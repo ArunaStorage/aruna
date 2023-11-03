@@ -12,7 +12,7 @@ use aruna_server::grpc::relations::RelationsServiceImpl;
 use aruna_server::grpc::search::SearchServiceImpl;
 use aruna_server::grpc::users::UserServiceImpl;
 use aruna_server::hooks;
-use aruna_server::hooks::hooks::HookMessage;
+use aruna_server::hooks::hook_handler::HookMessage;
 use aruna_server::middlelayer::db_handler::DatabaseHandler;
 use aruna_server::notification::natsio_handler::NatsIoHandler;
 use aruna_server::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes};
@@ -129,7 +129,8 @@ pub async fn init_database_handler_middlelayer() -> Arc<DatabaseHandler> {
     let auth_clone = auth.clone();
     let db_clone = db_handler.clone();
     tokio::spawn(async move {
-        let hook_executor = hooks::hooks::HookExec::new(hook_reciever, auth_clone, db_clone).await;
+        let hook_executor =
+            hooks::hook_handler::HookHandler::new(hook_reciever, auth_clone, db_clone).await;
         if let Err(err) = hook_executor.run().await {
             log::warn!("Hook execution error: {}", err)
         }
@@ -226,7 +227,8 @@ pub async fn init_project_service() -> ProjectServiceImpl {
     let auth_clone = perm_handler.clone();
     let db_clone = database_handler.clone();
     tokio::spawn(async move {
-        let hook_executor = hooks::hooks::HookExec::new(hook_reciever, auth_clone, db_clone).await;
+        let hook_executor =
+            hooks::hook_handler::HookHandler::new(hook_reciever, auth_clone, db_clone).await;
         if let Err(err) = hook_executor.run().await {
             log::warn!("Hook execution error: {}", err)
         }
@@ -361,7 +363,8 @@ pub async fn init_grpc_services() -> (
     let auth_clone = auth.clone();
     let db_clone = db_handler.clone();
     tokio::spawn(async move {
-        let hook_executor = hooks::hooks::HookExec::new(hook_reciever, auth_clone, db_clone).await;
+        let hook_executor =
+            hooks::hook_handler::HookHandler::new(hook_reciever, auth_clone, db_clone).await;
         if let Err(err) = hook_executor.run().await {
             log::warn!("Hook execution error: {}", err)
         }
@@ -423,7 +426,8 @@ pub async fn init_service_block() -> ServiceBlock {
     let auth_clone = auth_handler.clone();
     let db_clone = db_handler.clone();
     tokio::spawn(async move {
-        let hook_executor = hooks::hooks::HookExec::new(hook_reciever, auth_clone, db_clone).await;
+        let hook_executor =
+            hooks::hook_handler::HookHandler::new(hook_reciever, auth_clone, db_clone).await;
         if let Err(err) = hook_executor.run().await {
             log::warn!("Hook execution error: {}", err)
         }

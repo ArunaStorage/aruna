@@ -235,11 +235,6 @@ async fn test_update_description() {
 async fn test_update_keyvals() {
     // Init
     let db_handler = init_database_handler_middlelayer().await;
-    let authorizer = init_permission_handler(
-        db_handler.cache.clone(),
-        init_token_handler(db_handler.database.clone(), db_handler.cache.clone()).await,
-    )
-    .await;
     let resources = vec![
         ObjectMapping::PROJECT(DieselUlid::generate()),
         ObjectMapping::COLLECTION(DieselUlid::generate()),
@@ -302,10 +297,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![valid.clone(), static_kv.clone()],
                     remove_key_values: vec![deleted.clone()],
                 });
-                db_handler
-                    .update_keyvals(authorizer.clone(), request, user.id)
-                    .await
-                    .unwrap();
+                db_handler.update_keyvals(request, user.id).await.unwrap();
                 assert!(Object::get(r.id, &client)
                     .await
                     .unwrap()
@@ -327,10 +319,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![],
                     remove_key_values: vec![static_kv.clone()],
                 });
-                assert!(db_handler
-                    .update_keyvals(authorizer.clone(), err, user.id)
-                    .await
-                    .is_err());
+                assert!(db_handler.update_keyvals(err, user.id).await.is_err());
             }
             ObjectType::COLLECTION => {
                 let request = KeyValueUpdate::Collection(UpdateCollectionKeyValuesRequest {
@@ -338,10 +327,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![valid.clone(), static_kv.clone()],
                     remove_key_values: vec![deleted.clone()],
                 });
-                db_handler
-                    .update_keyvals(authorizer.clone(), request, user.id)
-                    .await
-                    .unwrap();
+                db_handler.update_keyvals(request, user.id).await.unwrap();
                 assert!(Object::get(r.id, &client)
                     .await
                     .unwrap()
@@ -363,10 +349,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![],
                     remove_key_values: vec![static_kv.clone()],
                 });
-                assert!(db_handler
-                    .update_keyvals(authorizer.clone(), err, user.id)
-                    .await
-                    .is_err());
+                assert!(db_handler.update_keyvals(err, user.id).await.is_err());
             }
             ObjectType::DATASET => {
                 let request = KeyValueUpdate::Dataset(UpdateDatasetKeyValuesRequest {
@@ -374,10 +357,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![valid.clone(), static_kv.clone()],
                     remove_key_values: vec![deleted.clone()],
                 });
-                db_handler
-                    .update_keyvals(authorizer.clone(), request, user.id)
-                    .await
-                    .unwrap();
+                db_handler.update_keyvals(request, user.id).await.unwrap();
                 assert!(Object::get(r.id, &client)
                     .await
                     .unwrap()
@@ -399,10 +379,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![],
                     remove_key_values: vec![static_kv.clone()],
                 });
-                assert!(db_handler
-                    .update_keyvals(authorizer.clone(), err, user.id)
-                    .await
-                    .is_err());
+                assert!(db_handler.update_keyvals(err, user.id).await.is_err());
             }
             _ => panic!(),
         };
@@ -413,11 +390,6 @@ async fn test_update_keyvals() {
 async fn update_object_test() {
     // Init
     let db_handler = init_database_handler_middlelayer().await;
-    let authorizer = init_permission_handler(
-        db_handler.cache.clone(),
-        init_token_handler(db_handler.database.clone(), db_handler.cache.clone()).await,
-    )
-    .await;
     let object_id = DieselUlid::generate();
     let object_mapping = ObjectMapping::OBJECT(object_id);
     let parent_id = DieselUlid::generate();
@@ -465,7 +437,7 @@ async fn update_object_test() {
     };
 
     let (updated, is_new) = db_handler
-        .update_grpc_object(authorizer.clone(), update_request, user.id, false)
+        .update_grpc_object(update_request, user.id, false)
         .await
         .unwrap();
     assert!(!is_new);
@@ -499,7 +471,7 @@ async fn update_object_test() {
         metadata_license_tag: None,
     };
     let (new, is_new) = db_handler
-        .update_grpc_object(authorizer.clone(), trigger_new_request, user.id, false)
+        .update_grpc_object(trigger_new_request, user.id, false)
         .await
         .unwrap();
     assert!(is_new);
@@ -525,7 +497,7 @@ async fn update_object_test() {
         data_license_tag: None,
     };
     let (new_2, is_new_2) = db_handler
-        .update_grpc_object(authorizer.clone(), force_new_revision, user.id, false)
+        .update_grpc_object(force_new_revision, user.id, false)
         .await
         .unwrap();
     assert!(is_new_2);
@@ -547,7 +519,7 @@ async fn update_object_test() {
         data_license_tag: Some("All_Rights_Reserved".to_string()),
     };
     let (license_updated, is_new) = db_handler
-        .update_grpc_object(authorizer.clone(), license_update.clone(), user.id, false)
+        .update_grpc_object(license_update.clone(), user.id, false)
         .await
         .unwrap();
     assert!(is_new);

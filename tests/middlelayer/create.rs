@@ -29,11 +29,6 @@ fn random_name() -> String {
 async fn create_project() {
     // init
     let db_handler = init_database_handler_middlelayer().await;
-    let authorizer = init_permission_handler(
-        db_handler.cache.clone(),
-        init_token_handler(db_handler.database.clone(), db_handler.cache.clone()).await,
-    )
-    .await;
 
     // create user
     let mut user = test_utils::new_user(vec![]);
@@ -59,7 +54,7 @@ async fn create_project() {
         default_endpoint.to_string(),
     );
     let (proj, _) = db_handler
-        .create_resource(authorizer.clone(), request, user.id, false)
+        .create_resource(request, user.id, false)
         .await
         .unwrap();
 
@@ -91,11 +86,6 @@ async fn create_collection() {
     // init
     let db_handler = init_database_handler_middlelayer().await;
     let client = &db_handler.database.get_client().await.unwrap();
-    let authorizer = init_permission_handler(
-        db_handler.cache.clone(),
-        init_token_handler(db_handler.database.clone(), db_handler.cache.clone()).await,
-    )
-    .await;
 
     // create user
     let mut user = test_utils::new_user(vec![]);
@@ -120,7 +110,7 @@ async fn create_collection() {
         default_endpoint.to_string(),
     );
     let (parent, _) = db_handler
-        .create_resource(authorizer.clone(), parent, user.id, false)
+        .create_resource(parent, user.id, false)
         .await
         .unwrap();
     db_handler.cache.add_object(parent.clone());
@@ -138,7 +128,7 @@ async fn create_collection() {
         default_data_license_tag: Some("All_Rights_Reserved".to_string()),
     });
     let (coll, _) = db_handler
-        .create_resource(authorizer.clone(), request, user.id, false)
+        .create_resource(request, user.id, false)
         .await
         .unwrap();
 
@@ -171,11 +161,6 @@ async fn create_dataset() {
     let db_handler = init_database_handler_middlelayer().await;
     let client = &db_handler.database.get_client().await.unwrap();
     let cache = Arc::new(Cache::new());
-    let authorizer = init_permission_handler(
-        cache.clone(),
-        init_token_handler(db_handler.database.clone(), cache.clone()).await,
-    )
-    .await;
     // create user
     let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
@@ -198,7 +183,7 @@ async fn create_dataset() {
         default_endpoint.to_string(),
     );
     let (parent, _) = db_handler
-        .create_resource(authorizer.clone(), parent, user.id, false)
+        .create_resource(parent, user.id, false)
         .await
         .unwrap();
     cache.add_object(parent.clone());
@@ -216,7 +201,7 @@ async fn create_dataset() {
         default_data_license_tag: Some("All_Rights_Reserved".to_string()),
     });
     let (ds, _) = db_handler
-        .create_resource(authorizer.clone(), request, user.id, false)
+        .create_resource(request, user.id, false)
         .await
         .unwrap();
 
@@ -249,11 +234,6 @@ async fn create_object() {
     let db_handler = init_database_handler_middlelayer().await;
     let client = &db_handler.database.get_client().await.unwrap();
     let cache = Arc::new(Cache::new());
-    let authorizer = init_permission_handler(
-        cache.clone(),
-        init_token_handler(db_handler.database.clone(), cache.clone()).await,
-    )
-    .await;
 
     // create user
     let mut user = test_utils::new_user(vec![]);
@@ -277,7 +257,7 @@ async fn create_object() {
     );
     // Should fail because endpoint does not exist
     assert!(db_handler
-        .create_resource(authorizer.clone(), failing_parent, user.id, false)
+        .create_resource(failing_parent, user.id, false)
         .await
         .is_err());
 
@@ -297,7 +277,7 @@ async fn create_object() {
         default_endpoint.to_string(),
     );
     let (parent, _) = db_handler
-        .create_resource(authorizer.clone(), parent, user.id, false)
+        .create_resource(parent, user.id, false)
         .await
         .unwrap();
     cache.add_object(parent.clone());
@@ -316,7 +296,7 @@ async fn create_object() {
         data_license_tag: "All_Rights_Reserved".to_string(),
     });
     let (obj, _) = db_handler
-        .create_resource(authorizer.clone(), request, user.id, false)
+        .create_resource(request, user.id, false)
         .await
         .unwrap();
 
