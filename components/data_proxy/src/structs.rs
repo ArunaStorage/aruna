@@ -30,6 +30,10 @@ use std::{
     str::FromStr,
 };
 
+/* ----- Constants ----- */
+pub const ALL_RIGHTS_RESERVED: &str = "AllRightsReserved";
+
+
 pub fn type_name_of<T>(_: T) -> &'static str {
     std::any::type_name::<T>()
 }
@@ -102,6 +106,8 @@ pub struct Object {
     pub data_class: DataClass,
     pub object_type: ObjectType,
     pub hashes: HashMap<String, String>,
+    pub metadata_license: String,
+    pub data_license: String,
     pub dynamic: bool,
     pub children: Option<HashSet<TypedRelation>>,
     pub parents: Option<HashSet<TypedRelation>>,
@@ -405,6 +411,8 @@ impl TryFrom<Project> for Object {
             data_class: value.data_class(),
             object_type: ObjectType::Project,
             hashes: HashMap::default(),
+            metadata_license: value.metadata_license_tag,
+            data_license: value.default_data_license_tag,
             dynamic: value.dynamic,
             parents: Some(inbounds),
             children: Some(outbounds),
@@ -462,6 +470,8 @@ impl TryFrom<Collection> for Object {
             data_class: value.data_class(),
             object_type: ObjectType::Collection,
             hashes: HashMap::default(),
+            metadata_license: value.metadata_license_tag,
+            data_license: value.default_data_license_tag,
             dynamic: value.dynamic,
             parents: Some(inbounds),
             children: Some(outbounds),
@@ -519,6 +529,8 @@ impl TryFrom<Dataset> for Object {
             data_class: value.data_class(),
             object_type: ObjectType::Dataset,
             hashes: HashMap::default(),
+            metadata_license: value.metadata_license_tag,
+            data_license: value.default_data_license_tag,
             dynamic: value.dynamic,
             parents: Some(inbounds),
             children: Some(outbounds),
@@ -576,6 +588,8 @@ impl TryFrom<GrpcObject> for Object {
             data_class: value.data_class(),
             object_type: ObjectType::Object,
             hashes: HashMap::default(),
+            metadata_license: value.metadata_license_tag,
+            data_license: value.data_license_tag,
             dynamic: value.dynamic,
             parents: Some(inbounds),
             children: Some(outbounds),
@@ -604,8 +618,8 @@ impl From<Object> for CreateProjectRequest {
             relations: vec![],
             data_class: value.data_class.into(),
             preferred_endpoint: "".to_string(),
-            metadata_license_tag: "all_rights_reserved".to_string(),
-            default_data_license_tag: "all_rights_reserved".to_string(),
+            metadata_license_tag: value.metadata_license,
+            default_data_license_tag: value.data_license,
         }
     }
 }
@@ -622,8 +636,8 @@ impl From<Object> for CreateCollectionRequest {
                 .parents
                 .and_then(|x| x.iter().next().map(|y| y.clone().try_into().ok()))
                 .flatten(),
-            metadata_license_tag: "all_rights_reserved".to_string(),
-            default_data_license_tag: "all_rights_reserved".to_string(),
+            metadata_license_tag: Some(value.metadata_license),
+            default_data_license_tag: Some(value.data_license),
         }
     }
 }
@@ -640,8 +654,8 @@ impl From<Object> for CreateDatasetRequest {
                 .parents
                 .and_then(|x| x.iter().next().map(|y| y.clone().try_into().ok()))
                 .flatten(),
-            metadata_license_tag: "all_rights_reserved".to_string(),
-            default_data_license_tag: "all_rights_reserved".to_string(),
+            metadata_license_tag: Some(value.metadata_license),
+            default_data_license_tag: Some(value.data_license),
         }
     }
 }
@@ -656,6 +670,8 @@ impl From<CreateBucketInput> for Object {
             data_class: DataClass::Private,
             object_type: ObjectType::Project,
             hashes: HashMap::default(),
+            metadata_license: ALL_RIGHTS_RESERVED.to_string(), // Default for now
+            data_license: ALL_RIGHTS_RESERVED.to_string(),     // Default for now
             dynamic: false,
             parents: None,
             children: None,
@@ -677,8 +693,8 @@ impl From<Object> for CreateObjectRequest {
                 .and_then(|x| x.iter().next().map(|y| y.clone().try_into().ok()))
                 .flatten(),
             hashes: vec![],
-            metadata_license_tag: "all_rights_reserved".to_string(),
-            data_license_tag: "all_rights_reserved".to_string(),
+            metadata_license_tag: value.metadata_license,
+            data_license_tag: value.data_license,
         }
     }
 }
@@ -695,8 +711,8 @@ impl From<Object> for UpdateObjectRequest {
             hashes: vec![],
             force_revision: false,
             parent: None,
-            metadata_license_tag: String::new(),
-            data_license_tag: String::new(),
+            metadata_license_tag: Some(value.metadata_license),
+            data_license_tag: Some(value.data_license),
         }
     }
 }

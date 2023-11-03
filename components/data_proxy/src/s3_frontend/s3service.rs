@@ -8,6 +8,7 @@ use crate::data_backends::storage_backend::StorageBackend;
 use crate::log_received;
 use crate::s3_frontend::utils::list_objects::filter_list_objects;
 use crate::s3_frontend::utils::list_objects::list_response;
+use crate::structs::ALL_RIGHTS_RESERVED;
 use crate::structs::CheckAccessResult;
 use crate::structs::Object as ProxyObject;
 use crate::structs::PartETag;
@@ -167,7 +168,7 @@ impl S3 for ArunaS3Service {
                 if o.object_status == Status::Initializing {
                     o
                 } else {
-                    // Force Object update in ArunaServer
+                    // Force Object update with new revision in ArunaServer
                     let new_revision = if let Some(handler) =
                         self.cache.aruna_client.read().await.as_ref()
                     {
@@ -191,6 +192,8 @@ impl S3 for ArunaS3Service {
                         data_class: new_revision.data_class,
                         object_type: crate::structs::ObjectType::Object,
                         hashes: HashMap::default(),
+                        metadata_license: new_revision.metadata_license,
+                        data_license: new_revision.data_license,
                         dynamic: false,
                         children: None,
                         parents: new_revision.parents,
@@ -212,6 +215,8 @@ impl S3 for ArunaS3Service {
                     data_class: DataClass::Private,
                     object_type: crate::structs::ObjectType::Object,
                     hashes: HashMap::default(),
+                    metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+                    data_license: ALL_RIGHTS_RESERVED.to_string(),
                     dynamic: false,
                     children: None,
                     parents: None,
@@ -233,6 +238,8 @@ impl S3 for ArunaS3Service {
                 data_class: DataClass::Private,
                 object_type: crate::structs::ObjectType::Object,
                 hashes: HashMap::default(),
+                metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+                data_license: ALL_RIGHTS_RESERVED.to_string(),
                 dynamic: false,
                 children: None,
                 parents: None,
@@ -317,6 +324,8 @@ impl S3 for ArunaS3Service {
                     data_class: DataClass::Private,
                     object_type: crate::structs::ObjectType::Collection,
                     hashes: HashMap::default(),
+                    metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+                    data_license: ALL_RIGHTS_RESERVED.to_string(),
                     dynamic: true,
                     children: None,
                     parents: Some(HashSet::from([TypedRelation::Project(
@@ -357,6 +366,8 @@ impl S3 for ArunaS3Service {
                     data_class: DataClass::Private,
                     object_type: crate::structs::ObjectType::Dataset,
                     hashes: HashMap::default(),
+                    metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+                    data_license: ALL_RIGHTS_RESERVED.to_string(),
                     dynamic: true,
                     children: None,
                     parents: Some(HashSet::from([parent])),
@@ -487,7 +498,7 @@ impl S3 for ArunaS3Service {
                 if o.object_status == Status::Initializing {
                     o
                 } else {
-                    // Force Object update in ArunaServer
+                    // Force Object update with new revision in ArunaServer
                     let new_revision = if let Some(handler) =
                         self.cache.aruna_client.read().await.as_ref()
                     {
@@ -511,6 +522,8 @@ impl S3 for ArunaS3Service {
                         data_class: new_revision.data_class,
                         object_type: crate::structs::ObjectType::Object,
                         hashes: HashMap::default(),
+                        metadata_license: new_revision.metadata_license,
+                        data_license: new_revision.data_license,
                         dynamic: false,
                         children: None,
                         parents: new_revision.parents,
@@ -532,6 +545,8 @@ impl S3 for ArunaS3Service {
                     data_class: DataClass::Private,
                     object_type: crate::structs::ObjectType::Object,
                     hashes: HashMap::default(),
+                    metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+                    data_license: ALL_RIGHTS_RESERVED.to_string(),
                     dynamic: false,
                     children: None,
                     parents: None,
@@ -553,6 +568,8 @@ impl S3 for ArunaS3Service {
                 data_class: DataClass::Private,
                 object_type: crate::structs::ObjectType::Object,
                 hashes: HashMap::default(),
+                metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+                data_license: ALL_RIGHTS_RESERVED.to_string(),
                 dynamic: false,
                 children: None,
                 parents: None,
@@ -588,6 +605,8 @@ impl S3 for ArunaS3Service {
                     data_class: DataClass::Private,
                     object_type: crate::structs::ObjectType::Collection,
                     hashes: HashMap::default(),
+                    metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+                    data_license: ALL_RIGHTS_RESERVED.to_string(),
                     dynamic: true,
                     children: None,
                     parents: Some(HashSet::from([TypedRelation::Project(
@@ -628,6 +647,8 @@ impl S3 for ArunaS3Service {
                     data_class: DataClass::Private,
                     object_type: crate::structs::ObjectType::Dataset,
                     hashes: HashMap::default(),
+                    metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+                    data_license: ALL_RIGHTS_RESERVED.to_string(),
                     dynamic: true,
                     children: None,
                     parents: Some(HashSet::from([parent])),

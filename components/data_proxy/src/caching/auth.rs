@@ -7,7 +7,6 @@ use crate::structs::ObjectLocation;
 use crate::structs::ObjectType;
 use crate::structs::ResourceIds;
 use crate::structs::ResourceResults;
-use crate::structs::ResourceString;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
