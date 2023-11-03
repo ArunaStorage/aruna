@@ -1,5 +1,6 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
+use crate::database::dsls::hook_dsl::TriggerVariant;
 use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO,
 };
@@ -16,7 +17,6 @@ use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use postgres_types::Json;
 use std::sync::Arc;
-use crate::database::dsls::hook_dsl::TriggerVariant;
 
 impl DatabaseHandler {
     pub async fn create_resource(
@@ -276,13 +276,17 @@ impl DatabaseHandler {
         };
         let trigger: Vec<TriggerVariant> = {
             let mut trigger = vec![TriggerVariant::RESOURCE_CREATED];
-            if !object.key_values.0.0.is_empty() {
-                for KeyValue{variant, ..} in &object.key_values.0.0 {
+            if !object.key_values.0 .0.is_empty() {
+                for KeyValue { variant, .. } in &object.key_values.0 .0 {
                     match variant {
                         KeyValueVariant::HOOK => trigger.push(TriggerVariant::HOOK_ADDED),
                         KeyValueVariant::LABEL => trigger.push(TriggerVariant::LABEL_ADDED),
-                        KeyValueVariant::STATIC_LABEL => trigger.push(TriggerVariant::STATIC_LABEL_ADDED),
-                        KeyValueVariant::HOOK_STATUS => trigger.push(TriggerVariant::HOOK_STATUS_CHANGED),
+                        KeyValueVariant::STATIC_LABEL => {
+                            trigger.push(TriggerVariant::STATIC_LABEL_ADDED)
+                        }
+                        KeyValueVariant::HOOK_STATUS => {
+                            trigger.push(TriggerVariant::HOOK_STATUS_CHANGED)
+                        }
                     }
                 }
             }
@@ -291,7 +295,13 @@ impl DatabaseHandler {
         let object_with_relation = owr.clone();
         tokio::spawn(async move {
             let hook_trigger = db_handler
-                .trigger_hooks(authorizer.clone(), object_with_relation, user_id, trigger, None)
+                .trigger_hooks(
+                    authorizer.clone(),
+                    object_with_relation,
+                    user_id,
+                    trigger,
+                    None,
+                )
                 .await;
             if hook_trigger.is_err() {
                 log::error!("{:?}", hook_trigger)

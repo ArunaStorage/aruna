@@ -191,6 +191,7 @@ impl DatabaseHandler {
         triggers: Vec<TriggerVariant>,
         updated_labels: Option<Vec<KeyValue>>,
     ) -> Result<()> {
+
         dbg!("Trigger hooks started");
         let client = self.database.get_client().await?;
         let parents = self.cache.upstream_dfs_iterative(&object.object.id)?;
@@ -257,80 +258,6 @@ impl DatabaseHandler {
             Ok(())
         }
     }
-    //pub async fn trigger_on_creation(
-    //    &self,
-    //    authorizer: Arc<PermissionHandler>,
-    //    object_id: DieselUlid,
-    //    user_id: DieselUlid,
-    //) -> Result<()> {
-    //    dbg!("Trigger creation triggered");
-    //    let client = self.database.get_client().await?;
-    //    dbg!(object_id);
-    //    let parents = self.cache.upstream_dfs_iterative(&object_id)?;
-    //    let projects = DatabaseHandler::collect_projects(parents);
-    //    let hooks: Vec<HookWithAssociatedProject> =
-    //        Hook::get_hooks_for_projects(&projects, &client)
-    //            .await?
-    //            .into_iter()
-    //            .filter(|h| h.trigger.0.variant == TriggerVariant::RESOURCE_CREATED)
-    //            .collect();
-    //    if hooks.is_empty() {
-    //        Ok(())
-    //    } else {
-    //        self.hook_action(authorizer.clone(), hooks, object_id, user_id)
-    //            .await?;
-    //        Ok(())
-    //    }
-    //}
-
-    //pub async fn trigger_on_append_hook(
-    //    &self,
-    //    authorizer: Arc<PermissionHandler>,
-    //    user_id: DieselUlid,
-    //    object_id: DieselUlid,
-    //    keyvals: Vec<KeyValue>,
-    //) -> Result<()> {
-    //    dbg!("ON_APPEND TRIGGERED");
-    //    let parents = self.cache.upstream_dfs_iterative(&object_id)?;
-    //    dbg!(&parents);
-    //    let projects = DatabaseHandler::collect_projects(parents);
-    //    let keyvals: Vec<(String, String)> =
-    //        keyvals.into_iter().map(|k| (k.key, k.value)).collect();
-    //    dbg!("KEYVALS: {:?}", &keyvals);
-    //    let client = self.database.get_client().await?;
-    //    let hooks: Vec<HookWithAssociatedProject> =
-    //        Hook::get_hooks_for_projects(&projects, &client).await?;
-    //    dbg!("UNFILTERED: {:?}", &hooks);
-    //    let hooks: Vec<HookWithAssociatedProject> = hooks
-    //        .into_iter()
-    //        .filter_map(|h| {
-    //            if h.trigger.0.variant == TriggerVariant::HOOK_ADDED {
-    //                for filter in h.trigger.0.filter {
-    //                    //TODO: Regex matching
-    //                    match filter {
-    //                        Filter::Name(name) => {}
-    //                        Filter::KeyValue(kv) => {}
-    //                    }
-    //                }
-    //                if keyvals.contains(&(h.trigger.0.filter.clone(), h.trigger_value.clone())) {
-    //                    Some(h)
-    //                } else {
-    //                    None
-    //                }
-    //            } else {
-    //                None
-    //            }
-    //        })
-    //        .collect();
-    //    dbg!("FILTERED: {:?}", &hooks);
-    //    if hooks.is_empty() {
-    //        Ok(())
-    //    } else {
-    //        self.hook_action(authorizer.clone(), hooks, object_id, user_id)
-    //            .await?;
-    //        Ok(())
-    //    }
-    //}
 
     async fn hook_action(
         &self,
@@ -411,39 +338,60 @@ impl DatabaseHandler {
                     }
                 }
                 crate::database::dsls::hook_dsl::HookVariant::External(ExternalHook{ url, credentials, template, method }) => {
-                    dbg!("REACHED EXTERNAL TRIGGER");
-                    // Get Object for response
-                    let object = self.cache.get_object(&object_id).ok_or_else(|| anyhow!("Object not found"))?;
-                    if object.object.object_type != ObjectType::OBJECT || object.object.object_status == ObjectStatus::INITIALIZING {
-                        continue
-                    }
 
-                    // Create secret for callback
-                    let (secret, pubkey_serial) = authorizer.token_handler.sign_hook_secret(self.cache.clone(), object_id, hook.id).await?;
-                    // TODO: Only create token when specified in custom template
-                    // Create append only s3-credentials
-                    let append_only_token = APIToken{
-                          pub_key: pubkey_serial,
-                          name: format!("{}-append_only", hook.id),
-                          created_at: chrono::Utc::now().naive_utc(),
-                          expires_at: hook.timeout
-                          ,
-                          object_id: Some(ObjectMapping::PROJECT(hook.project_id)),
-                          user_rights: crate::database::enums::DbPermissionLevel::APPEND,
+                    // This creates only presigned download urls for available objects.
+                    // If ObjectType is not OBJECT, only s3 credentials are generated.
+                    // This should allow for generic external hooks that can also be
+                    // triggered for other ObjectTypes than OBJECTs
+                    let (secret,
+                        download,
+                        pubkey_serial,
+                        upload_credentials) =
+                    match (object.object.object_type, &object.object.object_status) {
+                        // Get download url and s3-credentials for upload
+                        (ObjectType::OBJECT, ObjectStatus::AVAILABLE) => {
+                            let (secret, pubkey_serial) = authorizer.token_handler.sign_hook_secret(self.cache.clone(), object_id, hook.id).await?;
+                            // Create append only s3-credentials
+                            let append_only_token = APIToken{
+                                pub_key: pubkey_serial,
+                                name: format!("{}-append_only", hook.id),
+                                created_at: chrono::Utc::now().naive_utc(),
+                                expires_at: hook.timeout,
+                                // TODO: Custom resource permissions for hooks
+                                object_id: Some(ObjectMapping::PROJECT(hook.project_id)), 
+                                user_rights: crate::database::enums::DbPermissionLevel::APPEND,
+                            };
+                            let token_id = self.create_hook_token(&user_id, append_only_token).await?;
+
+                            // Create download url for response
+                            let request = PresignedDownload(GetDownloadUrlRequest{ object_id: object_id.to_string()});
+                            let (download, upload_credentials) = self.get_presigned_download_with_credentials(self.cache.clone(), authorizer.clone(), request, user_id, Some(token_id)).await?;
+                            let download = Some(download);
+                            (secret, download, pubkey_serial, upload_credentials)
+                        },
+                        // Get only s3-credentials for upload
+                        (_,_) => {
+                            let (secret, pubkey_serial) = authorizer.token_handler.sign_hook_secret(self.cache.clone(), object_id, hook.id).await?;
+                            // Create append only s3-credentials
+                            let append_only_token = APIToken{
+                                pub_key: pubkey_serial,
+                                name: format!("{}-append_only", hook.id),
+                                created_at: chrono::Utc::now().naive_utc(),
+                                expires_at: hook.timeout,
+                                // TODO: Custom resource permissions for hooks
+                                object_id: Some(ObjectMapping::PROJECT(hook.project_id)),
+                                user_rights: crate::database::enums::DbPermissionLevel::APPEND,
+                            };
+                            let token_id = self.create_hook_token(&user_id, append_only_token).await?;
+                            // Create download url for response
+                            let upload_credentials = self.get_s3_credentials(self.cache.clone(), authorizer.clone(), object_id, user_id, Some(token_id)).await?;
+                            (secret, None, pubkey_serial, Some(upload_credentials))
+                        }
                     };
-                    dbg!("Trigger token: {:?}", &append_only_token);
-                    let token_id = self.create_hook_token(&user_id, append_only_token).await?;
-                    dbg!("Trigger token id: {:?}", &token_id);
-
-                    // Create download url for response
-                    let request = PresignedDownload(GetDownloadUrlRequest{ object_id: object_id.to_string()});
-                    let (download, upload_credentials) = self.get_presigned_download_with_credentials(self.cache.clone(), authorizer.clone(), request, user_id, Some(token_id)).await?;
-                    dbg!("Presigned download: {:?}", &download);
                     let (access_key, secret_key) = match upload_credentials {
-                        Some(ref creds) => (Some(creds.access_key.to_string()), Some(creds.secret_key.to_string())),
-                        None => (None, None)
+                                Some(ref creds) => (Some(creds.access_key.to_string()), Some(creds.secret_key.to_string())),
+                                None => (None, None)
                     };
-                    dbg!("Upload creds: ({}, {})", &access_key, &secret_key);
 
                     // Create & send request
                     let client = reqwest::Client::new();

@@ -325,7 +325,7 @@ impl CustomTemplate {
         hook_id: DieselUlid,
         object: &Object,
         secret: String,
-        download_url: String,
+        download_url: Option<String>,
         upload_credentials: Option<GetCredentialsResponse>,
         pubkey_serial: i32,
     ) -> Result<String> {
@@ -346,6 +346,10 @@ impl CustomTemplate {
         let (access_key, secret_key) = match upload_credentials {
             Some(creds) => (creds.access_key, creds.secret_key),
             None => (String::new(), String::new()),
+        };
+        let download_url = match download_url {
+            Some(download) => download,
+            None => String::new(),
         };
         let replacement_pairs = [
             (r"\{\{secret\}\}", secret),

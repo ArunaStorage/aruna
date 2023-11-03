@@ -93,7 +93,7 @@ pub struct BasicTemplate {
     pub hook_id: DieselUlid,
     pub object: Resource,
     pub secret: String,
-    pub download: String,
+    pub download: Option<String>,
     pub pubkey_serial: i32,
     pub access_key: Option<String>,
     pub secret_key: Option<String>,
