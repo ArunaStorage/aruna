@@ -91,6 +91,7 @@ pub async fn main() -> Result<()> {
         .map_err(|_| anyhow::anyhow!("NatsIoHandler init failed"))?;
     let natsio_arc = Arc::new(natsio_handler);
 
+    // Create channel for HookHandler
     let (hook_sender, hook_reciever) = async_channel::unbounded();
 
     // Init DatabaseHandler
@@ -102,15 +103,12 @@ pub async fn main() -> Result<()> {
     };
     let db_handler_arc = Arc::new(database_handler);
 
+    // Init HookHandler
     let auth_clone = auth_arc.clone();
     let db_clone = db_handler_arc.clone();
-    tokio::spawn(async move {
-        let hook_executor =
-            hooks::hook_handler::HookHandler::new(hook_reciever, auth_clone, db_clone).await;
-        if let Err(err) = hook_executor.run().await {
-            log::warn!("Hook execution error: {}", err)
-        }
-    });
+    let hook_handler =
+        hooks::hook_handler::HookHandler::new(hook_reciever, auth_clone, db_clone).await;
+    hook_handler.run().await?;
 
     // MeilisearchClient
     let meilisearch_client = MeilisearchClient::new(

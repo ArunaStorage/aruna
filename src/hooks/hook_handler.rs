@@ -1,19 +1,18 @@
-use crate::database::crud::CrudDb;
 use crate::database::dsls::hook_dsl::{BasicTemplate, Credentials, ExternalHook, TemplateVariant};
 use crate::database::dsls::user_dsl::APIToken;
 use crate::database::enums::{ObjectMapping, ObjectStatus, ObjectType};
 use crate::middlelayer::hooks_request_types::CustomTemplate;
 use crate::middlelayer::presigned_url_handler::PresignedDownload;
+use crate::middlelayer::relations_request_types::ModifyRelations;
 use crate::{
     auth::permission_handler::PermissionHandler,
     database::dsls::{
         hook_dsl::{HookStatusValues, HookStatusVariant, HookWithAssociatedProject},
-        internal_relation_dsl::InternalRelation,
-        object_dsl::{ExternalRelation, KeyValue, KeyValueVariant, Object, ObjectWithRelations},
+        object_dsl::{KeyValue, KeyValueVariant, Object, ObjectWithRelations},
     },
     middlelayer::db_handler::DatabaseHandler,
 };
-use ahash::HashSet;
+use ahash::{HashSet, HashSetExt};
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::dataproxy::services::v2::GetCredentialsResponse;
@@ -27,16 +26,16 @@ use aruna_rust_api::api::storage::services::v2::{
 use async_channel::Receiver;
 use diesel_ulid::DieselUlid;
 use http::header::CONTENT_TYPE;
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct HookHandler {
     pub reciever: Receiver<HookMessage>,
     pub authorizer: Arc<PermissionHandler>,
     pub database_handler: Arc<DatabaseHandler>,
-    pub queue: Vec<HookMessage>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HookMessage {
     pub hook: HookWithAssociatedProject,
     pub object: ObjectWithRelations,
@@ -53,172 +52,172 @@ impl HookHandler {
             reciever,
             authorizer,
             database_handler,
-            queue: Vec::new(),
         }
     }
     pub async fn run(&self) -> Result<()> {
-        //let mut message_queue = HashSet::default();
-        while let Ok(message) = self.reciever.recv().await {
-            dbg!("Got hook message: {:?}", &message);
-            //message_queue.insert(message);
-            // TODO:
-            // - queue logic
-            // - deduplication
-            // - retries
-            self.hook_action(message).await?
-        }
+        let handler = self.clone();
+        let client = reqwest::Client::new();
+        tokio::spawn(async move {
+            while let Ok(message) = handler.reciever.recv().await {
+                // TODO:
+                // - queue logic
+                // - deduplication
+                // - retries
+                if let Err(action) = handler.hook_action(message, client.clone()).await {
+                    log::error!("[HookHandler] ERROR: {:?}", action);
+                };
+            }
+        });
         Ok(())
     }
-    pub async fn hook_action(&self, message: HookMessage) -> Result<()> {
+    pub async fn hook_action(&self, message: HookMessage, client: reqwest::Client) -> Result<()> {
         let HookMessage {
             hook,
             object,
             user_id,
         } = message;
-        let mut client = self.database_handler.database.get_client().await?;
-        let mut affected_parents: Vec<DieselUlid> = Vec::new();
-        dbg!("Hook: {:?}", &hook);
-        let mut object = object.clone();
-        let status_value = HookStatusValues {
-            name: hook.name.clone(),
-            status: HookStatusVariant::RUNNING,
-            trigger: hook.trigger.0.clone(),
-        };
-        let hook_status = KeyValue {
-            key: hook.id.to_string(),
-            value: serde_json::to_string(&status_value)?,
-            variant: KeyValueVariant::HOOK_STATUS,
-        };
-        dbg!("HookStatus: {:?}", &hook_status);
-        object.object.key_values.0 .0.push(hook_status.clone());
-        Object::add_key_value(&object.object.id, &client, hook_status).await?;
         let object_id = object.object.id;
-        self.database_handler
-            .cache
-            .upsert_object(&object.object.id, object.clone());
 
-        let transaction = client.transaction().await?;
-        let transaction_client = transaction.client();
-        let affected_parent = match hook.hook.0 {
-                crate::database::dsls::hook_dsl::HookVariant::Internal(internal_hook) => {
-                    match internal_hook {
-                        crate::database::dsls::hook_dsl::InternalHook::AddLabel { key, value } => {
-                            self.add_keyvals(object.clone(), user_id, key, value, APIKeyValVariant::Label).await?;
-                            None
-                        }
-                        crate::database::dsls::hook_dsl::InternalHook::AddHook { key, value } => {
-                            self.add_keyvals(object.clone(), user_id, key, value, APIKeyValVariant::Hook).await?;
-                            None
-                        }
-                        crate::database::dsls::hook_dsl::InternalHook::CreateRelation {
-                            relation,
-                        } => {
-                            match relation {
-                                aruna_rust_api::api::storage::models::v2::relation::Relation::External(external) => {
-                                    let relation: ExternalRelation = (&external).try_into()?;
-                                    Object::add_external_relations(&object_id, transaction_client, vec![relation]).await?;
-                                    None
-                                },
-                                aruna_rust_api::api::storage::models::v2::relation::Relation::Internal(internal) => {
-                                    let affected_parent = Some(DieselUlid::from_str(&internal.resource_id)?);
-                                    let mut internal = InternalRelation::from_api(&internal, object_id, self.database_handler.cache.clone())?;
-                                    internal.create(transaction_client).await?;
-                                    affected_parent
-                                },
-                            }
-                        }
+        // Add running status:
+        self.add_status(&hook, &object, HookStatusVariant::RUNNING)
+            .await?;
+
+        match hook.hook.0 {
+            crate::database::dsls::hook_dsl::HookVariant::Internal(ref internal_hook) => {
+                match internal_hook {
+                    crate::database::dsls::hook_dsl::InternalHook::AddLabel { key, value } => {
+                        self.add_keyvals(
+                            object.clone(),
+                            user_id,
+                            key.to_string(),
+                            value.to_string(),
+                            APIKeyValVariant::Label,
+                        )
+                        .await?;
+                        // Add finished status
+                        self.add_status(&hook, &object, HookStatusVariant::FINISHED)
+                            .await?;
+                    }
+                    crate::database::dsls::hook_dsl::InternalHook::AddHook { key, value } => {
+                        self.add_keyvals(
+                            object.clone(),
+                            user_id,
+                            key.to_string(),
+                            value.to_string(),
+                            APIKeyValVariant::Hook,
+                        )
+                        .await?;
+                        // Add finished status
+                        self.add_status(&hook, &object, HookStatusVariant::FINISHED)
+                            .await?;
+                    }
+                    crate::database::dsls::hook_dsl::InternalHook::CreateRelation { relation } => {
+                        let relation = aruna_rust_api::api::storage::models::v2::Relation {
+                            relation: Some(relation.clone()),
+                        };
+                        let request = ModifyRelations(
+                            aruna_rust_api::api::storage::services::v2::ModifyRelationsRequest {
+                                resource_id: object_id.to_string(),
+                                add_relations: vec![relation],
+                                remove_relations: vec![],
+                            },
+                        );
+                        let (resource, labels_info) = self
+                            .database_handler
+                            .get_resource(request, self.database_handler.cache.clone())
+                            .await?;
+                        self.database_handler
+                            .modify_relations(
+                                resource,
+                                labels_info.relations_to_add,
+                                labels_info.relations_to_remove,
+                            )
+                            .await?;
+                        self.add_status(&hook, &object, HookStatusVariant::FINISHED)
+                            .await?;
                     }
                 }
-                crate::database::dsls::hook_dsl::HookVariant::External(ExternalHook {
-                    ref url,
-                    ref credentials,
-                    ref template,
-                    ref method,
-                }) => {
-                    dbg!("[ STARTING EXTERNAL HOOK ]");
-                    // This creates only presigned download urls for available objects.
-                    // If ObjectType is not OBJECT, only s3 credentials are generated.
-                    // This should allow for generic external hooks that can also be
-                    // triggered for other ObjectTypes than OBJECTs
-                    let (secret, download, pubkey_serial, upload_credentials) = self.get_template_input(object.clone(), hook.clone(), user_id).await?;
-                    let (access_key, secret_key) = match upload_credentials {
-                        Some(ref creds) => (
-                            Some(creds.access_key.to_string()),
-                            Some(creds.secret_key.to_string()),
-                        ),
-                        None => (None, None),
-                    };
-
-                    // Create & send request
-                    // TODO: 
-                    // - Sometimes the connection is dropped before finishing, why?
-                    let client = reqwest::Client::new(); 
-                    let base_request = match method {
-                        crate::database::dsls::hook_dsl::Method::PUT => match credentials {
-                            Some(Credentials { token }) => client.put(url).bearer_auth(token),
-                            None => client.put(url),
-                        },
-                        crate::database::dsls::hook_dsl::Method::POST => match credentials {
-                            Some(Credentials { token }) => client.post(url).bearer_auth(token),
-                            None => client.post(url),
-                        },
-                    };
-                    dbg!(&base_request);
-                    // Put everything into template
-                    match template {
-                        TemplateVariant::Basic => {
-                            let json = serde_json::to_string(&BasicTemplate {
-                                hook_id: hook.id,
-                                object: object.clone().try_into()?,
-                                secret,
-                                download,
-                                pubkey_serial,
-                                access_key,
-                                secret_key,
-                            })?;
-                            //dbg!("Template: {:?}", &json);
-                            //let request = base_request.json(&json);
-                            //dbg!("Created request: ", &request);
-                            //let response = request.send().await?;
-                            let response = base_request.json(&json).send().await?;
-                            dbg!("External hook response: {:?}", response);
-                        }
-                        TemplateVariant::Custom(template) => {
-                            let template = CustomTemplate::create_custom_template(
-                                template.to_string(),
-                                hook.id,
-                                &object.object,
-                                secret,
-                                download,
-                                upload_credentials,
-                                pubkey_serial,
-                            )?;
-                            let response = base_request
-                                .header(CONTENT_TYPE, "text/plain")
-                                .body(template)
-                                .send()
-                                .await?;
-                            dbg!("Custom template hook response: {:?}", response);
-                        }
-                    };
-                    None
-                }
-            };
-        transaction.commit().await?;
-        if let Some(p) = affected_parent {
-            affected_parents.push(p);
-        }
-        let updated = Object::get_object_with_relations(&object.object.id, &client).await?;
-        if !affected_parents.is_empty() {
-            let mut affected =
-                Object::get_objects_with_relations(&affected_parents, &client).await?;
-            affected.push(updated);
-            for object in affected {
-                self.database_handler
-                    .cache
-                    .upsert_object(&object.object.id.clone(), object);
             }
-        }
+            crate::database::dsls::hook_dsl::HookVariant::External(ExternalHook {
+                ref url,
+                ref credentials,
+                ref template,
+                ref method,
+            }) => {
+                log::info!("[HookHandler] Starting external hook");
+                // This creates only presigned download urls for available objects.
+                // If ObjectType is not OBJECT, only s3 credentials are generated.
+                // This should allow for generic external hooks that can also be
+                // triggered for other ObjectTypes than OBJECTs
+                let (secret, download, pubkey_serial, upload_credentials) = self
+                    .get_template_input(object.clone(), hook.clone(), user_id)
+                    .await?;
+                let (access_key, secret_key) = match upload_credentials {
+                    Some(ref creds) => (
+                        Some(creds.access_key.to_string()),
+                        Some(creds.secret_key.to_string()),
+                    ),
+                    None => (None, None),
+                };
+
+                // Create & send request
+                //let client = reqwest::Client::new();
+                let base_request = match method {
+                    crate::database::dsls::hook_dsl::Method::PUT => match credentials {
+                        Some(Credentials { token }) => client.put(url).bearer_auth(token),
+                        None => client.put(url),
+                    },
+                    crate::database::dsls::hook_dsl::Method::POST => match credentials {
+                        Some(Credentials { token }) => client.post(url).bearer_auth(token),
+                        None => client.post(url),
+                    },
+                };
+                dbg!(&base_request);
+                // Put everything into template
+                let data_request = match template {
+                    TemplateVariant::Basic => {
+                        let json = serde_json::to_string(&BasicTemplate {
+                            hook_id: hook.id,
+                            object: object.clone().try_into()?,
+                            secret,
+                            download,
+                            pubkey_serial,
+                            access_key,
+                            secret_key,
+                        })?;
+                        dbg!("[HookHandler] BasicTemplate: {:?}", &json);
+                        //let request = base_request.json(&json);
+                        //dbg!("Created request: ", &request);
+                        //let response = request.send().await?;
+                        //let response = base_request.json(&json);
+                        //dbg!("External hook response: {:?}", response);
+                        base_request.json(&json)
+                    }
+                    TemplateVariant::Custom(template) => {
+                        let template = CustomTemplate::create_custom_template(
+                            template.to_string(),
+                            hook.id,
+                            &object.object,
+                            secret,
+                            download,
+                            upload_credentials,
+                            pubkey_serial,
+                        )?;
+                        dbg!("[HookHandler] Template: {:?}", &template);
+                        //let response = base_request
+                        //    .header(CONTENT_TYPE, "text/plain")
+                        //    .body(template);
+                        //dbg!("Custom template hook response: {:?}", response);
+                        //response
+                        base_request
+                            .header(CONTENT_TYPE, "text/plain")
+                            .body(template)
+                    }
+                };
+                let response = data_request.send().await?;
+                dbg!("[HookHandler] ExternalHook response: {:?}", &response);
+            }
+        };
         Ok(())
     }
 
@@ -310,6 +309,33 @@ impl HookHandler {
                     .await?;
             }
         }
+        Ok(())
+    }
+
+    async fn add_status(
+        &self,
+        hook: &HookWithAssociatedProject,
+        object: &ObjectWithRelations,
+        status: HookStatusVariant,
+    ) -> Result<()> {
+        let client = self.database_handler.database.get_client().await?;
+        let mut object = object.clone();
+        let status_value = HookStatusValues {
+            name: hook.name.clone(),
+            status,
+            trigger: hook.trigger.0.clone(),
+        };
+        let hook_status = KeyValue {
+            key: hook.id.to_string(),
+            value: serde_json::to_string(&status_value)?,
+            variant: KeyValueVariant::HOOK_STATUS,
+        };
+        dbg!("HookStatus: {:?}", &hook_status);
+        object.object.key_values.0 .0.push(hook_status.clone());
+        Object::add_key_value(&object.object.id, &client, hook_status).await?;
+        self.database_handler
+            .cache
+            .upsert_object(&object.object.id, object.clone());
         Ok(())
     }
 
