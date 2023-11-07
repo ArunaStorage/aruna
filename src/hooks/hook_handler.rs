@@ -13,6 +13,7 @@ use crate::{
     },
     middlelayer::db_handler::DatabaseHandler,
 };
+use ahash::HashSet;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::dataproxy::services::v2::GetCredentialsResponse;
@@ -56,8 +57,10 @@ impl HookHandler {
         }
     }
     pub async fn run(&self) -> Result<()> {
+        //let mut message_queue = HashSet::default();
         while let Ok(message) = self.reciever.recv().await {
             dbg!("Got hook message: {:?}", &message);
+            //message_queue.insert(message);
             // TODO:
             // - queue logic
             // - deduplication
@@ -132,6 +135,7 @@ impl HookHandler {
                     ref template,
                     ref method,
                 }) => {
+                    dbg!("[ STARTING EXTERNAL HOOK ]");
                     // This creates only presigned download urls for available objects.
                     // If ObjectType is not OBJECT, only s3 credentials are generated.
                     // This should allow for generic external hooks that can also be
@@ -146,7 +150,9 @@ impl HookHandler {
                     };
 
                     // Create & send request
-                    let client = reqwest::Client::new();
+                    // TODO: 
+                    // - Sometimes the connection is dropped before finishing, why?
+                    let client = reqwest::Client::new(); 
                     let base_request = match method {
                         crate::database::dsls::hook_dsl::Method::PUT => match credentials {
                             Some(Credentials { token }) => client.put(url).bearer_auth(token),
@@ -157,6 +163,7 @@ impl HookHandler {
                             None => client.post(url),
                         },
                     };
+                    dbg!(&base_request);
                     // Put everything into template
                     match template {
                         TemplateVariant::Basic => {
@@ -169,7 +176,10 @@ impl HookHandler {
                                 access_key,
                                 secret_key,
                             })?;
-                            dbg!("Template: {json}");
+                            //dbg!("Template: {:?}", &json);
+                            //let request = base_request.json(&json);
+                            //dbg!("Created request: ", &request);
+                            //let response = request.send().await?;
                             let response = base_request.json(&json).send().await?;
                             dbg!("External hook response: {:?}", response);
                         }
@@ -194,10 +204,10 @@ impl HookHandler {
                     None
                 }
             };
+        transaction.commit().await?;
         if let Some(p) = affected_parent {
             affected_parents.push(p);
         }
-        transaction.commit().await?;
         let updated = Object::get_object_with_relations(&object.object.id, &client).await?;
         if !affected_parents.is_empty() {
             let mut affected =

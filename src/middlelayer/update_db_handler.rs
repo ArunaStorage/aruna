@@ -11,10 +11,12 @@ use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
+use ahash::HashSet;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::notification::services::v2::EventVariant;
 use aruna_rust_api::api::storage::services::v2::{FinishObjectStagingRequest, UpdateObjectRequest};
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
 use postgres_types::Json;
 use std::str::FromStr;
 
@@ -431,6 +433,18 @@ impl DatabaseHandler {
                 .iter()
                 .map(|kv| kv.try_into())
                 .collect::<Result<Vec<KeyValue>>>()?;
+            // FIXME: Inefficient, theoretically this could always be set to all TriggerVariants,
+            // but needs additional testing
+            let trigger_variants = kvs
+                .iter()
+                .filter_map(|kv| match kv.variant {
+                    KeyValueVariant::HOOK => Some(TriggerVariant::HOOK_ADDED),
+                    KeyValueVariant::LABEL => Some(TriggerVariant::LABEL_ADDED),
+                    KeyValueVariant::STATIC_LABEL => Some(TriggerVariant::STATIC_LABEL_ADDED),
+                    KeyValueVariant::HOOK_STATUS => None,
+                })
+                .dedup()
+                .collect();
             let db_handler = DatabaseHandler {
                 database: self.database.clone(),
                 natsio_handler: self.natsio_handler.clone(),
@@ -440,12 +454,7 @@ impl DatabaseHandler {
             // tokio::spawn cannot return errors, so manual error logs are returned
             tokio::spawn(async move {
                 let call = db_handler
-                    .trigger_hooks(
-                        object,
-                        user_id,
-                        vec![TriggerVariant::LABEL_ADDED],
-                        Some(kvs),
-                    )
+                    .trigger_hooks(object, user_id, trigger_variants, Some(kvs))
                     .await;
                 if call.is_err() {
                     log::error!("{:?}", call);
@@ -458,6 +467,19 @@ impl DatabaseHandler {
                 .iter()
                 .map(|kv| kv.try_into())
                 .collect::<Result<Vec<KeyValue>>>()?;
+            // FIXME: Inefficient, theoretically this could always be set to all TriggerVariants,
+            // but needs additional testing
+            let mut trigger_variants: Vec<TriggerVariant> = kvs
+                .iter()
+                .filter_map(|kv| match kv.variant {
+                    KeyValueVariant::HOOK => Some(TriggerVariant::HOOK_ADDED),
+                    KeyValueVariant::LABEL => Some(TriggerVariant::LABEL_ADDED),
+                    KeyValueVariant::STATIC_LABEL => Some(TriggerVariant::STATIC_LABEL_ADDED),
+                    KeyValueVariant::HOOK_STATUS => None,
+                })
+                .dedup()
+                .collect();
+            trigger_variants.push(TriggerVariant::RESOURCE_CREATED);
             let db_handler = DatabaseHandler {
                 database: self.database.clone(),
                 natsio_handler: self.natsio_handler.clone(),
@@ -466,15 +488,7 @@ impl DatabaseHandler {
             };
             tokio::spawn(async move {
                 let call_on_create = db_handler
-                    .trigger_hooks(
-                        object,
-                        user_id,
-                        vec![
-                            TriggerVariant::LABEL_ADDED,
-                            TriggerVariant::RESOURCE_CREATED,
-                        ],
-                        Some(kvs),
-                    )
+                    .trigger_hooks(object, user_id, trigger_variants, Some(kvs))
                     .await;
                 if call_on_create.is_err() {
                     log::error!("{:?}", call_on_create);
