@@ -1,7 +1,7 @@
 use crate::{
     caching::{auth::get_token_from_md, cache::Cache},
     helpers::sign_download_url,
-    structs::{DbPermissionLevel, Object, ObjectType},
+    structs::{DbPermissionLevel, Object, ObjectType, ALL_RIGHTS_RESERVED},
 };
 use aruna_rust_api::api::{
     dataproxy::services::v2::{
@@ -109,6 +109,8 @@ impl BundlerService for BundlerServiceImpl {
             data_class: DataClass::Workspace,
             object_type: ObjectType::Bundle,
             hashes: HashMap::default(),
+            metadata_license: ALL_RIGHTS_RESERVED.to_string(), // Default for now
+            data_license: ALL_RIGHTS_RESERVED.to_string(),     // Default for now
             dynamic: false,
             children: Some(HashSet::from_iter(trels)),
             parents: None,

@@ -6,7 +6,7 @@ use crate::structs::Object;
 use crate::structs::ObjectLocation;
 use crate::structs::ObjectType;
 use crate::structs::ResourceIds;
-use crate::structs::ResourceString;
+use crate::structs::ResourceResults;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
@@ -418,19 +418,29 @@ impl AuthHandler {
             }
         }
 
-        let res_strings = ResourceString::try_from(path)?;
+        //let res_strings = ResourceString::try_from(path)?;
+        //
 
-        let mut found = Vec::new();
-        let mut missing = Vec::new();
+        let ResourceResults { found, missing } =
+            ResourceResults::from_path(path, self.cache.clone())?;
+        dbg!(&found);
+        dbg!(&missing);
+        // let mut found = Vec::new();
+        // let mut missing = Vec::new();
 
-        for resource in res_strings.into_parts() {
-            if let Some(e) = self.cache.get_res_by_res_string(resource.clone()) {
-                found.push(e);
-            } else {
-                missing.push(resource.clone());
-            }
-        }
-        found.sort();
+        //for resource in res_strings.into_parts() {
+        //    if let Some(e) = self.cache.get_res_by_res_string(resource.clone()) {
+        //        found.push(e);
+        //    } else {
+        //        missing.push(resource.clone());
+        //    }
+        //}
+        //found.sort();
+        let missing = if missing.is_empty() {
+            None
+        } else {
+            Some(missing.into())
+        };
 
         let resource_id = found
             .last()
@@ -445,7 +455,7 @@ impl AuthHandler {
             .value()
             .clone();
 
-        Ok(((object, location), resource_id, Some(missing.into()), None))
+        Ok(((object, location), resource_id, missing, None))
     }
 
     pub(crate) fn sign_impersonating_token(

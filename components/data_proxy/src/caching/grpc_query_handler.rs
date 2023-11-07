@@ -3,10 +3,10 @@ use crate::structs::ObjectLocation;
 use crate::structs::PubKey;
 use anyhow::anyhow;
 use anyhow::Result;
-use aruna_rust_api::api::notification::services::v2::anouncement_event;
+use aruna_rust_api::api::notification::services::v2::announcement_event;
 use aruna_rust_api::api::notification::services::v2::event_message::MessageVariant;
 use aruna_rust_api::api::notification::services::v2::AcknowledgeMessageBatchRequest;
-use aruna_rust_api::api::notification::services::v2::AnouncementEvent;
+use aruna_rust_api::api::notification::services::v2::AnnouncementEvent;
 use aruna_rust_api::api::notification::services::v2::EventMessage;
 use aruna_rust_api::api::notification::services::v2::EventVariant;
 use aruna_rust_api::api::notification::services::v2::GetEventMessageStreamRequest;
@@ -49,12 +49,12 @@ use aruna_rust_api::api::{
 };
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
-use tonic::transport::ClientTlsConfig;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::metadata::AsciiMetadataKey;
 use tonic::metadata::AsciiMetadataValue;
 use tonic::transport::Channel;
+use tonic::transport::ClientTlsConfig;
 use tonic::Request;
 
 use super::cache::Cache;
@@ -80,7 +80,6 @@ impl GrpcQueryHandler {
         cache: Arc<Cache>,
         endpoint_id: String,
     ) -> Result<Self> {
-
         // Check if server host url is tls
         let server_url: String = server.into();
         let endpoint = if server_url.starts_with("https") {
@@ -588,17 +587,17 @@ impl GrpcQueryHandler {
 
     async fn process_announcements_event(
         &self,
-        message: AnouncementEvent,
+        message: AnnouncementEvent,
     ) -> Result<Option<Reply>> {
         match message
             .event_variant
             .ok_or_else(|| anyhow!("No event variant"))?
         {
-            anouncement_event::EventVariant::NewPubkey(_)
-            | anouncement_event::EventVariant::RemovePubkey(_)
-            | anouncement_event::EventVariant::NewDataProxyId(_)
-            | anouncement_event::EventVariant::RemoveDataProxyId(_)
-            | anouncement_event::EventVariant::UpdateDataProxyId(_) => {
+            announcement_event::EventVariant::NewPubkey(_)
+            | announcement_event::EventVariant::RemovePubkey(_)
+            | announcement_event::EventVariant::NewDataProxyId(_)
+            | announcement_event::EventVariant::RemoveDataProxyId(_)
+            | announcement_event::EventVariant::UpdateDataProxyId(_) => {
                 let pks = self
                     .get_pubkeys()
                     .await?
@@ -607,8 +606,8 @@ impl GrpcQueryHandler {
                     .collect();
                 self.cache.set_pubkeys(pks).await?
             }
-            anouncement_event::EventVariant::Downtime(_) => (),
-            anouncement_event::EventVariant::Version(_) => (),
+            announcement_event::EventVariant::Downtime(_) => (),
+            announcement_event::EventVariant::Version(_) => (),
         }
         Ok(message.reply)
     }
