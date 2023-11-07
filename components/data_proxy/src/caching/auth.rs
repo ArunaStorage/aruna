@@ -436,6 +436,11 @@ impl AuthHandler {
         //    }
         //}
         //found.sort();
+        let missing = if missing.is_empty() {
+            None
+        } else {
+            Some(missing.into())
+        };
 
         let resource_id = found
             .last()
@@ -450,7 +455,7 @@ impl AuthHandler {
             .value()
             .clone();
 
-        Ok(((object, location), resource_id, Some(missing.into()), None))
+        Ok(((object, location), resource_id, missing, None))
     }
 
     pub(crate) fn sign_impersonating_token(
