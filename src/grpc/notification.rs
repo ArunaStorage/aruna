@@ -297,7 +297,7 @@ impl EventNotificationService for NotificationServiceImpl {
         // Check empty permission context just to validate registered and active user
         let (_, _, is_proxy) = tonic_auth!(
             self.authorizer
-                .check_permissions_verbose(&token, vec![Context::default()])
+                .check_permissions_verbose(&token, vec![Context::registered()])
                 .await,
             "Permission denied"
         );
@@ -456,7 +456,7 @@ impl EventNotificationService for NotificationServiceImpl {
         // Check empty permission context just to validate registered and active user
         tonic_auth!(
             self.authorizer
-                .check_permissions(&token, vec![Context::default()])
+                .check_permissions(&token, vec![Context::registered()])
                 .await,
             "Permission denied"
         );

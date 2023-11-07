@@ -69,7 +69,9 @@ impl PermissionHandler {
                     for ctx in &ctxs {
                         dbg!(&ctx);
                         match ctx.variant {
-                            ContextVariant::SelfUser | ContextVariant::GlobalProxy => {}
+                            ContextVariant::SelfUser
+                            | ContextVariant::Registered
+                            | ContextVariant::GlobalProxy => {}
                             ContextVariant::Resource((_, perm))
                             | ContextVariant::User((_, perm)) => {
                                 if perm > DbPermissionLevel::READ {
