@@ -12,7 +12,6 @@ use crate::{
     },
     middlelayer::db_handler::DatabaseHandler,
 };
-use ahash::{HashSet, HashSetExt};
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::dataproxy::services::v2::GetCredentialsResponse;
@@ -178,7 +177,7 @@ impl HookHandler {
                     TemplateVariant::Basic => {
                         let json = serde_json::to_string(&BasicTemplate {
                             hook_id: hook.id,
-                            object: object.clone().try_into()?,
+                            object: object.clone().into(),
                             secret,
                             download,
                             pubkey_serial,

@@ -125,8 +125,7 @@ impl ProjectService for ProjectServiceImpl {
             .get_object(&project_id)
             .ok_or_else(|| tonic::Status::not_found("Project not found"))?;
 
-        let generic_project: generic_resource::Resource =
-            tonic_invalid!(res.try_into(), "Invalid project");
+        let generic_project: generic_resource::Resource = res.into();
 
         let response = GetProjectResponse {
             project: Some(generic_project.into_inner()?),
@@ -240,8 +239,7 @@ impl ProjectService for ProjectServiceImpl {
         )
         .await;
 
-        let project: generic_resource::Resource =
-            tonic_internal!(project.try_into(), "Project conversion error");
+        let project: generic_resource::Resource = project.into();
         let response = UpdateProjectNameResponse {
             project: Some(project.into_inner()?),
         };
@@ -282,8 +280,7 @@ impl ProjectService for ProjectServiceImpl {
         )
         .await;
 
-        let project: generic_resource::Resource =
-            tonic_internal!(project.try_into(), "Project conversion error");
+        let project: generic_resource::Resource = project.into();
 
         let response = UpdateProjectDescriptionResponse {
             project: Some(project.into_inner()?),
@@ -325,8 +322,7 @@ impl ProjectService for ProjectServiceImpl {
         )
         .await;
 
-        let project: generic_resource::Resource =
-            tonic_internal!(project.try_into(), "Project conversion error");
+        let project: generic_resource::Resource = project.into();
 
         let response = UpdateProjectKeyValuesResponse {
             project: Some(project.into_inner()?),
@@ -369,8 +365,7 @@ impl ProjectService for ProjectServiceImpl {
         )
         .await;
 
-        let project: generic_resource::Resource =
-            tonic_internal!(project.try_into(), "Project conversion error");
+        let project: generic_resource::Resource = project.into();
         let response = UpdateProjectDataClassResponse {
             project: Some(project.into_inner()?),
         };
@@ -413,13 +408,11 @@ impl ProjectService for ProjectServiceImpl {
         // Add or update resources in search index
         search_utils::update_search_index(&self.search_client, search_update).await;
 
-        let project: generic_resource::Resource = tonic_internal!(
-            self.cache
-                .get_object(&old_id)
-                .ok_or_else(|| tonic::Status::not_found("Project not found"))?
-                .try_into(),
-            "Project conversion error"
-        );
+        let project: generic_resource::Resource = self
+            .cache
+            .get_object(&old_id)
+            .ok_or_else(|| tonic::Status::not_found("Project not found"))?
+            .into();
         let response = ArchiveProjectResponse {
             project: Some(project.into_inner()?),
         };
@@ -450,8 +443,7 @@ impl ProjectService for ProjectServiceImpl {
             self.database_handler.update_license(request).await,
             "Invalid update license request"
         );
-        let generic_resource: generic_resource::Resource =
-            tonic_internal!(project.try_into(), "Internal resource conversion error");
+        let generic_resource: generic_resource::Resource = project.into();
         let response = UpdateProjectLicensesResponse {
             project: Some(generic_resource.into_inner()?),
         };

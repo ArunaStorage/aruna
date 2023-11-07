@@ -86,8 +86,7 @@ impl ObjectService for ObjectServiceImpl {
         )
         .await;
 
-        let generic_object: generic_resource::Resource =
-            tonic_invalid!(object_plus.try_into(), "Invalid object");
+        let generic_object: generic_resource::Resource = object_plus.into();
 
         let response = CreateObjectResponse {
             object: Some(generic_object.into_inner()?),
@@ -215,8 +214,7 @@ impl ObjectService for ObjectServiceImpl {
                     "Invalid id"
                 ))
                 .ok_or_else(|| Status::not_found("Object not found"))?;
-            let object: generic_resource::Resource =
-                tonic_internal!(object.try_into(), "Object conversion error");
+            let object: generic_resource::Resource = object.into();
             let response = FinishObjectStagingResponse {
                 object: Some(object.into_inner()?),
             };
@@ -237,8 +235,7 @@ impl ObjectService for ObjectServiceImpl {
         )
         .await;
 
-        let object: generic_resource::Resource =
-            tonic_internal!(object.try_into(), "Object conversion error");
+        let object: generic_resource::Resource = object.into();
         let response = FinishObjectStagingResponse {
             object: Some(object.into_inner()?),
         };
@@ -290,8 +287,7 @@ impl ObjectService for ObjectServiceImpl {
         )
         .await;
 
-        let object: generic_resource::Resource =
-            tonic_internal!(object.try_into(), "Object conversion error");
+        let object: generic_resource::Resource = object.into();
         let response = UpdateObjectResponse {
             object: Some(object.into_inner()?),
             new_revision,
@@ -333,8 +329,7 @@ impl ObjectService for ObjectServiceImpl {
         )
         .await;
 
-        let converted: generic_resource::Resource =
-            tonic_internal!(new.try_into(), "Conversion error");
+        let converted: generic_resource::Resource = new.into();
         let response = CloneObjectResponse {
             object: Some(converted.into_inner()?),
         };
@@ -411,8 +406,7 @@ impl ObjectService for ObjectServiceImpl {
             .get_object(&object_id)
             .ok_or_else(|| Status::not_found("Object not found"))?;
 
-        let generic_object: generic_resource::Resource =
-            tonic_invalid!(res.try_into(), "Invalid object");
+        let generic_object: generic_resource::Resource = res.into();
 
         let response = GetObjectResponse {
             object: Some(generic_object.into_inner()?),

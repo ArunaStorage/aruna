@@ -93,8 +93,7 @@ impl CollectionService for CollectionServiceImpl {
         )
         .await;
 
-        let generic_collection: generic_resource::Resource =
-            tonic_invalid!(collection.try_into(), "Invalid collection");
+        let generic_collection: generic_resource::Resource = collection.into();
 
         let response = CreateCollectionResponse {
             collection: Some(generic_collection.into_inner()?),
@@ -133,8 +132,7 @@ impl CollectionService for CollectionServiceImpl {
             .get_object(&collection_id)
             .ok_or_else(|| tonic::Status::not_found("Collection not found"))?;
 
-        let generic_collection: generic_resource::Resource =
-            tonic_invalid!(res.try_into(), "Invalid collection");
+        let generic_collection: generic_resource::Resource = res.into();
 
         let response = GetCollectionResponse {
             collection: Some(generic_collection.into_inner()?),
@@ -250,8 +248,7 @@ impl CollectionService for CollectionServiceImpl {
         )
         .await;
 
-        let collection: generic_resource::Resource =
-            tonic_internal!(collection.try_into(), "Collection conversion error");
+        let collection: generic_resource::Resource = collection.into();
 
         let response = UpdateCollectionNameResponse {
             collection: Some(collection.into_inner()?),
@@ -293,8 +290,7 @@ impl CollectionService for CollectionServiceImpl {
         )
         .await;
 
-        let collection: generic_resource::Resource =
-            tonic_internal!(collection.try_into(), "Collection conversion error");
+        let collection: generic_resource::Resource = collection.into();
 
         let response = UpdateCollectionDescriptionResponse {
             collection: Some(collection.into_inner()?),
@@ -336,8 +332,7 @@ impl CollectionService for CollectionServiceImpl {
         )
         .await;
 
-        let collection: generic_resource::Resource =
-            tonic_internal!(collection.try_into(), "Collection conversion error");
+        let collection: generic_resource::Resource = collection.into();
         let response = UpdateCollectionKeyValuesResponse {
             collection: Some(collection.into_inner()?),
         };
@@ -379,8 +374,7 @@ impl CollectionService for CollectionServiceImpl {
         )
         .await;
 
-        let collection: generic_resource::Resource =
-            tonic_internal!(collection.try_into(), "Collection conversion error");
+        let collection: generic_resource::Resource = collection.into();
         let response = UpdateCollectionDataClassResponse {
             collection: Some(collection.into_inner()?),
         };
@@ -422,13 +416,11 @@ impl CollectionService for CollectionServiceImpl {
         // Add or update collection in search index
         search_utils::update_search_index(&self.search_client, search_update).await;
 
-        let collection: generic_resource::Resource = tonic_internal!(
-            self.cache
-                .get_object(&new_id)
-                .ok_or_else(|| tonic::Status::not_found("Collection not found"))?
-                .try_into(),
-            "Collection conversion error"
-        );
+        let collection: generic_resource::Resource = self
+            .cache
+            .get_object(&new_id)
+            .ok_or_else(|| tonic::Status::not_found("Collection not found"))?
+            .into();
 
         let response = SnapshotCollectionResponse {
             collection: Some(collection.into_inner()?),
@@ -460,8 +452,7 @@ impl CollectionService for CollectionServiceImpl {
             self.database_handler.update_license(request).await,
             "Invalid update license request"
         );
-        let generic_resource: generic_resource::Resource =
-            tonic_internal!(project.try_into(), "Internal resource conversion error");
+        let generic_resource: generic_resource::Resource = project.into();
         let response = UpdateCollectionLicensesResponse {
             collection: Some(generic_resource.into_inner()?),
         };

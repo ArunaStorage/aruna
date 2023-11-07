@@ -69,7 +69,7 @@ impl EndpointService for EndpointServiceImpl {
             .add_pubkey(pk.id as i32, PubKeyEnum::DataProxy((pk.pubkey, key, ep.id)));
 
         let result = CreateEndpointResponse {
-            endpoint: Some(tonic_internal!(ep.try_into(), "Endpoint conversion error")),
+            endpoint: Some(ep.into()),
         };
 
         return_with_log!(result);
@@ -143,7 +143,7 @@ impl EndpointService for EndpointServiceImpl {
             "No endpoint found"
         );
         let result = GetEndpointResponse {
-            endpoint: Some(tonic_internal!(ep.try_into(), "Endpoint conversion error")),
+            endpoint: Some(ep.into()),
         };
 
         return_with_log!(result);
@@ -171,11 +171,8 @@ impl EndpointService for EndpointServiceImpl {
         let response = GetEndpointsResponse {
             endpoints: eps
                 .into_iter()
-                .map(|ep| -> Result<Endpoint, Status> {
-                    ep.try_into()
-                        .map_err(|_| Status::internal("Endpoint conversion error"))
-                })
-                .collect::<Result<Vec<Endpoint>, Status>>()?,
+                .map(|ep| -> Endpoint { ep.into() })
+                .collect::<Vec<Endpoint>>(),
         };
         return_with_log!(response);
     }
@@ -229,10 +226,7 @@ impl EndpointService for EndpointServiceImpl {
             "Default endpoint not found"
         );
         let response = GetDefaultEndpointResponse {
-            endpoint: Some(tonic_internal!(
-                default.try_into(),
-                "Endpoint conversion error"
-            )),
+            endpoint: Some(default.into()),
         };
         return_with_log!(response);
     }

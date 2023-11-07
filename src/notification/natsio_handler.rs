@@ -327,10 +327,7 @@ impl NatsIoHandler {
     ) -> anyhow::Result<()> {
         // Calculate resource checksum
         let resource_checksum = tonic_internal!(
-            checksum_resource(tonic_internal!(
-                object.clone().try_into(),
-                "Proto conversion failed"
-            )),
+            checksum_resource(object.clone().into(),),
             "Checksum calculation failed"
         );
 

@@ -180,8 +180,7 @@ async fn process_resource_event(
             } {
                 if let Some(object_plus) = cache.get_object(&res_ulid) {
                     // Convert to proto and compare checksum
-                    let proto_resource: generic_resource::Resource =
-                        object_plus.clone().try_into()?;
+                    let proto_resource: generic_resource::Resource = object_plus.clone().into();
                     let proto_checksum = checksum_resource(proto_resource.clone())?;
 
                     if proto_checksum != resource.checksum {
