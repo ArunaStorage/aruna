@@ -23,6 +23,7 @@ pub struct FSBackend {
 }
 
 impl FSBackend {
+    #[tracing::instrument(level = "trace", skip(_endpoint_id))]
     #[allow(dead_code)]
     pub async fn new(_endpoint_id: String) -> Result<Self> {
         let base_path = dotenvy::var("FS_BASEPATH").unwrap();
@@ -34,6 +35,7 @@ impl FSBackend {
         Ok(handler)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, bucket))]
     pub async fn check_and_create_bucket(&self, bucket: String) -> Result<()> {
         let path = Path::new(&self.base_path).join(bucket);
         if !path.exists() {
@@ -48,6 +50,7 @@ impl FSBackend {
 impl StorageBackend for FSBackend {
     // Uploads a single object in chunks
     // Objects are uploaded in chunks that come from a channel to allow modification in the data middleware
+    #[tracing::instrument(level = "trace", skip(self, recv, location, _content_len))]
     async fn put_object(
         &self,
         mut recv: Receiver<Result<bytes::Bytes>>,
@@ -74,6 +77,7 @@ impl StorageBackend for FSBackend {
     // Downloads the given object from the s3 storage
     // The body is wrapped into an async reader and reads the data in chunks.
     // The chunks are then transferred into the sender.
+    #[tracing::instrument(level = "trace", skip(self, location, _range, sender))]
     async fn get_object(
         &self,
         location: ObjectLocation,
@@ -96,6 +100,7 @@ impl StorageBackend for FSBackend {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, location))]
     async fn head_object(&self, location: ObjectLocation) -> Result<i64> {
         let len = tokio::fs::File::open(
             Path::new(&self.base_path)
@@ -110,6 +115,7 @@ impl StorageBackend for FSBackend {
     }
 
     // Initiates a multipart upload in s3 and returns the associated upload id.
+    #[tracing::instrument(level = "trace", skip(self, location))]
     async fn init_multipart_upload(&self, location: ObjectLocation) -> Result<String> {
         self.check_and_create_bucket(location.bucket.clone())
             .await?;
@@ -126,6 +132,7 @@ impl StorageBackend for FSBackend {
         return Ok(up_id);
     }
 
+    #[tracing::instrument(level = "trace", skip(self, recv, _location, upload_id, _content_len, part_number))]
     async fn upload_multi_object(
         &self,
         mut recv: Receiver<Result<bytes::Bytes>>,
@@ -153,6 +160,7 @@ impl StorageBackend for FSBackend {
         });
     }
 
+    #[tracing::instrument(level = "trace", skip(self, location, parts, upload_id))]
     async fn finish_multipart_upload(
         &self,
         location: ObjectLocation,
@@ -185,10 +193,12 @@ impl StorageBackend for FSBackend {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, bucket))]
     async fn create_bucket(&self, bucket: String) -> Result<()> {
         self.check_and_create_bucket(bucket).await
     }
 
+    #[tracing::instrument(level = "trace", skip(self, location))]
     /// Delete a object from the storage system
     /// # Arguments
     /// * `location` - The location of the object
@@ -202,6 +212,7 @@ impl StorageBackend for FSBackend {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, _obj, expected_size, ex_bucket, temp))]
     /// Initialize a new location for a specific object
     /// This takes the object_info into account and creates a new location for the object
     async fn initialize_location(

@@ -12,6 +12,11 @@ use simple_logger::SimpleLogger;
 use std::{net::SocketAddr, str::FromStr, sync::Arc};
 use tokio::try_join;
 use tonic::transport::Server;
+use tracing::info_span;
+use tracing::span;
+use tracing::{debug, Level};
+use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::EnvFilter;
 
 mod bundler;
 mod caching;
@@ -25,46 +30,72 @@ mod structs;
 mod macros;
 mod helpers;
 
+#[tracing::instrument(level = "trace", skip())]
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::from_filename(".env").ok();
 
+    let subscriber = tracing_subscriber::fmt()
+        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
+        // Use a more compact, abbreviated log format
+        .compact()
+        .with_env_filter("none,aos_data_proxy=trace")
+        // Display source code file paths
+        .with_file(true)
+        // Display source code line numbers
+        .with_line_number(true)
+        .with_target(false)
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber)?;
+
+    let span = info_span!("INIT ENV");
+    let guard = span.enter();
+
     let remote_synced = dotenvy::var("DATA_PROXY_REMOTE_SYNCED")?.parse::<bool>()?;
+    debug!(target = "DATA_PROXY_REMOTE_SYNCED", value = remote_synced);
     let aruna_host_url = if let true = remote_synced {
         Some(dotenvy::var("ARUNA_HOST_URL")?)
     } else {
         None
     };
+    debug!(target = "ARUNA_HOST_URL", value = aruna_host_url);
     let with_persistence = dotenvy::var("DATA_PROXY_PERSISTENCE")?.parse::<bool>()?;
-
+    debug!(target = "DATA_PROXY_PERSISTENCE", value = with_persistence);
     let hostname = dotenvy::var("DATA_PROXY_DATA_SERVER")?;
+    debug!(target = "DATA_PROXY_DATA_SERVER", value = hostname);
     // ULID of the endpoint
     let endpoint_id = dotenvy::var("DATA_PROXY_ENDPOINT_ID")?;
-
-    //
+    debug!(target = "DATA_PROXY_ENDPOINT_ID", value = endpoint_id);
     let data_proxy_grpc_addr = dotenvy::var("DATA_PROXY_GRPC_SERVER")?.parse::<SocketAddr>()?;
+    debug!(
+        target = "DATA_PROXY_GRPC_SERVER",
+        value = ?data_proxy_grpc_addr
+    );
 
-    // Init logger
-    SimpleLogger::new()
-        .with_module_level("s3s", log::LevelFilter::Error)
-        .with_module_level("aws_config", log::LevelFilter::Error)
-        .with_module_level("aws_sdk_s3", log::LevelFilter::Error)
-        .with_module_level("aws_smithy_client", log::LevelFilter::Error)
-        .with_module_level("aws_smithy_http_tower", log::LevelFilter::Error)
-        .with_module_level("aws_smithy_runtime", log::LevelFilter::Error)
-        .with_module_level("aws_smithy_runtime_api", log::LevelFilter::Error)
-        .with_module_level("tower", log::LevelFilter::Error)
-        .with_module_level("h2", log::LevelFilter::Error)
-        .with_module_level("hyper", log::LevelFilter::Error)
-        .with_module_level("isahc", log::LevelFilter::Error)
-        .with_module_level("tokio_postgres", log::LevelFilter::Error)
-        .with_module_level("tracing", log::LevelFilter::Error)
-        .with_level(log::LevelFilter::Debug)
-        .env()
-        .init()?;
+    // // Init logger
+    // SimpleLogger::new()
+    //     .with_module_level("s3s", log::LevelFilter::Error)
+    //     .with_module_level("aws_config", log::LevelFilter::Error)
+    //     .with_module_level("aws_sdk_s3", log::LevelFilter::Error)
+    //     .with_module_level("aws_smithy_client", log::LevelFilter::Error)
+    //     .with_module_level("aws_smithy_http_tower", log::LevelFilter::Error)
+    //     .with_module_level("aws_smithy_runtime", log::LevelFilter::Error)
+    //     .with_module_level("aws_smithy_runtime_api", log::LevelFilter::Error)
+    //     .with_module_level("tower", log::LevelFilter::Error)
+    //     .with_module_level("h2", log::LevelFilter::Error)
+    //     .with_module_level("hyper", log::LevelFilter::Error)
+    //     .with_module_level("isahc", log::LevelFilter::Error)
+    //     .with_module_level("tokio_postgres", log::LevelFilter::Error)
+    //     .with_module_level("tracing", log::LevelFilter::Error)
+    //     .with_level(log::LevelFilter::Debug)
+    //     .env()
+    //     .init()?;
 
     let encoding_key = dotenvy::var("DATA_PROXY_ENCODING_KEY")?;
     let encoding_key_serial = dotenvy::var("DATA_PROXY_PUBKEY_SERIAL")?.parse::<i32>()?;
+
+    drop(guard);
 
     let storage_backend: Arc<Box<dyn StorageBackend>> =
         Arc::new(Box::new(S3Backend::new(endpoint_id.to_string()).await?));

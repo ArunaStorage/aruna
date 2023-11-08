@@ -19,6 +19,7 @@ pub trait GetId {
 }
 
 impl GetId for ResourceId {
+    #[tracing::instrument(level = "trace", skip(self))]
     fn get_id(&self) -> Result<DieselUlid> {
         match self {
             ResourceId::ProjectId(a)
@@ -34,6 +35,7 @@ pub trait IntoHashMap {
 }
 
 impl IntoHashMap for Permission {
+    #[tracing::instrument(level = "trace", skip(self))]
     fn into_hash_map(self) -> Result<HashMap<DieselUlid, DbPermissionLevel>> {
         let mut map = HashMap::new();
         map.insert(
@@ -48,6 +50,7 @@ impl IntoHashMap for Permission {
 }
 
 impl ExtractAccessKeyPermissions for User {
+    #[tracing::instrument(level = "trace", skip(self))]
     fn extract_access_key_permissions(
         &self,
     ) -> Result<Vec<(String, HashMap<DieselUlid, DbPermissionLevel>)>> {

@@ -59,6 +59,7 @@ pub enum Action {
 }
 
 impl From<u8> for Action {
+    #[tracing::instrument(level = "trace", skip(input))]
     fn from(input: u8) -> Self {
         match input {
             0 => Action::All,
@@ -77,6 +78,7 @@ pub struct Intent {
 }
 
 impl Serialize for Intent {
+    #[tracing::instrument(level = "trace", skip(self, serializer))]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -87,6 +89,7 @@ impl Serialize for Intent {
 }
 
 impl<'de> Deserialize<'de> for Intent {
+    #[tracing::instrument(level = "trace", skip(deserializer))]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -105,6 +108,7 @@ impl<'de> Deserialize<'de> for Intent {
 }
 
 impl AuthHandler {
+    #[tracing::instrument(level = "trace", skip(cache, self_id, encode_secret, encoding_key_serial))]
     pub fn new(
         cache: Arc<Cache>,
         self_id: DieselUlid,
@@ -124,6 +128,7 @@ impl AuthHandler {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self, token))]
     pub fn check_permissions(&self, token: &str) -> Result<(DieselUlid, Option<String>)> {
         let kid = decode_header(token)?
             .kid
@@ -149,6 +154,7 @@ impl AuthHandler {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self, token, dec_key))]
     pub(crate) fn extract_claims(
         &self,
         token: &str,
@@ -158,6 +164,7 @@ impl AuthHandler {
         Ok(token.claims)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, creds, method, path))]
     pub async fn check_access(
         &self,
         creds: Option<&Credentials>,
@@ -318,6 +325,7 @@ impl AuthHandler {
         Err(anyhow!("Invalid permissions"))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, vec_vec_ids, access_key, target_perm_level, get_secret))]
     pub fn check_ids(
         &self,
         vec_vec_ids: &Vec<Vec<ResourceIds>>,
@@ -348,6 +356,7 @@ impl AuthHandler {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self, path, _method))]
     #[allow(clippy::type_complexity)]
     pub fn extract_object_from_path(
         &self,
@@ -458,6 +467,7 @@ impl AuthHandler {
         Ok(((object, location), resource_id, missing, None))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, user_id, tid))]
     pub(crate) fn sign_impersonating_token(
         &self,
         user_id: impl Into<String>,
@@ -480,6 +490,7 @@ impl AuthHandler {
         self.sign_token(claims)
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     pub(crate) fn sign_notification_token(&self) -> Result<String> {
         let claims = ArunaTokenClaims {
             iss: "aruna_dataproxy".to_string(),
@@ -498,6 +509,7 @@ impl AuthHandler {
         self.sign_token(claims)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, claims))]
     pub(crate) fn sign_token(&self, claims: ArunaTokenClaims) -> Result<String> {
         let header = Header {
             kid: Some(format!("{}", &self.encoding_key.0)),
@@ -511,6 +523,7 @@ impl AuthHandler {
     }
 }
 
+#[tracing::instrument(level = "trace", skip(md))]
 pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
     let token_string = md
         .get("Authorization")

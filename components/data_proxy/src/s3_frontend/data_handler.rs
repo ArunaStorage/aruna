@@ -22,6 +22,7 @@ use std::sync::Arc;
 pub struct DataHandler {}
 
 impl DataHandler {
+    #[tracing::instrument(level = "trace", skip(backend, before_location, new_location))]
     pub async fn finalize_location(
         backend: Arc<Box<dyn StorageBackend>>,
         before_location: &ObjectLocation,

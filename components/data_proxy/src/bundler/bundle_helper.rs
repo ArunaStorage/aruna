@@ -16,6 +16,7 @@ use aruna_file::{
 use futures_util::TryStreamExt;
 use s3s::{dto::StreamingBlob, s3_error};
 
+#[tracing::instrument(level = "trace", skip(path_level_vec, backend))]
 pub async fn get_bundle(
     path_level_vec: Vec<(String, Option<ObjectLocation>)>,
     backend: Arc<Box<dyn StorageBackend>>,

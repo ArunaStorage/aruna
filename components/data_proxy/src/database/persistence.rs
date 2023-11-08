@@ -20,6 +20,7 @@ pub enum Table {
 }
 
 impl Display for Table {
+    #[tracing::instrument(level = "trace", skip(self, f))]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Table::Objects => write!(f, "objects"),

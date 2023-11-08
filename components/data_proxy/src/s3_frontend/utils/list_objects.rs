@@ -20,6 +20,7 @@ pub struct Contents {
     pub storage_class: DataClass,
 }
 impl From<(&String, &(Object, Option<ObjectLocation>))> for Contents {
+    #[tracing::instrument(level = "trace", skip(value))]
     fn from(value: (&String, &(Object, Option<ObjectLocation>))) -> Self {
         Contents {
             key: value.0.clone(),
@@ -33,6 +34,7 @@ impl From<(&String, &(Object, Option<ObjectLocation>))> for Contents {
     }
 }
 
+#[tracing::instrument(level = "trace", skip(map, root))]
 /// Creates a filtered and ordered BTreeMap for ListObjectsV2
 pub fn filter_list_objects(
     map: &DashMap<ResourceString, ResourceIds, RandomState>,
@@ -66,6 +68,7 @@ pub fn filter_list_objects(
         })
         .collect()
 }
+#[tracing::instrument(level = "trace", skip(sorted, cache, delimiter, prefix, start_after, max_keys))]
 pub fn list_response(
     sorted: BTreeMap<String, DieselUlid>,
     cache: &Arc<Cache>,

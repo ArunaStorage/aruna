@@ -28,6 +28,7 @@ pub struct S3Server {
 pub struct WrappingService(SharedS3Service);
 
 impl S3Server {
+    #[tracing::instrument(level = "trace", skip(address, hostname, backend, cache))]
     pub async fn new(
         address: impl Into<String> + Copy,
         hostname: impl Into<String>,
@@ -48,6 +49,7 @@ impl S3Server {
             address: address.into(),
         })
     }
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn run(self) -> Result<()> {
         // Run server
         let listener = TcpListener::bind(&self.address)?;
@@ -66,10 +68,12 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
 
     type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
+    #[tracing::instrument(level = "trace", skip(self))]
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, req))]
     fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
         let mut service = self.0.clone();
         let resp = service.call(req);
@@ -86,12 +90,14 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
 }
 
 impl AsRef<S3Service> for WrappingService {
+    #[tracing::instrument(level = "trace", skip(self))]
     fn as_ref(&self) -> &S3Service {
         self.0.as_ref()
     }
 }
 
 impl WrappingService {
+    #[tracing::instrument(level = "trace", skip(self))]
     #[must_use]
     pub fn into_make_service(self) -> MakeService<Self> {
         MakeService(self)
@@ -108,10 +114,12 @@ impl<T, S: Clone> Service<T> for MakeService<S> {
 
     type Future = Ready<Result<Self::Response, Self::Error>>;
 
+    #[tracing::instrument(level = "trace", skip(self))]
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     fn call(&mut self, _: T) -> Self::Future {
         ready(Ok(self.0.clone()))
     }

@@ -33,6 +33,7 @@ use std::{
 /* ----- Constants ----- */
 pub const ALL_RIGHTS_RESERVED: &str = "AllRightsReserved";
 
+#[tracing::instrument(level = "trace", skip())]
 pub fn type_name_of<T>(_: T) -> &'static str {
     std::any::type_name::<T>()
 }
@@ -48,6 +49,7 @@ pub enum DbPermissionLevel {
 }
 
 impl From<&Method> for DbPermissionLevel {
+    #[tracing::instrument(level = "trace", skip(method))]
     fn from(method: &Method) -> Self {
         match *method {
             Method::GET | Method::OPTIONS => DbPermissionLevel::Read,
@@ -127,6 +129,7 @@ pub struct PubKey {
 }
 
 impl From<Pubkey> for PubKey {
+    #[tracing::instrument(level = "trace", skip(value))]
     fn from(value: Pubkey) -> Self {
         Self {
             id: value.id as i16,
@@ -137,6 +140,7 @@ impl From<Pubkey> for PubKey {
 }
 
 impl TypedRelation {
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_id(&self) -> DieselUlid {
         match self {
             TypedRelation::Project(i)
@@ -162,6 +166,7 @@ impl TypedRelation {
 
 impl TryFrom<&Relation> for TypedRelation {
     type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: &Relation) -> Result<Self> {
         match value {
             Relation::External(_) => Err(anyhow!("Invalid External rel")),
@@ -191,6 +196,7 @@ impl TryFrom<&Relation> for TypedRelation {
 }
 impl TryInto<create_collection_request::Parent> for TypedRelation {
     type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(self))]
     fn try_into(self) -> Result<create_collection_request::Parent> {
         match self {
             TypedRelation::Project(i) => {
@@ -203,6 +209,7 @@ impl TryInto<create_collection_request::Parent> for TypedRelation {
 
 impl TryInto<create_dataset_request::Parent> for TypedRelation {
     type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(self))]
     fn try_into(self) -> Result<create_dataset_request::Parent> {
         match self {
             TypedRelation::Project(i) => {
@@ -218,6 +225,7 @@ impl TryInto<create_dataset_request::Parent> for TypedRelation {
 
 impl TryInto<create_object_request::Parent> for TypedRelation {
     type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(self))]
     fn try_into(self) -> Result<create_object_request::Parent> {
         match self {
             TypedRelation::Project(i) => {
@@ -236,6 +244,7 @@ impl TryInto<create_object_request::Parent> for TypedRelation {
 
 impl TryFrom<GenericBytes<i16>> for PubKey {
     type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: GenericBytes<i16>) -> Result<Self, Self::Error> {
         Ok(bincode::deserialize(&value.data)?)
     }
@@ -243,6 +252,7 @@ impl TryFrom<GenericBytes<i16>> for PubKey {
 
 impl TryInto<GenericBytes<i16>> for PubKey {
     type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(self))]
     fn try_into(self) -> Result<GenericBytes<i16>, Self::Error> {
         let data = bincode::serialize(&self)?;
         Ok(GenericBytes {
@@ -254,6 +264,7 @@ impl TryInto<GenericBytes<i16>> for PubKey {
 }
 
 impl WithGenericBytes<i16> for PubKey {
+    #[tracing::instrument(level = "trace", skip())]
     fn get_table() -> Table {
         Table::PubKeys
     }
@@ -261,6 +272,7 @@ impl WithGenericBytes<i16> for PubKey {
 
 impl TryFrom<GenericBytes<DieselUlid>> for Object {
     type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: GenericBytes<DieselUlid>) -> Result<Self, Self::Error> {
         Ok(bincode::deserialize(&value.data)?)
     }
@@ -268,6 +280,7 @@ impl TryFrom<GenericBytes<DieselUlid>> for Object {
 
 impl TryInto<GenericBytes<DieselUlid>> for Object {
     type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(self))]
     fn try_into(self) -> Result<GenericBytes<DieselUlid>, Self::Error> {
         let data = bincode::serialize(&self)?;
         Ok(GenericBytes {
@@ -279,6 +292,7 @@ impl TryInto<GenericBytes<DieselUlid>> for Object {
 }
 
 impl WithGenericBytes<DieselUlid> for Object {
+    #[tracing::instrument(level = "trace", skip())]
     fn get_table() -> Table {
         Table::Objects
     }
@@ -286,6 +300,7 @@ impl WithGenericBytes<DieselUlid> for Object {
 
 impl TryFrom<GenericBytes<DieselUlid>> for ObjectLocation {
     type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: GenericBytes<DieselUlid>) -> Result<Self, Self::Error> {
         Ok(bincode::deserialize(&value.data)?)
     }
@@ -293,6 +308,7 @@ impl TryFrom<GenericBytes<DieselUlid>> for ObjectLocation {
 
 impl TryInto<GenericBytes<DieselUlid>> for ObjectLocation {
     type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(self))]
     fn try_into(self) -> Result<GenericBytes<DieselUlid>, Self::Error> {
         let data = bincode::serialize(&self)?;
         Ok(GenericBytes {
@@ -304,6 +320,7 @@ impl TryInto<GenericBytes<DieselUlid>> for ObjectLocation {
 }
 
 impl WithGenericBytes<DieselUlid> for ObjectLocation {
+    #[tracing::instrument(level = "trace", skip())]
     fn get_table() -> Table {
         Table::ObjectLocations
     }
@@ -311,6 +328,7 @@ impl WithGenericBytes<DieselUlid> for ObjectLocation {
 
 impl TryFrom<GenericBytes<String>> for User {
     type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
+    #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: GenericBytes<String>) -> Result<Self, Self::Error> {
         let user: User = bincode::deserialize(&value.data).unwrap();
         Ok(user)
@@ -319,6 +337,7 @@ impl TryFrom<GenericBytes<String>> for User {
 
 impl TryInto<GenericBytes<String>> for User {
     type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
+    #[tracing::instrument(level = "trace", skip(self))]
     fn try_into(self) -> Result<GenericBytes<String>, Self::Error> {
         let user = self;
         let data = bincode::serialize(&user)?;
@@ -331,12 +350,14 @@ impl TryInto<GenericBytes<String>> for User {
 }
 
 impl WithGenericBytes<String> for User {
+    #[tracing::instrument(level = "trace", skip())]
     fn get_table() -> Table {
         Table::Users
     }
 }
 
 impl From<PermissionLevel> for DbPermissionLevel {
+    #[tracing::instrument(level = "trace", skip(level))]
     fn from(level: PermissionLevel) -> Self {
         match level {
             PermissionLevel::Read => DbPermissionLevel::Read,
@@ -351,6 +372,7 @@ impl From<PermissionLevel> for DbPermissionLevel {
 impl TryFrom<Resource> for Object {
     type Error = anyhow::Error;
 
+    #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: Resource) -> std::result::Result<Self, Self::Error> {
         match value {
             Resource::Project(p) => p.try_into(),
@@ -363,6 +385,7 @@ impl TryFrom<Resource> for Object {
 
 impl TryFrom<Project> for Object {
     type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: Project) -> Result<Self, Self::Error> {
         let (inbound, outbound): (Vec<_>, Vec<_>) = value
             .relations
@@ -422,6 +445,7 @@ impl TryFrom<Project> for Object {
 
 impl TryFrom<Collection> for Object {
     type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: Collection) -> Result<Self, Self::Error> {
         let (inbound, outbound): (Vec<_>, Vec<_>) = value
             .relations
@@ -481,6 +505,7 @@ impl TryFrom<Collection> for Object {
 
 impl TryFrom<Dataset> for Object {
     type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: Dataset) -> Result<Self, Self::Error> {
         let (inbound, outbound): (Vec<_>, Vec<_>) = value
             .relations
@@ -540,6 +565,7 @@ impl TryFrom<Dataset> for Object {
 
 impl TryFrom<GrpcObject> for Object {
     type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: GrpcObject) -> Result<Self, Self::Error> {
         let (inbound, outbound): (Vec<_>, Vec<_>) = value
             .relations
@@ -598,6 +624,7 @@ impl TryFrom<GrpcObject> for Object {
 }
 
 impl From<&ResourceIds> for DieselUlid {
+    #[tracing::instrument(level = "trace", skip(value))]
     fn from(value: &ResourceIds) -> Self {
         match value {
             ResourceIds::Project(id) => *id,
@@ -609,6 +636,7 @@ impl From<&ResourceIds> for DieselUlid {
 }
 
 impl From<Object> for CreateProjectRequest {
+    #[tracing::instrument(level = "trace", skip(value))]
     fn from(value: Object) -> Self {
         CreateProjectRequest {
             name: value.name,
@@ -624,6 +652,7 @@ impl From<Object> for CreateProjectRequest {
 }
 
 impl From<Object> for CreateCollectionRequest {
+    #[tracing::instrument(level = "trace", skip(value))]
     fn from(value: Object) -> Self {
         CreateCollectionRequest {
             name: value.name,
@@ -642,6 +671,7 @@ impl From<Object> for CreateCollectionRequest {
 }
 
 impl From<Object> for CreateDatasetRequest {
+    #[tracing::instrument(level = "trace", skip(value))]
     fn from(value: Object) -> Self {
         CreateDatasetRequest {
             name: value.name,
@@ -660,6 +690,7 @@ impl From<Object> for CreateDatasetRequest {
 }
 
 impl From<CreateBucketInput> for Object {
+    #[tracing::instrument(level = "trace", skip(value))]
     fn from(value: CreateBucketInput) -> Self {
         Object {
             id: DieselUlid::generate(),
@@ -680,6 +711,7 @@ impl From<CreateBucketInput> for Object {
 }
 
 impl From<Object> for CreateObjectRequest {
+    #[tracing::instrument(level = "trace", skip(value))]
     fn from(value: Object) -> Self {
         CreateObjectRequest {
             name: value.name,
@@ -699,6 +731,7 @@ impl From<Object> for CreateObjectRequest {
 }
 
 impl From<Object> for UpdateObjectRequest {
+    #[tracing::instrument(level = "trace", skip(value))]
     fn from(value: Object) -> Self {
         UpdateObjectRequest {
             object_id: value.id.to_string(),
@@ -717,6 +750,7 @@ impl From<Object> for UpdateObjectRequest {
 }
 
 impl Object {
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_hashes(&self) -> Vec<Hash> {
         self.hashes
             .iter()
@@ -747,6 +781,7 @@ pub enum ResourceString {
 }
 
 impl ResourceString {
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn into_parts(self) -> Vec<ResourceString> {
         match self {
             ResourceString::Project(p) => vec![ResourceString::Project(p)],
@@ -786,12 +821,14 @@ impl ResourceString {
 }
 
 impl PartialOrd for ResourceString {
+    #[tracing::instrument(level = "trace", skip(self, other))]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for ResourceString {
+    #[tracing::instrument(level = "trace", skip(self, other))]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match self {
             ResourceString::Project(_) => match other {
@@ -836,6 +873,7 @@ pub struct Missing {
 }
 
 impl From<Vec<ResourceString>> for Missing {
+    #[tracing::instrument(level = "trace", skip(value))]
     fn from(value: Vec<ResourceString>) -> Self {
         let mut missing = Missing::default();
         for x in value {
@@ -1003,6 +1041,7 @@ pub struct ResourceResults {
 }
 
 impl ResourceResults {
+    #[tracing::instrument(level = "trace", skip(path, cache))]
     pub fn from_path(path: &S3Path, cache: Arc<Cache>) -> Result<Self> {
         // FIXME: I am so inefficient
         if let Some((bucket, key)) = path.as_object() {
@@ -1272,6 +1311,7 @@ impl ResourceResults {
 
 impl TryFrom<&S3Path> for ResourceString {
     type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: &S3Path) -> Result<Self> {
         if let Some((b, k)) = value.as_object() {
             let pathvec = k.split('/').collect::<Vec<&str>>();
@@ -1322,6 +1362,7 @@ pub enum ResourceIds {
 }
 
 impl PartialEq<DieselUlid> for ResourceIds {
+    #[tracing::instrument(level = "trace", skip(self, other))]
     fn eq(&self, other: &DieselUlid) -> bool {
         match self {
             ResourceIds::Project(id) => id == other,
@@ -1333,6 +1374,7 @@ impl PartialEq<DieselUlid> for ResourceIds {
 }
 
 impl ResourceIds {
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_id(&self) -> DieselUlid {
         match self {
             ResourceIds::Project(id) => *id,
@@ -1342,6 +1384,7 @@ impl ResourceIds {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_project(&self) -> DieselUlid {
         match self {
             ResourceIds::Project(id) => *id,
@@ -1351,6 +1394,7 @@ impl ResourceIds {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_collection(&self) -> Option<DieselUlid> {
         match self {
             ResourceIds::Project(_) => None,
@@ -1360,6 +1404,7 @@ impl ResourceIds {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_dataset(&self) -> Option<DieselUlid> {
         match self {
             ResourceIds::Project(_) => None,
@@ -1369,6 +1414,7 @@ impl ResourceIds {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_object(&self) -> Option<DieselUlid> {
         match self {
             ResourceIds::Project(_) => None,
@@ -1378,6 +1424,7 @@ impl ResourceIds {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_typed_parent(&self) -> Option<TypedRelation> {
         match self {
             ResourceIds::Project(_) => None,
@@ -1401,6 +1448,7 @@ impl ResourceIds {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self, id))]
     pub fn check_if_in(&self, id: DieselUlid) -> bool {
         match self {
             ResourceIds::Project(pid) => pid == &id,
@@ -1417,6 +1465,7 @@ impl ResourceIds {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn destructurize(
         &self,
     ) -> (
@@ -1433,6 +1482,7 @@ impl ResourceIds {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self, id))]
     pub fn set_project(&mut self, id: DieselUlid) {
         match self {
             ResourceIds::Project(p) => *p = id,
@@ -1442,6 +1492,7 @@ impl ResourceIds {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self, id))]
     pub fn set_collection(&mut self, id: DieselUlid) -> Result<()> {
         match self {
             ResourceIds::Project(_) => return Err(anyhow!("Cannot set collection on project")),
@@ -1452,6 +1503,7 @@ impl ResourceIds {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, id))]
     pub fn set_dataset(&mut self, id: DieselUlid) -> Result<()> {
         match self {
             ResourceIds::Project(_) => return Err(anyhow!("Cannot set dataset on project")),
@@ -1464,6 +1516,7 @@ impl ResourceIds {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, id))]
     pub fn set_object(&mut self, id: DieselUlid) -> Result<()> {
         match self {
             ResourceIds::Project(_) => return Err(anyhow!("Cannot set object on project")),
@@ -1488,6 +1541,7 @@ pub struct CheckAccessResult {
 }
 
 impl CheckAccessResult {
+    #[tracing::instrument(level = "trace", skip(user_id, token_id, resource_ids, missing_resources, object, bundle))]
     pub fn new(
         user_id: Option<String>,
         token_id: Option<String>,

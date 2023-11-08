@@ -74,6 +74,7 @@ pub struct GrpcQueryHandler {
 }
 
 impl GrpcQueryHandler {
+    #[tracing::instrument(level = "trace", skip(server, cache, endpoint_id))]
     #[allow(dead_code)]
     pub async fn new(
         server: impl Into<String>,
@@ -141,6 +142,7 @@ impl GrpcQueryHandler {
 
 // Aruna grpc request section
 impl GrpcQueryHandler {
+    #[tracing::instrument(level = "trace", skip(self, id, _checksum))]
     pub async fn get_user(&self, id: DieselUlid, _checksum: String) -> Result<GrpcUser> {
         let mut req = Request::new(GetUserRedactedRequest {
             user_id: id.to_string(),
@@ -161,6 +163,7 @@ impl GrpcQueryHandler {
             .ok_or(anyhow!("Unknown user"))?;
         Ok(user)
     }
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn get_pubkeys(&self) -> Result<Vec<Pubkey>> {
         let mut req = Request::new(GetPubkeysRequest {});
 
@@ -178,6 +181,7 @@ impl GrpcQueryHandler {
             .pubkeys)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, object, token))]
     pub async fn create_project(&self, object: DPObject, token: &str) -> Result<DPObject> {
         let mut req = Request::new(CreateProjectRequest::from(object));
 
@@ -202,6 +206,7 @@ impl GrpcQueryHandler {
         Ok(object)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, id, _checksum))]
     async fn get_project(&self, id: &DieselUlid, _checksum: String) -> Result<Project> {
         let mut req = Request::new(GetProjectRequest {
             project_id: id.to_string(),
@@ -221,6 +226,7 @@ impl GrpcQueryHandler {
             .ok_or(anyhow!("unknown project"))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, id, _checksum))]
     async fn get_collection(&self, id: &DieselUlid, _checksum: String) -> Result<Collection> {
         let mut req = Request::new(GetCollectionRequest {
             collection_id: id.to_string(),
@@ -240,6 +246,7 @@ impl GrpcQueryHandler {
             .ok_or(anyhow!("unknown collection"))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, object, token))]
     pub async fn create_collection(&self, object: DPObject, token: &str) -> Result<DPObject> {
         let mut req = Request::new(CreateCollectionRequest::from(object));
 
@@ -264,6 +271,7 @@ impl GrpcQueryHandler {
         Ok(object)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, id, _checksum))]
     async fn get_dataset(&self, id: &DieselUlid, _checksum: String) -> Result<Dataset> {
         let mut req = Request::new(GetDatasetRequest {
             dataset_id: id.to_string(),
@@ -283,6 +291,7 @@ impl GrpcQueryHandler {
             .ok_or(anyhow!("unknown dataset"))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, object, token))]
     pub async fn create_dataset(&self, object: DPObject, token: &str) -> Result<DPObject> {
         let mut req = Request::new(CreateDatasetRequest::from(object));
 
@@ -307,6 +316,7 @@ impl GrpcQueryHandler {
         Ok(object)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, id, _checksum))]
     async fn get_object(&self, id: &DieselUlid, _checksum: String) -> Result<Object> {
         let mut req = Request::new(GetObjectRequest {
             object_id: id.to_string(),
@@ -326,6 +336,7 @@ impl GrpcQueryHandler {
             .ok_or(anyhow!("unknown object"))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, object, loc, token))]
     pub async fn create_object(
         &self,
         object: DPObject,
@@ -358,6 +369,7 @@ impl GrpcQueryHandler {
         Ok(object)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, object, token, force_update))]
     pub async fn init_object_update(
         &self,
         object: DPObject,
@@ -395,6 +407,7 @@ impl GrpcQueryHandler {
         Ok(object)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, object_id, content_len, hashes, location, token))]
     pub async fn finish_object(
         &self,
         object_id: DieselUlid,
@@ -439,6 +452,7 @@ impl GrpcQueryHandler {
         Ok(object)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, proxy_object, loc, token))]
     pub async fn create_and_finish(
         &self,
         proxy_object: DPObject,
@@ -494,6 +508,7 @@ impl GrpcQueryHandler {
         Ok(object)
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn create_notifications_channel(&self) -> Result<()> {
         let mut req = Request::new(GetEventMessageStreamRequest {
             stream_consumer: self.endpoint_id.to_string(),
@@ -584,6 +599,7 @@ impl GrpcQueryHandler {
 
 /// Request handling section
 impl GrpcQueryHandler {
+    #[tracing::instrument(level = "trace", skip(self, message))]
     async fn process_message(&self, message: EventMessage) -> Result<Option<Reply>> {
         match message.message_variant.unwrap() {
             MessageVariant::ResourceEvent(r_event) => self.process_resource_event(r_event).await,
@@ -594,6 +610,7 @@ impl GrpcQueryHandler {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self, message))]
     async fn process_announcements_event(
         &self,
         message: AnnouncementEvent,
@@ -621,6 +638,7 @@ impl GrpcQueryHandler {
         Ok(message.reply)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, message))]
     async fn process_user_event(&self, message: UserEvent) -> Result<Option<Reply>> {
         match message.event_variant() {
             EventVariant::Created | EventVariant::Available | EventVariant::Updated => {
@@ -639,6 +657,7 @@ impl GrpcQueryHandler {
         Ok(message.reply)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, event))]
     async fn process_resource_event(&self, event: ResourceEvent) -> Result<Option<Reply>> {
         match event.event_variant() {
             EventVariant::Created | EventVariant::Updated => {
@@ -685,6 +704,7 @@ impl GrpcQueryHandler {
     }
 }
 
+#[tracing::instrument(level = "trace", skip(res))]
 pub fn sort_resources(res: &mut [Resource]) {
     res.sort_by(|x, y| match (x, y) {
         (Resource::Project(_), Resource::Project(_)) => std::cmp::Ordering::Equal,

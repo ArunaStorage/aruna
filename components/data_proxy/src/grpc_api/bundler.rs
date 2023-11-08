@@ -24,6 +24,7 @@ pub struct BundlerServiceImpl {
 }
 
 impl BundlerServiceImpl {
+    #[tracing::instrument(level = "trace", skip(cache, endpoint_url, ssl))]
     pub fn new(cache: Arc<Cache>, endpoint_url: String, ssl: bool) -> Self {
         Self {
             cache,
@@ -35,6 +36,7 @@ impl BundlerServiceImpl {
 
 #[tonic::async_trait]
 impl BundlerService for BundlerServiceImpl {
+    #[tracing::instrument(level = "trace", skip(self, request))]
     async fn create_bundle(
         &self,
         request: tonic::Request<CreateBundleRequest>,
@@ -155,6 +157,7 @@ impl BundlerService for BundlerServiceImpl {
         Ok(tonic::Response::new(response))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, request))]
     async fn delete_bundle(
         &self,
         request: tonic::Request<DeleteBundleRequest>,

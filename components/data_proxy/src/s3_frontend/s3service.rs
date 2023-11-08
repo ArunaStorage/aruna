@@ -56,12 +56,14 @@ pub struct ArunaS3Service {
 }
 
 impl Debug for ArunaS3Service {
+    #[tracing::instrument(level = "trace", skip(self, f))]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ArunaS3Service").finish()
     }
 }
 
 impl ArunaS3Service {
+    #[tracing::instrument(level = "trace", skip(backend, cache))]
     pub async fn new(backend: Arc<Box<dyn StorageBackend>>, cache: Arc<Cache>) -> Result<Self> {
         Ok(ArunaS3Service {
             backend: backend.clone(),
@@ -954,6 +956,7 @@ impl S3 for ArunaS3Service {
         Ok(S3Response::new(response))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, req))]
     async fn get_object(
         &self,
         req: S3Request<GetObjectInput>,
@@ -1154,6 +1157,7 @@ impl S3 for ArunaS3Service {
         }))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, req))]
     async fn head_object(
         &self,
         req: S3Request<HeadObjectInput>,
@@ -1206,6 +1210,7 @@ impl S3 for ArunaS3Service {
         }))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, _req))]
     async fn list_objects(
         &self,
         _req: S3Request<ListObjectsInput>,
@@ -1216,6 +1221,7 @@ impl S3 for ArunaS3Service {
         ))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, req))]
     async fn list_objects_v2(
         &self,
         req: S3Request<ListObjectsV2Input>,

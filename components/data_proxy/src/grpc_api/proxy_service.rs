@@ -11,6 +11,7 @@ pub struct DataproxyServiceImpl {
 }
 
 impl DataproxyServiceImpl {
+    #[tracing::instrument(level = "trace", skip(cache))]
     pub fn new(cache: Arc<Cache>) -> Self {
         Self { cache }
     }
@@ -18,6 +19,7 @@ impl DataproxyServiceImpl {
 
 #[tonic::async_trait]
 impl DataproxyService for DataproxyServiceImpl {
+    #[tracing::instrument(level = "trace", skip(self, _request))]
     /// RequestReplication
     ///
     /// Status: BETA
@@ -29,6 +31,7 @@ impl DataproxyService for DataproxyServiceImpl {
     ) -> Result<tonic::Response<RequestReplicationResponse>, tonic::Status> {
         Err(tonic::Status::unimplemented("Currently not implemented"))
     }
+    #[tracing::instrument(level = "trace", skip(self, _request))]
     /// InitReplication
     ///
     /// Status: BETA

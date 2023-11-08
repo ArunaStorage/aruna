@@ -11,6 +11,7 @@ pub struct DataproxyUserServiceImpl {
 }
 
 impl DataproxyUserServiceImpl {
+    #[tracing::instrument(level = "trace", skip(cache))]
     pub fn new(cache: Arc<Cache>) -> Self {
         Self { cache }
     }
@@ -18,6 +19,7 @@ impl DataproxyUserServiceImpl {
 
 #[tonic::async_trait]
 impl DataproxyUserService for DataproxyUserServiceImpl {
+    #[tracing::instrument(level = "trace", skip(self, request))]
     /// GetCredentials
     ///
     /// Status: BETA
@@ -71,6 +73,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self, _request))]
     /// PushReplica
     ///
     /// Status: BETA
@@ -83,6 +86,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
         Err(tonic::Status::unimplemented("Not implemented"))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, _request))]
     /// PullReplica
     ///
     /// Status: BETA
@@ -95,6 +99,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
         Err(tonic::Status::unimplemented("Not implemented"))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, _request))]
     /// PullReplica
     ///
     /// Status: BETA

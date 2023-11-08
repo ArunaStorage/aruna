@@ -36,6 +36,7 @@ pub struct Cache {
 }
 
 impl Cache {
+    #[tracing::instrument(level = "trace", skip(notifications_url, with_persistence, self_id, encoding_key, encoding_key_serial))]
     pub async fn new(
         notifications_url: Option<impl Into<String>>,
         with_persistence: bool,
@@ -79,16 +80,19 @@ impl Cache {
         Ok(cache)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, notifications))]
     pub async fn set_notifications(&self, notifications: Arc<GrpcQueryHandler>) {
         let mut guard = self.aruna_client.write().await;
         *guard = Some(notifications);
     }
 
+    #[tracing::instrument(level = "trace", skip(self, auth))]
     pub async fn set_auth(&self, auth: AuthHandler) {
         let mut guard = self.auth.write().await;
         *guard = Some(auth);
     }
 
+    #[tracing::instrument(level = "trace", skip(self, persistence))]
     pub async fn set_persistence(&self, persistence: Database) -> Result<()> {
         let persistence = self.sync_with_persistence(persistence).await?;
         let mut guard = self.persistence.write().await;
@@ -96,6 +100,7 @@ impl Cache {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, access_key))]
     /// Requests a secret key from the cache
     pub fn get_secret(&self, access_key: &str) -> Result<SecretKey> {
         Ok(SecretKey::from(
@@ -107,6 +112,7 @@ impl Cache {
         ))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, database))]
     pub async fn sync_with_persistence(&self, database: Database) -> Result<Database> {
         let client = database.get_client().await?;
         for user in User::get_all(&client).await? {
@@ -130,6 +136,7 @@ impl Cache {
         Ok(database)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, user, access_key))]
     /// Requests a secret key from the cache
     pub async fn create_or_get_secret(
         self: Arc<Self>,
@@ -190,6 +197,7 @@ impl Cache {
         .await?
     }
 
+    #[tracing::instrument(level = "trace", skip(self, pks))]
     pub async fn sync_pubkeys(&self, pks: Vec<PubKey>) -> Result<()> {
         for pk in pks.into_iter() {
             let dec_key = DecodingKey::from_ed_pem(
@@ -204,6 +212,7 @@ impl Cache {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, pks))]
     pub async fn set_pubkeys(&self, pks: Vec<PubKey>) -> Result<()> {
         if let Some(persistence) = self.persistence.read().await.as_ref() {
             PubKey::delete_all(&persistence.get_client().await?).await?;
@@ -225,10 +234,12 @@ impl Cache {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, res))]
     pub fn get_res_by_res_string(&self, res: ResourceString) -> Option<ResourceIds> {
         self.paths.get(&res).map(|e| e.value().clone())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, resource_id, variant))]
     pub fn get_name_trees(
         &self,
         resource_id: &str,
@@ -506,6 +517,7 @@ impl Cache {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self, kid))]
     pub fn get_pubkey(&self, kid: i32) -> Result<(PubKey, DecodingKey)> {
         Ok(self
             .pubkeys
@@ -514,6 +526,7 @@ impl Cache {
             .clone())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, user))]
     pub async fn upsert_user(self: Arc<Cache>, user: GrpcUser) -> Result<()> {
         let user_id = DieselUlid::from_str(&user.id)?;
 
@@ -547,6 +560,7 @@ impl Cache {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, access_key, permission))]
     pub async fn add_permission_to_access_key(
         &self,
         access_key: &str,
@@ -569,6 +583,7 @@ impl Cache {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self, access_key, permission))]
     pub async fn _remove_permission_from_access_key(
         &self,
         access_key: &str,
@@ -589,6 +604,7 @@ impl Cache {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self, user_id))]
     pub async fn remove_user(&self, user_id: DieselUlid) -> Result<()> {
         let keys = self
             .users
@@ -614,6 +630,7 @@ impl Cache {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, object, location))]
     pub async fn upsert_object(
         &self,
         object: Object,
@@ -650,6 +667,7 @@ impl Cache {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, id))]
     pub async fn delete_object(&self, id: DieselUlid) -> Result<()> {
         if let Some(persistence) = self.persistence.read().await.as_ref() {
             Object::delete(&id, &persistence.get_client().await?).await?;
@@ -661,10 +679,12 @@ impl Cache {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, access_key))]
     pub fn get_user_by_key(&self, access_key: &str) -> Option<User> {
         self.users.get(access_key).map(|e| e.value().clone())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, id))]
     pub fn get_resource_ids_from_id(
         &self,
         id: DieselUlid,
@@ -847,6 +867,7 @@ impl Cache {
         Ok((result, rel))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, resource_id))]
     pub fn get_path_levels(
         &self,
         resource_id: DieselUlid,

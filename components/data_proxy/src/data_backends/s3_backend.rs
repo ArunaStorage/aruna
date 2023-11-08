@@ -27,6 +27,7 @@ pub struct S3Backend {
 }
 
 impl S3Backend {
+    #[tracing::instrument(level = "trace", skip(endpoint_id))]
     pub async fn new(endpoint_id: String) -> Result<Self> {
         let s3_endpoint = dotenvy::var("AWS_S3_HOST").unwrap();
 
@@ -52,6 +53,7 @@ impl StorageBackend for S3Backend {
     // Uploads a single object in chunks
     // Objects are uploaded in chunks that come from a channel to allow modification in the data middleware
     // The receiver can directly will be wrapped and will then be directly passed into the s3 client
+    #[tracing::instrument(level = "trace", skip(self, recv, location, content_len))]
     async fn put_object(
         &self,
         recv: Receiver<Result<bytes::Bytes>>,
@@ -87,6 +89,7 @@ impl StorageBackend for S3Backend {
     // Downloads the given object from the s3 storage
     // The body is wrapped into an async reader and reads the data in chunks.
     // The chunks are then transferred into the sender.
+    #[tracing::instrument(level = "trace", skip(self, location, range, sender))]
     async fn get_object(
         &self,
         location: ObjectLocation,
@@ -114,6 +117,7 @@ impl StorageBackend for S3Backend {
         return Ok(());
     }
 
+    #[tracing::instrument(level = "trace", skip(self, location))]
     async fn head_object(&self, location: ObjectLocation) -> Result<i64> {
         let object = self
             .s3_client
@@ -127,6 +131,7 @@ impl StorageBackend for S3Backend {
     }
 
     // Initiates a multipart upload in s3 and returns the associated upload id.
+    #[tracing::instrument(level = "trace", skip(self, location))]
     async fn init_multipart_upload(&self, location: ObjectLocation) -> Result<String> {
         self.check_and_create_bucket(location.bucket.clone())
             .await?;
@@ -142,6 +147,7 @@ impl StorageBackend for S3Backend {
         return Ok(multipart.upload_id().unwrap().to_string());
     }
 
+    #[tracing::instrument(level = "trace", skip(self, recv, location, upload_id, content_len, part_number))]
     async fn upload_multi_object(
         &self,
         recv: Receiver<Result<bytes::Bytes>>,
@@ -172,6 +178,7 @@ impl StorageBackend for S3Backend {
         });
     }
 
+    #[tracing::instrument(level = "trace", skip(self, location, parts, upload_id))]
     async fn finish_multipart_upload(
         &self,
         location: ObjectLocation,
@@ -212,10 +219,12 @@ impl StorageBackend for S3Backend {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self, bucket))]
     async fn create_bucket(&self, bucket: String) -> Result<()> {
         self.check_and_create_bucket(bucket).await
     }
 
+    #[tracing::instrument(level = "trace", skip(self, location))]
     /// Delete a object from the storage system
     /// # Arguments
     /// * `location` - The location of the object
@@ -229,6 +238,7 @@ impl StorageBackend for S3Backend {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, _obj, expected_size, ex_bucket, temp))]
     /// Initialize a new location for a specific object
     /// This takes the object_info into account and creates a new location for the object
     async fn initialize_location(
@@ -266,6 +276,7 @@ impl StorageBackend for S3Backend {
 }
 
 impl S3Backend {
+    #[tracing::instrument(level = "trace", skip(self, bucket))]
     pub async fn check_and_create_bucket(&self, bucket: String) -> Result<()> {
         match self
             .s3_client
@@ -285,6 +296,7 @@ impl S3Backend {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_random_bucket(&self) -> String {
         let bucket: String = thread_rng()
             .sample_iter(&Alphanumeric)

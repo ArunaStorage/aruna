@@ -6,6 +6,7 @@ pub struct Database {
 }
 
 impl Database {
+    #[tracing::instrument(level = "trace", skip())]
     pub async fn new() -> Result<Self> {
         let database_host = dotenvy::var("PERSISTENCE_DB_HOST")?;
         let database_port = dotenvy::var("PERSISTENCE_DB_PORT")?.parse()?;
@@ -31,6 +32,7 @@ impl Database {
         })
     }
 
+    #[tracing::instrument(level = "trace", skip(client))]
     pub async fn initialize_db(client: &Client) -> Result<()> {
         dotenvy::from_filename(".env")?;
         let initial = tokio::fs::read_to_string(dotenvy::var("PERSISTENCE_DB_SCHEMA")?).await?;
@@ -38,6 +40,7 @@ impl Database {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn get_client(&self) -> Result<Client> {
         Ok(self.connection_pool.get().await?)
     }

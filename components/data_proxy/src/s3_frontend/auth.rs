@@ -11,6 +11,7 @@ pub struct AuthProvider {
 }
 
 impl AuthProvider {
+    #[tracing::instrument(level = "trace", skip(cache))]
     pub async fn new(cache: Arc<Cache>) -> Self {
         Self { cache }
     }
@@ -18,6 +19,7 @@ impl AuthProvider {
 
 #[async_trait::async_trait]
 impl S3Auth for AuthProvider {
+    #[tracing::instrument(level = "trace", skip(self, access_key))]
     async fn get_secret_key(&self, access_key: &str) -> S3Result<SecretKey> {
         dbg!(format!("check access key: {}", &access_key));
         let secret = self
@@ -27,6 +29,7 @@ impl S3Auth for AuthProvider {
         Ok(secret)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, cx))]
     async fn check_access(&self, cx: &mut S3AuthContext<'_>) -> S3Result<()> {
         dbg!(format!("check context: {:#?}", cx.s3_path()));
         match self.cache.auth.read().await.as_ref() {

@@ -3,6 +3,7 @@ use aruna_file::helpers::footer_parser::{FooterParser, Range as ArunaRange};
 use s3s::dto::Range as S3Range;
 use s3s::dto::Range::{Int, Suffix};
 
+#[tracing::instrument(level = "trace", skip(input_range, content_length, footer))]
 pub fn calculate_ranges(
     input_range: Option<S3Range>,
     content_length: u64,
@@ -30,10 +31,12 @@ pub fn calculate_ranges(
     }
 }
 
+#[tracing::instrument(level = "trace", skip(range))]
 pub fn calculate_content_length_from_range(range: ArunaRange) -> i64 {
     (range.to - range.from) as i64 // Note: -1 bytes-ranges are inclusive
 }
 
+#[tracing::instrument(level = "trace", skip(range_string, content_length))]
 pub fn aruna_range_from_s3range(range_string: S3Range, content_length: u64) -> ArunaRange {
     match range_string {
         Int { first, last } => match last {

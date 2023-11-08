@@ -43,7 +43,7 @@ tower = { version = "0.4.13", features = ["retry"] }
 tonic = {version = "0.10.2", features = ["tls", "tls-roots"]}
 tracing = "0.1.40"
 tracing-error = "0.2.0"
-tracing-subscriber = {version = "0.3.17", optional = true, features = ["env-filter", "time"]}
+tracing-subscriber = {version = "0.3.17", features = ["env-filter", "time"]}
 url = "2.4.1"
 zstd = "0.13.0"
 diesel-ulid = "0.3.1"

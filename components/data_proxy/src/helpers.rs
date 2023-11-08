@@ -3,6 +3,7 @@ use http::Method;
 use reqsign::{AwsCredential, AwsV4Signer};
 use url::Url;
 
+#[tracing::instrument(level = "trace", skip(method, access_key, secret_key, ssl, multipart, part_number, upload_id, bucket, key, endpoint, duration))]
 /// Creates a fully customized presigned S3 url.
 ///
 /// ## Arguments:
@@ -81,6 +82,7 @@ pub fn sign_url(
     Ok(req.url().to_string())
 }
 
+#[tracing::instrument(level = "trace", skip(access_key, secret_key, ssl, bucket, key, endpoint))]
 /// Convenience wrapper function for sign_url(...) to reduce unused parameters for download url.
 pub fn sign_download_url(
     access_key: &str,

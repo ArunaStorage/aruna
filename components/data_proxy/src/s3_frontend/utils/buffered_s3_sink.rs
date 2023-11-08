@@ -21,6 +21,7 @@ pub struct BufferedS3Sink {
 impl Sink for BufferedS3Sink {}
 
 impl BufferedS3Sink {
+    #[tracing::instrument(level = "trace", skip(backend, target_location, upload_id, part_number, single_part_upload, tags, with_sender))]
     pub fn new(
         backend: Arc<Box<dyn StorageBackend>>,
         target_location: ObjectLocation,
@@ -60,6 +61,7 @@ impl BufferedS3Sink {
 }
 
 impl BufferedS3Sink {
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn initialize_multipart(&mut self) -> Result<()> {
         self.part_number = Some(1);
 
@@ -72,6 +74,7 @@ impl BufferedS3Sink {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn upload_single(&mut self) -> Result<()> {
         let backend_clone = self.backend.clone();
         let expected_len: i64 = self.buffer.len() as i64;
@@ -92,6 +95,7 @@ impl BufferedS3Sink {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn upload_part(&mut self) -> Result<()> {
         dbg!("part", &self.buffer.len());
         let backend_clone = self.backend.clone();
@@ -131,6 +135,7 @@ impl BufferedS3Sink {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn finish_multipart(&mut self) -> Result<()> {
         let up_id = self
             .upload_id
@@ -145,6 +150,7 @@ impl BufferedS3Sink {
         log::info!("Finished with: {:?}", self.sum);
         Ok(())
     }
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn _get_parts(&self) -> Vec<PartETag> {
         self.tags.clone()
     }
@@ -152,6 +158,7 @@ impl BufferedS3Sink {
 
 #[async_trait::async_trait]
 impl Transformer for BufferedS3Sink {
+    #[tracing::instrument(level = "trace", skip(self, buf, finished))]
     async fn process_bytes(&mut self, buf: &mut BytesMut, finished: bool, _: bool) -> Result<bool> {
         self.sum += buf.len();
         let len = buf.len();
