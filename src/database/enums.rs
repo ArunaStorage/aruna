@@ -33,12 +33,13 @@ impl ObjectStatus {
     }
 }
 
+/// This enum
 #[derive(Debug, ToSql, FromSql, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
 pub enum DataClass {
-    PUBLIC,
-    PRIVATE,
-    WORKSPACE,
-    CONFIDENTIAL,
+    PUBLIC = 1,
+    PRIVATE = 2,
+    WORKSPACE = 4,
+    CONFIDENTIAL = 5,
 }
 impl DataClass {
     pub fn get_type() -> Type {

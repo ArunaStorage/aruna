@@ -118,7 +118,7 @@ impl From<ObjectDocument> for Project {
             key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
             stats: None,
-            data_class: object_document.data_class as i32,
+            data_class: object_document.data_class.into(),
             created_at: Some(Timestamp {
                 seconds: object_document.created_at,
                 nanos: 0,
@@ -169,7 +169,7 @@ impl From<ObjectDocument> for Collection {
             key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
             stats: None,
-            data_class: object_document.data_class as i32,
+            data_class: object_document.data_class.into(),
             created_at: Some(Timestamp {
                 seconds: object_document.created_at,
                 nanos: 0,
@@ -220,7 +220,7 @@ impl From<ObjectDocument> for Dataset {
             key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
             stats: None,
-            data_class: object_document.data_class as i32,
+            data_class: object_document.data_class.into(),
             created_at: Some(Timestamp {
                 seconds: object_document.created_at,
                 nanos: 0,
@@ -271,7 +271,7 @@ impl From<ObjectDocument> for Object {
             key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
             content_len: object_document.size,
-            data_class: object_document.data_class as i32,
+            data_class: object_document.data_class.into(),
             created_at: Some(Timestamp {
                 seconds: object_document.created_at,
                 nanos: 0,
