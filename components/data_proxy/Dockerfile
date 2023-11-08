@@ -8,11 +8,11 @@ RUN apk add llvm cmake gcc ca-certificates libc-dev pkgconfig openssl-dev protoc
 COPY . .
 RUN cargo build --release
 
-FROM rust:1-alpine
+FROM alpine:3.18
 WORKDIR /run
 RUN apk update
 RUN apk upgrade
-RUN apk add llvm cmake gcc ca-certificates libc-dev pkgconfig openssl-dev protoc protobuf-dev libpq-dev musl-dev git
+RUN apk add ca-certificates libpq-dev musl-dev
 COPY --from=builder /build/target/release/aos_data_proxy .
 COPY --from=builder /build/.env .
 COPY --from=builder /build/src/database/schema.sql .
