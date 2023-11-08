@@ -400,6 +400,7 @@ impl GrpcQueryHandler {
         object_id: DieselUlid,
         content_len: i64,
         hashes: Vec<Hash>,
+        location: Option<ObjectLocation>,
         token: &str,
     ) -> Result<DPObject> {
         let mut req = Request::new(FinishObjectStagingRequest {
@@ -425,7 +426,15 @@ impl GrpcQueryHandler {
 
         let object = DPObject::try_from(response)?;
 
-        self.cache.upsert_object(object.clone(), None).await?;
+        // Persist Object and Location in cache/database
+        if let Some(mut location) = location {
+            location.id = object.id;
+            self.cache
+                .upsert_object(object.clone(), Some(location))
+                .await?;
+        } else {
+            self.cache.upsert_object(object.clone(), None).await?;
+        }
 
         Ok(object)
     }

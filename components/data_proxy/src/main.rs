@@ -46,6 +46,19 @@ async fn main() -> Result<()> {
 
     // Init logger
     SimpleLogger::new()
+        .with_module_level("s3s", log::LevelFilter::Error)
+        .with_module_level("aws_config", log::LevelFilter::Error)
+        .with_module_level("aws_sdk_s3", log::LevelFilter::Error)
+        .with_module_level("aws_smithy_client", log::LevelFilter::Error)
+        .with_module_level("aws_smithy_http_tower", log::LevelFilter::Error)
+        .with_module_level("aws_smithy_runtime", log::LevelFilter::Error)
+        .with_module_level("aws_smithy_runtime_api", log::LevelFilter::Error)
+        .with_module_level("tower", log::LevelFilter::Error)
+        .with_module_level("h2", log::LevelFilter::Error)
+        .with_module_level("hyper", log::LevelFilter::Error)
+        .with_module_level("isahc", log::LevelFilter::Error)
+        .with_module_level("tokio_postgres", log::LevelFilter::Error)
+        .with_module_level("tracing", log::LevelFilter::Error)
         .with_level(log::LevelFilter::Debug)
         .env()
         .init()?;

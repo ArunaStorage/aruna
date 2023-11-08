@@ -8,12 +8,12 @@ use crate::data_backends::storage_backend::StorageBackend;
 use crate::log_received;
 use crate::s3_frontend::utils::list_objects::filter_list_objects;
 use crate::s3_frontend::utils::list_objects::list_response;
-use crate::structs::ALL_RIGHTS_RESERVED;
 use crate::structs::CheckAccessResult;
 use crate::structs::Object as ProxyObject;
 use crate::structs::PartETag;
 use crate::structs::ResourceString;
 use crate::structs::TypedRelation;
+use crate::structs::ALL_RIGHTS_RESERVED;
 use anyhow::Result;
 use aruna_file::helpers::footer_parser::FooterParser;
 use aruna_file::streamreadwrite::ArunaStreamReadWriter;
@@ -27,6 +27,8 @@ use aruna_file::transformers::hashing_transformer::HashingTransformer;
 use aruna_file::transformers::size_probe::SizeProbe;
 use aruna_file::transformers::zstd_comp::ZstdEnc;
 use aruna_file::transformers::zstd_decomp::ZstdDec;
+use aruna_rust_api::api::storage::models::v2::Hash;
+use aruna_rust_api::api::storage::models::v2::Hashalgorithm;
 use aruna_rust_api::api::storage::models::v2::{DataClass, Status};
 use base64::engine::general_purpose;
 use base64::Engine;
@@ -261,8 +263,6 @@ impl S3 for ArunaS3Service {
         let (final_sha_trans, final_sha_recv) = HashingTransformer::new(Sha256::new());
         let (final_size_trans, final_size_recv) = SizeProbe::new();
 
-        let mut md5_initial: Option<String> = None;
-        let mut sha_initial: Option<String> = None;
         let sha_final: String;
         let initial_size: u64;
         let final_size: u64;
@@ -314,11 +314,12 @@ impl S3 for ArunaS3Service {
             None => return Err(s3_error!(InvalidRequest, "Empty body is not allowed")),
         }
 
-        if let Some(missing) = missing_resources {
-            let collection_id = if let Some(collection) = missing.c {
+        // Create missing parent resources
+        if let Some(missing) = &missing_resources {
+            let collection_id = if let Some(collection) = &missing.c {
                 let col = ProxyObject {
                     id: DieselUlid::default(),
-                    name: collection,
+                    name: collection.to_string(),
                     key_values: vec![],
                     object_status: Status::Available,
                     data_class: DataClass::Private,
@@ -351,7 +352,7 @@ impl S3 for ArunaS3Service {
                 res_ids.get_collection()
             };
 
-            let dataset_id = if let Some(dataset) = missing.d {
+            let dataset_id = if let Some(dataset) = &missing.d {
                 let parent = if let Some(collection_id) = collection_id {
                     TypedRelation::Collection(collection_id)
                 } else {
@@ -360,7 +361,7 @@ impl S3 for ArunaS3Service {
 
                 let dataset = ProxyObject {
                     id: DieselUlid::generate(),
-                    name: dataset,
+                    name: dataset.to_string(),
                     key_values: vec![],
                     object_status: Status::Available,
                     data_class: DataClass::Private,
@@ -400,55 +401,106 @@ impl S3 for ArunaS3Service {
                     res_ids.get_project(),
                 )]));
             }
+        }
 
-            md5_initial = Some(
-                initial_md5_recv
-                    .try_recv()
-                    .map_err(|_| s3_error!(InternalError, "Unable to md5 hash initial data"))?,
-            );
-            sha_initial = Some(
-                initial_sha_recv
-                    .try_recv()
-                    .map_err(|_| s3_error!(InternalError, "Unable to sha hash initial data"))?,
-            );
-            sha_final = final_sha_recv
+        // Fetch calculated hashes
+        let md5_initial = Some(
+            initial_md5_recv
                 .try_recv()
-                .map_err(|_| s3_error!(InternalError, "Unable to md5 hash final data"))?;
-            initial_size = initial_size_recv
+                .map_err(|_| s3_error!(InternalError, "Unable to md5 hash initial data"))?,
+        );
+        let sha_initial = Some(
+            initial_sha_recv
                 .try_recv()
-                .map_err(|_| s3_error!(InternalError, "Unable to get size"))?;
-            final_size = final_size_recv
-                .try_recv()
-                .map_err(|_| s3_error!(InternalError, "Unable to get size"))?;
+                .map_err(|_| s3_error!(InternalError, "Unable to sha hash initial data"))?,
+        );
+        sha_final = final_sha_recv
+            .try_recv()
+            .map_err(|_| s3_error!(InternalError, "Unable to sha hash final data"))?;
+        initial_size = initial_size_recv
+            .try_recv()
+            .map_err(|_| s3_error!(InternalError, "Unable to get size"))?;
+        final_size = final_size_recv
+            .try_recv()
+            .map_err(|_| s3_error!(InternalError, "Unable to get size"))?;
 
-            object.hashes = vec![
-                (
-                    "MD5".to_string(),
-                    md5_initial.clone().ok_or_else(|| {
-                        s3_error!(InternalError, "Unable to get md5 hash initial data")
-                    })?,
-                ),
-                (
-                    "SHA256".to_string(),
-                    sha_initial.clone().ok_or_else(|| {
-                        s3_error!(InternalError, "Unable to get sha hash initial data")
-                    })?,
-                ),
-            ]
-            .into_iter()
-            .collect::<HashMap<String, String>>();
-            location.raw_content_len = initial_size as i64;
-            location.disk_content_len = final_size as i64;
-            location.disk_hash = Some(sha_final.clone());
+        object.hashes = vec![
+            (
+                "MD5".to_string(),
+                md5_initial.clone().ok_or_else(|| {
+                    s3_error!(InternalError, "Unable to get md5 hash initial data")
+                })?,
+            ),
+            (
+                "SHA256".to_string(),
+                sha_initial.clone().ok_or_else(|| {
+                    s3_error!(InternalError, "Unable to get sha hash initial data")
+                })?,
+            ),
+        ]
+        .into_iter()
+        .collect::<HashMap<String, String>>();
 
-            if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
-                if let Some(token) = &impersonating_token {
+        let hashes = vec![
+            Hash {
+                alg: Hashalgorithm::Sha256.into(),
+                hash: sha_initial.clone().ok_or_else(|| {
+                    s3_error!(InternalError, "Unable to get sha hash initial data")
+                })?,
+            },
+            Hash {
+                alg: Hashalgorithm::Md5.into(),
+                hash: md5_initial.clone().ok_or_else(|| {
+                    s3_error!(InternalError, "Unable to get md5 hash initial data")
+                })?,
+            },
+        ];
+
+        location.raw_content_len = initial_size as i64;
+        location.disk_content_len = final_size as i64;
+        location.disk_hash = Some(sha_final.clone());
+
+        if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
+            if let Some(token) = &impersonating_token {
+                if let Some(missing) = missing_resources {
+                    if missing.o.is_some() {
+                        handler
+                            .create_and_finish(object.clone(), location, token)
+                            .await
+                            .map_err(|e| {
+                                log::error!("Create and finish error: {}", e);
+                                s3_error!(InternalError, "Unable to create and/or finish object")
+                            })?;
+                    } else {
+                        handler
+                            .finish_object(
+                                object.id,
+                                location.raw_content_len,
+                                hashes,
+                                Some(location),
+                                token,
+                            )
+                            //.finish_object(object.clone(), location, token)
+                            .await
+                            .map_err(|e| {
+                                log::error!("Finish error: {}", e);
+                                s3_error!(InternalError, "Unable to finish object")
+                            })?;
+                    }
+                } else {
                     handler
-                        .create_and_finish(object.clone(), location, token)
+                        .finish_object(
+                            object.id,
+                            location.raw_content_len,
+                            hashes,
+                            Some(location),
+                            token,
+                        )
+                        //.finish_object(object.clone(), location, token)
                         .await
                         .map_err(|e| {
-                            log::error!("Create and finish error: {}", e);
-                            s3_error!(InternalError, "Unable to create and/or finish object")
+                            log::error!("Finish error: {}", e);
+                            s3_error!(InternalError, "Unable to finish object")
                         })?;
                 }
             }
@@ -875,13 +927,11 @@ impl S3 for ArunaS3Service {
 
         if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
             if let Some(token) = &impersonating_token {
+                // Set id of new location to object id to satisfy FK constraint
                 let object = handler
-                    .finish_object(object.id, new_location.raw_content_len, hashes, token)
+                    .finish_object(object.id, new_location.raw_content_len, hashes, None, token)
                     .await
                     .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
-
-                // Set id of new location to object id to satisfy FK constraint
-                new_location.id = object.id;
 
                 self.cache
                     .upsert_object(object, Some(new_location))
