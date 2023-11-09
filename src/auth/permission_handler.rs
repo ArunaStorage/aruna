@@ -47,9 +47,6 @@ impl PermissionHandler {
 
         // Individual permission checking if token is signed from Dataproxy
         if is_proxy {
-            // Add Dataproxy context
-            //ctxs.push(Context::proxy());
-
             return if let Some(intent) = proxy_intent {
                 if intent.action == Action::Impersonate {
                     //Case 1: Impersonate

@@ -46,6 +46,11 @@ pub async fn main() -> Result<()> {
     // Init logger
     SimpleLogger::new()
         .with_level(log::LevelFilter::Debug)
+        .with_module_level("async_nats", log::LevelFilter::Error)
+        .with_module_level("h2", log::LevelFilter::Error)
+        .with_module_level("hyper", log::LevelFilter::Error)
+        .with_module_level("isahc", log::LevelFilter::Error)
+        .with_module_level("tokio_postgres", log::LevelFilter::Error)
         .env()
         .init()?;
 
