@@ -57,7 +57,7 @@ impl AuthorizationService for AuthorizationServiceImpl {
                     user_id,
                     resource_id,
                     &obj.object.name,
-                    obj.into_object_mapping(tonic_invalid!(
+                    obj.as_object_mapping(tonic_invalid!(
                         DbPermissionLevel::try_from(request.get_ref().permission_level),
                         "Invalid permission level"
                     )),
@@ -233,7 +233,7 @@ impl AuthorizationService for AuthorizationServiceImpl {
             .cache
             .get_object(&resource_id)
             .ok_or_else(|| tonic::Status::not_found("Object does not exist"))?
-            .into_object_mapping::<DbPermissionLevel>(permission_level);
+            .as_object_mapping::<DbPermissionLevel>(permission_level);
 
         // Update resource permission of user
         let user = tonic_internal!(

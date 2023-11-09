@@ -528,7 +528,7 @@ impl EventNotificationService for NotificationServiceImpl {
         // Check empty permission context just to validate registered and active user
         let _test = tonic_auth!(
             self.authorizer
-                .check_permissions(&token, vec![Context::default()])
+                .check_permissions(&token, vec![Context::registered()])
                 .await,
             "Permission denied"
         );
@@ -655,7 +655,7 @@ fn extract_context_event_type_from_target(
 
             (context, event_type)
         }
-        Target::Anouncements(_) => (Context::default(), EventType::Announcement(None)),
+        Target::Announcements(_) => (Context::registered(), EventType::Announcement(None)),
         Target::All(_) => (Context::proxy(), EventType::All),
     })
 }
@@ -704,7 +704,7 @@ impl TryInto<Context> for EventType {
                 tonic_invalid!(DieselUlid::from_str(&user_id), "Invalid user id"),
                 DbPermissionLevel::READ,
             )),
-            EventType::Announcement(_) => Ok(Context::default()),
+            EventType::Announcement(_) => Ok(Context::registered()),
             EventType::All => Ok(Context::proxy()),
         }
     }

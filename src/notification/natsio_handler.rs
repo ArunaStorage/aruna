@@ -2,10 +2,10 @@ use std::collections::hash_map::RandomState;
 use std::collections::HashSet;
 use std::time::Duration;
 
-use aruna_rust_api::api::notification::services::v2::anouncement_event::EventVariant as AnnouncementVariant;
+use aruna_rust_api::api::notification::services::v2::announcement_event::EventVariant as AnnouncementVariant;
 use aruna_rust_api::api::notification::services::v2::event_message::MessageVariant;
 use aruna_rust_api::api::notification::services::v2::{
-    AnouncementEvent, EventVariant, Reply, Resource, ResourceEvent, UserEvent,
+    AnnouncementEvent, EventVariant, Reply, Resource, ResourceEvent, UserEvent,
 };
 
 use aruna_rust_api::api::storage::models::v2::{ResourceVariant, User as ApiUser};
@@ -327,10 +327,7 @@ impl NatsIoHandler {
     ) -> anyhow::Result<()> {
         // Calculate resource checksum
         let resource_checksum = tonic_internal!(
-            checksum_resource(tonic_internal!(
-                object.clone().try_into(),
-                "Proto conversion failed"
-            )),
+            checksum_resource(object.clone().into(),),
             "Checksum calculation failed"
         );
 
@@ -411,7 +408,7 @@ impl NatsIoHandler {
 
         // Emit message
         self.register_event(
-            MessageVariant::AnnouncementEvent(AnouncementEvent {
+            MessageVariant::AnnouncementEvent(AnnouncementEvent {
                 reply: None,
                 event_variant: Some(announcement_type),
             }),

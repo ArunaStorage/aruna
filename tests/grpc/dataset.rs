@@ -45,8 +45,8 @@ async fn grpc_create_dataset() {
         relations: vec![],
         data_class: DataClass::Private as i32,
         parent: Some(Parent::ProjectId(project.id.to_string())),
-        default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
-        metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        default_data_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
+        metadata_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
     };
     let grpc_request = add_token(Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
 
@@ -159,7 +159,7 @@ async fn grpc_get_dataset() {
         dataset_id: DieselUlid::generate().to_string(),
     };
 
-    let tokenless_request = add_token(tonic::Request::new(get_request.clone()), ADMIN_OIDC_TOKEN);
+    let tokenless_request = add_token(Request::new(get_request.clone()), ADMIN_OIDC_TOKEN);
 
     let response = dataset_service.get_dataset(tokenless_request).await;
 
@@ -169,20 +169,20 @@ async fn grpc_get_dataset() {
     get_request.dataset_id = dataset.id.clone();
 
     let response = dataset_service
-        .get_dataset(tonic::Request::new(get_request.clone()))
+        .get_dataset(Request::new(get_request.clone()))
         .await;
 
     assert!(response.is_err());
 
     // Get Dataset without permissions
-    let grpc_request = add_token(tonic::Request::new(get_request.clone()), USER1_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(get_request.clone()), USER1_OIDC_TOKEN);
 
     let response = dataset_service.get_dataset(grpc_request).await;
 
     assert!(response.is_err());
 
     // Get Dataset with permissions
-    let grpc_request = add_token(tonic::Request::new(get_request.clone()), USER1_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(get_request.clone()), USER1_OIDC_TOKEN);
 
     fast_track_grpc_permission_add(
         &auth_service,
@@ -258,7 +258,7 @@ async fn grpc_get_datasets() {
         ],
     };
 
-    let tokenless_request = add_token(tonic::Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
+    let tokenless_request = add_token(Request::new(inner_request.clone()), ADMIN_OIDC_TOKEN);
 
     let response = dataset_service.get_datasets(tokenless_request).await;
 
@@ -268,13 +268,13 @@ async fn grpc_get_datasets() {
     inner_request.dataset_ids = vec![dataset_01_ulid.to_string(), dataset_02_ulid.to_string()];
 
     let response = dataset_service
-        .get_datasets(tonic::Request::new(inner_request.clone()))
+        .get_datasets(Request::new(inner_request.clone()))
         .await;
 
     assert!(response.is_err());
 
     // Get Dataset without permissions
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = dataset_service.get_datasets(grpc_request).await;
 
@@ -290,7 +290,7 @@ async fn grpc_get_datasets() {
     )
     .await;
 
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let response = dataset_service.get_datasets(grpc_request).await;
 
@@ -306,7 +306,7 @@ async fn grpc_get_datasets() {
     )
     .await;
 
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER1_OIDC_TOKEN);
 
     let proto_datasets = dataset_service
         .get_datasets(grpc_request)

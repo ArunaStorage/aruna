@@ -28,6 +28,40 @@ use url::Url;
 pub struct PresignedUpload(pub GetUploadUrlRequest);
 pub struct PresignedDownload(pub GetDownloadUrlRequest);
 impl DatabaseHandler {
+    pub async fn get_s3_credentials(
+        &self,
+        cache: Arc<Cache>,
+        authorizer: Arc<PermissionHandler>,
+        object_id: DieselUlid,
+        user_id: DieselUlid,
+        token_id: Option<DieselUlid>,
+    ) -> Result<GetCredentialsResponse> {
+        let (project_id, ..) = DatabaseHandler::get_path(object_id, cache.clone()).await?;
+        let endpoint = self.get_project_endpoint(project_id, cache.clone()).await?;
+        dbg!("endpoint");
+
+        // Not sure if this is needed
+        // Check if user trusts endpoint
+        let user = cache
+            .get_user(&user_id)
+            .ok_or_else(|| anyhow!("User not found"))?;
+        if !user
+            .attributes
+            .0
+            .trusted_endpoints
+            .contains_key(&endpoint.id)
+        {
+            return Err(anyhow!("User does not trust endpoint"));
+        }
+        let (_, _, _, credentials) = DatabaseHandler::get_credentials(
+            authorizer.clone(),
+            user_id,
+            token_id,
+            endpoint.clone(),
+        )
+        .await?;
+        Ok(credentials)
+    }
     pub async fn get_presigned_download_with_credentials(
         &self,
         cache: Arc<Cache>,

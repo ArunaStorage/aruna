@@ -20,7 +20,7 @@ $Runtime run -d --name meili --rm -p 7700:7700 -e MEILI_MASTER_KEY='MASTER_KEY' 
 $Runtime run -d --name yugabyte -p5433:5433 yugabytedb/yugabyte:2.19.2.0-b121 bin/yugabyted start\
  --tserver_flags="enable_wait_queues=true,enable_deadlock_detection=true,yb_enable_read_committed_isolation=true" --daemon=false
 
-until [ "${Runtime} inspect -f {{.State.Running}} yugabyte"=="true" ]; do
+until [ "${Runtime} inspect -f {{.State.Running}} yugabyte" == "true" ]; do
     echo "Waiting for container startup ..."
     sleep 1;
 done;

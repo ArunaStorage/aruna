@@ -1,5 +1,6 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
 
+use crate::database::dsls::object_dsl::KeyValue;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
@@ -7,7 +8,7 @@ use aruna_rust_api::api::storage::models::v2::relation::Relation;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use postgres_from_row::FromRow;
-use postgres_types::{FromSql, Json, ToSql};
+use postgres_types::{FromSql, Json};
 use serde::{Deserialize, Serialize};
 use tokio_postgres::Client;
 
@@ -18,9 +19,10 @@ pub struct Hook {
     pub description: String,
     pub project_ids: Vec<DieselUlid>,
     pub owner: DieselUlid,
-    pub trigger_type: TriggerType,
-    pub trigger_key: String,
-    pub trigger_value: String,
+    pub trigger: Json<Trigger>,
+    //pub trigger_type: TriggerType,
+    //pub trigger_key: String,
+    //pub trigger_value: String,
     pub timeout: NaiveDateTime,
     pub hook: Json<HookVariant>,
 }
@@ -45,11 +47,27 @@ pub enum Method {
     POST,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Trigger {
+    pub variant: TriggerVariant,
+    pub filter: Vec<Filter>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Filter {
+    Name(String),
+    KeyValue(KeyValue),
+    // TODO: ObjectStatus & ObjectType
+}
 #[allow(non_camel_case_types)]
-#[derive(Clone, Debug, Serialize, Deserialize, FromSql, ToSql, PartialEq, Eq)]
-pub enum TriggerType {
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TriggerVariant {
     HOOK_ADDED,
-    OBJECT_CREATED,
+    RESOURCE_CREATED,
+    LABEL_ADDED,
+    STATIC_LABEL_ADDED,
+    HOOK_STATUS_CHANGED,
+    OBJECT_FINISHED,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -75,7 +93,7 @@ pub struct BasicTemplate {
     pub hook_id: DieselUlid,
     pub object: Resource,
     pub secret: String,
-    pub download: String,
+    pub download: Option<String>,
     pub pubkey_serial: i32,
     pub access_key: Option<String>,
     pub secret_key: Option<String>,
@@ -85,7 +103,7 @@ pub struct BasicTemplate {
 pub struct HookStatusValues {
     pub name: String,
     pub status: HookStatusVariant,
-    pub trigger_type: TriggerType,
+    pub trigger: Trigger,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -102,9 +120,7 @@ pub struct HookWithAssociatedProject {
     pub description: String,
     pub project_ids: Vec<DieselUlid>,
     pub owner: DieselUlid,
-    pub trigger_type: TriggerType,
-    pub trigger_key: String,
-    pub trigger_value: String,
+    pub trigger: Json<Trigger>,
     pub timeout: NaiveDateTime,
     pub hook: Json<HookVariant>,
     pub project_id: DieselUlid,
@@ -113,8 +129,8 @@ pub struct HookWithAssociatedProject {
 #[async_trait::async_trait]
 impl CrudDb for Hook {
     async fn create(&mut self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO hooks (id, name, description, project_ids, owner, trigger_type, trigger_key, trigger_value, timeout, hook) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+        let query = "INSERT INTO hooks (id, name, description, project_ids, owner, trigger, timeout, hook) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8
         ) RETURNING *;";
 
         let prepared = client.prepare(query).await?;
@@ -128,9 +144,7 @@ impl CrudDb for Hook {
                     &self.description,
                     &self.project_ids,
                     &self.owner,
-                    &self.trigger_type,
-                    &self.trigger_key,
-                    &self.trigger_value,
+                    &self.trigger,
                     &self.timeout,
                     &self.hook,
                 ],

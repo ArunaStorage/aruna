@@ -38,7 +38,7 @@ impl CreateTemplate {
             ),
             endpoint_ids: Json(
                 self.0
-                    .endpoint_id
+                    .endpoint_ids
                     .iter()
                     .map(|id| DieselUlid::from_str(id).map_err(|_| anyhow!("Invalid id")))
                     .collect::<Result<Vec<DieselUlid>>>()?,
@@ -92,7 +92,7 @@ impl CreateWorkspace {
                 global_admin: false,
                 service_account: true,
                 tokens: DashMap::default(),
-                trusted_endpoints: dashmap::DashMap::from_iter(endpoints),
+                trusted_endpoints: DashMap::from_iter(endpoints),
                 custom_attributes: vec![],
                 permissions: DashMap::from_iter(vec![(
                     workspace_id,

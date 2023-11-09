@@ -78,7 +78,7 @@ impl DatasetService for DatasetServiceImpl {
 
         let (dataset, _) = tonic_internal!(
             self.database_handler
-                .create_resource(self.authorizer.clone(), request, user_id, is_dataproxy)
+                .create_resource(request, user_id, is_dataproxy)
                 .await,
             "Internal database error"
         );
@@ -92,8 +92,7 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let generic_dataset: generic_resource::Resource =
-            tonic_invalid!(dataset.try_into(), "Invalid dataset");
+        let generic_dataset: generic_resource::Resource = dataset.into();
 
         let response = CreateDatasetResponse {
             dataset: Some(generic_dataset.into_inner()?),
@@ -132,8 +131,7 @@ impl DatasetService for DatasetServiceImpl {
             .get_object(&dataset_id)
             .ok_or_else(|| tonic::Status::not_found("Dataset not found"))?;
 
-        let generic_dataset: generic_resource::Resource =
-            tonic_invalid!(res.try_into(), "Invalid dataset");
+        let generic_dataset: generic_resource::Resource = res.into();
 
         let response = GetDatasetResponse {
             dataset: Some(generic_dataset.into_inner()?),
@@ -250,8 +248,7 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let dataset: generic_resource::Resource =
-            tonic_internal!(dataset.try_into(), "Dataset conversion error");
+        let dataset: generic_resource::Resource = dataset.into();
 
         let response = UpdateDatasetNameResponse {
             dataset: Some(dataset.into_inner()?),
@@ -293,8 +290,7 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let dataset: generic_resource::Resource =
-            tonic_internal!(dataset.try_into(), "Dataset conversion error");
+        let dataset: generic_resource::Resource = dataset.into();
 
         let response = UpdateDatasetDescriptionResponse {
             dataset: Some(dataset.into_inner()?),
@@ -322,9 +318,7 @@ impl DatasetService for DatasetServiceImpl {
         );
 
         let dataset = tonic_internal!(
-            self.database_handler
-                .update_keyvals(self.authorizer.clone(), request, user_id)
-                .await,
+            self.database_handler.update_keyvals(request, user_id).await,
             "Internal database error."
         );
         self.cache
@@ -337,8 +331,7 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let dataset: generic_resource::Resource =
-            tonic_internal!(dataset.try_into(), "Dataset conversion error");
+        let dataset: generic_resource::Resource = dataset.into();
 
         let response = UpdateDatasetKeyValuesResponse {
             dataset: Some(dataset.into_inner()?),
@@ -381,8 +374,7 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let dataset: generic_resource::Resource =
-            tonic_internal!(dataset.try_into(), "Dataset conversion error");
+        let dataset: generic_resource::Resource = dataset.into();
 
         let response = UpdateDatasetDataClassResponse {
             dataset: Some(dataset.into_inner()?),
@@ -425,13 +417,11 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let dataset: generic_resource::Resource = tonic_internal!(
-            self.cache
-                .get_object(&new_id)
-                .ok_or_else(|| tonic::Status::not_found("Dataset not found"))?
-                .try_into(),
-            "Dataset conversion error"
-        );
+        let dataset: generic_resource::Resource = self
+            .cache
+            .get_object(&new_id)
+            .ok_or_else(|| tonic::Status::not_found("Dataset not found"))?
+            .into();
 
         let response = SnapshotDatasetResponse {
             dataset: Some(dataset.into_inner()?),
@@ -463,8 +453,7 @@ impl DatasetService for DatasetServiceImpl {
             self.database_handler.update_license(request).await,
             "Invalid update license request"
         );
-        let generic_resource: generic_resource::Resource =
-            tonic_internal!(project.try_into(), "Internal resource conversion error");
+        let generic_resource: generic_resource::Resource = project.into();
         let response = UpdateDatasetLicensesResponse {
             dataset: Some(generic_resource.into_inner()?),
         };

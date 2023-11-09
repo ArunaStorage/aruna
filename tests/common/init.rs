@@ -11,9 +11,12 @@ use aruna_server::grpc::projects::ProjectServiceImpl;
 use aruna_server::grpc::relations::RelationsServiceImpl;
 use aruna_server::grpc::search::SearchServiceImpl;
 use aruna_server::grpc::users::UserServiceImpl;
+use aruna_server::hooks;
+use aruna_server::hooks::hook_handler::HookMessage;
 use aruna_server::middlelayer::db_handler::DatabaseHandler;
 use aruna_server::notification::natsio_handler::NatsIoHandler;
 use aruna_server::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes};
+use async_channel::Sender;
 use std::sync::Arc;
 
 use super::test_utils::DEFAULT_ENDPOINT_ULID;
@@ -114,15 +117,25 @@ pub async fn init_search_client() -> Arc<MeilisearchClient> {
 }
 
 #[allow(dead_code)]
-pub async fn init_database_handler_middlelayer() -> DatabaseHandler {
-    let database = init_database().await;
-    let natsio_handler = init_nats_client().await;
-    // Init DatabaseHandler
-    DatabaseHandler {
-        database: database.clone(),
-        natsio_handler,
-        cache: init_cache(database, true).await,
-    }
+pub async fn init_database_handler_middlelayer() -> Arc<DatabaseHandler> {
+    // Init internal components
+    let db = init_database().await;
+    let nats = init_nats_client().await;
+    let cache = init_cache(db.clone(), true).await;
+    let (hook_sender, hook_reciever) = async_channel::unbounded();
+    let db_handler = init_database_handler(db.clone(), nats, cache.clone(), hook_sender).await;
+    let token_handler = init_token_handler(db.clone(), cache.clone()).await;
+    let auth = init_permission_handler(cache.clone(), token_handler).await;
+    let auth_clone = auth.clone();
+    let db_clone = db_handler.clone();
+    tokio::spawn(async move {
+        let hook_executor =
+            hooks::hook_handler::HookHandler::new(hook_reciever, auth_clone, db_clone).await;
+        if let Err(err) = hook_executor.run().await {
+            log::warn!("Hook execution error: {}", err)
+        }
+    });
+    db_handler
 }
 
 #[allow(dead_code)]
@@ -130,12 +143,14 @@ pub async fn init_database_handler(
     db_conn: Arc<Database>,
     nats_handler: Arc<NatsIoHandler>,
     cache: Arc<Cache>,
+    hook_sender: Sender<HookMessage>,
 ) -> Arc<DatabaseHandler> {
     // Init DatabaseHandler
     Arc::new(DatabaseHandler {
         database: db_conn,
         natsio_handler: nats_handler,
         cache,
+        hook_sender,
     })
 }
 
@@ -199,10 +214,25 @@ pub async fn init_project_service() -> ProjectServiceImpl {
     // Init NatsIoHandler
     let nats_client = init_nats_client().await;
 
+    let (hook_sender, hook_reciever) = async_channel::unbounded();
     // Init DatabaseHandler
-    let database_handler =
-        init_database_handler(db_conn.clone(), nats_client.clone(), cache.clone()).await;
-
+    let database_handler = init_database_handler(
+        db_conn.clone(),
+        nats_client.clone(),
+        cache.clone(),
+        hook_sender,
+    )
+    .await;
+    // Init HookExecutor
+    let auth_clone = perm_handler.clone();
+    let db_clone = database_handler.clone();
+    tokio::spawn(async move {
+        let hook_executor =
+            hooks::hook_handler::HookHandler::new(hook_reciever, auth_clone, db_clone).await;
+        if let Err(err) = hook_executor.run().await {
+            log::warn!("Hook execution error: {}", err)
+        }
+    });
     // Init project service
     ProjectServiceImpl::new(
         database_handler,
@@ -325,10 +355,20 @@ pub async fn init_grpc_services() -> (
     let db = init_database().await;
     let nats = init_nats_client().await;
     let cache = init_cache(db.clone(), true).await;
-    let db_handler = init_database_handler(db.clone(), nats, cache.clone()).await;
+    let (hook_sender, hook_reciever) = async_channel::unbounded();
+    let db_handler = init_database_handler(db.clone(), nats, cache.clone(), hook_sender).await;
     let token_handler = init_token_handler(db.clone(), cache.clone()).await;
     let auth = init_permission_handler(cache.clone(), token_handler).await;
     let search = init_search_client().await;
+    let auth_clone = auth.clone();
+    let db_clone = db_handler.clone();
+    tokio::spawn(async move {
+        let hook_executor =
+            hooks::hook_handler::HookHandler::new(hook_reciever, auth_clone, db_clone).await;
+        if let Err(err) = hook_executor.run().await {
+            log::warn!("Hook execution error: {}", err)
+        }
+    });
 
     // Init gRPC service implementations
     (
@@ -372,11 +412,26 @@ pub async fn init_service_block() -> ServiceBlock {
     let db_conn = init_database().await;
     let nats_handler = init_nats_client().await;
     let cache = init_cache(db_conn.clone(), true).await;
-    let db_handler =
-        init_database_handler(db_conn.clone(), nats_handler.clone(), cache.clone()).await;
+    let (hook_sender, hook_reciever) = async_channel::unbounded();
+    let db_handler = init_database_handler(
+        db_conn.clone(),
+        nats_handler.clone(),
+        cache.clone(),
+        hook_sender,
+    )
+    .await;
     let token_handler = init_token_handler(db_conn.clone(), cache.clone()).await;
     let auth_handler = init_permission_handler(cache.clone(), token_handler.clone()).await;
     let search_handler = init_search_client().await;
+    let auth_clone = auth_handler.clone();
+    let db_clone = db_handler.clone();
+    tokio::spawn(async move {
+        let hook_executor =
+            hooks::hook_handler::HookHandler::new(hook_reciever, auth_clone, db_clone).await;
+        if let Err(err) = hook_executor.run().await {
+            log::warn!("Hook execution error: {}", err)
+        }
+    });
 
     // Init gRPC service implementations
     ServiceBlock {

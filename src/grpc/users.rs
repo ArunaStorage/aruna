@@ -476,7 +476,7 @@ impl UserService for UserServiceImpl {
         let user = self
             .cache
             .get_user(&user_id)
-            .ok_or_else(|| tonic::Status::not_found("User not found"))?;
+            .ok_or_else(|| Status::not_found("User not found"))?;
         // Service accounts are not allowed to get additional trusted endpoints
         if user.attributes.0.service_account
             && !user
@@ -485,7 +485,7 @@ impl UserService for UserServiceImpl {
                 .trusted_endpoints
                 .contains_key(&endpoint_ulid)
         {
-            return Err(tonic::Status::unauthenticated(
+            return Err(Status::unauthenticated(
                 "Service accounts are not allowed to add non-predefined endpoints",
             ));
         }
@@ -538,12 +538,12 @@ impl UserService for UserServiceImpl {
         // Check if dataproxy host url is tls
         let dp_endpoint = if endpoint_host_url.starts_with("https") {
             Channel::from_shared(endpoint_host_url)
-                .map_err(|_| tonic::Status::internal("Could not connect to Dataproxy"))?
+                .map_err(|_| Status::internal("Could not connect to Dataproxy"))?
                 .tls_config(ClientTlsConfig::new())
-                .map_err(|_| tonic::Status::internal("Could not connect to Dataproxy"))?
+                .map_err(|_| Status::internal("Could not connect to Dataproxy"))?
         } else {
             Channel::from_shared(endpoint_host_url)
-                .map_err(|_| tonic::Status::internal("Could not connect to Dataproxy"))?
+                .map_err(|_| Status::internal("Could not connect to Dataproxy"))?
         };
 
         let mut dp_conn = tonic_internal!(

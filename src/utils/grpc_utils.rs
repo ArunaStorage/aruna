@@ -134,6 +134,5 @@ pub fn query(cache: &Arc<Cache>, id: &DieselUlid) -> Result<generic_resource::Re
     let owr = cache
         .get_object(id)
         .ok_or_else(|| Status::not_found("Resource not found"))?;
-    owr.try_into()
-        .map_err(|_| Status::internal("Conversion error"))
+    Ok(owr.into())
 }

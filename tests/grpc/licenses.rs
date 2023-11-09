@@ -203,8 +203,8 @@ async fn default_licenses() {
         key_values: Vec::new(),
         relations: Vec::new(),
         data_class: DataClass::Public as i32,
-        metadata_license_tag: String::new(),
-        default_data_license_tag: String::new(),
+        metadata_license_tag: None,
+        default_data_license_tag: None,
         parent: Some(aruna_rust_api::api::storage::services::v2::create_collection_request::Parent::ProjectId(project.id)),
     };
     let collection = services
@@ -234,8 +234,8 @@ async fn default_licenses() {
         key_values: Vec::new(),
         relations: Vec::new(),
         data_class: DataClass::Public as i32,
-        metadata_license_tag: String::new(),
-        default_data_license_tag: second_license_tag.clone(),
+        metadata_license_tag: None,
+        default_data_license_tag: Some(second_license_tag.clone()),
         parent: Some(aruna_rust_api::api::storage::services::v2::create_dataset_request::Parent::CollectionId(collection.id)),
     };
     let dataset = services

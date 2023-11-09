@@ -1,6 +1,4 @@
-use crate::common::init::{
-    init_database_handler_middlelayer, init_permission_handler, init_token_handler,
-};
+use crate::common::init::init_database_handler_middlelayer;
 use crate::common::test_utils;
 use aruna_rust_api::api::storage::models::v2::{Hash, KeyValue as APIKeyValue};
 use aruna_rust_api::api::storage::services::v2::{
@@ -236,11 +234,6 @@ async fn test_update_description() {
 async fn test_update_keyvals() {
     // Init
     let db_handler = init_database_handler_middlelayer().await;
-    let authorizer = init_permission_handler(
-        db_handler.cache.clone(),
-        init_token_handler(db_handler.database.clone(), db_handler.cache.clone()).await,
-    )
-    .await;
     let resources = vec![
         ObjectMapping::PROJECT(DieselUlid::generate()),
         ObjectMapping::COLLECTION(DieselUlid::generate()),
@@ -303,10 +296,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![valid.clone(), static_kv.clone()],
                     remove_key_values: vec![deleted.clone()],
                 });
-                db_handler
-                    .update_keyvals(authorizer.clone(), request, user.id)
-                    .await
-                    .unwrap();
+                db_handler.update_keyvals(request, user.id).await.unwrap();
                 assert!(Object::get(r.id, &client)
                     .await
                     .unwrap()
@@ -328,10 +318,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![],
                     remove_key_values: vec![static_kv.clone()],
                 });
-                assert!(db_handler
-                    .update_keyvals(authorizer.clone(), err, user.id)
-                    .await
-                    .is_err());
+                assert!(db_handler.update_keyvals(err, user.id).await.is_err());
             }
             ObjectType::COLLECTION => {
                 let request = KeyValueUpdate::Collection(UpdateCollectionKeyValuesRequest {
@@ -339,10 +326,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![valid.clone(), static_kv.clone()],
                     remove_key_values: vec![deleted.clone()],
                 });
-                db_handler
-                    .update_keyvals(authorizer.clone(), request, user.id)
-                    .await
-                    .unwrap();
+                db_handler.update_keyvals(request, user.id).await.unwrap();
                 assert!(Object::get(r.id, &client)
                     .await
                     .unwrap()
@@ -364,10 +348,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![],
                     remove_key_values: vec![static_kv.clone()],
                 });
-                assert!(db_handler
-                    .update_keyvals(authorizer.clone(), err, user.id)
-                    .await
-                    .is_err());
+                assert!(db_handler.update_keyvals(err, user.id).await.is_err());
             }
             ObjectType::DATASET => {
                 let request = KeyValueUpdate::Dataset(UpdateDatasetKeyValuesRequest {
@@ -375,10 +356,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![valid.clone(), static_kv.clone()],
                     remove_key_values: vec![deleted.clone()],
                 });
-                db_handler
-                    .update_keyvals(authorizer.clone(), request, user.id)
-                    .await
-                    .unwrap();
+                db_handler.update_keyvals(request, user.id).await.unwrap();
                 assert!(Object::get(r.id, &client)
                     .await
                     .unwrap()
@@ -400,10 +378,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![],
                     remove_key_values: vec![static_kv.clone()],
                 });
-                assert!(db_handler
-                    .update_keyvals(authorizer.clone(), err, user.id)
-                    .await
-                    .is_err());
+                assert!(db_handler.update_keyvals(err, user.id).await.is_err());
             }
             _ => panic!(),
         };
@@ -414,11 +389,6 @@ async fn test_update_keyvals() {
 async fn update_object_test() {
     // Init
     let db_handler = init_database_handler_middlelayer().await;
-    let authorizer = init_permission_handler(
-        db_handler.cache.clone(),
-        init_token_handler(db_handler.database.clone(), db_handler.cache.clone()).await,
-    )
-    .await;
     let object_id = DieselUlid::generate();
     let object_mapping = ObjectMapping::OBJECT(object_id);
     let parent_id = DieselUlid::generate();
@@ -461,12 +431,12 @@ async fn update_object_test() {
         hashes: vec![],
         parent: None,
         force_revision: false,
-        data_license_tag: "".to_string(),
-        metadata_license_tag: "".to_string(),
+        data_license_tag: None,
+        metadata_license_tag: None,
     };
 
     let (updated, is_new) = db_handler
-        .update_grpc_object(authorizer.clone(), update_request, user.id, false)
+        .update_grpc_object(update_request, user.id, false)
         .await
         .unwrap();
     assert!(!is_new);
@@ -496,11 +466,11 @@ async fn update_object_test() {
         }],
         parent: None,
         force_revision: false,
-        data_license_tag: "".to_string(),
-        metadata_license_tag: "".to_string(),
+        data_license_tag: None,
+        metadata_license_tag: None,
     };
     let (new, is_new) = db_handler
-        .update_grpc_object(authorizer.clone(), trigger_new_request, user.id, false)
+        .update_grpc_object(trigger_new_request, user.id, false)
         .await
         .unwrap();
     assert!(is_new);
@@ -522,11 +492,11 @@ async fn update_object_test() {
         hashes: vec![],
         parent: None,
         force_revision: true,
-        metadata_license_tag: "".to_string(),
-        data_license_tag: "".to_string(),
+        metadata_license_tag: None,
+        data_license_tag: None,
     };
     let (new_2, is_new_2) = db_handler
-        .update_grpc_object(authorizer.clone(), force_new_revision, user.id, false)
+        .update_grpc_object(force_new_revision, user.id, false)
         .await
         .unwrap();
     assert!(is_new_2);
@@ -544,20 +514,20 @@ async fn update_object_test() {
         hashes: vec![],
         parent: None,
         force_revision: true,
-        metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
-        data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        metadata_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
+        data_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
     };
     let (license_updated, is_new) = db_handler
-        .update_grpc_object(authorizer.clone(), license_update.clone(), user.id, false)
+        .update_grpc_object(license_update.clone(), user.id, false)
         .await
         .unwrap();
     assert!(is_new);
     assert_eq!(
         license_update.metadata_license_tag,
-        license_updated.object.metadata_license
+        Some(license_updated.object.metadata_license)
     );
     assert_eq!(
         license_update.data_license_tag,
-        license_updated.object.data_license
+        Some(license_updated.object.data_license)
     )
 }

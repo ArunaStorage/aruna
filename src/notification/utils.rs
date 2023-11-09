@@ -1,4 +1,4 @@
-use aruna_rust_api::api::notification::services::v2::{anouncement_event::EventVariant, Reply};
+use aruna_rust_api::api::notification::services::v2::{announcement_event::EventVariant, Reply};
 use base64::{engine::general_purpose, Engine};
 use diesel_ulid::DieselUlid;
 use hmac::{Hmac, Mac};

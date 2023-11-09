@@ -4,8 +4,8 @@ use anyhow::{anyhow, bail};
 use aruna_rust_api::api::storage::models::v2::User as ApiUser;
 use aruna_rust_api::api::{
     notification::services::v2::{
-        anouncement_event::EventVariant as AnnEventVariant, event_message::MessageVariant,
-        AnouncementEvent, EventVariant, ResourceEvent, UserEvent,
+        announcement_event::EventVariant as AnnEventVariant, event_message::MessageVariant,
+        AnnouncementEvent, EventVariant, ResourceEvent, UserEvent,
     },
     storage::models::v2::generic_resource,
 };
@@ -180,8 +180,7 @@ async fn process_resource_event(
             } {
                 if let Some(object_plus) = cache.get_object(&res_ulid) {
                     // Convert to proto and compare checksum
-                    let proto_resource: generic_resource::Resource =
-                        object_plus.clone().try_into()?;
+                    let proto_resource: generic_resource::Resource = object_plus.clone().into();
                     let proto_checksum = checksum_resource(proto_resource.clone())?;
 
                     if proto_checksum != resource.checksum {
@@ -267,7 +266,7 @@ async fn process_user_event(
 }
 
 async fn process_announcement_event(
-    announcement_event: AnouncementEvent,
+    announcement_event: AnnouncementEvent,
     cache: Arc<Cache>,
     database: Arc<Database>,
 ) -> anyhow::Result<()> {

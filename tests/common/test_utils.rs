@@ -152,7 +152,7 @@ pub fn object_from_mapping(
 }
 
 #[allow(dead_code)]
-pub fn add_token<T>(mut req: tonic::Request<T>, token: &str) -> tonic::Request<T> {
+pub fn add_token<T>(mut req: Request<T>, token: &str) -> Request<T> {
     let metadata = req.metadata_mut();
     metadata.append(
         AsciiMetadataKey::from_bytes(b"Authorization").unwrap(),
@@ -273,8 +273,8 @@ pub async fn fast_track_grpc_collection_create(
         relations: vec![],
         data_class: ApiDataClass::Private as i32,
         parent: Some(parent),
-        default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
-        metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        default_data_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
+        metadata_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
     };
 
     let grpc_request = add_token(Request::new(create_request), token);
@@ -312,8 +312,8 @@ pub async fn fast_track_grpc_dataset_create(
         relations: vec![],
         data_class: ApiDataClass::Private as i32,
         parent: Some(parent),
-        default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
-        metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        default_data_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
+        metadata_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
     };
 
     let grpc_request = add_token(Request::new(create_request), token);

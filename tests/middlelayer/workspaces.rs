@@ -15,8 +15,8 @@ use aruna_server::{
     database::{
         crud::CrudDb,
         dsls::{
-            hook_dsl::{Hook, HookVariant, InternalHook},
-            object_dsl::Object,
+            hook_dsl::{Filter, Hook, HookVariant, InternalHook, Trigger, TriggerVariant},
+            object_dsl::{KeyValue, KeyValueVariant, Object},
             user_dsl::User,
         },
         enums::{DataClass, ObjectStatus},
@@ -45,7 +45,7 @@ async fn create_and_delete_template() {
         name: "middlelayer_template_test".to_string(),
         hook_ids: vec![],
         description: "some_desc".to_string(),
-        endpoint_id: vec![],
+        endpoint_ids: vec![],
     });
     let workspace_id = db_handler
         .create_workspace_template(request, user.id)
@@ -76,7 +76,7 @@ async fn get_templates() {
             name: rand_string(10),
             hook_ids: vec![],
             description: rand_string(10),
-            endpoint_id: vec![],
+            endpoint_ids: vec![],
         });
         ids.push(
             db_handler
@@ -101,7 +101,7 @@ async fn create_and_delete_workspace() {
     let client = db_handler.database.get_client().await.unwrap();
     user.create(&client).await.unwrap();
 
-    // TODO: Create & mock endpoints
+    // Create & mock endpoints
     // -> Default endpoint
     let default_endpoint = "01H81W0ZMB54YEP5711Q2BK46V".to_string();
     let default_task = endpoint_mock::start_server("0.0.0.0:50052".parse::<SocketAddr>().unwrap())
@@ -133,9 +133,14 @@ async fn create_and_delete_workspace() {
         description: "".to_string(),
         project_ids: vec![],
         owner: user.id,
-        trigger_type: aruna_server::database::dsls::hook_dsl::TriggerType::OBJECT_CREATED,
-        trigger_key: "some_key".to_string(),
-        trigger_value: "some_value".to_string(),
+        trigger: Json(Trigger {
+            variant: TriggerVariant::RESOURCE_CREATED,
+            filter: vec![Filter::KeyValue(KeyValue {
+                key: "some_key".to_string(),
+                value: "some_value".to_string(),
+                variant: KeyValueVariant::LABEL,
+            })],
+        }),
         timeout: chrono::Utc::now()
             .naive_utc()
             .checked_add_days(chrono::Days::new(1))
@@ -154,7 +159,7 @@ async fn create_and_delete_workspace() {
         name: rand_string(10),
         hook_ids: vec![DieselUlid::generate().to_string()],
         description: rand_string(10),
-        endpoint_id: vec![],
+        endpoint_ids: vec![],
     });
     // -> Template with default endpoint
     let default_endpoint_template = CreateTemplate(CreateWorkspaceTemplateRequest {
@@ -163,7 +168,7 @@ async fn create_and_delete_workspace() {
         name: rand_string(10),
         hook_ids: vec![],
         description: rand_string(10),
-        endpoint_id: vec![],
+        endpoint_ids: vec![],
     });
     // -> Template with custom endpoint
     let custom_endpoint_template = CreateTemplate(CreateWorkspaceTemplateRequest {
@@ -172,7 +177,7 @@ async fn create_and_delete_workspace() {
         name: rand_string(10),
         hook_ids: vec![],
         description: rand_string(10),
-        endpoint_id: vec![ep.id.to_string()],
+        endpoint_ids: vec![ep.id.to_string()],
     });
     assert!(db_handler
         .create_workspace_template(invalid, user.id)
@@ -346,7 +351,7 @@ pub async fn claim_workspace() {
         name: "claim_test".to_string(),
         hook_ids: vec![],
         description: "abc".to_string(),
-        endpoint_id: vec![ep.id.to_string()],
+        endpoint_ids: vec![ep.id.to_string()],
     });
     let template_id = db_handler
         .create_workspace_template(template, creator.id)

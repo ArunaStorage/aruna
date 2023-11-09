@@ -89,7 +89,8 @@ macro_rules! tonic_internal {
     ($result:expr, $message:expr) => {
         $result.map_err(|e| {
             log::error!("{}", e);
-            tonic::Status::internal($message)
+            let msg = format!("{} : {}", $message, e);
+            tonic::Status::internal(msg)
         })?
     };
 }
@@ -99,7 +100,8 @@ macro_rules! tonic_invalid {
     ($result:expr, $message:expr) => {
         $result.map_err(|e| {
             log::error!("{}", e);
-            tonic::Status::invalid_argument($message)
+            let msg = format!("{} : {}", $message, e);
+            tonic::Status::invalid_argument(msg)
         })?
     };
 }
@@ -109,7 +111,8 @@ macro_rules! tonic_auth {
     ($result:expr, $message:expr) => {
         $result.map_err(|e| {
             log::error!("{}", e);
-            tonic::Status::unauthenticated($message)
+            let msg = format!("{} : {}", $message, e);
+            tonic::Status::unauthenticated(msg)
         })?
     };
 }

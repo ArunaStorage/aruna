@@ -47,17 +47,17 @@ impl LicenseService for LicensesServiceImpl {
     ) -> Result<Response<GetLicenseResponse>> {
         log_received!(&request);
 
-        let token = tonic_auth!(
-            get_token_from_md(request.metadata()),
-            "Token authentication error"
-        );
+        //let token = tonic_auth!(
+        //    get_token_from_md(request.metadata()),
+        //    "Token authentication error"
+        //);
 
         let request = request.into_inner();
-        let ctx = Context::self_ctx();
-        tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]).await,
-            "Unauthorized"
-        );
+        // let ctx = Context::self_ctx();
+        // tonic_auth!(
+        //     self.authorizer.check_permissions(&token, vec![ctx]).await,
+        //     "Unauthorized"
+        // );
 
         let license = tonic_internal!(
             self.database_handler.get_license(request.tag).await,
@@ -75,16 +75,16 @@ impl LicenseService for LicensesServiceImpl {
     ) -> Result<Response<ListLicensesResponse>> {
         log_received!(&request);
 
-        let token = tonic_auth!(
-            get_token_from_md(request.metadata()),
-            "Token authentication error"
-        );
+        // let token = tonic_auth!(
+        //     get_token_from_md(request.metadata()),
+        //     "Token authentication error"
+        // );
 
-        let ctx = Context::self_ctx();
-        tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]).await,
-            "Unauthorized"
-        );
+        // let ctx = Context::self_ctx();
+        // tonic_auth!(
+        //     self.authorizer.check_permissions(&token, vec![ctx]).await,
+        //     "Unauthorized"
+        // );
 
         let licenses = tonic_internal!(
             self.database_handler.list_licenses().await,

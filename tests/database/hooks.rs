@@ -1,7 +1,8 @@
 use crate::common::{init, test_utils};
 use aruna_server::database::dsls::hook_dsl::{
-    Hook, HookVariant, HookWithAssociatedProject, TriggerType,
+    Filter, Hook, HookVariant, HookWithAssociatedProject, Trigger, TriggerVariant,
 };
+use aruna_server::database::dsls::object_dsl::{KeyValue, KeyValueVariant};
 use aruna_server::database::enums::ObjectType;
 use aruna_server::database::{crud::CrudDb, enums::ObjectMapping};
 use diesel_ulid::DieselUlid;
@@ -24,9 +25,14 @@ async fn create_hook() {
         description: "SOME_DESCRIPTION".to_string(),
         owner: user.id,
         project_ids: vec![proj_id],
-        trigger_type: TriggerType::HOOK_ADDED,
-        trigger_key: "TEST_KEY".to_string(),
-        trigger_value: "TEST_VALUE".to_string(),
+        trigger: Json(Trigger {
+            variant: TriggerVariant::HOOK_ADDED,
+            filter: vec![Filter::KeyValue(KeyValue {
+                key: "TEST_KEY".to_string(),
+                value: "TEST_VALUE".to_string(),
+                variant: KeyValueVariant::HOOK,
+            })],
+        }),
         timeout: chrono::Utc::now()
             .naive_utc()
             .checked_add_days(chrono::Days::new(1))
@@ -79,9 +85,14 @@ pub async fn get_hooks() {
             description: "SOME_DESCRIPTION".to_string(),
             owner: other_user.id,
             project_ids: projects.clone(),
-            trigger_type: TriggerType::HOOK_ADDED,
-            trigger_key: "TEST_KEY".to_string(),
-            trigger_value: "TEST_VALUE".to_string(),
+            trigger: Json(Trigger {
+                variant: TriggerVariant::HOOK_ADDED,
+                filter: vec![Filter::KeyValue(KeyValue {
+                    key: "TEST_KEY".to_string(),
+                    value: "TEST_VALUE".to_string(),
+                    variant: KeyValueVariant::HOOK,
+                })],
+            }),
             timeout: chrono::Utc::now()
                 .naive_utc()
                 .checked_add_days(chrono::Days::new(1))
@@ -106,9 +117,14 @@ pub async fn get_hooks() {
         description: "SOME_DESCRIPTION".to_string(),
         owner: user.id,
         project_ids: vec![proj_id],
-        trigger_type: TriggerType::HOOK_ADDED,
-        trigger_key: "TEST_KEY".to_string(),
-        trigger_value: "TEST_VALUE".to_string(),
+        trigger: Json(Trigger {
+            variant: TriggerVariant::HOOK_ADDED,
+            filter: vec![Filter::KeyValue(KeyValue {
+                key: "TEST_KEY".to_string(),
+                value: "TEST_VALUE".to_string(),
+                variant: KeyValueVariant::HOOK,
+            })],
+        }),
         timeout: chrono::Utc::now()
             .naive_utc()
             .checked_add_days(chrono::Days::new(1))
@@ -138,9 +154,7 @@ pub async fn get_hooks() {
         description: hook.description.clone(),
         project_ids: hook.project_ids.clone(),
         owner: hook.owner,
-        trigger_type: hook.trigger_type.clone(),
-        trigger_key: hook.trigger_key.clone(),
-        trigger_value: hook.trigger_value.clone(),
+        trigger: hook.trigger.clone(),
         timeout: hook.timeout,
         hook: hook.hook.clone(),
         project_id: proj_id,

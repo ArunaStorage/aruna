@@ -1,27 +1,21 @@
-use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::hook_dsl::{
-    BasicTemplate, Credentials, ExternalHook, Hook, HookStatusValues, HookStatusVariant,
-    HookWithAssociatedProject, TemplateVariant, TriggerType,
+    Filter, Hook, HookStatusValues, HookStatusVariant, HookWithAssociatedProject, TriggerVariant,
 };
-use crate::database::dsls::internal_relation_dsl::InternalRelation;
-use crate::database::dsls::object_dsl::Object;
-use crate::database::dsls::object_dsl::{ExternalRelation, KeyValue, KeyValueVariant};
-use crate::database::dsls::user_dsl::APIToken;
-use crate::database::enums::{ObjectMapping, ObjectStatus, ObjectType};
+use crate::database::dsls::object_dsl::{KeyValue, KeyValueVariant};
+use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
+use crate::database::enums::ObjectMapping;
+use crate::hooks::hook_handler::HookMessage;
 use crate::middlelayer::db_handler::DatabaseHandler;
-use crate::middlelayer::hooks_request_types::{Callback, CreateHook, CustomTemplate};
-use crate::middlelayer::presigned_url_handler::PresignedDownload;
+use crate::middlelayer::hooks_request_types::{Callback, CreateHook};
 use anyhow::{anyhow, Result};
 
 use crate::middlelayer::hooks_request_types::ListBy;
 use aruna_rust_api::api::hooks::services::v2::AddProjectsToHookRequest;
-use aruna_rust_api::api::storage::services::v2::GetDownloadUrlRequest;
 use diesel_ulid::DieselUlid;
-use http::header::CONTENT_TYPE;
 use postgres_types::Json;
+use regex::Regex;
 use std::str::FromStr;
-use std::sync::Arc;
 
 impl DatabaseHandler {
     pub async fn create_hook(&self, request: CreateHook, user_id: &DieselUlid) -> Result<Hook> {
@@ -167,18 +161,7 @@ impl DatabaseHandler {
 
         Ok(())
     }
-
-    pub async fn trigger_on_creation(
-        &self,
-        authorizer: Arc<PermissionHandler>,
-        object_id: DieselUlid,
-        user_id: DieselUlid,
-    ) -> Result<()> {
-        dbg!("Trigger creation triggered");
-        let client = self.database.get_client().await?;
-        dbg!(object_id);
-        let parents = self.cache.upstream_dfs_iterative(&object_id)?;
-        dbg!("THRESHOLD");
+    fn collect_projects(parents: Vec<Vec<ObjectMapping<DieselUlid>>>) -> Vec<DieselUlid> {
         let mut projects: Vec<DieselUlid> = Vec::new();
         for branch in parents {
             projects.append(
@@ -191,254 +174,281 @@ impl DatabaseHandler {
                     .collect(),
             );
         }
-        dbg!("Projects = {:?}", &projects);
-        let hooks: Vec<HookWithAssociatedProject> =
-            Hook::get_hooks_for_projects(&projects, &client)
-                .await?
-                .into_iter()
-                .filter(|h| h.trigger_type == TriggerType::OBJECT_CREATED)
-                .collect();
-
-        if hooks.is_empty() {
-            Ok(())
-        } else {
-            self.hook_action(authorizer.clone(), hooks, object_id, user_id)
-                .await?;
-            Ok(())
-        }
+        projects
     }
-
-    pub async fn trigger_on_append_hook(
+    pub async fn trigger_hooks(
         &self,
-        authorizer: Arc<PermissionHandler>,
+        object: ObjectWithRelations,
         user_id: DieselUlid,
-        object_id: DieselUlid,
-        keyvals: Vec<KeyValue>,
+        triggers: Vec<TriggerVariant>,
+        updated_labels: Option<Vec<KeyValue>>,
     ) -> Result<()> {
-        dbg!("ON_APPEND TRIGGERED");
-        let parents = self.cache.upstream_dfs_iterative(&object_id)?;
-        dbg!(&parents);
-        let mut projects: Vec<DieselUlid> = Vec::new();
-        for branch in parents {
-            projects.append(
-                &mut branch
-                    .iter()
-                    .filter_map(|parent| match parent {
-                        ObjectMapping::PROJECT(id) => Some(*id),
-                        _ => None,
-                    })
-                    .collect(),
-            );
-        }
-        dbg!("Projects = {:?}", &projects);
-        let keyvals: Vec<(String, String)> =
-            keyvals.into_iter().map(|k| (k.key, k.value)).collect();
-        dbg!("KEYVALS: {:?}", &keyvals);
+        dbg!("Trigger hooks started");
         let client = self.database.get_client().await?;
-        let hooks: Vec<HookWithAssociatedProject> =
-            Hook::get_hooks_for_projects(&projects, &client).await?;
-        dbg!("UNFILTERED: {:?}", &hooks);
-        let hooks: Vec<HookWithAssociatedProject> = hooks
-            .into_iter()
-            .filter_map(|h| {
-                if h.trigger_type == TriggerType::HOOK_ADDED {
-                    if keyvals.contains(&(h.trigger_key.clone(), h.trigger_value.clone())) {
-                        Some(h)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-            .collect();
-        dbg!("FILTERED: {:?}", &hooks);
-        if hooks.is_empty() {
-            Ok(())
+        let parents = self.cache.upstream_dfs_iterative(&object.object.id)?;
+        let projects = DatabaseHandler::collect_projects(parents);
+        let labels = if let Some(labels) = &updated_labels {
+            labels
         } else {
-            self.hook_action(authorizer.clone(), hooks, object_id, user_id)
-                .await?;
-            Ok(())
-        }
-    }
+            &object.object.key_values.0 .0
+        };
 
-    async fn hook_action(
-        &self,
-        authorizer: Arc<PermissionHandler>,
-        hooks: Vec<HookWithAssociatedProject>,
-        object_id: DieselUlid,
-        user_id: DieselUlid,
-    ) -> Result<()> {
-        let mut client = self.database.get_client().await?;
-        let mut affected_parents: Vec<DieselUlid> = Vec::new();
-        for hook in hooks {
-            dbg!("Hook: {:?}", &hook);
-            dbg!("ObjectID: {:?}", &object_id);
-            // Add HookStatus to object
-            let mut object = self
-                .cache
-                .get_object(&object_id)
-                .ok_or_else(|| anyhow!("Object not found"))?
-                .clone();
-            let status_value = HookStatusValues {
-                name: hook.name,
-                status: crate::database::dsls::hook_dsl::HookStatusVariant::RUNNING,
-                trigger_type: hook.trigger_type,
-            };
-            let hook_status = KeyValue {
-                key: hook.id.to_string(),
-                value: serde_json::to_string(&status_value)?,
-                variant: KeyValueVariant::HOOK_STATUS,
-            };
-            dbg!("HookStatus: {:?}", &hook_status);
-            object.object.key_values.0 .0.push(hook_status.clone());
-            Object::add_key_value(&object_id, &client, hook_status).await?;
-            self.cache.upsert_object(&object_id, object);
-
-            let transaction = client.transaction().await?;
-            let transaction_client = transaction.client();
-            let affected_parent = match hook.hook.0 {
-                crate::database::dsls::hook_dsl::HookVariant::Internal(internal_hook) => {
-                    match internal_hook {
-                        crate::database::dsls::hook_dsl::InternalHook::AddLabel { key, value } => {
-                            Object::add_key_value(
-                                &object_id,
-                                transaction_client,
-                                KeyValue {
-                                    key,
-                                    value,
-                                    variant: KeyValueVariant::LABEL,
-                                },
-                            )
-                            .await?;
-                            None
-                        }
-                        crate::database::dsls::hook_dsl::InternalHook::AddHook { key, value } => {
-                            Object::add_key_value(
-                                &object_id,
-                                transaction_client,
-                                KeyValue {
-                                    key,
-                                    value,
-                                    variant: KeyValueVariant::HOOK,
-                                },
-                            )
-                            .await?;
-                            None
-                        }
-                        crate::database::dsls::hook_dsl::InternalHook::CreateRelation {
-                            relation,
-                        } => {
-                            match relation {
-                                aruna_rust_api::api::storage::models::v2::relation::Relation::External(external) => {
-                                    let relation: ExternalRelation = (&external).try_into()?;
-                                    Object::add_external_relations(&object_id, transaction_client, vec![relation]).await?;
-                                    None
-                                },
-                                aruna_rust_api::api::storage::models::v2::relation::Relation::Internal(internal) => {
-                                    let affected_parent = Some(DieselUlid::from_str(&internal.resource_id)?);
-                                    let mut internal = InternalRelation::from_api(&internal, object_id, self.cache.clone())?;
-                                    internal.create(transaction_client).await?;
-                                    affected_parent
-                                },
+        // Get hooks that are associated with triggered-object parent-projects
+        let hooks: Vec<HookWithAssociatedProject> = {
+            let mut hooks = Vec::new();
+            // Filter through hooks
+            for h in Hook::get_hooks_for_projects(&projects, &client).await? {
+                // Only get hooks that are triggered
+                if triggers.contains(&h.trigger.0.variant) {
+                    let mut is_match = false;
+                    // Only get hooks that are matched by filter
+                    for filter in h.trigger.0.filter.clone() {
+                        match filter {
+                            Filter::Name(name) => {
+                                let regex = Regex::new(&name)?;
+                                if regex.is_match(&object.object.name) {
+                                    is_match = true;
+                                    break;
+                                } else {
+                                    continue;
+                                }
                             }
-                        }
-                    }
-                }
-                crate::database::dsls::hook_dsl::HookVariant::External(ExternalHook{ url, credentials, template, method }) => {
-                    dbg!("REACHED EXTERNAL TRIGGER");
-                    // Get Object for response
-                    let object = self.cache.get_object(&object_id).ok_or_else(|| anyhow!("Object not found"))?;
-                    if object.object.object_type != ObjectType::OBJECT || object.object.object_status == ObjectStatus::INITIALIZING {
-                        continue
-                    }
-
-                    // Create secret for callback
-                    let (secret, pubkey_serial) = authorizer.token_handler.sign_hook_secret(self.cache.clone(), object_id, hook.id).await?;
-                    // TODO: Only create token when specified in custom template
-                    // Create append only s3-credentials
-                    let append_only_token = APIToken{
-                          pub_key: pubkey_serial,
-                          name: format!("{}-append_only", hook.id),
-                          created_at: chrono::Utc::now().naive_utc(),
-                          expires_at: hook.timeout
-                          ,
-                          object_id: Some(ObjectMapping::PROJECT(hook.project_id)),
-                          user_rights: crate::database::enums::DbPermissionLevel::APPEND,
-                    };
-                    dbg!("Trigger token: {:?}", &append_only_token);
-                    let token_id = self.create_hook_token(&user_id, append_only_token).await?;
-                    dbg!("Trigger token id: {:?}", &token_id);
-
-                    // Create download url for response
-                    let request = PresignedDownload(GetDownloadUrlRequest{ object_id: object_id.to_string()});
-                    let (download, upload_credentials) = self.get_presigned_download_with_credentials(self.cache.clone(), authorizer.clone(), request, user_id, Some(token_id)).await?;
-                    dbg!("Presigned download: {:?}", &download);
-                    let (access_key, secret_key) = match upload_credentials {
-                        Some(ref creds) => (Some(creds.access_key.to_string()), Some(creds.secret_key.to_string())),
-                        None => (None, None)
-                    };
-                    dbg!("Upload creds: ({}, {})", &access_key, &secret_key);
-
-                    // Create & send request
-                    let client = reqwest::Client::new();
-                    let base_request = match method {
-                        crate::database::dsls::hook_dsl::Method::PUT => {
-                            match credentials {
-                                Some(Credentials{token}) => client.put(url).bearer_auth(token),
-                                None => client.put(url),
-                            }
-                        },
-                        crate::database::dsls::hook_dsl::Method::POST => {
-                            match credentials {
-                                Some(Credentials{token}) =>  {
-                                    client.post(url).bearer_auth(token)
-                                },
-                                None => {
-                                    client.post(url)
+                            Filter::KeyValue(KeyValue {
+                                key,
+                                value,
+                                variant,
+                            }) => {
+                                let key_regex = Regex::new(&key)?;
+                                let value_regex = Regex::new(&value)?;
+                                for label in labels {
+                                    if (label.variant == variant)
+                                        && (key_regex.is_match(&label.key))
+                                        && (value_regex.is_match(&label.value))
+                                    {
+                                        is_match = true;
+                                        break;
+                                    } else {
+                                        continue;
+                                    }
                                 }
                             }
                         }
-                    };
-                    // Put everything into template
-                    match template {
-                        TemplateVariant::Basic => {
-                            let json = serde_json::to_string(&BasicTemplate {
-                                hook_id: hook.id,
-                                object: object.try_into()?,
-                                secret,
-                                download,
-                                pubkey_serial,
-                                access_key,
-                                secret_key,
-                            })?;
-                            dbg!("Template: {json}");
-                            let response = base_request.json(&json).send().await?;
-                            dbg!("External hook response: {:?}", response);
-                        }
-                        TemplateVariant::Custom(template) => {
-                            let template = CustomTemplate::create_custom_template(template, hook.id, &object.object, secret, download, upload_credentials, pubkey_serial)?;
-                            let response = base_request.header(CONTENT_TYPE, "text/plain").body(template).send().await?;
-                            dbg!("Custom template hook response: {:?}", response);
-                        },
-                    };
-                    None
+                    }
+                    if is_match {
+                        hooks.push(h)
+                    }
                 }
-            };
-            if let Some(p) = affected_parent {
-                affected_parents.push(p);
             }
-            transaction.commit().await?;
-        }
-        let updated = Object::get_object_with_relations(&object_id, &client).await?;
-        if !affected_parents.is_empty() {
-            let mut affected =
-                Object::get_objects_with_relations(&affected_parents, &client).await?;
-            affected.push(updated);
-            for object in affected {
-                self.cache.upsert_object(&object.object.id.clone(), object);
+            hooks
+        };
+        if hooks.is_empty() {
+            Ok(())
+        } else {
+            for hook in hooks {
+                let message = HookMessage {
+                    hook,
+                    object: object.clone(),
+                    user_id,
+                };
+                self.hook_sender.send(message).await?;
             }
+            Ok(())
         }
-        Ok(())
     }
+
+    // async fn hook_action(
+    //     &self,
+    //     authorizer: Arc<PermissionHandler>,
+    //     hooks: Vec<HookWithAssociatedProject>,
+    //     object: ObjectWithRelations,
+    //     user_id: DieselUlid,
+    // ) -> Result<()> {
+    //     let mut client = self.database.get_client().await?;
+    //     let mut affected_parents: Vec<DieselUlid> = Vec::new();
+    //     for hook in hooks {
+    //         dbg!("Hook: {:?}", &hook);
+    //         let mut object = object.clone();
+    //         let status_value = HookStatusValues {
+    //             name: hook.name,
+    //             status: HookStatusVariant::RUNNING,
+    //             trigger: hook.trigger.0.clone(),
+    //         };
+    //         let hook_status = KeyValue {
+    //             key: hook.id.to_string(),
+    //             value: serde_json::to_string(&status_value)?,
+    //             variant: KeyValueVariant::HOOK_STATUS,
+    //         };
+    //         dbg!("HookStatus: {:?}", &hook_status);
+    //         object.object.key_values.0 .0.push(hook_status.clone());
+    //         Object::add_key_value(&object.object.id, &client, hook_status).await?;
+    //         let object_id = object.object.id;
+    //         self.cache.upsert_object(&object.object.id, object.clone());
+
+    //         let transaction = client.transaction().await?;
+    //         let transaction_client = transaction.client();
+    //         let affected_parent = match hook.hook.0 {
+    //             crate::database::dsls::hook_dsl::HookVariant::Internal(internal_hook) => {
+    //                 match internal_hook {
+    //                     crate::database::dsls::hook_dsl::InternalHook::AddLabel { key, value } => {
+    //                         Object::add_key_value(
+    //                             &object_id,
+    //                             transaction_client,
+    //                             KeyValue {
+    //                                 key,
+    //                                 value,
+    //                                 variant: KeyValueVariant::LABEL,
+    //                             },
+    //                         )
+    //                         .await?;
+    //                         None
+    //                     }
+    //                     crate::database::dsls::hook_dsl::InternalHook::AddHook { key, value } => {
+    //                         Object::add_key_value(
+    //                             &object_id,
+    //                             transaction_client,
+    //                             KeyValue {
+    //                                 key,
+    //                                 value,
+    //                                 variant: KeyValueVariant::HOOK,
+    //                             },
+    //                         )
+    //                         .await?;
+    //                         None
+    //                     }
+    //                     crate::database::dsls::hook_dsl::InternalHook::CreateRelation {
+    //                         relation,
+    //                     } => {
+    //                         match relation {
+    //                             aruna_rust_api::api::storage::models::v2::relation::Relation::External(external) => {
+    //                                 let relation: ExternalRelation = (&external).try_into()?;
+    //                                 Object::add_external_relations(&object_id, transaction_client, vec![relation]).await?;
+    //                                 None
+    //                             },
+    //                             aruna_rust_api::api::storage::models::v2::relation::Relation::Internal(internal) => {
+    //                                 let affected_parent = Some(DieselUlid::from_str(&internal.resource_id)?);
+    //                                 let mut internal = InternalRelation::from_api(&internal, object_id, self.cache.clone())?;
+    //                                 internal.create(transaction_client).await?;
+    //                                 affected_parent
+    //                             },
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //             crate::database::dsls::hook_dsl::HookVariant::External(ExternalHook{ url, credentials, template, method }) => {
+
+    //                 // This creates only presigned download urls for available objects.
+    //                 // If ObjectType is not OBJECT, only s3 credentials are generated.
+    //                 // This should allow for generic external hooks that can also be
+    //                 // triggered for other ObjectTypes than OBJECTs
+    //                 let (secret,
+    //                     download,
+    //                     pubkey_serial,
+    //                     upload_credentials) =
+    //                 match (object.object.object_type, &object.object.object_status) {
+    //                     // Get download url and s3-credentials for upload
+    //                     (ObjectType::OBJECT, ObjectStatus::AVAILABLE) => {
+    //                         let (secret, pubkey_serial) = authorizer.token_handler.sign_hook_secret(self.cache.clone(), object_id, hook.id).await?;
+    //                         // Create append only s3-credentials
+    //                         let append_only_token = APIToken{
+    //                             pub_key: pubkey_serial,
+    //                             name: format!("{}-append_only", hook.id),
+    //                             created_at: chrono::Utc::now().naive_utc(),
+    //                             expires_at: hook.timeout,
+    //                             // TODO: Custom resource permissions for hooks
+    //                             object_id: Some(ObjectMapping::PROJECT(hook.project_id)),
+    //                             user_rights: crate::database::enums::DbPermissionLevel::APPEND,
+    //                         };
+    //                         let token_id = self.create_hook_token(&user_id, append_only_token).await?;
+
+    //                         // Create download url for response
+    //                         let request = PresignedDownload(GetDownloadUrlRequest{ object_id: object_id.to_string()});
+    //                         let (download, upload_credentials) = self.get_presigned_download_with_credentials(self.cache.clone(), authorizer.clone(), request, user_id, Some(token_id)).await?;
+    //                         let download = Some(download);
+    //                         (secret, download, pubkey_serial, upload_credentials)
+    //                     },
+    //                     // Get only s3-credentials for upload
+    //                     (_,_) => {
+    //                         let (secret, pubkey_serial) = authorizer.token_handler.sign_hook_secret(self.cache.clone(), object_id, hook.id).await?;
+    //                         // Create append only s3-credentials
+    //                         let append_only_token = APIToken{
+    //                             pub_key: pubkey_serial,
+    //                             name: format!("{}-append_only", hook.id),
+    //                             created_at: chrono::Utc::now().naive_utc(),
+    //                             expires_at: hook.timeout,
+    //                             // TODO: Custom resource permissions for hooks
+    //                             object_id: Some(ObjectMapping::PROJECT(hook.project_id)),
+    //                             user_rights: crate::database::enums::DbPermissionLevel::APPEND,
+    //                         };
+    //                         let token_id = self.create_hook_token(&user_id, append_only_token).await?;
+    //                         // Create download url for response
+    //                         let upload_credentials = self.get_s3_credentials(self.cache.clone(), authorizer.clone(), object_id, user_id, Some(token_id)).await?;
+    //                         (secret, None, pubkey_serial, Some(upload_credentials))
+    //                     }
+    //                 };
+    //                 let (access_key, secret_key) = match upload_credentials {
+    //                             Some(ref creds) => (Some(creds.access_key.to_string()), Some(creds.secret_key.to_string())),
+    //                             None => (None, None)
+    //                 };
+
+    //                 // Create & send request
+    //                 let client = reqwest::Client::new();
+    //                 let base_request = match method {
+    //                     crate::database::dsls::hook_dsl::Method::PUT => {
+    //                         match credentials {
+    //                             Some(Credentials{token}) => client.put(url).bearer_auth(token),
+    //                             None => client.put(url),
+    //                         }
+    //                     },
+    //                     crate::database::dsls::hook_dsl::Method::POST => {
+    //                         match credentials {
+    //                             Some(Credentials{token}) =>  {
+    //                                 client.post(url).bearer_auth(token)
+    //                             },
+    //                             None => {
+    //                                 client.post(url)
+    //                             }
+    //                         }
+    //                     }
+    //                 };
+    //                 // Put everything into template
+    //                 match template {
+    //                     TemplateVariant::Basic => {
+    //                         let json = serde_json::to_string(&BasicTemplate {
+    //                             hook_id: hook.id,
+    //                             object: object.try_into()?,
+    //                             secret,
+    //                             download,
+    //                             pubkey_serial,
+    //                             access_key,
+    //                             secret_key,
+    //                         })?;
+    //                         dbg!("Template: {json}");
+    //                         let response = base_request.json(&json).send().await?;
+    //                         dbg!("External hook response: {:?}", response);
+    //                     }
+    //                     TemplateVariant::Custom(template) => {
+    //                         let template = CustomTemplate::create_custom_template(template, hook.id, &object.object, secret, download, upload_credentials, pubkey_serial)?;
+    //                         let response = base_request.header(CONTENT_TYPE, "text/plain").body(template).send().await?;
+    //                         dbg!("Custom template hook response: {:?}", response);
+    //                     },
+    //                 };
+    //                 None
+    //             }
+    //         };
+    //         if let Some(p) = affected_parent {
+    //             affected_parents.push(p);
+    //         }
+    //         transaction.commit().await?;
+    //     }
+    //     let updated = Object::get_object_with_relations(&object.object.id, &client).await?;
+    //     if !affected_parents.is_empty() {
+    //         let mut affected =
+    //             Object::get_objects_with_relations(&affected_parents, &client).await?;
+    //         affected.push(updated);
+    //         for object in affected {
+    //             self.cache.upsert_object(&object.object.id.clone(), object);
+    //         }
+    //     }
+    //     Ok(())
+    // }
 }

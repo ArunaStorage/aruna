@@ -200,7 +200,7 @@ impl SearchService for SearchServiceImpl {
         };
 
         // Convert to proto resource
-        let generic_object: Resource = tonic_invalid!(object_plus.try_into(), "Invalid object");
+        let generic_object: Resource = object_plus.into();
 
         // Create response and return with log
         let response = GetResourceResponse {
@@ -343,14 +343,14 @@ impl SearchService for SearchServiceImpl {
         let resources = objects
             .into_iter()
             .map(|(object, permission)| {
-                Ok::<ResourceWithPermission, tonic::Status>(ResourceWithPermission {
+                Ok::<ResourceWithPermission, Status>(ResourceWithPermission {
                     resource: Some(GenericResource {
-                        resource: Some(tonic_invalid!(object.try_into(), "Invalid object")),
+                        resource: Some(object.into()),
                     }),
-                    permission: tonic_invalid!(permission.try_into(), "Invalid permission"),
+                    permission: permission.into(),
                 })
             })
-            .collect::<Result<Vec<ResourceWithPermission>, tonic::Status>>()?;
+            .collect::<Result<Vec<ResourceWithPermission>, Status>>()?;
 
         // Create response and return with log
         let response = GetResourcesResponse { resources };

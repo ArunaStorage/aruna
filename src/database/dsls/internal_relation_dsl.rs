@@ -187,7 +187,7 @@ impl InternalRelation {
         Ok(())
     }
 
-    pub fn into_origin_object_mapping(&self) -> ObjectMapping<DieselUlid> {
+    pub fn as_origin_object_mapping(&self) -> ObjectMapping<DieselUlid> {
         match self.origin_type {
             ObjectType::PROJECT => ObjectMapping::PROJECT(self.origin_pid),
             ObjectType::COLLECTION => ObjectMapping::COLLECTION(self.origin_pid),
@@ -196,7 +196,7 @@ impl InternalRelation {
         }
     }
 
-    pub fn into_target_object_mapping(&self) -> ObjectMapping<DieselUlid> {
+    pub fn as_target_object_mapping(&self) -> ObjectMapping<DieselUlid> {
         match self.target_type {
             ObjectType::PROJECT => ObjectMapping::PROJECT(self.target_pid),
             ObjectType::COLLECTION => ObjectMapping::COLLECTION(self.target_pid),

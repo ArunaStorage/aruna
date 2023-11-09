@@ -1,7 +1,7 @@
 use crate::auth::permission_handler::PermissionHandler;
 use crate::caching::cache::Cache;
 use crate::database::dsls::hook_dsl::{
-    ExternalHook, Hook, InternalHook, TemplateVariant, TriggerType,
+    ExternalHook, Filter, Hook, InternalHook, TemplateVariant, Trigger, TriggerVariant,
 };
 use crate::database::dsls::object_dsl::{KeyValue, KeyValueVariant, KeyValues, Object};
 use crate::database::enums::{DataClass, ObjectStatus};
@@ -14,9 +14,9 @@ use aruna_rust_api::api::hooks::services::v2::{internal_hook::InternalAction, Ad
 use aruna_rust_api::api::hooks::services::v2::{
     HookCallbackRequest, ListProjectHooksRequest, Method,
 };
-
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
+use postgres_types::Json;
 use regex::{Regex, RegexSet};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -42,14 +42,64 @@ impl ListBy {
 pub struct Callback(pub HookCallbackRequest);
 
 impl CreateHook {
-    fn get_trigger(&self) -> Result<(TriggerType, String, String)> {
+    fn get_trigger(&self) -> Result<Trigger> {
         match self.0.trigger.clone() {
             Some(trigger) => match trigger.trigger_type() {
-                aruna_rust_api::api::hooks::services::v2::TriggerType::HookAdded => {
-                    Ok((TriggerType::HOOK_ADDED, trigger.key, trigger.value))
+                aruna_rust_api::api::hooks::services::v2::TriggerType::HookAdded => Ok(Trigger {
+                    variant: TriggerVariant::HOOK_ADDED,
+                    filter: trigger
+                        .filters
+                        .into_iter()
+                        .map(|f| f.try_into())
+                        .collect::<Result<Vec<Filter>>>()?,
+                }),
+                aruna_rust_api::api::hooks::services::v2::TriggerType::ResourceCreated => {
+                    Ok(Trigger {
+                        variant: TriggerVariant::RESOURCE_CREATED,
+                        filter: trigger
+                            .filters
+                            .into_iter()
+                            .map(|f| f.try_into())
+                            .collect::<Result<Vec<Filter>>>()?,
+                    })
                 }
-                aruna_rust_api::api::hooks::services::v2::TriggerType::ObjectCreated => {
-                    Ok((TriggerType::OBJECT_CREATED, trigger.key, trigger.value))
+                aruna_rust_api::api::hooks::services::v2::TriggerType::LabelAdded => Ok(Trigger {
+                    variant: TriggerVariant::LABEL_ADDED,
+                    filter: trigger
+                        .filters
+                        .into_iter()
+                        .map(|f| f.try_into())
+                        .collect::<Result<Vec<Filter>>>()?,
+                }),
+                aruna_rust_api::api::hooks::services::v2::TriggerType::StaticLabelAdded => {
+                    Ok(Trigger {
+                        variant: TriggerVariant::STATIC_LABEL_ADDED,
+                        filter: trigger
+                            .filters
+                            .into_iter()
+                            .map(|f| f.try_into())
+                            .collect::<Result<Vec<Filter>>>()?,
+                    })
+                }
+                aruna_rust_api::api::hooks::services::v2::TriggerType::HookStatusChanged => {
+                    Ok(Trigger {
+                        variant: TriggerVariant::HOOK_STATUS_CHANGED,
+                        filter: trigger
+                            .filters
+                            .into_iter()
+                            .map(|f| f.try_into())
+                            .collect::<Result<Vec<Filter>>>()?,
+                    })
+                }
+                aruna_rust_api::api::hooks::services::v2::TriggerType::ObjectFinished => {
+                    Ok(Trigger {
+                        variant: TriggerVariant::OBJECT_FINISHED,
+                        filter: trigger
+                            .filters
+                            .into_iter()
+                            .map(|f| f.try_into())
+                            .collect::<Result<Vec<Filter>>>()?,
+                    })
                 }
                 _ => Err(anyhow!("Invalid trigger type")),
             },
@@ -75,19 +125,17 @@ impl CreateHook {
             Some(APIHook {
                 hook_type: Some(HookType::ExternalHook(external_hook)),
             }) => {
-                let (trigger_type, trigger_key, trigger_value) = self.get_trigger()?;
+                let trigger = Json(self.get_trigger()?);
                 Ok(Hook {
                     id: DieselUlid::generate(),
                     name: self.0.name.clone(),
                     description: self.0.description.clone(),
                     project_ids: self.get_project_ids()?,
                     owner: *user_id,
-                    trigger_type,
-                    trigger_key,
-                    trigger_value,
+                    trigger,
                     timeout: self.get_timeout()?,
-                    hook: postgres_types::Json(
-                        crate::database::dsls::hook_dsl::HookVariant::External(ExternalHook {
+                    hook: Json(crate::database::dsls::hook_dsl::HookVariant::External(
+                        ExternalHook {
                             url: external_hook.url.clone(),
                             credentials: external_hook.credentials.clone().map(|c| {
                                 crate::database::dsls::hook_dsl::Credentials { token: c.token }
@@ -108,14 +156,14 @@ impl CreateHook {
                                 Method::Put => crate::database::dsls::hook_dsl::Method::PUT,
                                 Method::Post => crate::database::dsls::hook_dsl::Method::POST,
                             },
-                        }),
-                    ),
+                        },
+                    )),
                 })
             }
             Some(APIHook {
                 hook_type: Some(HookType::InternalHook(internal_hook)),
             }) => {
-                let (trigger_type, trigger_key, trigger_value) = self.get_trigger()?;
+                let trigger = Json(self.get_trigger()?);
                 let internal_hook = match &internal_hook.internal_action {
                     Some(InternalAction::AddLabel(AddLabel { key, value })) => {
                         InternalHook::AddHook {
@@ -143,13 +191,11 @@ impl CreateHook {
                     description: self.0.description.to_string(),
                     project_ids: self.get_project_ids()?,
                     owner: *user_id,
-                    trigger_type,
-                    trigger_key,
-                    trigger_value,
+                    trigger,
                     timeout: self.get_timeout()?,
-                    hook: postgres_types::Json(
-                        crate::database::dsls::hook_dsl::HookVariant::Internal(internal_hook),
-                    ),
+                    hook: Json(crate::database::dsls::hook_dsl::HookVariant::Internal(
+                        internal_hook,
+                    )),
                 })
             }
             _ => Err(anyhow!("Invalid hook provided")),
@@ -279,7 +325,7 @@ impl CustomTemplate {
         hook_id: DieselUlid,
         object: &Object,
         secret: String,
-        download_url: String,
+        download_url: Option<String>,
         upload_credentials: Option<GetCredentialsResponse>,
         pubkey_serial: i32,
     ) -> Result<String> {
@@ -300,6 +346,10 @@ impl CustomTemplate {
         let (access_key, secret_key) = match upload_credentials {
             Some(creds) => (creds.access_key, creds.secret_key),
             None => (String::new(), String::new()),
+        };
+        let download_url = match download_url {
+            Some(download) => download,
+            None => String::new(),
         };
         let replacement_pairs = [
             (r"\{\{secret\}\}", secret),

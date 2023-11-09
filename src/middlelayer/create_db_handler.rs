@@ -1,9 +1,9 @@
-use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
+use crate::database::dsls::hook_dsl::TriggerVariant;
 use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO,
 };
-use crate::database::dsls::object_dsl::{Object, ObjectWithRelations};
+use crate::database::dsls::object_dsl::{KeyValue, KeyValueVariant, Object, ObjectWithRelations};
 use crate::database::dsls::user_dsl::User;
 use crate::database::enums::{DbPermissionLevel, ObjectMapping, ObjectType};
 use crate::middlelayer::create_request_types::CreateRequest;
@@ -15,12 +15,10 @@ use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use postgres_types::Json;
-use std::sync::Arc;
 
 impl DatabaseHandler {
     pub async fn create_resource(
         &self,
-        authorizer: Arc<PermissionHandler>,
         request: CreateRequest,
         user_id: DieselUlid,
         is_dataproxy: bool,
@@ -121,7 +119,7 @@ impl DatabaseHandler {
 
         // Create object in database
         let mut object = request
-            .into_new_db_object(user_id, DieselUlid::default(), transaction_client)
+            .as_new_db_object(user_id, DieselUlid::default(), transaction_client)
             .await?;
         object.endpoints = Json(endpoint_ids);
         object.create(transaction_client).await?;
@@ -200,7 +198,7 @@ impl DatabaseHandler {
         };
 
         // Create specified relations
-        let internal_relations = request.get_internal_relations(object.id, self.cache.clone())?;
+        let internal_relations = request.get_other_relations(object.id, self.cache.clone())?;
         InternalRelation::batch_create(&internal_relations, transaction_client).await?;
         // Collect affected objects
         let mut affected: Vec<DieselUlid> = Vec::new();
@@ -247,14 +245,14 @@ impl DatabaseHandler {
                 .upsert_object(&parent_plus.object.id, parent_plus.clone());
 
             // If created resource has parent emit notification for updated parent
-            let parent_hierachies = parent_plus.object.fetch_object_hierarchies(&client).await?;
+            let parent_hierarchies = parent_plus.object.fetch_object_hierarchies(&client).await?;
 
             // Try to emit object created notification(s)
             if let Err(err) = self
                 .natsio_handler
                 .register_resource_event(
                     &parent_plus,
-                    parent_hierachies,
+                    parent_hierarchies,
                     EventVariant::Updated,
                     Some(&DieselUlid::generate()), // block_id for deduplication
                 )
@@ -268,41 +266,39 @@ impl DatabaseHandler {
         };
 
         // Trigger hooks
-        if object.object_type != ObjectType::PROJECT {
-            let db_handler = DatabaseHandler {
-                database: self.database.clone(),
-                natsio_handler: self.natsio_handler.clone(),
-                cache: self.cache.clone(),
-            };
-            tokio::spawn(async move {
-                let mut affected = affected;
-                affected.push(object.id);
-                for affected_id in affected {
-                    let hook_trigger = db_handler
-                        .trigger_on_creation(authorizer.clone(), affected_id, user_id)
-                        .await;
-                    if hook_trigger.is_err() {
-                        log::error!("{:?}", hook_trigger)
-                    }
-                }
-            });
-        } else {
-            let db_handler = DatabaseHandler {
-                database: self.database.clone(),
-                natsio_handler: self.natsio_handler.clone(),
-                cache: self.cache.clone(),
-            };
-            tokio::spawn(async move {
-                for affected_id in affected {
-                    let hook_trigger = db_handler
-                        .trigger_on_creation(authorizer.clone(), affected_id, user_id)
-                        .await;
-                    if hook_trigger.is_err() {
-                        log::error!("{:?}", hook_trigger)
-                    }
-                }
-            });
+        let db_handler = DatabaseHandler {
+            database: self.database.clone(),
+            natsio_handler: self.natsio_handler.clone(),
+            cache: self.cache.clone(),
+            hook_sender: self.hook_sender.clone(),
         };
+        let trigger: Vec<TriggerVariant> = {
+            let mut trigger = vec![TriggerVariant::RESOURCE_CREATED];
+            if !object.key_values.0 .0.is_empty() {
+                for KeyValue { variant, .. } in &object.key_values.0 .0 {
+                    match variant {
+                        KeyValueVariant::HOOK => trigger.push(TriggerVariant::HOOK_ADDED),
+                        KeyValueVariant::LABEL => trigger.push(TriggerVariant::LABEL_ADDED),
+                        KeyValueVariant::STATIC_LABEL => {
+                            trigger.push(TriggerVariant::STATIC_LABEL_ADDED)
+                        }
+                        KeyValueVariant::HOOK_STATUS => {
+                            trigger.push(TriggerVariant::HOOK_STATUS_CHANGED)
+                        }
+                    }
+                }
+            }
+            trigger
+        };
+        let object_with_relation = owr.clone();
+        tokio::spawn(async move {
+            let hook_trigger = db_handler
+                .trigger_hooks(object_with_relation, user_id, trigger, None)
+                .await;
+            if hook_trigger.is_err() {
+                log::error!("{:?}", hook_trigger)
+            }
+        });
         // Fetch all object paths for the notification subjects
         let object_hierarchies = object.fetch_object_hierarchies(&client).await?;
         // Try to emit object created notification(s)

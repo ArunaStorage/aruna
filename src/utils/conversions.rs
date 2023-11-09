@@ -1,6 +1,6 @@
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
-use crate::database::dsls::hook_dsl::{Hook, Method};
+use crate::database::dsls::hook_dsl::{Filter, Hook, Method};
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_BELONGS_TO, INTERNAL_RELATION_VARIANT_METADATA,
@@ -33,8 +33,10 @@ use crate::database::{
 use crate::middlelayer::create_request_types::Parent;
 use ahash::RandomState;
 use anyhow::{anyhow, bail, Result};
+use aruna_rust_api::api::hooks::services::v2::filter::FilterVariant;
 use aruna_rust_api::api::hooks::services::v2::hook::HookType;
 use aruna_rust_api::api::hooks::services::v2::internal_hook::InternalAction;
+use aruna_rust_api::api::hooks::services::v2::Filter as APIFilter;
 use aruna_rust_api::api::hooks::services::v2::{
     AddHook, AddLabel, Credentials, ExternalHook, Hook as APIHook, HookInfo, InternalHook, Trigger,
 };
@@ -1264,15 +1266,74 @@ impl From<&Method> for i32 {
         }
     }
 }
+
+impl TryFrom<APIFilter> for Filter {
+    type Error = anyhow::Error;
+    fn try_from(filter: APIFilter) -> Result<Self> {
+        match filter.filter_variant {
+            Some(var) => match var {
+                FilterVariant::Name(name) => Ok(Filter::Name(name)),
+                FilterVariant::KeyValue(kv) => Ok(Filter::KeyValue(crate::database::dsls::object_dsl::KeyValue {
+                    key: kv.key.clone(),
+                    value: kv.value.clone(),
+                    variant: match kv.variant() {
+                        aruna_rust_api::api::storage::models::v2::KeyValueVariant::Unspecified => {
+                            return Err(anyhow!("Invalid key value variant"));
+                        }
+                        aruna_rust_api::api::storage::models::v2::KeyValueVariant::Label => {
+                            KeyValueVariant::LABEL
+                        }
+                        aruna_rust_api::api::storage::models::v2::KeyValueVariant::StaticLabel => {
+                            KeyValueVariant::STATIC_LABEL
+                        }
+                        aruna_rust_api::api::storage::models::v2::KeyValueVariant::Hook => {
+                            KeyValueVariant::HOOK
+                        }
+                        aruna_rust_api::api::storage::models::v2::KeyValueVariant::HookStatus => {
+                            KeyValueVariant::HOOK_STATUS
+                        }
+                    },
+                })),
+            },
+            None => Err(anyhow!("No filter provided")),
+        }
+    }
+}
 impl Hook {
     fn as_trigger(&self) -> Trigger {
         Trigger {
-            trigger_type: match self.trigger_type {
-                crate::database::dsls::hook_dsl::TriggerType::HOOK_ADDED => 1,
-                crate::database::dsls::hook_dsl::TriggerType::OBJECT_CREATED => 2,
+            trigger_type: match self.trigger.0.variant {
+                crate::database::dsls::hook_dsl::TriggerVariant::HOOK_ADDED => 1,
+                crate::database::dsls::hook_dsl::TriggerVariant::RESOURCE_CREATED => 2,
+                crate::database::dsls::hook_dsl::TriggerVariant::LABEL_ADDED => 3,
+                crate::database::dsls::hook_dsl::TriggerVariant::STATIC_LABEL_ADDED => 4,
+                crate::database::dsls::hook_dsl::TriggerVariant::HOOK_STATUS_CHANGED => 5,
+                crate::database::dsls::hook_dsl::TriggerVariant::OBJECT_FINISHED => 6,
             },
-            key: self.trigger_key.clone(),
-            value: self.trigger_value.clone(),
+            filters: self
+                .clone()
+                .trigger
+                .0
+                .filter
+                .into_iter()
+                .map(|f| match f {
+                    Filter::Name(name) => APIFilter {
+                        filter_variant: Some(FilterVariant::Name(name)),
+                    },
+                    Filter::KeyValue(kv) => APIFilter {
+                        filter_variant: Some(FilterVariant::KeyValue(KeyValue {
+                            key: kv.key,
+                            value: kv.value,
+                            variant: match kv.variant {
+                                KeyValueVariant::HOOK => 3,
+                                KeyValueVariant::LABEL => 1,
+                                KeyValueVariant::STATIC_LABEL => 2,
+                                KeyValueVariant::HOOK_STATUS => 4,
+                            },
+                        })),
+                    },
+                })
+                .collect(),
         }
     }
     fn as_api_hook(&self) -> APIHook {
@@ -1470,7 +1531,7 @@ impl From<CreateLicenseRequest> for License {
 }
 
 pub struct ContextContainer(pub Vec<Context>);
-impl TryFrom<Vec<aruna_rust_api::api::storage::models::v2::Relation>> for ContextContainer {
+impl TryFrom<Vec<Relation>> for ContextContainer {
     type Error = tonic::Status;
 
     fn try_from(relations: Vec<Relation>) -> Result<Self, tonic::Status> {

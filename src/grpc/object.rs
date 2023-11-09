@@ -61,18 +61,18 @@ impl ObjectService for ObjectServiceImpl {
         let is_service_account = self
             .cache
             .get_user(&user_id)
-            .ok_or_else(|| tonic::Status::not_found("User not found"))?
+            .ok_or_else(|| Status::not_found("User not found"))?
             .attributes
             .0
             .service_account;
         if is_service_account && (request.get_data_class() != 4) {
-            return Err(tonic::Status::invalid_argument(
+            return Err(Status::invalid_argument(
                 "Workspaces have to be claimed for dataclass changes",
             ));
         }
         let (object_plus, _) = tonic_internal!(
             self.database_handler
-                .create_resource(self.authorizer.clone(), request, user_id, is_dataproxy)
+                .create_resource(request, user_id, is_dataproxy)
                 .await,
             "Internal database error"
         );
@@ -86,8 +86,7 @@ impl ObjectService for ObjectServiceImpl {
         )
         .await;
 
-        let generic_object: generic_resource::Resource =
-            tonic_invalid!(object_plus.try_into(), "Invalid object");
+        let generic_object: generic_resource::Resource = object_plus.into();
 
         let response = CreateObjectResponse {
             object: Some(generic_object.into_inner()?),
@@ -215,8 +214,7 @@ impl ObjectService for ObjectServiceImpl {
                     "Invalid id"
                 ))
                 .ok_or_else(|| Status::not_found("Object not found"))?;
-            let object: generic_resource::Resource =
-                tonic_internal!(object.try_into(), "Object conversion error");
+            let object: generic_resource::Resource = object.into();
             let response = FinishObjectStagingResponse {
                 object: Some(object.into_inner()?),
             };
@@ -224,9 +222,7 @@ impl ObjectService for ObjectServiceImpl {
         }
 
         let object = tonic_internal!(
-            self.database_handler
-                .finish_object(request, self.authorizer.clone(), user_id)
-                .await,
+            self.database_handler.finish_object(request, user_id).await,
             "Internal database error."
         );
 
@@ -239,8 +235,7 @@ impl ObjectService for ObjectServiceImpl {
         )
         .await;
 
-        let object: generic_resource::Resource =
-            tonic_internal!(object.try_into(), "Object conversion error");
+        let object: generic_resource::Resource = object.into();
         let response = FinishObjectStagingResponse {
             object: Some(object.into_inner()?),
         };
@@ -278,7 +273,7 @@ impl ObjectService for ObjectServiceImpl {
 
         let (object, new_revision) = tonic_internal!(
             self.database_handler
-                .update_grpc_object(self.authorizer.clone(), inner, user_id, is_service_account)
+                .update_grpc_object(inner, user_id, is_service_account)
                 .await,
             "Internal database error."
         );
@@ -292,8 +287,7 @@ impl ObjectService for ObjectServiceImpl {
         )
         .await;
 
-        let object: generic_resource::Resource =
-            tonic_internal!(object.try_into(), "Object conversion error");
+        let object: generic_resource::Resource = object.into();
         let response = UpdateObjectResponse {
             object: Some(object.into_inner()?),
             new_revision,
@@ -335,8 +329,7 @@ impl ObjectService for ObjectServiceImpl {
         )
         .await;
 
-        let converted: generic_resource::Resource =
-            tonic_internal!(new.try_into(), "Conversion error");
+        let converted: generic_resource::Resource = new.into();
         let response = CloneObjectResponse {
             object: Some(converted.into_inner()?),
         };
@@ -413,8 +406,7 @@ impl ObjectService for ObjectServiceImpl {
             .get_object(&object_id)
             .ok_or_else(|| Status::not_found("Object not found"))?;
 
-        let generic_object: generic_resource::Resource =
-            tonic_invalid!(res.try_into(), "Invalid object");
+        let generic_object: generic_resource::Resource = res.into();
 
         let response = GetObjectResponse {
             object: Some(generic_object.into_inner()?),

@@ -261,21 +261,27 @@ impl UpdateObject {
             None => old.name,
         }
     }
-    pub fn get_dataclass(&self, old: Object, is_service_account: bool) -> Result<DataClass> {
+    pub fn get_dataclass(
+        &self,
+        old: Object,
+        is_service_account: bool,
+    ) -> Result<(DataClass, bool)> {
         let new = self.0.data_class;
         let old_converted: i32 = old.data_class.clone().into();
         if is_service_account {
-            if (new != 0) || (new != 4) {
-                return Err(anyhow!("Workspaces need to be claimed for status updates"));
+            return if (new != 0) || (new != 4) {
+                Err(anyhow!("Workspaces need to be claimed for status updates"))
             } else {
-                return Ok(DataClass::WORKSPACE);
-            }
+                Ok((DataClass::WORKSPACE, false))
+            };
         } else if new == 0 {
-            return Ok(old.data_class);
+            return Ok((old.data_class, false));
         } else if old_converted < new {
-            return Err(anyhow!("Dataclass can only be relaxed."));
+            // True because triggers new revision
+            return Ok((new.try_into()?, true));
         }
-        new.try_into()
+        // False because triggers no new revision
+        Ok((new.try_into()?, false))
     }
     pub fn get_endpoints(&self, old: Object) -> Result<DashMap<DieselUlid, bool, RandomState>> {
         // TODO -> Currently not implemented in APICall
@@ -390,24 +396,24 @@ impl UpdateObject {
         relations
     }
     pub async fn get_license(&self, old: &Object, client: &Client) -> Result<(String, String)> {
-        let metadata_license = if self.0.metadata_license_tag.is_empty() {
-            old.metadata_license.clone()
-        } else {
-            let meta = self.0.metadata_license_tag.clone();
-            if UpdateObject::check_license(&meta, client).await? {
-                meta
-            } else {
-                return Err(anyhow!("License does not exist"));
+        let metadata_license = match self.0.metadata_license_tag.clone() {
+            None => old.metadata_license.clone(),
+            Some(meta) => {
+                if UpdateObject::check_license(&meta, client).await? {
+                    meta
+                } else {
+                    return Err(anyhow!("License does not exist"));
+                }
             }
         };
-        let data_license = if self.0.data_license_tag.is_empty() {
-            old.data_license.clone()
-        } else {
-            let data = self.0.data_license_tag.clone();
-            if UpdateObject::check_license(&data, client).await? {
-                data
-            } else {
-                return Err(anyhow!("License does not exist"));
+        let data_license = match self.0.data_license_tag.clone() {
+            None => old.data_license.clone(),
+            Some(data) => {
+                if UpdateObject::check_license(&data, client).await? {
+                    data
+                } else {
+                    return Err(anyhow!("License does not exist"));
+                }
             }
         };
         Ok((metadata_license, data_license))
