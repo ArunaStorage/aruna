@@ -368,6 +368,19 @@ impl EventNotificationService for NotificationServiceImpl {
             pull_consumer.messages().await,
             "Message stream creation failed"
         );
+
+        // Keep-alive spawn
+        let tx_clone = tx.clone();
+        tokio::spawn(async move {
+            loop {
+                let result = tx_clone
+                    .send(Ok(GetEventMessageStreamResponse { message: None }))
+                    .await;
+                debug!("{:?}", result);
+                tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+            }
+        });
+
         // Send messages in batches if present
         let cloned_reply_signing_secret = self.natsio_handler.reply_secret.clone();
         tokio::spawn(async move {
