@@ -14,6 +14,7 @@ use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
+use log::debug;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use s3s::auth::SecretKey;
 use std::collections::{HashMap, VecDeque};
@@ -535,7 +536,9 @@ impl Cache {
                             mut_entry.clone()
                         };
                         if let Some(persistence) = self.persistence.read().await.as_ref() {
-                            user.upsert(&persistence.get_client().await?).await?;
+                            let result = user.upsert(&persistence.get_client().await?).await;
+                            debug!("User database update result: {:#?}", result);
+                            result?
                         }
                         break;
                     }
@@ -620,7 +623,10 @@ impl Cache {
         location: Option<ObjectLocation>,
     ) -> Result<()> {
         if let Some(persistence) = self.persistence.read().await.as_ref() {
-            object.upsert(&persistence.get_client().await?).await?;
+            let result = object.upsert(&persistence.get_client().await?).await;
+            debug!("Resource database update result: {:#?}", result);
+            result?;
+
             if let Some(l) = &location {
                 l.upsert(&persistence.get_client().await?).await?;
             }

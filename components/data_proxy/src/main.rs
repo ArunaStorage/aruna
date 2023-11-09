@@ -46,9 +46,11 @@ async fn main() -> Result<()> {
 
     // Init logger
     SimpleLogger::new()
+        .with_level(log::LevelFilter::Debug)
         .with_module_level("s3s", log::LevelFilter::Error)
         .with_module_level("aws_config", log::LevelFilter::Error)
         .with_module_level("aws_sdk_s3", log::LevelFilter::Error)
+        .with_module_level("aws_sdk_sts", log::LevelFilter::Error)
         .with_module_level("aws_smithy_client", log::LevelFilter::Error)
         .with_module_level("aws_smithy_http_tower", log::LevelFilter::Error)
         .with_module_level("aws_smithy_runtime", log::LevelFilter::Error)
@@ -57,9 +59,10 @@ async fn main() -> Result<()> {
         .with_module_level("h2", log::LevelFilter::Error)
         .with_module_level("hyper", log::LevelFilter::Error)
         .with_module_level("isahc", log::LevelFilter::Error)
+        .with_module_level("rustls", log::LevelFilter::Error)
         .with_module_level("tokio_postgres", log::LevelFilter::Error)
+        .with_module_level("tokio_util", log::LevelFilter::Error)
         .with_module_level("tracing", log::LevelFilter::Error)
-        .with_level(log::LevelFilter::Debug)
         .env()
         .init()?;
 

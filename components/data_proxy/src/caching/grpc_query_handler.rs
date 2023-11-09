@@ -49,6 +49,7 @@ use aruna_rust_api::api::{
 };
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
+use log::debug;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::metadata::AsciiMetadataKey;
@@ -83,8 +84,10 @@ impl GrpcQueryHandler {
         // Check if server host url is tls
         let server_url: String = server.into();
         let endpoint = if server_url.starts_with("https") {
+            debug!("Opening tls channel to ArunaServer.");
             Channel::from_shared(server_url)?.tls_config(ClientTlsConfig::new())?
         } else {
+            debug!("Opening unsecured channel to ArunaServer.");
             Channel::from_shared(server_url)?
         };
         let channel = endpoint.connect().await?;
@@ -504,28 +507,35 @@ impl GrpcQueryHandler {
             AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
         );
 
+        debug!("Try to fetch notification stream from ArunaServer");
         let stream = self
             .event_notification_service
             .clone()
             .get_event_message_stream(req)
             .await?;
+        debug!("Fetched notification stream from ArunaServer: {:#?}", stream);
 
         let mut inner_stream = stream.into_inner();
 
-        // TODO: Fullsync
+        // Fullsync
         let mut req = Request::new(FullSyncEndpointRequest {});
         req.metadata_mut().append(
             AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
             AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
         );
+
+        debug!("Request full sync stream from ArunaServer");
         let mut full_sync_stream = self
             .endpoint_service
             .clone()
             .full_sync_endpoint(req)
             .await?
             .into_inner();
+        debug!("Received full sync stream: {:?}", full_sync_stream);
+
         let mut resources = Vec::new();
         while let Some(full_sync_message) = full_sync_stream.message().await? {
+            debug!("Received full sync message: {:#?}", full_sync_message);
             match full_sync_message
                 .target
                 .ok_or_else(|| anyhow!("Missing target in full_sync"))?
@@ -549,15 +559,21 @@ impl GrpcQueryHandler {
                 _ => (),
             }
         }
+        debug!("User and PubKey sync finished");
+
         sort_resources(&mut resources);
         for res in resources {
             self.cache
                 .upsert_object(DPObject::try_from(res)?, None)
                 .await?
         }
+        debug!("Resource sync finished");
+        
         while let Some(m) = inner_stream.message().await? {
+            debug!("Received event notification message from ArunaServer");
+
             if let Some(message) = m.message {
-                log::debug!("Received message: {:?}", message);
+                debug!("Received message: {:#?}", message);
 
                 if let Ok(Some(r)) = self.process_message(message).await {
                     let mut resp =
