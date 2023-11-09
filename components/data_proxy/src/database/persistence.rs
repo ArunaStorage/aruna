@@ -1,3 +1,4 @@
+use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::Result;
 use deadpool_postgres::Client;
@@ -40,7 +41,7 @@ where
 {
     fn get_table() -> Table;
     async fn upsert(&self, client: &Client) -> Result<()> {
-        let generic: GenericBytes<X> = match self.clone().try_into() {
+        let generic: GenericBytes<X> = match trace_err!(self.clone().try_into()) {
             Ok(generic) => generic,
             Err(e) => return Err(anyhow!("Failed to convert to GenericBytes: {:?}", e)),
         };
@@ -49,10 +50,12 @@ where
             "INSERT INTO {} (id, data) VALUES ($1, $2::BYTEA) ON CONFLICT (id) DO UPDATE SET data = $2;",
             Self::get_table()
         );
-        let prepared = client.prepare(&query).await?;
-        client
-            .query(&prepared, &[&generic.id, &generic.data.to_vec().as_slice()])
-            .await?;
+        let prepared = trace_err!(client.prepare(&query).await)?;
+        trace_err!(
+            client
+                .query(&prepared, &[&generic.id, &generic.data.to_vec().as_slice()])
+                .await
+        )?;
         Ok(())
     }
 
@@ -61,16 +64,16 @@ where
         Self: WithGenericBytes<X>,
     {
         let query = format!("SELECT * FROM {};", Self::get_table());
-        let prepared = client.prepare(&query).await?;
-        let rows = client.query(&prepared, &[]).await?;
+        let prepared = trace_err!(client.prepare(&query).await)?;
+        let rows = trace_err!(client.query(&prepared, &[]).await)?;
         Ok(rows
             .iter()
             .map(|row| {
-                match Self::try_from(GenericBytes {
+                match trace_err!(Self::try_from(GenericBytes {
                     id: row.get::<&str, X>("id"),
                     data: row.get("data"),
                     table: Self::get_table(),
-                }) {
+                })) {
                     Ok(generic) => Ok(generic),
                     Err(e) => Err(anyhow!("Failed to convert to GenericBytes {:?}", e)),
                 }
@@ -82,13 +85,13 @@ where
         Self: WithGenericBytes<X>,
     {
         let query = format!("SELECT * FROM {} WHERE id = $1;", Self::get_table());
-        let prepared = client.prepare(&query).await?;
-        let row = client.query_one(&prepared, &[&id]).await?;
-        match Self::try_from(GenericBytes {
+        let prepared = trace_err!(client.prepare(&query).await)?;
+        let row = trace_err!(client.query_one(&prepared, &[&id]).await)?;
+        match trace_err!(Self::try_from(GenericBytes {
             id: row.get::<usize, X>(0),
             data: row.get(1),
             table: Self::get_table(),
-        }) {
+        })) {
             Ok(generic) => Ok(generic),
             Err(e) => Err(anyhow!("Failed to convert to GenericBytes, {:?}", e)),
         }
@@ -99,16 +102,16 @@ where
         Self: WithGenericBytes<X>,
     {
         let query = format!("SELECT * FROM {} WHERE id = $1;", Self::get_table());
-        let prepared = client.prepare(&query).await?;
-        let row = client.query_opt(&prepared, &[&id]).await?;
+        let prepared = trace_err!(client.prepare(&query).await)?;
+        let row = trace_err!(client.query_opt(&prepared, &[&id]).await)?;
 
         match row {
             Some(row) => {
-                match Self::try_from(GenericBytes {
+                match trace_err!(Self::try_from(GenericBytes {
                     id: row.get::<usize, X>(0),
                     data: row.get(1),
                     table: Self::get_table(),
-                }) {
+                })) {
                     Ok(generic) => Ok(Some(generic)),
                     Err(e) => Err(anyhow!("Failed to convert to GenericBytes, {:?}", e)),
                 }
@@ -119,15 +122,15 @@ where
 
     async fn delete(id: &X, client: &Client) -> Result<()> {
         let query = format!("DELETE FROM {} WHERE id = $1;", Self::get_table());
-        let prepared = client.prepare(&query).await?;
-        client.execute(&prepared, &[&id]).await?;
+        let prepared = trace_err!(client.prepare(&query).await)?;
+        trace_err!(client.execute(&prepared, &[&id]).await)?;
         Ok(())
     }
 
     async fn delete_all(client: &Client) -> Result<()> {
         let query = format!("DELETE FROM {};", Self::get_table());
-        let prepared = client.prepare(&query).await?;
-        client.execute(&prepared, &[]).await?;
+        let prepared = trace_err!(client.prepare(&query).await)?;
+        trace_err!(client.execute(&prepared, &[]).await)?;
         Ok(())
     }
 }
