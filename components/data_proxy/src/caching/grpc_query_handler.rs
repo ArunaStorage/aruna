@@ -407,7 +407,10 @@ impl GrpcQueryHandler {
         Ok(object)
     }
 
-    #[tracing::instrument(level = "trace", skip(self, object_id, content_len, hashes, location, token))]
+    #[tracing::instrument(
+        level = "trace",
+        skip(self, object_id, content_len, hashes, location, token)
+    )]
     pub async fn finish_object(
         &self,
         object_id: DieselUlid,

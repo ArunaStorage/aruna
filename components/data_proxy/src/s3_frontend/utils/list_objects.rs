@@ -68,7 +68,10 @@ pub fn filter_list_objects(
         })
         .collect()
 }
-#[tracing::instrument(level = "trace", skip(sorted, cache, delimiter, prefix, start_after, max_keys))]
+#[tracing::instrument(
+    level = "trace",
+    skip(sorted, cache, delimiter, prefix, start_after, max_keys)
+)]
 pub fn list_response(
     sorted: BTreeMap<String, DieselUlid>,
     cache: &Arc<Cache>,

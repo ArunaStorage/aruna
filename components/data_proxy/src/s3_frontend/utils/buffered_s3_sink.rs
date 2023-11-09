@@ -21,7 +21,18 @@ pub struct BufferedS3Sink {
 impl Sink for BufferedS3Sink {}
 
 impl BufferedS3Sink {
-    #[tracing::instrument(level = "trace", skip(backend, target_location, upload_id, part_number, single_part_upload, tags, with_sender))]
+    #[tracing::instrument(
+        level = "trace",
+        skip(
+            backend,
+            target_location,
+            upload_id,
+            part_number,
+            single_part_upload,
+            tags,
+            with_sender
+        )
+    )]
     pub fn new(
         backend: Arc<Box<dyn StorageBackend>>,
         target_location: ObjectLocation,

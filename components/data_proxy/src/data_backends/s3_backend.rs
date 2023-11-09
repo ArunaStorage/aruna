@@ -149,7 +149,10 @@ impl StorageBackend for S3Backend {
         return Ok(multipart.upload_id().unwrap().to_string());
     }
 
-    #[tracing::instrument(level = "trace", skip(self, recv, location, upload_id, content_len, part_number))]
+    #[tracing::instrument(
+        level = "trace",
+        skip(self, recv, location, upload_id, content_len, part_number)
+    )]
     async fn upload_multi_object(
         &self,
         recv: Receiver<Result<bytes::Bytes>>,

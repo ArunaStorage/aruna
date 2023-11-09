@@ -1541,7 +1541,10 @@ pub struct CheckAccessResult {
 }
 
 impl CheckAccessResult {
-    #[tracing::instrument(level = "trace", skip(user_id, token_id, resource_ids, missing_resources, object, bundle))]
+    #[tracing::instrument(
+        level = "trace",
+        skip(user_id, token_id, resource_ids, missing_resources, object, bundle)
+    )]
     pub fn new(
         user_id: Option<String>,
         token_id: Option<String>,

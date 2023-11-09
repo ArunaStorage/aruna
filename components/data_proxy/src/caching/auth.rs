@@ -22,15 +22,15 @@ use s3s::auth::Credentials;
 use s3s::path::S3Path;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
-use tracing::debug;
-use tracing::error;
-use tracing::trace;
 use std::ops::Add;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
 use tonic::metadata::MetadataMap;
+use tracing::debug;
+use tracing::error;
+use tracing::trace;
 
 pub struct AuthHandler {
     pub cache: Arc<Cache>,
@@ -112,7 +112,10 @@ impl<'de> Deserialize<'de> for Intent {
 }
 
 impl AuthHandler {
-    #[tracing::instrument(level = "trace", skip(cache, self_id, encode_secret, encoding_key_serial))]
+    #[tracing::instrument(
+        level = "trace",
+        skip(cache, self_id, encode_secret, encoding_key_serial)
+    )]
     pub fn new(
         cache: Arc<Cache>,
         self_id: DieselUlid,
@@ -154,7 +157,7 @@ impl AuthHandler {
                 _ => {
                     error!("Action not allowed for Dataproxy");
                     bail!("Action not allowed for Dataproxy")
-                },
+                }
             }
         } else {
             // No intent, no Dataproxy/Action check
@@ -168,7 +171,11 @@ impl AuthHandler {
         token: &str,
         dec_key: &DecodingKey,
     ) -> Result<ArunaTokenClaims> {
-        let token = trace_err!(decode::<ArunaTokenClaims>(token, dec_key, &Validation::new(Algorithm::EdDSA)))?;
+        let token = trace_err!(decode::<ArunaTokenClaims>(
+            token,
+            dec_key,
+            &Validation::new(Algorithm::EdDSA)
+        ))?;
         Ok(token.claims)
     }
 
@@ -187,7 +194,9 @@ impl AuthHandler {
                 trace!("detected POST/PUT");
                 let user = trace_err!(self
                     .cache
-                    .get_user_by_key(&trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key)
+                    .get_user_by_key(
+                        &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
+                    )
                     .ok_or_else(|| anyhow!("Unknown user")))?;
 
                 let token_id = if user.user_id.to_string() == user.access_key {
@@ -213,7 +222,9 @@ impl AuthHandler {
                 trace!("detected not POST/PUT");
                 let user = trace_err!(self
                     .cache
-                    .get_user_by_key(&trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key)
+                    .get_user_by_key(
+                        &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
+                    )
                     .ok_or_else(|| anyhow!("Unknown user")))?;
 
                 return Ok(CheckAccessResult::new(
@@ -239,7 +250,9 @@ impl AuthHandler {
                 // Check if user has access to Bundle Object
                 let user = trace_err!(self
                     .cache
-                    .get_user_by_key(&trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key)
+                    .get_user_by_key(
+                        &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
+                    )
                     .ok_or_else(|| anyhow!("Unknown user")))?;
 
                 for (res, perm) in user.permissions {
@@ -278,7 +291,9 @@ impl AuthHandler {
                 debug!("bundle_not_public");
                 let user = trace_err!(self
                     .cache
-                    .get_user_by_key(&trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key)
+                    .get_user_by_key(
+                        &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
+                    )
                     .ok_or_else(|| anyhow!("Unknown user")))?;
 
                 for (res, perm) in user.permissions {
@@ -342,7 +357,10 @@ impl AuthHandler {
         Err(anyhow!("Invalid permissions"))
     }
 
-    #[tracing::instrument(level = "trace", skip(self, vec_vec_ids, access_key, target_perm_level, get_secret))]
+    #[tracing::instrument(
+        level = "trace",
+        skip(self, vec_vec_ids, access_key, target_perm_level, get_secret)
+    )]
     pub fn check_ids(
         &self,
         vec_vec_ids: &Vec<Vec<ResourceIds>>,
@@ -362,6 +380,7 @@ impl AuthHandler {
                         continue 'id_vec;
                     }
                 }
+                error!(?res, ?perm, ?vec_ids, "Invalid permissions");
                 return Err(anyhow!("Invalid permissions"));
             }
         }
@@ -388,51 +407,56 @@ impl AuthHandler {
         Option<String>,
     )> {
         if let Some((bucket, mut path)) = path.as_object() {
+            debug!("bucket as object");
             if bucket == "objects" {
+                debug!("special bucket detected");
                 path = path.trim_matches('/');
                 if let Some((prefix, name)) = path.split_once('/') {
-                    let id = DieselUlid::from_str(prefix)?;
-                    dbg!(id);
-                    let obj = self
+                    let id = trace_err!(DieselUlid::from_str(prefix))?;
+                    trace!(?id, "extracted id from path");
+                    let obj = trace_err!(self
                         .cache
                         .resources
                         .get(&id)
-                        .ok_or_else(|| anyhow!("No object found in path"))?
-                        .value()
-                        .clone();
+                        .ok_or_else(|| anyhow!("No object found in path")))?
+                    .value()
+                    .clone();
 
-                    let mut ids = self.cache.get_resource_ids_from_id(id)?.0;
+                    let mut ids = trace_err!(self.cache.get_resource_ids_from_id(id))?.0;
                     ids.sort();
 
+                    trace!(?ids, "extracted ids from path");
                     return Ok((
                         obj,
-                        ids.last()
-                            .ok_or_else(|| anyhow!("No object found in path"))?
+                        trace_err!(ids.last().ok_or_else(|| anyhow!("No object found in path")))?
                             .clone(),
                         None,
                         Some(name.to_string()),
                     ));
                 }
             } else if bucket == "bundles" {
+                debug!("special bundle bucket detected");
                 path = path.trim_matches('/');
                 if let Some((prefix, name)) = path.split_once('/') {
-                    let id = DieselUlid::from_str(prefix)?;
-                    log::debug!("Bundle ID: {}", id);
+                    let id = trace_err!(DieselUlid::from_str(prefix))?;
+                    trace!(?id, "extracted bundle id from path");
 
-                    let (bundle_object, _) = self
+                    let (bundle_object, _) = trace_err!(self
                         .cache
                         .resources
                         .get(&id)
-                        .ok_or_else(|| anyhow!("No object found in path"))?
-                        .value()
-                        .clone();
+                        .ok_or_else(|| anyhow!("No object found in path")))?
+                    .value()
+                    .clone();
 
                     // Check if Bundle is empty
                     if let Some(children) = &bundle_object.children {
                         if children.is_empty() {
+                            error!(?children, "Empty bundle: Children is empty");
                             bail!("Empty bundle: Children is empty")
                         }
                     } else {
+                        error!("empty bundle, children is None");
                         bail!("Empty bundle: Children is None")
                     }
 
@@ -460,17 +484,23 @@ impl AuthHandler {
         let resource_id = trace_err!(found
             .last()
             .ok_or_else(|| anyhow!("No object found in path")))?
-            .clone();
+        .clone();
 
         let (object, location) = trace_err!(self
             .cache
             .resources
             .get(&resource_id.get_id())
             .ok_or_else(|| anyhow!("No object found in path")))?
-            .value()
-            .clone();
+        .value()
+        .clone();
 
-        trace!(?object, ?location, ?resource_id, ?missing, "extracted object from path");
+        trace!(
+            ?object,
+            ?location,
+            ?resource_id,
+            ?missing,
+            "extracted object from path"
+        );
 
         Ok(((object, location), resource_id, missing, None))
     }
@@ -495,7 +525,7 @@ impl AuthHandler {
             }),
         };
 
-        self.sign_token(claims)
+        trace_err!(self.sign_token(claims))
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -514,7 +544,7 @@ impl AuthHandler {
             }),
         };
 
-        self.sign_token(claims)
+        trace_err!(self.sign_token(claims))
     }
 
     #[tracing::instrument(level = "trace", skip(self, claims))]
@@ -525,7 +555,7 @@ impl AuthHandler {
             ..Default::default()
         };
 
-        let token = jsonwebtoken::encode(&header, &claims, &self.encoding_key.1)?;
+        let token = trace_err!(jsonwebtoken::encode(&header, &claims, &self.encoding_key.1))?;
 
         Ok(token)
     }
@@ -533,38 +563,26 @@ impl AuthHandler {
 
 #[tracing::instrument(level = "trace", skip(md))]
 pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
-    let token_string = md
+    let token_string = trace_err!(md
         .get("Authorization")
-        .ok_or(anyhow!("Metadata token not found"))?
-        .to_str()?;
+        .ok_or(anyhow!("Metadata token not found")))?
+    .to_str()?;
 
     let split = token_string.split(' ').collect::<Vec<_>>();
 
     if split.len() != 2 {
-        log::debug!(
-            "Could not get token from metadata: Wrong length, expected: 2, got: {:?}",
-            split.len()
-        );
+        error!(split_len = split.len(), "wrong token length, expected: 2");
         return Err(anyhow!("Authorization flow error"));
     }
 
     if split[0] != "Bearer" {
-        log::debug!(
-            "Could not get token from metadata: Invalid token type, expected: Bearer, got: {:?}",
-            split[0]
-        );
-
+        error!(split = split[0], "wrong token type, expected: Bearer");
         return Err(anyhow!("Authorization flow error"));
     }
 
     if split[1].is_empty() {
-        log::debug!(
-            "Could not get token from metadata: Invalid token length, expected: >0, got: {:?}",
-            split[1].len()
-        );
-
+        error!(?split, "empty token");
         return Err(anyhow!("Authorization flow error"));
     }
-
     Ok(split[1].to_string())
 }

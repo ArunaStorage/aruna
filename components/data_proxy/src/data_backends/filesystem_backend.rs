@@ -132,7 +132,10 @@ impl StorageBackend for FSBackend {
         return Ok(up_id);
     }
 
-    #[tracing::instrument(level = "trace", skip(self, recv, _location, upload_id, _content_len, part_number))]
+    #[tracing::instrument(
+        level = "trace",
+        skip(self, recv, _location, upload_id, _content_len, part_number)
+    )]
     async fn upload_multi_object(
         &self,
         mut recv: Receiver<Result<bytes::Bytes>>,

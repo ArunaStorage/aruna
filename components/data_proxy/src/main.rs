@@ -11,11 +11,11 @@ use grpc_api::{proxy_service::DataproxyServiceImpl, user_service::DataproxyUserS
 use std::{net::SocketAddr, str::FromStr, sync::Arc};
 use tokio::try_join;
 use tonic::transport::Server;
-use tracing::info_span;
 use tracing::debug;
+use tracing::info_span;
 use tracing_subscriber::fmt::format::FmtSpan;
-use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
+use tracing_subscriber::EnvFilter;
 
 mod bundler;
 mod caching;
@@ -34,7 +34,9 @@ mod helpers;
 async fn main() -> Result<()> {
     dotenvy::from_filename(".env").ok();
 
-    let filter = EnvFilter::try_from_default_env().unwrap_or("none".into()).add_directive("aos_data_proxy=trace".parse()?);
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or("none".into())
+        .add_directive("aos_data_proxy=trace".parse()?);
 
     let subscriber = tracing_subscriber::fmt()
         .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
