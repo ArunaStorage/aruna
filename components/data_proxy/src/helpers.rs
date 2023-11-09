@@ -1,3 +1,4 @@
+use crate::trace_err;
 use anyhow::Result;
 use http::Method;
 use reqsign::{AwsCredential, AwsV4Signer};
@@ -70,21 +71,21 @@ pub fn sign_url(
 
     // Construct request
     let url = if multipart {
-        Url::parse(&format!(
+        trace_err!(Url::parse(&format!(
             "{}{}.{}/{}?partNumber={}&uploadId={}",
             protocol, bucket, endpoint_sanitized, key, part_number, upload_id
-        ))?
+        )))?
     } else {
-        Url::parse(&format!(
+        trace_err!(Url::parse(&format!(
             "{}{}.{}/{}",
             protocol, bucket, endpoint_sanitized, key
-        ))?
+        )))?
     };
 
     let mut req = reqwest::Request::new(method, url);
 
     // Signing request with Signer
-    signer.sign_query(
+    trace_err!(signer.sign_query(
         &mut req,
         std::time::Duration::new(duration as u64, 0), // Sec, nano
         &AwsCredential {
@@ -93,7 +94,7 @@ pub fn sign_url(
             session_token: None,
             expires_in: None,
         },
-    )?;
+    ))?;
     Ok(req.url().to_string())
 }
 

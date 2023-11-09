@@ -1,5 +1,6 @@
 use crate::caching::cache::Cache;
 use crate::database::persistence::{GenericBytes, Table, WithGenericBytes};
+use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
@@ -29,6 +30,7 @@ use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
 };
+use tracing::error;
 
 /* ----- Constants ----- */
 pub const ALL_RIGHTS_RESERVED: &str = "AllRightsReserved";
@@ -151,30 +153,21 @@ impl TypedRelation {
     }
 }
 
-// impl TryFrom<&Object> for TypedRelation {
-//     type Error = anyhow::Error;
-//     fn try_from(value: &Object) -> Result<Self> {
-//         Ok(match value.object_type {
-//             ObjectType::Project => TypedRelation::Project(value.id),
-//             ObjectType::Collection => TypedRelation::Collection(value.id),
-//             ObjectType::Dataset => TypedRelation::Dataset(value.id),
-//             ObjectType::Object => TypedRelation::Object(value.id),
-//             ObjectType::Bundle => bail!("Bundles do not have typed relations"),
-//         })
-//     }
-// }
-
 impl TryFrom<&Relation> for TypedRelation {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: &Relation) -> Result<Self> {
         match value {
-            Relation::External(_) => Err(anyhow!("Invalid External rel")),
+            Relation::External(_) => {
+                error!("invalid external rel");
+                Err(anyhow!("Invalid External rel"))
+            }
             Relation::Internal(int) => {
                 let resource_id = DieselUlid::from_str(&int.resource_id)?;
 
                 match int.resource_variant() {
                     aruna_rust_api::api::storage::models::v2::ResourceVariant::Unspecified => {
+                        error!("Invalid target");
                         Err(anyhow!("Invalid target"))
                     }
                     aruna_rust_api::api::storage::models::v2::ResourceVariant::Project => {
@@ -202,7 +195,10 @@ impl TryInto<create_collection_request::Parent> for TypedRelation {
             TypedRelation::Project(i) => {
                 Ok(create_collection_request::Parent::ProjectId(i.to_string()))
             }
-            _ => Err(anyhow!("Invalid ")),
+            _ => {
+                error!("Invalid");
+                Err(anyhow!("Invalid"))
+            }
         }
     }
 }
@@ -218,7 +214,10 @@ impl TryInto<create_dataset_request::Parent> for TypedRelation {
             TypedRelation::Collection(i) => {
                 Ok(create_dataset_request::Parent::CollectionId(i.to_string()))
             }
-            _ => Err(anyhow!("Invalid ")),
+            _ => {
+                error!("Invalid");
+                Err(anyhow!("Invalid"))
+            }
         }
     }
 }
@@ -237,7 +236,10 @@ impl TryInto<create_object_request::Parent> for TypedRelation {
             TypedRelation::Dataset(i) => {
                 Ok(create_object_request::Parent::DatasetId(i.to_string()))
             }
-            _ => Err(anyhow!("Invalid ")),
+            _ => {
+                error!("Invalid");
+                Err(anyhow!("Invalid "))
+            }
         }
     }
 }
@@ -246,7 +248,7 @@ impl TryFrom<GenericBytes<i16>> for PubKey {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: GenericBytes<i16>) -> Result<Self, Self::Error> {
-        Ok(bincode::deserialize(&value.data)?)
+        Ok(trace_err!(bincode::deserialize(&value.data))?)
     }
 }
 
@@ -254,7 +256,7 @@ impl TryInto<GenericBytes<i16>> for PubKey {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(self))]
     fn try_into(self) -> Result<GenericBytes<i16>, Self::Error> {
-        let data = bincode::serialize(&self)?;
+        let data = trace_err!(bincode::serialize(&self))?;
         Ok(GenericBytes {
             id: self.id,
             data,
@@ -274,7 +276,7 @@ impl TryFrom<GenericBytes<DieselUlid>> for Object {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: GenericBytes<DieselUlid>) -> Result<Self, Self::Error> {
-        Ok(bincode::deserialize(&value.data)?)
+        Ok(trace_err!(bincode::deserialize(&value.data))?)
     }
 }
 
@@ -282,7 +284,7 @@ impl TryInto<GenericBytes<DieselUlid>> for Object {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(self))]
     fn try_into(self) -> Result<GenericBytes<DieselUlid>, Self::Error> {
-        let data = bincode::serialize(&self)?;
+        let data = trace_err!(bincode::serialize(&self))?;
         Ok(GenericBytes {
             id: self.id,
             data,
@@ -302,7 +304,7 @@ impl TryFrom<GenericBytes<DieselUlid>> for ObjectLocation {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: GenericBytes<DieselUlid>) -> Result<Self, Self::Error> {
-        Ok(bincode::deserialize(&value.data)?)
+        Ok(trace_err!(bincode::deserialize(&value.data))?)
     }
 }
 
@@ -310,7 +312,7 @@ impl TryInto<GenericBytes<DieselUlid>> for ObjectLocation {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(self))]
     fn try_into(self) -> Result<GenericBytes<DieselUlid>, Self::Error> {
-        let data = bincode::serialize(&self)?;
+        let data = trace_err!(bincode::serialize(&self))?;
         Ok(GenericBytes {
             id: self.id,
             data,
@@ -330,7 +332,7 @@ impl TryFrom<GenericBytes<String>> for User {
     type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: GenericBytes<String>) -> Result<Self, Self::Error> {
-        let user: User = bincode::deserialize(&value.data).unwrap();
+        let user: User = trace_err!(bincode::deserialize(&value.data))?;
         Ok(user)
     }
 }
@@ -340,7 +342,7 @@ impl TryInto<GenericBytes<String>> for User {
     #[tracing::instrument(level = "trace", skip(self))]
     fn try_into(self) -> Result<GenericBytes<String>, Self::Error> {
         let user = self;
-        let data = bincode::serialize(&user)?;
+        let data = trace_err!(bincode::serialize(&user))?;
         Ok(GenericBytes {
             id: user.access_key,
             data,
@@ -375,10 +377,10 @@ impl TryFrom<Resource> for Object {
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: Resource) -> std::result::Result<Self, Self::Error> {
         match value {
-            Resource::Project(p) => p.try_into(),
-            Resource::Collection(c) => c.try_into(),
-            Resource::Dataset(d) => d.try_into(),
-            Resource::Object(o) => o.try_into(),
+            Resource::Project(p) => trace_err!(Object::try_from(p)),
+            Resource::Collection(c) => trace_err!(Object::try_from(c)),
+            Resource::Dataset(d) => trace_err!(Object::try_from(d)),
+            Resource::Object(o) => trace_err!(Object::try_from(o)),
         }
     }
 }
@@ -897,143 +899,6 @@ impl From<Vec<ResourceString>> for Missing {
     }
 }
 
-// s3://foo/bar/baz
-
-// impl ResourceStrings {
-//     pub fn permute(mut self) -> (Vec<ResourceString>, Vec<(ResourceString, Missing)>) {
-//         let mut orig = Vec::new();
-//         let mut permutations = Vec::new();
-
-//         for x in self.0.drain(..) {
-//             match x {
-//                 ResourceString::Project(p) => {
-//                     orig.push(ResourceString::Project(p.clone()));
-//                 }
-//                 ResourceString::Collection(p, c) => {
-//                     orig.push(ResourceString::Collection(p.clone(), c.clone()));
-//                     permutations.push((
-//                         ResourceString::Project(p.clone()),
-//                         Missing {
-//                             c: Some(c.clone()),
-//                             ..Default::default()
-//                         },
-//                     ));
-//                 }
-//                 ResourceString::Dataset(p, c, d) => {
-//                     orig.push(ResourceString::Dataset(p.clone(), c.clone(), d.clone()));
-//                     if let Some(c) = c {
-//                         permutations.push((
-//                             ResourceString::Collection(p.clone(), c.clone()),
-//                             Missing {
-//                                 d: Some(d.clone()),
-//                                 ..Default::default()
-//                             },
-//                         ));
-//                         permutations.push((
-//                             ResourceString::Project(p.clone()),
-//                             Missing {
-//                                 c: Some(c.clone()),
-//                                 d: Some(d.clone()),
-//                                 ..Default::default()
-//                             },
-//                         ));
-//                     }
-//                     permutations.push((
-//                         ResourceString::Project(p.clone()),
-//                         Missing {
-//                             d: Some(d.clone()),
-//                             ..Default::default()
-//                         },
-//                     ));
-//                 }
-//                 ResourceString::Object(p, c, d, o) => {
-//                     orig.push(ResourceString::Object(
-//                         p.clone(),
-//                         c.clone(),
-//                         d.clone(),
-//                         o.clone(),
-//                     ));
-//                     if let Some(c) = &c {
-//                         permutations.push((
-//                             ResourceString::Project(p.clone()),
-//                             Missing {
-//                                 c: Some(c.clone()),
-//                                 o: Some(o.clone()),
-//                                 ..Default::default()
-//                             },
-//                         ));
-
-//                         permutations.push((
-//                             ResourceString::Collection(p.clone(), c.clone()),
-//                             Missing {
-//                                 o: Some(o.clone()),
-//                                 ..Default::default()
-//                             },
-//                         ));
-
-//                         if let Some(d) = &d {
-//                             permutations.push((
-//                                 ResourceString::Project(p.clone()),
-//                                 Missing {
-//                                     c: Some(c.clone()),
-//                                     d: Some(d.clone()),
-//                                     o: Some(o.clone()),
-//                                     ..Default::default()
-//                                 },
-//                             ));
-
-//                             permutations.push((
-//                                 ResourceString::Collection(p.clone(), c.clone()),
-//                                 Missing {
-//                                     d: Some(d.clone()),
-//                                     o: Some(o.clone()),
-//                                     ..Default::default()
-//                                 },
-//                             ));
-
-//                             permutations.push((
-//                                 ResourceString::Dataset(p.clone(), Some(c.clone()), d.clone()),
-//                                 Missing {
-//                                     c: Some(c.clone()),
-//                                     d: Some(d.clone()),
-//                                     o: Some(o.clone()),
-//                                     ..Default::default()
-//                                 },
-//                             ));
-//                         }
-//                     } else if let Some(d) = &d {
-//                         permutations.push((
-//                             ResourceString::Project(p.clone()),
-//                             Missing {
-//                                 d: Some(d.clone()),
-//                                 o: Some(o.clone()),
-//                                 ..Default::default()
-//                             },
-//                         ));
-
-//                         permutations.push((
-//                             ResourceString::Dataset(p.clone(), None, d.clone()),
-//                             Missing {
-//                                 o: Some(o.clone()),
-//                                 ..Default::default()
-//                             },
-//                         ));
-//                     }
-//                     permutations.push((
-//                         ResourceString::Project(p.clone()),
-//                         Missing {
-//                             o: Some(o.clone()),
-//                             ..Default::default()
-//                         },
-//                     ));
-//                 }
-//             }
-//         }
-
-//         (orig, permutations)
-//     }
-// }
-
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
 pub struct ResourceResults {
     pub found: Vec<ResourceIds>,
@@ -1047,7 +912,10 @@ impl ResourceResults {
         if let Some((bucket, key)) = path.as_object() {
             let pathvec = key.split('/').collect::<Vec<&str>>();
             match pathvec.len() {
-                0 => Err(anyhow!("Only bucket provided")),
+                0 => {
+                    error!("only bucket provided");
+                    Err(anyhow!("Only bucket provided"))
+                }
                 1 => {
                     let object = ResourceString::Object(
                         bucket.to_string(),
@@ -1304,6 +1172,7 @@ impl ResourceResults {
                 }
             }
         } else {
+            error!("invalid path");
             Err(anyhow!("Invalid path"))
         }
     }
@@ -1343,6 +1212,7 @@ impl TryFrom<&S3Path> for ResourceString {
                 )),
             }
         } else {
+            error!("invalid path");
             Err(anyhow!("Invalid path"))
         }
     }
@@ -1495,7 +1365,12 @@ impl ResourceIds {
     #[tracing::instrument(level = "trace", skip(self, id))]
     pub fn set_collection(&mut self, id: DieselUlid) -> Result<()> {
         match self {
-            ResourceIds::Project(_) => return Err(anyhow!("Cannot set collection on project")),
+            ResourceIds::Project(_) => {
+                return {
+                    error!("cannot set collection on project");
+                    Err(anyhow!("Cannot set collection on project"))
+                }
+            }
             ResourceIds::Collection(_, c) => *c = id,
             ResourceIds::Dataset(_, c, _) => *c = Some(id),
             ResourceIds::Object(_, c, _, _) => *c = Some(id),
@@ -1506,9 +1381,15 @@ impl ResourceIds {
     #[tracing::instrument(level = "trace", skip(self, id))]
     pub fn set_dataset(&mut self, id: DieselUlid) -> Result<()> {
         match self {
-            ResourceIds::Project(_) => return Err(anyhow!("Cannot set dataset on project")),
+            ResourceIds::Project(_) => {
+                return {
+                    error!("cannot set dataset on project");
+                    Err(anyhow!("Cannot set dataset on project"))
+                }
+            }
             ResourceIds::Collection(_, _) => {
-                return Err(anyhow!("Cannot set dataset on collection"))
+                error!("cannot set dataset on collection");
+                return Err(anyhow!("Cannot set dataset on collection"));
             }
             ResourceIds::Dataset(_, _, d) => *d = id,
             ResourceIds::Object(_, _, d, _) => *d = Some(id),
@@ -1519,9 +1400,13 @@ impl ResourceIds {
     #[tracing::instrument(level = "trace", skip(self, id))]
     pub fn set_object(&mut self, id: DieselUlid) -> Result<()> {
         match self {
-            ResourceIds::Project(_) => return Err(anyhow!("Cannot set object on project")),
+            ResourceIds::Project(_) => {
+                error!("cannot set object on project");
+                return Err(anyhow!("Cannot set object on project"));
+            }
             ResourceIds::Collection(_, _) => {
-                return Err(anyhow!("Cannot set object on collection"))
+                error!("cannot set object on collection");
+                return Err(anyhow!("Cannot set object on collection"));
             }
             ResourceIds::Dataset(_, _, _) => return Err(anyhow!("Cannot set object on dataset")),
             ResourceIds::Object(_, _, _, o) => *o = id,
