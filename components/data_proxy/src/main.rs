@@ -7,6 +7,7 @@ use caching::cache::Cache;
 use data_backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
 use grpc_api::bundler::BundlerServiceImpl;
 use grpc_api::{proxy_service::DataproxyServiceImpl, user_service::DataproxyUserServiceImpl};
+use tracing::error;
 use std::{net::SocketAddr, str::FromStr, sync::Arc};
 use tokio::try_join;
 use tonic::transport::Server;
@@ -136,7 +137,7 @@ async fn main() -> Result<()> {
     match try_join!(s3_server.run(), grpc_server_handle) {
         Ok(_) => Ok(()),
         Err(err) => {
-            log::error!("{}", err);
+            error!("{}", err);
             Err(err)
         }
     }
