@@ -401,23 +401,28 @@ impl MeilisearchClient {
             // Set the filterable attributes of the index
             index
                 .set_filterable_attributes([
-                    "object_type", // e.g. object_type = 1 or object_type > 2
-                    //"object_type_name", //e.g. = OBJECT or IN [PROJECT, DATASET]
-                    "object_status", // e.g. = "AVAILABLE" or IN [AVAILABLE, ERROR]
-                    "size",          // e.g. size > 12345
+                    "name",
+                    "description",    // e.g. description = ""
+                    "object_type",    //e.g. = OBJECT or IN [PROJECT, DATASET]
+                    "object_type_id", // e.g. object_type = 1 or object_type > 2
+                    "status",         // e.g. = "AVAILABLE" or IN [AVAILABLE, ERROR]
+                    "size",           // e.g. size > 12345
                     "labels.key",
                     "labels.value",
-                    "labels.variant", // e.g. labels.variant = "LABEL"
-                    "data_class",     // e.g. data_class = "PUBLIC"
-                    "created_at",     // e.g. created_at < 1692824072 (2023-08-23T20:54:32+00:00)
+                    "labels.variant",   // e.g. labels.variant = "LABEL"
+                    "data_class",       // e.g. data_class = "PUBLIC"
+                    "created_at",       // e.g. created_at < 1692824072 (2023-08-23T20:54:32+00:00)
+                    "metadata_license", // e.g. metadata_license = CC0
+                    "data_license",     // e.g. data_license = CC0
                 ])
                 .await?
                 .wait_for_completion(&self.client, None, None)
                 .await?;
 
             // Set the sortable attributes of the index
+            //TODO: Implement in API
             index
-                .set_sortable_attributes(["size", "object_type", "created_at"])
+                .set_sortable_attributes(["size", "object_type_id", "created_at"])
                 .await?
                 .wait_for_completion(&self.client, None, None)
                 .await?;
