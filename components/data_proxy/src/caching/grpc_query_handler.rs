@@ -1,6 +1,7 @@
 use crate::structs::Object as DPObject;
 use crate::structs::ObjectLocation;
 use crate::structs::PubKey;
+use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::notification::services::v2::announcement_event;
@@ -56,6 +57,9 @@ use tonic::metadata::AsciiMetadataValue;
 use tonic::transport::Channel;
 use tonic::transport::ClientTlsConfig;
 use tonic::Request;
+use tracing::debug;
+use tracing::error;
+use tracing::trace;
 
 use super::cache::Cache;
 
@@ -84,11 +88,13 @@ impl GrpcQueryHandler {
         // Check if server host url is tls
         let server_url: String = server.into();
         let endpoint = if server_url.starts_with("https") {
-            Channel::from_shared(server_url)?.tls_config(ClientTlsConfig::new())?
+            trace_err!(
+                trace_err!(Channel::from_shared(server_url))?.tls_config(ClientTlsConfig::new())
+            )?
         } else {
-            Channel::from_shared(server_url)?
+            trace_err!(Channel::from_shared(server_url))?
         };
-        let channel = endpoint.connect().await?;
+        let channel = trace_err!(endpoint.connect().await)?;
 
         let project_service = ProjectServiceClient::new(channel.clone());
 
@@ -106,13 +112,13 @@ impl GrpcQueryHandler {
 
         let event_notification_service = EventNotificationServiceClient::new(channel);
 
-        let long_lived_token = cache
+        let long_lived_token = trace_err!(cache
             .auth
             .read()
             .await
             .as_ref()
-            .ok_or_else(|| anyhow!("No auth found"))?
-            .sign_notification_token()?;
+            .ok_or_else(|| anyhow!("No auth found")))?
+        .sign_notification_token()?;
 
         let handler = GrpcQueryHandler {
             project_service,
@@ -142,25 +148,26 @@ impl GrpcQueryHandler {
 
 // Aruna grpc request section
 impl GrpcQueryHandler {
-    #[tracing::instrument(level = "trace", skip(self, id, _checksum))]
+    #[tracing::instrument(level = "trace", skip(self, _checksum))]
     pub async fn get_user(&self, id: DieselUlid, _checksum: String) -> Result<GrpcUser> {
         let mut req = Request::new(GetUserRedactedRequest {
             user_id: id.to_string(),
         });
 
         req.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token))?,
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!(
+                "Bearer {}",
+                self.long_lived_token
+            )))?,
         );
 
-        let user = self
-            .user_service
-            .clone()
-            .get_user_redacted(req)
-            .await?
-            .into_inner()
-            .user
-            .ok_or(anyhow!("Unknown user"))?;
+        let user = trace_err!(
+            trace_err!(self.user_service.clone().get_user_redacted(req).await)?
+                .into_inner()
+                .user
+                .ok_or(anyhow!("Unknown user"))
+        )?;
         Ok(user)
     }
     #[tracing::instrument(level = "trace", skip(self))]
@@ -168,17 +175,18 @@ impl GrpcQueryHandler {
         let mut req = Request::new(GetPubkeysRequest {});
 
         req.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!(
+                "Bearer {}",
+                self.long_lived_token.as_str()
+            )))?,
         );
 
-        Ok(self
-            .storage_status_service
-            .clone()
-            .get_pubkeys(req)
-            .await?
-            .into_inner()
-            .pubkeys)
+        Ok(
+            trace_err!(self.storage_status_service.clone().get_pubkeys(req).await)?
+                .into_inner()
+                .pubkeys,
+        )
     }
 
     #[tracing::instrument(level = "trace", skip(self, object, token))]
@@ -186,20 +194,18 @@ impl GrpcQueryHandler {
         let mut req = Request::new(CreateProjectRequest::from(object));
 
         req.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
         );
 
-        let response = self
-            .project_service
-            .clone()
-            .create_project(req)
-            .await?
-            .into_inner()
-            .project
-            .ok_or(anyhow!("unknown project"))?;
+        let response = trace_err!(trace_err!(
+            self.project_service.clone().create_project(req).await
+        )?
+        .into_inner()
+        .project
+        .ok_or(anyhow!("unknown project")))?;
 
-        let object = DPObject::try_from(response)?;
+        let object = trace_err!(DPObject::try_from(response))?;
 
         self.cache.upsert_object(object.clone(), None).await?;
 
@@ -213,37 +219,41 @@ impl GrpcQueryHandler {
         });
 
         req.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!(
+                "Bearer {}",
+                self.long_lived_token.as_str()
+            )))?,
         );
 
-        self.project_service
-            .clone()
-            .get_project(req)
-            .await?
-            .into_inner()
-            .project
-            .ok_or(anyhow!("unknown project"))
+        trace_err!(
+            trace_err!(self.project_service.clone().get_project(req).await)?
+                .into_inner()
+                .project
+                .ok_or(anyhow!("unknown project"))
+        )
     }
 
-    #[tracing::instrument(level = "trace", skip(self, id, _checksum))]
+    #[tracing::instrument(level = "trace", skip(self, _checksum))]
     async fn get_collection(&self, id: &DieselUlid, _checksum: String) -> Result<Collection> {
         let mut req = Request::new(GetCollectionRequest {
             collection_id: id.to_string(),
         });
 
         req.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!(
+                "Bearer {}",
+                self.long_lived_token.as_str()
+            )))?,
         );
 
-        self.collection_service
-            .clone()
-            .get_collection(req)
-            .await?
-            .into_inner()
-            .collection
-            .ok_or(anyhow!("unknown collection"))
+        trace_err!(
+            trace_err!(self.collection_service.clone().get_collection(req).await)?
+                .into_inner()
+                .collection
+                .ok_or(anyhow!("unknown collection"))
+        )
     }
 
     #[tracing::instrument(level = "trace", skip(self, object, token))]
@@ -251,20 +261,18 @@ impl GrpcQueryHandler {
         let mut req = Request::new(CreateCollectionRequest::from(object));
 
         req.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
         );
 
-        let response = self
-            .collection_service
-            .clone()
-            .create_collection(req)
-            .await?
-            .into_inner()
-            .collection
-            .ok_or(anyhow!("unknown project"))?;
+        let response = trace_err!(trace_err!(
+            self.collection_service.clone().create_collection(req).await
+        )?
+        .into_inner()
+        .collection
+        .ok_or(anyhow!("unknown project")))?;
 
-        let object = DPObject::try_from(response)?;
+        let object = trace_err!(DPObject::try_from(response))?;
 
         self.cache.upsert_object(object.clone(), None).await?;
 
@@ -278,17 +286,19 @@ impl GrpcQueryHandler {
         });
 
         req.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!(
+                "Bearer {}",
+                self.long_lived_token.as_str()
+            )))?,
         );
 
-        self.dataset_service
-            .clone()
-            .get_dataset(req)
-            .await?
-            .into_inner()
-            .dataset
-            .ok_or(anyhow!("unknown dataset"))
+        trace_err!(
+            trace_err!(self.dataset_service.clone().get_dataset(req).await)?
+                .into_inner()
+                .dataset
+                .ok_or(anyhow!("unknown dataset"))
+        )
     }
 
     #[tracing::instrument(level = "trace", skip(self, object, token))]
@@ -296,44 +306,44 @@ impl GrpcQueryHandler {
         let mut req = Request::new(CreateDatasetRequest::from(object));
 
         req.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
         );
 
-        let response = self
-            .dataset_service
-            .clone()
-            .create_dataset(req)
-            .await?
-            .into_inner()
-            .dataset
-            .ok_or(anyhow!("unknown project"))?;
+        let response = trace_err!(trace_err!(
+            self.dataset_service.clone().create_dataset(req).await
+        )?
+        .into_inner()
+        .dataset
+        .ok_or(anyhow!("unknown project")))?;
 
-        let object = DPObject::try_from(response)?;
+        let object = trace_err!(DPObject::try_from(response))?;
 
         self.cache.upsert_object(object.clone(), None).await?;
 
         Ok(object)
     }
 
-    #[tracing::instrument(level = "trace", skip(self, id, _checksum))]
+    #[tracing::instrument(level = "trace", skip(self, _checksum))]
     async fn get_object(&self, id: &DieselUlid, _checksum: String) -> Result<Object> {
         let mut req = Request::new(GetObjectRequest {
             object_id: id.to_string(),
         });
 
         req.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!(
+                "Bearer {}",
+                self.long_lived_token.as_str()
+            )))?,
         );
 
-        self.object_service
-            .clone()
-            .get_object(req)
-            .await?
-            .into_inner()
-            .object
-            .ok_or(anyhow!("unknown object"))
+        trace_err!(
+            trace_err!(self.object_service.clone().get_object(req).await)?
+                .into_inner()
+                .object
+                .ok_or(anyhow!("unknown object"))
+        )
     }
 
     #[tracing::instrument(level = "trace", skip(self, object, loc, token))]
@@ -346,20 +356,18 @@ impl GrpcQueryHandler {
         let mut req = Request::new(CreateObjectRequest::from(object));
 
         req.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
         );
 
-        let response = self
-            .object_service
-            .clone()
-            .create_object(req)
-            .await?
-            .into_inner()
-            .object
-            .ok_or(anyhow!("unknown project"))?;
+        let response = trace_err!(trace_err!(
+            self.object_service.clone().create_object(req).await
+        )?
+        .into_inner()
+        .object
+        .ok_or(anyhow!("unknown project")))?;
 
-        let object = DPObject::try_from(response)?;
+        let object = trace_err!(DPObject::try_from(response))?;
 
         if let Some(ref mut loc) = loc {
             loc.id = object.id;
@@ -384,33 +392,24 @@ impl GrpcQueryHandler {
         let mut req = Request::new(inner_request);
 
         req.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
         );
 
         // Update Object in ArunaServer and validate response
-        let response = self
-            .object_service
-            .clone()
-            .update_object(req)
-            .await?
-            .into_inner();
+        let response =
+            trace_err!(self.object_service.clone().update_object(req).await)?.into_inner();
 
-        let object = DPObject::try_from(
-            response
-                .object
-                .ok_or(anyhow!("response does not contain object"))?,
-        )?;
+        let object = trace_err!(DPObject::try_from(trace_err!(response
+            .object
+            .ok_or(anyhow!("response does not contain object")))?,))?;
 
         self.cache.upsert_object(object.clone(), None).await?;
 
         Ok(object)
     }
 
-    #[tracing::instrument(
-        level = "trace",
-        skip(self, object_id, content_len, hashes, location, token)
-    )]
+    #[tracing::instrument(level = "trace", skip(self, hashes, location, token))]
     pub async fn finish_object(
         &self,
         object_id: DieselUlid,
@@ -427,20 +426,18 @@ impl GrpcQueryHandler {
         });
 
         req.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
         );
 
-        let response = self
-            .object_service
-            .clone()
-            .finish_object_staging(req)
-            .await?
-            .into_inner()
-            .object
-            .ok_or(anyhow!("unknown project"))?;
+        let response = trace_err!(trace_err!(
+            self.object_service.clone().finish_object_staging(req).await
+        )?
+        .into_inner()
+        .object
+        .ok_or(anyhow!("unknown project")))?;
 
-        let object = DPObject::try_from(response)?;
+        let object = trace_err!(DPObject::try_from(response))?;
 
         // Persist Object and Location in cache/database
         if let Some(mut location) = location {
@@ -466,19 +463,17 @@ impl GrpcQueryHandler {
         let mut req = Request::new(CreateObjectRequest::from(proxy_object.clone()));
 
         req.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
         );
 
-        let server_object: DPObject = self
-            .object_service
-            .clone()
-            .create_object(req)
-            .await?
-            .into_inner()
-            .object
-            .ok_or(anyhow!("Object missing in CreateObjectResponse"))?
-            .try_into()?;
+        let server_object: DPObject = trace_err!(trace_err!(
+            self.object_service.clone().create_object(req).await
+        )?
+        .into_inner()
+        .object
+        .ok_or(anyhow!("Object missing in CreateObjectResponse")))?
+        .try_into()?;
 
         let mut req = Request::new(FinishObjectStagingRequest {
             object_id: server_object.id.to_string(),
@@ -488,21 +483,19 @@ impl GrpcQueryHandler {
         });
 
         req.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", token))?,
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
         );
 
-        let response = self
-            .object_service
-            .clone()
-            .finish_object_staging(req)
-            .await?
-            .into_inner()
-            .object
-            .ok_or(anyhow!("Object missing in FinishObjectResponse"))?;
+        let response = trace_err!(trace_err!(
+            self.object_service.clone().finish_object_staging(req).await
+        )?
+        .into_inner()
+        .object
+        .ok_or(anyhow!("Object missing in FinishObjectResponse")))?;
 
         // Id of location record should be set to Dataproxy Object id but is set to Server Object id... the fuck?
-        let object = DPObject::try_from(response)?;
+        let object = trace_err!(DPObject::try_from(response))?;
         loc.id = object.id;
 
         // Persist Object and Location in cache/database
@@ -518,35 +511,40 @@ impl GrpcQueryHandler {
         });
 
         req.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!(
+                "Bearer {}",
+                self.long_lived_token.as_str()
+            )))?,
         );
 
-        let stream = self
-            .event_notification_service
-            .clone()
-            .get_event_message_stream(req)
-            .await?;
+        let stream = trace_err!(
+            self.event_notification_service
+                .clone()
+                .get_event_message_stream(req)
+                .await
+        )?;
 
         let mut inner_stream = stream.into_inner();
 
         // TODO: Fullsync
         let mut req = Request::new(FullSyncEndpointRequest {});
         req.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", self.long_lived_token.as_str()))?,
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!(
+                "Bearer {}",
+                self.long_lived_token.as_str()
+            )))?,
         );
-        let mut full_sync_stream = self
-            .endpoint_service
-            .clone()
-            .full_sync_endpoint(req)
-            .await?
-            .into_inner();
+        let mut full_sync_stream =
+            trace_err!(self.endpoint_service.clone().full_sync_endpoint(req).await)?.into_inner();
         let mut resources = Vec::new();
-        while let Some(full_sync_message) = full_sync_stream.message().await? {
-            match full_sync_message
+        while let Some(full_sync_message) = trace_err!(full_sync_stream.message().await)? {
+            debug!("received full_sync_message");
+            trace!(?full_sync_message);
+            match trace_err!(full_sync_message
                 .target
-                .ok_or_else(|| anyhow!("Missing target in full_sync"))?
+                .ok_or_else(|| anyhow!("Missing target in full_sync")))?
             {
                 Target::GenericResource(GenericResource { resource: Some(r) }) => {
                     resources.push(r);
@@ -570,32 +568,37 @@ impl GrpcQueryHandler {
         sort_resources(&mut resources);
         for res in resources {
             self.cache
-                .upsert_object(DPObject::try_from(res)?, None)
+                .upsert_object(trace_err!(DPObject::try_from(res))?, None)
                 .await?
         }
+        debug!("querying events");
         while let Some(m) = inner_stream.message().await? {
             if let Some(message) = m.message {
-                log::debug!("Received message: {:?}", message);
+                debug!(?message, "Received message");
 
                 if let Ok(Some(r)) = self.process_message(message).await {
                     let mut resp =
                         Request::new(AcknowledgeMessageBatchRequest { replies: vec![r] });
 
                     resp.metadata_mut().append(
-                        AsciiMetadataKey::from_bytes("authorization".as_bytes())?,
-                        AsciiMetadataValue::try_from(format!(
+                        trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+                        trace_err!(AsciiMetadataValue::try_from(format!(
                             "Bearer {}",
                             self.long_lived_token.as_str()
-                        ))?,
+                        )))?,
                     );
 
-                    self.event_notification_service
-                        .clone()
-                        .acknowledge_message_batch(resp)
-                        .await?;
+                    trace_err!(
+                        self.event_notification_service
+                            .clone()
+                            .acknowledge_message_batch(resp)
+                            .await
+                    )?;
+                    debug!("acknowledged message");
                 }
             }
         }
+        error!("Stream was closed by sender");
         Err(anyhow!("Stream was closed by sender"))
     }
 }
@@ -618,31 +621,31 @@ impl GrpcQueryHandler {
         &self,
         message: AnnouncementEvent,
     ) -> Result<Option<Reply>> {
-        match message
+        debug!("processing announcement event");
+        match trace_err!(message
             .event_variant
-            .ok_or_else(|| anyhow!("No event variant"))?
+            .ok_or_else(|| anyhow!("No event variant")))?
         {
             announcement_event::EventVariant::NewPubkey(_)
             | announcement_event::EventVariant::RemovePubkey(_)
             | announcement_event::EventVariant::NewDataProxyId(_)
             | announcement_event::EventVariant::RemoveDataProxyId(_)
             | announcement_event::EventVariant::UpdateDataProxyId(_) => {
-                let pks = self
-                    .get_pubkeys()
-                    .await?
+                let pks = trace_err!(self.get_pubkeys().await)?
                     .into_iter()
                     .map(PubKey::from)
                     .collect();
-                self.cache.set_pubkeys(pks).await?
+                trace_err!(self.cache.set_pubkeys(pks).await)?;
             }
             announcement_event::EventVariant::Downtime(_) => (),
             announcement_event::EventVariant::Version(_) => (),
-        }
+        };
         Ok(message.reply)
     }
 
     #[tracing::instrument(level = "trace", skip(self, message))]
     async fn process_user_event(&self, message: UserEvent) -> Result<Option<Reply>> {
+        debug!("processing user event");
         match message.event_variant() {
             EventVariant::Created | EventVariant::Available | EventVariant::Updated => {
                 let uid = DieselUlid::from_str(&message.user_id)?;
@@ -662,32 +665,50 @@ impl GrpcQueryHandler {
 
     #[tracing::instrument(level = "trace", skip(self, event))]
     async fn process_resource_event(&self, event: ResourceEvent) -> Result<Option<Reply>> {
+        debug!("processing resource event");
         match event.event_variant() {
             EventVariant::Created | EventVariant::Updated => {
+                trace!("upserting object");
                 if let Some(r) = event.resource {
                     match r.resource_variant() {
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Project => {
-                            let object = self
-                                .get_project(&DieselUlid::from_str(&r.resource_id)?, r.checksum)
-                                .await?;
+                            let object = trace_err!(
+                                self.get_project(
+                                    &trace_err!(DieselUlid::from_str(&r.resource_id))?,
+                                    r.checksum
+                                )
+                                .await
+                            )?;
                             self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Collection => {
-                            let object = self
-                                .get_collection(&DieselUlid::from_str(&r.resource_id)?, r.checksum)
-                                .await?;
+                            let object = trace_err!(
+                                self.get_collection(
+                                    &trace_err!(DieselUlid::from_str(&r.resource_id))?,
+                                    r.checksum
+                                )
+                                .await
+                            )?;
                             self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Dataset => {
-                            let object = self
-                                .get_dataset(&DieselUlid::from_str(&r.resource_id)?, r.checksum)
-                                .await?;
+                            let object = trace_err!(
+                                self.get_dataset(
+                                    &trace_err!(DieselUlid::from_str(&r.resource_id))?,
+                                    r.checksum
+                                )
+                                .await
+                            )?;
                             self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Object => {
-                            let object = self
-                                .get_object(&DieselUlid::from_str(&r.resource_id)?, r.checksum)
-                                .await?;
+                            let object = trace_err!(
+                                self.get_object(
+                                    &trace_err!(DieselUlid::from_str(&r.resource_id))?,
+                                    r.checksum
+                                )
+                                .await
+                            )?;
                             self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         _ => (),
@@ -695,6 +716,7 @@ impl GrpcQueryHandler {
                 }
             }
             EventVariant::Deleted => {
+                trace!("deleting object");
                 if let Some(r) = event.resource {
                     self.cache
                         .delete_object(DieselUlid::from_str(&r.resource_id)?)
