@@ -5,7 +5,6 @@ use super::utils::ranges::calculate_ranges;
 use crate::bundler::bundle_helper::get_bundle;
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
-use crate::log_received;
 use crate::s3_frontend::utils::list_objects::filter_list_objects;
 use crate::s3_frontend::utils::list_objects::list_response;
 use crate::structs::CheckAccessResult;
@@ -14,6 +13,7 @@ use crate::structs::PartETag;
 use crate::structs::ResourceString;
 use crate::structs::TypedRelation;
 use crate::structs::ALL_RIGHTS_RESERVED;
+use crate::trace_err;
 use anyhow::Result;
 use aruna_file::helpers::footer_parser::FooterParser;
 use aruna_file::streamreadwrite::ArunaStreamReadWriter;
@@ -49,6 +49,10 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::sync::Arc;
+use tracing::error;
+use tracing::info_span;
+use tracing::trace;
+use tracing::Instrument;
 
 pub struct ArunaS3Service {
     backend: Arc<Box<dyn StorageBackend>>,
@@ -86,45 +90,32 @@ impl S3 for ArunaS3Service {
         if let Some(client) = self.cache.aruna_client.read().await.as_ref() {
             let CheckAccessResult {
                 user_id, token_id, ..
-            } = data.ok_or_else(|| s3_error!(InternalError, "Internal Error"))?;
+            } = trace_err!(data.ok_or_else(|| s3_error!(InternalError, "Internal Error")))?;
 
-            let token = self
+            let token = trace_err!(self
                 .cache
                 .auth
                 .read()
                 .await
                 .as_ref()
-                .ok_or_else(|| s3_error!(InternalError, "Missing auth handler"))?
-                .sign_impersonating_token(
-                    user_id.ok_or_else(|| {
-                        s3_error!(NotSignedUp, "Unauthorized: Impersonating user error")
-                    })?,
-                    token_id,
-                )
-                .map_err(|e| {
-                    dbg!(e);
-                    s3_error!(NotSignedUp, "Unauthorized: Impersonating error")
-                })?;
+                .ok_or_else(|| s3_error!(InternalError, "Missing auth handler")))?
+            .sign_impersonating_token(
+                trace_err!(user_id.ok_or_else(|| {
+                    s3_error!(NotSignedUp, "Unauthorized: Impersonating user error")
+                }))?,
+                token_id,
+            )
+            .map_err(|_| s3_error!(NotSignedUp, "Unauthorized: Impersonating error"))?;
 
-            new_object = client
-                .create_project(new_object, &token)
-                .await
-                .map_err(|e| {
-                    dbg!(e);
-                    s3_error!(InternalError, "[BACKEND] Unable to create project")
-                })?;
+            new_object = trace_err!(client.create_project(new_object, &token).await)
+                .map_err(|_| s3_error!(InternalError, "[BACKEND] Unable to create project"))?;
         }
         let output = CreateBucketOutput {
             location: Some(new_object.name.to_string()),
         };
 
-        self.cache
-            .upsert_object(new_object, None)
-            .await
-            .map_err(|e| {
-                dbg!(e);
-                s3_error!(InternalError, "Unable to cache new bucket")
-            })?;
+        trace_err!(self.cache.upsert_object(new_object, None).await)
+            .map_err(|_| s3_error!(InternalError, "Unable to cache new bucket"))?;
 
         Ok(S3Response::new(output))
     }
@@ -136,6 +127,7 @@ impl S3 for ArunaS3Service {
     ) -> S3Result<S3Response<PutObjectOutput>> {
         match req.input.content_length {
             Some(0) | None => {
+                error!("Missing or invalid (0) content-length");
                 return Err(s3_error!(
                     MissingContentLength,
                     "Missing or invalid (0) content-length"
@@ -151,11 +143,11 @@ impl S3 for ArunaS3Service {
             missing_resources,
             object,
             ..
-        } = req
+        } = trace_err!(req
             .extensions
             .get::<CheckAccessResult>()
             .cloned()
-            .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context"))?;
+            .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context")))?;
 
         let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
         {
@@ -170,24 +162,26 @@ impl S3 for ArunaS3Service {
         let mut object = if let Some((o, _)) = object {
             if o.object_type == crate::structs::ObjectType::Object {
                 if o.object_status == Status::Initializing {
+                    trace!("Object is initializing");
                     o
                 } else {
                     // Force Object update with new revision in ArunaServer
+                    trace!("Object is not initializing, force update");
                     let new_revision = if let Some(handler) =
                         self.cache.aruna_client.read().await.as_ref()
                     {
                         if let Some(token) = &impersonating_token {
-                            handler
-                                .init_object_update(o, token, true)
-                                .await
+                            trace_err!(handler.init_object_update(o, token, true).await)
                                 .map_err(|_| s3_error!(InternalError, "Object update failed"))?
                         } else {
+                            error!("missing impersonating token");
                             return Err(s3_error!(InternalError, "Token creation failed"));
                         }
                     } else {
                         return Err(s3_error!(InternalError, "ArunaServer client not available"));
                     };
 
+                    trace!("Created dummy object");
                     ProxyObject {
                         id: new_revision.id,
                         name: new_revision.name,
@@ -205,11 +199,12 @@ impl S3 for ArunaS3Service {
                     }
                 }
             } else {
-                let missing_object_name = missing_resources
+                trace!("ObjectType is not object");
+                let missing_object_name = trace_err!(trace_err!(missing_resources
                     .clone()
-                    .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?
-                    .o
-                    .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?;
+                    .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path")))?
+                .o
+                .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path")))?;
 
                 ProxyObject {
                     id: DieselUlid::generate(),
@@ -228,11 +223,11 @@ impl S3 for ArunaS3Service {
                 }
             }
         } else {
-            let missing_object_name = missing_resources
+            let missing_object_name = trace_err!(trace_err!(missing_resources
                 .clone()
-                .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?
-                .o
-                .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?;
+                .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path")))?
+            .o
+            .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path")))?;
 
             ProxyObject {
                 id: DieselUlid::generate(),
@@ -252,11 +247,14 @@ impl S3 for ArunaS3Service {
         };
 
         // Initialize data location in the storage backend
-        let mut location = self
-            .backend
-            .initialize_location(&object, req.input.content_length, None, false)
-            .await
-            .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
+        let mut location = trace_err!(
+            self.backend
+                .initialize_location(&object, req.input.content_length, None, false)
+                .await
+        )
+        .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
+
+        trace!("Initialized data location");
 
         // Initialize hashing transformers
         let (initial_sha_trans, initial_sha_recv) = HashingTransformer::new(Sha256::new());
@@ -290,34 +288,42 @@ impl S3 for ArunaS3Service {
                 awr = awr.add_transformer(initial_size_trans);
 
                 if location.compressed {
+                    trace!("adding zstd decompressor");
                     awr = awr.add_transformer(ZstdEnc::new(true));
                     if location.raw_content_len > 5242880 + 80 * 28 {
+                        trace!("adding footer generator");
                         awr = awr.add_transformer(FooterGenerator::new(None))
                     }
                 }
 
                 if let Some(enc_key) = &location.encryption_key {
                     awr = awr.add_transformer(
-                        ChaCha20Enc::new(true, enc_key.to_string().into_bytes()).map_err(|e| {
-                            log::error!("{}", e);
-                            s3_error!(InternalError, "Internal data transformer encryption error")
-                        })?,
+                        trace_err!(ChaCha20Enc::new(true, enc_key.to_string().into_bytes()))
+                            .map_err(|_| {
+                                s3_error!(
+                                    InternalError,
+                                    "Internal data transformer encryption error"
+                                )
+                            })?,
                     );
                 }
 
                 awr = awr.add_transformer(final_sha_trans);
                 awr = awr.add_transformer(final_size_trans);
 
-                awr.process().await.map_err(|e| {
-                    log::error!("{}", e);
+                trace_err!(awr.process().await).map_err(|_| {
                     s3_error!(InternalError, "Internal data transformer processing error")
                 })?;
             }
-            None => return Err(s3_error!(InvalidRequest, "Empty body is not allowed")),
+            None => {
+                error!("Empty body is not allowed");
+                return Err(s3_error!(InvalidRequest, "Empty body is not allowed"));
+            }
         }
 
         // Create missing parent resources
         if let Some(missing) = &missing_resources {
+            trace!(?missing, "parent_resources");
             let collection_id = if let Some(collection) = &missing.c {
                 let col = ProxyObject {
                     id: DieselUlid::default(),
@@ -339,9 +345,7 @@ impl S3 for ArunaS3Service {
 
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                     if let Some(token) = &impersonating_token {
-                        let col = handler
-                            .create_collection(col, token)
-                            .await
+                        let col = trace_err!(handler.create_collection(col, token).await)
                             .map_err(|_| s3_error!(InternalError, "Unable to create collection"))?;
                         Some(col.id)
                     } else {
@@ -378,9 +382,7 @@ impl S3 for ArunaS3Service {
                 };
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                     if let Some(token) = &impersonating_token {
-                        let dataset = handler
-                            .create_dataset(dataset, token)
-                            .await
+                        let dataset = trace_err!(handler.create_dataset(dataset, token).await)
                             .map_err(|_| s3_error!(InternalError, "Unable to create dataset"))?;
 
                         Some(dataset.id)
@@ -394,6 +396,7 @@ impl S3 for ArunaS3Service {
                 res_ids.get_dataset()
             };
 
+            trace!("updating parents");
             if let Some(ds_id) = dataset_id {
                 object.parents = Some(HashSet::from([TypedRelation::Dataset(ds_id)]));
             } else if let Some(col_id) = collection_id {
@@ -406,38 +409,34 @@ impl S3 for ArunaS3Service {
         }
 
         // Fetch calculated hashes
+        trace!("fetching hashes");
         let md5_initial = Some(
-            initial_md5_recv
-                .try_recv()
+            trace_err!(initial_md5_recv.try_recv())
                 .map_err(|_| s3_error!(InternalError, "Unable to md5 hash initial data"))?,
         );
         let sha_initial = Some(
-            initial_sha_recv
-                .try_recv()
+            trace_err!(initial_sha_recv.try_recv())
                 .map_err(|_| s3_error!(InternalError, "Unable to sha hash initial data"))?,
         );
-        sha_final = final_sha_recv
-            .try_recv()
+        sha_final = trace_err!(final_sha_recv.try_recv())
             .map_err(|_| s3_error!(InternalError, "Unable to sha hash final data"))?;
-        initial_size = initial_size_recv
-            .try_recv()
+        initial_size = trace_err!(initial_size_recv.try_recv())
             .map_err(|_| s3_error!(InternalError, "Unable to get size"))?;
-        final_size = final_size_recv
-            .try_recv()
+        final_size = trace_err!(final_size_recv.try_recv())
             .map_err(|_| s3_error!(InternalError, "Unable to get size"))?;
 
         object.hashes = vec![
             (
                 "MD5".to_string(),
-                md5_initial.clone().ok_or_else(|| {
+                trace_err!(md5_initial.clone().ok_or_else(|| {
                     s3_error!(InternalError, "Unable to get md5 hash initial data")
-                })?,
+                }))?,
             ),
             (
                 "SHA256".to_string(),
-                sha_initial.clone().ok_or_else(|| {
+                trace_err!(sha_initial.clone().ok_or_else(|| {
                     s3_error!(InternalError, "Unable to get sha hash initial data")
-                })?,
+                }))?,
             ),
         ]
         .into_iter()
@@ -446,15 +445,15 @@ impl S3 for ArunaS3Service {
         let hashes = vec![
             Hash {
                 alg: Hashalgorithm::Sha256.into(),
-                hash: sha_initial.clone().ok_or_else(|| {
+                hash: trace_err!(sha_initial.clone().ok_or_else(|| {
                     s3_error!(InternalError, "Unable to get sha hash initial data")
-                })?,
+                }))?,
             },
             Hash {
                 alg: Hashalgorithm::Md5.into(),
-                hash: md5_initial.clone().ok_or_else(|| {
+                hash: trace_err!(md5_initial.clone().ok_or_else(|| {
                     s3_error!(InternalError, "Unable to get md5 hash initial data")
-                })?,
+                }))?,
             },
         ];
 
@@ -462,18 +461,35 @@ impl S3 for ArunaS3Service {
         location.disk_content_len = final_size as i64;
         location.disk_hash = Some(sha_final.clone());
 
+        trace!("finishing object");
         if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
             if let Some(token) = &impersonating_token {
                 if let Some(missing) = missing_resources {
                     if missing.o.is_some() {
-                        handler
-                            .create_and_finish(object.clone(), location, token)
-                            .await
-                            .map_err(|e| {
-                                log::error!("Create and finish error: {}", e);
-                                s3_error!(InternalError, "Unable to create and/or finish object")
-                            })?;
+                        trace_err!(
+                            handler
+                                .create_and_finish(object.clone(), location, token)
+                                .await
+                        )
+                        .map_err(|_| {
+                            s3_error!(InternalError, "Unable to create and/or finish object")
+                        })?;
                     } else {
+                        trace_err!(
+                            handler
+                                .finish_object(
+                                    object.id,
+                                    location.raw_content_len,
+                                    hashes,
+                                    Some(location),
+                                    token,
+                                )
+                                .await
+                        )
+                        .map_err(|_| s3_error!(InternalError, "Unable to finish object"))?;
+                    }
+                } else {
+                    trace_err!(
                         handler
                             .finish_object(
                                 object.id,
@@ -482,28 +498,9 @@ impl S3 for ArunaS3Service {
                                 Some(location),
                                 token,
                             )
-                            //.finish_object(object.clone(), location, token)
                             .await
-                            .map_err(|e| {
-                                log::error!("Finish error: {}", e);
-                                s3_error!(InternalError, "Unable to finish object")
-                            })?;
-                    }
-                } else {
-                    handler
-                        .finish_object(
-                            object.id,
-                            location.raw_content_len,
-                            hashes,
-                            Some(location),
-                            token,
-                        )
-                        //.finish_object(object.clone(), location, token)
-                        .await
-                        .map_err(|e| {
-                            log::error!("Finish error: {}", e);
-                            s3_error!(InternalError, "Unable to finish object")
-                        })?;
+                    )
+                    .map_err(|_| s3_error!(InternalError, "Unable to finish object"))?;
                 }
             }
         }
@@ -522,8 +519,6 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<CreateMultipartUploadInput>,
     ) -> S3Result<S3Response<CreateMultipartUploadOutput>> {
-        log_received!(&req);
-
         let CheckAccessResult {
             user_id,
             token_id,
@@ -531,11 +526,11 @@ impl S3 for ArunaS3Service {
             missing_resources,
             object,
             ..
-        } = req
+        } = trace_err!(req
             .extensions
             .get::<CheckAccessResult>()
             .cloned()
-            .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context"))?;
+            .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context")))?;
 
         let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
         {
@@ -544,27 +539,31 @@ impl S3 for ArunaS3Service {
             None
         };
 
-        let res_ids =
-            resource_ids.ok_or_else(|| s3_error!(InvalidArgument, "Unknown object path"))?;
+        let res_ids = trace_err!(
+            resource_ids.ok_or_else(|| s3_error!(InvalidArgument, "Unknown object path"))
+        )?;
 
         let mut new_object = if let Some((o, _)) = object {
             if o.object_type == crate::structs::ObjectType::Object {
                 if o.object_status == Status::Initializing {
+                    trace!("Object is initializing");
                     o
                 } else {
+                    trace!("object is not initializing, force update");
                     // Force Object update with new revision in ArunaServer
                     let new_revision = if let Some(handler) =
                         self.cache.aruna_client.read().await.as_ref()
                     {
                         if let Some(token) = &impersonating_token {
-                            handler
-                                .init_object_update(o, token, true)
-                                .await
+                            trace_err!(handler.init_object_update(o, token, true).await)
                                 .map_err(|_| s3_error!(InternalError, "Object update failed"))?
                         } else {
+                            error!("missing impersonating token");
                             return Err(s3_error!(InternalError, "Token creation failed"));
                         }
                     } else {
+                        //TODO: Enable offline mode
+                        error!("ArunaServer client not available");
                         return Err(s3_error!(InternalError, "ArunaServer client not available"));
                     };
 
@@ -585,11 +584,13 @@ impl S3 for ArunaS3Service {
                     }
                 }
             } else {
-                let missing_object_name = missing_resources
+                let missing_object_name = trace_err!(trace_err!(missing_resources
                     .clone()
-                    .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?
-                    .o
-                    .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?;
+                    .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path")))?
+                .o
+                .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path")))?;
+
+                trace!(?missing_object_name, "missing_object_name");
 
                 ProxyObject {
                     id: DieselUlid::generate(),
@@ -608,11 +609,11 @@ impl S3 for ArunaS3Service {
                 }
             }
         } else {
-            let missing_object_name = missing_resources
+            let missing_object_name = trace_err!(trace_err!(missing_resources
                 .clone()
-                .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?
-                .o
-                .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path"))?;
+                .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path")))?
+            .o
+            .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path")))?;
 
             ProxyObject {
                 id: DieselUlid::generate(),
@@ -631,25 +632,25 @@ impl S3 for ArunaS3Service {
             }
         };
 
-        let mut location = self
-            .backend
-            .initialize_location(&new_object, None, None, true)
-            .await
-            .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
+        let mut location = trace_err!(
+            self.backend
+                .initialize_location(&new_object, None, None, true)
+                .await
+        )
+        .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
 
-        let init_response = self
-            .backend
-            .clone()
-            .init_multipart_upload(location.clone())
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InvalidArgument, "Unable to initialize multi-part")
-            })?;
+        let init_response = trace_err!(
+            self.backend
+                .clone()
+                .init_multipart_upload(location.clone())
+                .await
+        )
+        .map_err(|_| s3_error!(InvalidArgument, "Unable to initialize multi-part"))?;
 
         location.upload_id = Some(init_response.to_string());
 
         if let Some(missing) = missing_resources {
+            trace!(?missing, "missing parent resources");
             let collection_id = if let Some(collection) = missing.c {
                 let col = ProxyObject {
                     id: DieselUlid::generate(),
@@ -671,9 +672,7 @@ impl S3 for ArunaS3Service {
 
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                     if let Some(token) = &impersonating_token {
-                        let col = handler
-                            .create_collection(col, token)
-                            .await
+                        let col = trace_err!(handler.create_collection(col, token).await)
                             .map_err(|_| s3_error!(InternalError, "Unable to create collection"))?;
                         Some(col.id)
                     } else {
@@ -711,9 +710,7 @@ impl S3 for ArunaS3Service {
 
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                     if let Some(token) = &impersonating_token {
-                        let dataset = handler
-                            .create_dataset(dataset, token)
-                            .await
+                        let dataset = trace_err!(handler.create_dataset(dataset, token).await)
                             .map_err(|_| s3_error!(InternalError, "Unable to create dataset"))?;
 
                         Some(dataset.id)
@@ -727,6 +724,7 @@ impl S3 for ArunaS3Service {
                 res_ids.get_dataset()
             };
 
+            trace!("updating parents");
             if let Some(ds_id) = dataset_id {
                 new_object.parents = Some(HashSet::from([TypedRelation::Dataset(ds_id)]));
             } else if let Some(col_id) = collection_id {
@@ -737,15 +735,15 @@ impl S3 for ArunaS3Service {
                 )]));
             }
 
+            trace!("finishing object");
             if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                 if let Some(token) = &impersonating_token {
-                    handler
-                        .create_object(new_object.clone(), Some(location), token)
-                        .await
-                        .map_err(|err| {
-                            log::error!("Unable to create object: {:?}", err);
-                            s3_error!(InternalError, "Unable to create object")
-                        })?;
+                    trace_err!(
+                        handler
+                            .create_object(new_object.clone(), Some(location), token)
+                            .await
+                    )
+                    .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
                 }
             }
         }
@@ -763,10 +761,9 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<UploadPartInput>,
     ) -> S3Result<S3Response<UploadPartOutput>> {
-        log_received!(&req);
-
         match req.input.content_length {
             Some(0) | None => {
+                error!("Missing or invalid (0) content-length");
                 return Err(s3_error!(
                     MissingContentLength,
                     "Missing or invalid (0) content-length"
@@ -775,22 +772,25 @@ impl S3 for ArunaS3Service {
             _ => {}
         };
 
-        let CheckAccessResult { object, .. } =
-            req.extensions
-                .get::<CheckAccessResult>()
-                .cloned()
-                .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context"))?;
+        let CheckAccessResult { object, .. } = trace_err!(req
+            .extensions
+            .get::<CheckAccessResult>()
+            .cloned()
+            .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context")))?;
 
         // If the object exists and the signatures match -> Skip the download
 
         let location = if let Some((_, Some(loc))) = object {
             loc
         } else {
+            error!("object not initialized");
             return Err(s3_error!(InvalidArgument, "Object not initialized"));
         };
 
         let etag = match req.input.body {
             Some(data) => {
+                trace!("streaming data to backend");
+
                 let (sink, receiver) = BufferedS3Sink::new(
                     self.backend.clone(),
                     location.clone(),
@@ -804,33 +804,39 @@ impl S3 for ArunaS3Service {
                 let mut awr = ArunaStreamReadWriter::new_with_sink(data, sink);
 
                 if location.compressed {
+                    trace!("adding zstd compressor");
                     awr = awr.add_transformer(ZstdEnc::new(false));
                 }
 
                 if let Some(enc_key) = &location.encryption_key {
+                    trace!("adding chacha20 encryption");
                     awr = awr.add_transformer(
-                        ChaCha20Enc::new(true, enc_key.to_string().into_bytes()).map_err(|e| {
-                            log::error!("{}", e);
-                            s3_error!(InternalError, "Internal data transformer encryption error")
-                        })?,
+                        trace_err!(ChaCha20Enc::new(true, enc_key.to_string().into_bytes()))
+                            .map_err(|_| {
+                                s3_error!(
+                                    InternalError,
+                                    "Internal data transformer encryption error"
+                                )
+                            })?,
                     );
                 }
 
-                awr.process().await.map_err(|e| {
-                    log::error!("{}", e);
+                trace_err!(awr.process().await).map_err(|_| {
                     s3_error!(InternalError, "Internal data transformer processing error")
                 })?;
 
                 if let Some(r) = receiver {
-                    r.recv().await.map_err(|e| {
-                        log::error!("{}", e);
-                        s3_error!(InternalError, "Unable to query etag")
-                    })?
+                    trace_err!(r.recv().await)
+                        .map_err(|_| s3_error!(InternalError, "Unable to query etag"))?
                 } else {
-                    return Err(s3_error!(InternalError, "Unable to query etag"));
+                    error!("receiver is none");
+                    return Err(s3_error!(InternalError, "receiver is none"));
                 }
             }
-            None => return Err(s3_error!(InvalidRequest, "Empty body is not allowed")),
+            None => {
+                error!("empty body is not allowed");
+                return Err(s3_error!(InvalidRequest, "Empty body is not allowed"));
+            }
         };
 
         let output = UploadPartOutput {
@@ -850,11 +856,11 @@ impl S3 for ArunaS3Service {
             token_id,
             object,
             ..
-        } = req
+        } = trace_err!(req
             .extensions
             .get::<CheckAccessResult>()
             .cloned()
-            .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context"))?;
+            .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context")))?;
 
         let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
         {
@@ -867,14 +873,18 @@ impl S3 for ArunaS3Service {
         let (object, old_location) = if let Some((object, Some(loc))) = object {
             (object, loc)
         } else {
+            error!("object not initialized");
             return Err(s3_error!(InvalidArgument, "Object not initialized"));
         };
 
         let parts = match req.input.multipart_upload {
-            Some(parts) => parts
+            Some(parts) => trace_err!(parts
                 .parts
-                .ok_or_else(|| s3_error!(InvalidPart, "Parts must be specified")),
-            None => return Err(s3_error!(InvalidPart, "Parts must be specified")),
+                .ok_or_else(|| s3_error!(InvalidPart, "Parts must be specified"))),
+            None => {
+                error!("parts is none");
+                return Err(s3_error!(InvalidPart, "Parts must be specified"));
+            }
         }?;
 
         let etag_parts = parts
@@ -882,100 +892,88 @@ impl S3 for ArunaS3Service {
             .map(|a| {
                 Ok(PartETag {
                     part_number: a.part_number,
-                    etag: a
+                    etag: trace_err!(a
                         .e_tag
-                        .ok_or_else(|| s3_error!(InvalidPart, "etag must be specified"))?,
+                        .ok_or_else(|| s3_error!(InvalidPart, "etag must be specified")))?,
                 })
             })
             .collect::<Result<Vec<PartETag>, S3Error>>()?;
 
         // Does this object exists (including object id etc)
         //req.input.multipart_upload.unwrap().
-        self.backend
-            .clone()
-            .finish_multipart_upload(
-                old_location.clone(),
-                etag_parts,
-                old_location
-                    .upload_id
-                    .as_ref()
-                    .ok_or_else(|| s3_error!(InvalidPart, "Upload id must be specified"))?
-                    .to_string(),
-            )
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InternalError, "Unable to finish upload")
-            })?;
+        trace_err!(
+            self.backend
+                .clone()
+                .finish_multipart_upload(
+                    old_location.clone(),
+                    etag_parts,
+                    old_location
+                        .upload_id
+                        .as_ref()
+                        .ok_or_else(|| s3_error!(InvalidPart, "Upload id must be specified"))?
+                        .to_string(),
+                )
+                .await
+        )
+        .map_err(|_| s3_error!(InternalError, "Unable to finish upload"))?;
 
         let response = CompleteMultipartUploadOutput {
             e_tag: Some(object.id.to_string()),
             ..Default::default()
         };
 
-        let mut new_location = self
-            .backend
-            .initialize_location(&object, None, None, false)
-            .await
-            .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
+        let mut new_location = trace_err!(
+            self.backend
+                .initialize_location(&object, None, None, false)
+                .await
+        )
+        .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
 
-        let hashes =
+        let hashes = trace_err!(
             DataHandler::finalize_location(self.backend.clone(), &old_location, &mut new_location)
                 .await
-                .map_err(|e| {
-                    log::error!("{}", e);
-                    s3_error!(InternalError, "Unable to finalize location")
-                })?;
+        )
+        .map_err(|_| s3_error!(InternalError, "Unable to finalize location"))?;
 
         if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
             if let Some(token) = &impersonating_token {
                 // Set id of new location to object id to satisfy FK constraint
-                let object = handler
-                    .finish_object(object.id, new_location.raw_content_len, hashes, None, token)
-                    .await
-                    .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
+                let object = trace_err!(
+                    handler
+                        .finish_object(object.id, new_location.raw_content_len, hashes, None, token)
+                        .await
+                )
+                .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
 
-                self.cache
-                    .upsert_object(object, Some(new_location))
-                    .await
-                    .map_err(|e| {
-                        log::error! {"Upsert object error: {}", e};
-                        s3_error!(InternalError, "Unable to cache object after finish")
-                    })?;
+                trace_err!(self.cache.upsert_object(object, Some(new_location)).await)
+                    .map_err(|_| s3_error!(InternalError, "Unable to cache object after finish"))?;
 
-                self.backend
-                    .delete_object(old_location)
-                    .await
-                    .map_err(|e| {
-                        log::error!("{}", e);
-                        s3_error!(InternalError, "Unable to delete old object")
-                    })?;
+                trace_err!(self.backend.delete_object(old_location).await)
+                    .map_err(|_| s3_error!(InternalError, "Unable to delete old object"))?;
             }
         }
 
         Ok(S3Response::new(response))
     }
 
-    #[tracing::instrument(level = "trace", skip(self, req))]
+    #[tracing::instrument]
     async fn get_object(
         &self,
         req: S3Request<GetObjectInput>,
     ) -> S3Result<S3Response<GetObjectOutput>> {
-        let CheckAccessResult { object, bundle, .. } = req
+        let CheckAccessResult { object, bundle, .. } = trace_err!(req
             .extensions
             .get::<CheckAccessResult>()
             .cloned()
-            .ok_or_else(|| s3_error!(InternalError, "No context found"))?;
+            .ok_or_else(|| s3_error!(InternalError, "No context found")))?;
 
         if let Some(_bundle) = bundle {
             let id = match object {
                 Some((obj, _)) => obj.id,
                 None => return Err(s3_error!(NoSuchKey, "Object not found")),
             };
-            let levels = self.cache.get_path_levels(id).map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InternalError, "Unable to get path levels")
-            })?;
+            let levels = trace_err!(self.cache.get_path_levels(id))
+                .map_err(|_| s3_error!(InternalError, "Unable to get path levels"))?;
 
             let body = get_bundle(levels, self.backend.clone()).await;
 
@@ -1001,19 +999,22 @@ impl S3 for ArunaS3Service {
 
         let id = match object {
             Some((obj, _)) => obj.id,
-            None => return Err(s3_error!(NoSuchKey, "Object not found")),
+            None => {
+                error!("Object not found");
+                return Err(s3_error!(NoSuchKey, "Object not found"));
+            }
         };
 
-        let cache_result = self
+        let cache_result = trace_err!(self
             .cache
             .resources
             .get(&id)
-            .ok_or_else(|| s3_error!(NoSuchKey, "Object not found"))?;
+            .ok_or_else(|| s3_error!(NoSuchKey, "Object not found")))?;
         let (_, location) = cache_result.value();
-        let location = location
+        let location = trace_err!(location
             .as_ref()
-            .ok_or_else(|| s3_error!(InternalError, "Object location not found"))?
-            .clone();
+            .ok_or_else(|| s3_error!(InternalError, "Object location not found")))?
+        .clone();
         let content_length = location.raw_content_len;
         let encryption_key = location
             .clone()
@@ -1024,34 +1025,32 @@ impl S3 for ArunaS3Service {
 
         // Gets 128 kb chunks (last 2)
         let footer_parser: Option<FooterParser> = if content_length > 5242880 * 28 {
+            trace!("getting footer");
             // Without encryption block because this is already checked inside
             let (footer_sender, footer_receiver) = async_channel::unbounded();
             let parser = match encryption_key.clone() {
                 Some(key) => {
-                    self.backend
-                        .get_object(
-                            location.clone(),
-                            Some(format!("bytes=-{}", (65536 + 28) * 2)),
-                            // "-" means last (2) chunks
-                            // when encrypted + 28 for encryption information (16 bytes nonce, 12 bytes checksum)
-                            // Encrypted chunk = | 16 b nonce | 65536 b data | 12 b checksum |
-                            footer_sender,
-                        )
-                        .await
-                        .map_err(|e| {
-                            log::error!("{}", e);
-                            s3_error!(InternalError, "Unable to get encryption_footer")
-                        })?;
+                    trace_err!(
+                        self.backend
+                            .get_object(
+                                location.clone(),
+                                Some(format!("bytes=-{}", (65536 + 28) * 2)),
+                                // "-" means last (2) chunks
+                                // when encrypted + 28 for encryption information (16 bytes nonce, 12 bytes checksum)
+                                // Encrypted chunk = | 16 b nonce | 65536 b data | 12 b checksum |
+                                footer_sender,
+                            )
+                            .await
+                    )
+                    .map_err(|_| s3_error!(InternalError, "Unable to get encryption_footer"))?;
                     let mut output = Vec::with_capacity(130_000);
                     // Stream takes receiver chunks und them into vec
                     let mut arsw =
                         ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
 
                     // processes chunks and puts them into output
-                    arsw.process().await.map_err(|e| {
-                        log::error!("{}", e);
-                        s3_error!(InternalError, "Unable to get footer")
-                    })?;
+                    trace_err!(arsw.process().await)
+                        .map_err(|_| s3_error!(InternalError, "Unable to get footer"))?;
                     drop(arsw);
 
                     match output.try_into() {
@@ -1063,26 +1062,23 @@ impl S3 for ArunaS3Service {
                     }
                 }
                 None => {
-                    self.backend
-                        .get_object(
-                            location.clone(),
-                            Some(format!("bytes=-{}", 65536 * 2)),
-                            // when not encrypted without 28
-                            footer_sender,
-                        )
-                        .await
-                        .map_err(|e| {
-                            log::error!("{}", e);
-                            s3_error!(InternalError, "Unable to get compression footer")
-                        })?;
+                    trace_err!(
+                        self.backend
+                            .get_object(
+                                location.clone(),
+                                Some(format!("bytes=-{}", 65536 * 2)),
+                                // when not encrypted without 28
+                                footer_sender,
+                            )
+                            .await
+                    )
+                    .map_err(|_| s3_error!(InternalError, "Unable to get compression footer"))?;
                     let mut output = Vec::with_capacity(130_000);
                     let mut arsw =
                         ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
 
-                    arsw.process().await.map_err(|e| {
-                        log::error!("{}", e);
-                        s3_error!(InternalError, "Unable to get footer")
-                    })?;
+                    trace_err!(arsw.process().await)
+                        .map_err(|_| s3_error!(InternalError, "Unable to get footer"))?;
                     drop(arsw);
 
                     match output.try_into() {
@@ -1097,6 +1093,7 @@ impl S3 for ArunaS3Service {
         };
 
         // Needed for final part
+        trace!("calculating ranges");
         let (query_ranges, filter_ranges) =
             calculate_ranges(req.input.range, content_length as u64, footer_parser)
                 .map_err(|_| s3_error!(InternalError, "Error while parsing ranges"))?;
@@ -1108,42 +1105,47 @@ impl S3 for ArunaS3Service {
 
         // Spawn get_object
         let backend = self.backend.clone();
-        tokio::spawn(async move {
-            backend
-                .get_object(location.clone(), query_ranges, sender)
-                .await
-        });
+        tokio::spawn(
+            async move {
+                backend
+                    .get_object(location.clone(), query_ranges, sender)
+                    .await
+            }
+            .instrument(info_span!("get_object")),
+        );
         let (final_send, final_rcv) = async_channel::bounded(10);
 
         // Spawn final part
-        tokio::spawn(async move {
-            let mut asrw =
-                ArunaStreamReadWriter::new_with_sink(receiver, AsyncSenderSink::new(final_send));
+        tokio::spawn(
+            async move {
+                let mut asrw = ArunaStreamReadWriter::new_with_sink(
+                    receiver,
+                    AsyncSenderSink::new(final_send),
+                );
 
-            if let Some(r) = filter_ranges {
-                asrw = asrw.add_transformer(Filter::new(r));
-            };
+                if let Some(r) = filter_ranges {
+                    asrw = asrw.add_transformer(Filter::new(r));
+                };
 
-            asrw.add_transformer(ChaCha20Dec::new(cloned_key).map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InternalError, "Internal notifier error")
-            })?)
-            .add_transformer(ZstdDec::new())
-            .process()
-            .await
-            .map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InternalError, "Internal notifier error")
-            })?;
+                trace_err!(
+                    asrw.add_transformer(trace_err!(ChaCha20Dec::new(cloned_key)
+                        .map_err(|_| { s3_error!(InternalError, "Internal notifier error") }))?)
+                        .add_transformer(ZstdDec::new())
+                        .process()
+                        .await
+                )
+                .map_err(|_| s3_error!(InternalError, "Internal notifier error"))?;
 
-            match 1 {
-                1 => Ok(()),
-                _ => Err(s3_error!(InternalError, "Internal notifier error")),
+                match 1 {
+                    1 => Ok(()),
+                    _ => Err(s3_error!(InternalError, "Internal notifier error")),
+                }
             }
-        });
+            .instrument(tracing::info_span!("query_data")),
+        );
 
         let body =
-            Some(StreamingBlob::wrap(final_rcv.map_err(|_| {
+            Some(StreamingBlob::wrap(trace_err!(final_rcv).map_err(|_| {
                 s3_error!(InternalError, "Internal processing error")
             })));
 
@@ -1157,28 +1159,29 @@ impl S3 for ArunaS3Service {
         }))
     }
 
-    #[tracing::instrument(level = "trace", skip(self, req))]
+    #[tracing::instrument]
     async fn head_object(
         &self,
         req: S3Request<HeadObjectInput>,
     ) -> S3Result<S3Response<HeadObjectOutput>> {
-        let CheckAccessResult { object, bundle, .. } = req
+        let CheckAccessResult { object, bundle, .. } = trace_err!(req
             .extensions
             .get::<CheckAccessResult>()
             .cloned()
-            .ok_or_else(|| s3_error!(InternalError, "No context found"))?;
+            .ok_or_else(|| s3_error!(InternalError, "No context found")))?;
 
-        dbg!((&object, &bundle));
+        trace!(?object, ?bundle);
 
         if let Some(_bundle) = bundle {
             let id = match object {
                 Some((obj, _)) => obj.id,
-                None => return Err(s3_error!(NoSuchKey, "Object not found")),
+                None => {
+                    trace!("Object not found");
+                    return Err(s3_error!(NoSuchKey, "Object not found"));
+                }
             };
-            let _levels = self.cache.get_path_levels(id).map_err(|e| {
-                log::error!("{}", e);
-                s3_error!(InternalError, "Unable to get path levels")
-            })?;
+            let _levels = trace_err!(self.cache.get_path_levels(id))
+                .map_err(|_| s3_error!(InternalError, "Unable to get path levels"))?;
 
             return Ok(S3Response::new(HeadObjectOutput {
                 content_length: -1,
@@ -1193,7 +1196,8 @@ impl S3 for ArunaS3Service {
             }));
         }
 
-        let (object, location) = object.ok_or_else(|| s3_error!(NoSuchKey, "No object found"))?;
+        let (object, location) =
+            trace_err!(object.ok_or_else(|| s3_error!(NoSuchKey, "No object found")))?;
 
         let content_len = location.map(|l| l.raw_content_len).unwrap_or_default();
 
@@ -1210,27 +1214,30 @@ impl S3 for ArunaS3Service {
         }))
     }
 
-    #[tracing::instrument(level = "trace", skip(self, _req))]
+    #[tracing::instrument]
     async fn list_objects(
         &self,
         _req: S3Request<ListObjectsInput>,
     ) -> S3Result<S3Response<ListObjectsOutput>> {
+        error!("ListObjects is not implemented yet");
         Err(s3_error!(
             NotImplemented,
             "ListObjects is not implemented yet"
         ))
     }
 
-    #[tracing::instrument(level = "trace", skip(self, req))]
+    #[tracing::instrument]
     async fn list_objects_v2(
         &self,
         req: S3Request<ListObjectsV2Input>,
     ) -> S3Result<S3Response<ListObjectsV2Output>> {
-        log::debug!("{:?}", &req);
         let project_name = ResourceString::Project(req.input.bucket.clone());
         match self.cache.paths.get(&project_name) {
             Some(_) => {}
-            None => return Err(s3_error!(NoSuchBucket, "No bucket found")),
+            None => {
+                error!("No bucket found");
+                return Err(s3_error!(NoSuchBucket, "No bucket found"));
+            }
         };
         let root = &req.input.bucket;
 
@@ -1267,14 +1274,14 @@ impl S3 for ArunaS3Service {
             _ => 1000usize,
         };
 
-        let (keys, common_prefixes, new_continuation_token) = list_response(
+        let (keys, common_prefixes, new_continuation_token) = trace_err!(list_response(
             sorted,
             &self.cache,
             &delimiter,
             &prefix,
             &start_after,
             max_keys,
-        )
+        ))
         .map_err(|_| s3_error!(NoSuchKey, "Keys not found in ListObjectsV2"))?;
 
         let key_count = keys.len() as i32;
@@ -1313,7 +1320,6 @@ impl S3 for ArunaS3Service {
             start_after: Some(start_after),
             ..Default::default()
         };
-        log::debug!("{:?}", &result);
         Ok(S3Response::new(result))
     }
 }

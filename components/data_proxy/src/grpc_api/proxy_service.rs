@@ -3,6 +3,7 @@ use aruna_rust_api::api::dataproxy::services::v2::{
     RequestReplicationRequest, RequestReplicationResponse,
 };
 use std::sync::Arc;
+use tracing::error;
 
 use crate::caching::cache::Cache;
 
@@ -29,6 +30,7 @@ impl DataproxyService for DataproxyServiceImpl {
         &self,
         _request: tonic::Request<RequestReplicationRequest>,
     ) -> Result<tonic::Response<RequestReplicationResponse>, tonic::Status> {
+        error!("RequestReplication not implemented");
         Err(tonic::Status::unimplemented("Currently not implemented"))
     }
     #[tracing::instrument(level = "trace", skip(self, _request))]
@@ -41,6 +43,7 @@ impl DataproxyService for DataproxyServiceImpl {
         &self,
         _request: tonic::Request<InitReplicationRequest>,
     ) -> Result<tonic::Response<InitReplicationResponse>, tonic::Status> {
+        error!("InitReplication not implemented");
         Err(tonic::Status::unimplemented("Currently not implemented"))
     }
 }

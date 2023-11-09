@@ -14,9 +14,7 @@ use tonic::transport::Server;
 use tracing::debug;
 use tracing::info_span;
 use tracing_subscriber::fmt::format::FmtSpan;
-use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
-
 mod bundler;
 mod caching;
 mod data_backends;

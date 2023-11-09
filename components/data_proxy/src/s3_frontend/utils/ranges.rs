@@ -3,6 +3,8 @@ use aruna_file::helpers::footer_parser::{FooterParser, Range as ArunaRange};
 use s3s::dto::Range as S3Range;
 use s3s::dto::Range::{Int, Suffix};
 
+use crate::trace_err;
+
 #[tracing::instrument(level = "trace", skip(input_range, content_length, footer))]
 pub fn calculate_ranges(
     input_range: Option<S3Range>,
@@ -12,9 +14,10 @@ pub fn calculate_ranges(
     match input_range {
         Some(r) => match footer {
             Some(mut foot) => {
-                foot.parse()?;
-                let (o1, mut o2) =
-                    foot.get_offsets_by_range(aruna_range_from_s3range(r, content_length))?;
+                trace_err!(foot.parse())?;
+                let (o1, mut o2) = trace_err!(
+                    foot.get_offsets_by_range(aruna_range_from_s3range(r, content_length))
+                )?;
                 o2.to += 1;
                 Ok((Some(format!("bytes={}-{}", o1.from, o1.to - 1)), Some(o2)))
             }

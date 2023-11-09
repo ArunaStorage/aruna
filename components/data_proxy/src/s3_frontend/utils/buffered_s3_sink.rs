@@ -1,10 +1,12 @@
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::structs::{ObjectLocation, PartETag};
+use crate::trace_err;
 use anyhow::{anyhow, Result};
 use aruna_file::transformer::{Sink, Transformer};
 use async_channel::{Receiver, Sender};
 use bytes::{BufMut, BytesMut};
 use std::sync::Arc;
+use tracing::{debug, info_span, trace, Instrument};
 
 pub struct BufferedS3Sink {
     backend: Arc<Box<dyn StorageBackend>>,
@@ -74,6 +76,7 @@ impl BufferedS3Sink {
 impl BufferedS3Sink {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn initialize_multipart(&mut self) -> Result<()> {
+        trace!("Initializing multipart");
         self.part_number = Some(1);
 
         self.upload_id = Some(
@@ -81,88 +84,92 @@ impl BufferedS3Sink {
                 .init_multipart_upload(self.target_location.clone())
                 .await?,
         );
-        log::info!("Initialized multipart: {:?}", self.upload_id);
+        debug!("Initialized multipart");
         Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
     async fn upload_single(&mut self) -> Result<()> {
+        trace!("Single upload");
         let backend_clone = self.backend.clone();
         let expected_len: i64 = self.buffer.len() as i64;
         let location_clone = self.target_location.clone();
 
         let (sender, receiver) = async_channel::bounded(10);
 
-        sender.send(Ok(self.buffer.split().freeze())).await?;
+        trace_err!(sender.send(Ok(self.buffer.split().freeze())).await)?;
 
-        tokio::spawn(async move {
-            backend_clone
-                .put_object(receiver, location_clone, expected_len)
-                .await
-        })
+        tokio::spawn(
+            async move {
+                backend_clone
+                    .put_object(receiver, location_clone, expected_len)
+                    .await
+            }
+            .instrument(info_span!("upload_single_spawn")),
+        )
         .await??;
-
-        log::debug!("Single upload to: {:?}", self.target_location.clone());
+        debug!(?self.target_location, "uploaded single");
         Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
     async fn upload_part(&mut self) -> Result<()> {
-        dbg!("part", &self.buffer.len());
+        trace!("uploading part");
         let backend_clone = self.backend.clone();
         let expected_len: i64 = self.buffer.len() as i64;
         let location_clone = self.target_location.clone();
-        let pnumber = self
+        let pnumber = trace_err!(self
             .part_number
-            .ok_or_else(|| anyhow!("PartNumber expected"))?;
+            .ok_or_else(|| anyhow!("PartNumber expected")))?;
 
-        let up_id = self
+        let up_id = trace_err!(self
             .upload_id
             .clone()
-            .ok_or_else(|| anyhow!("Upload ID not found"))?;
+            .ok_or_else(|| anyhow!("Upload ID not found")))?;
 
         let (sender, receiver) = async_channel::bounded(10);
-        sender.try_send(Ok(self.buffer.split().freeze()))?;
+        trace_err!(sender.try_send(Ok(self.buffer.split().freeze())))?;
 
-        let tag = tokio::spawn(async move {
-            backend_clone
-                .upload_multi_object(receiver, location_clone, up_id, expected_len, pnumber)
-                .await
-        })
+        let tag = tokio::spawn(
+            async move {
+                backend_clone
+                    .upload_multi_object(receiver, location_clone, up_id, expected_len, pnumber)
+                    .await
+            }
+            .instrument(info_span!("upload_part_spawn")),
+        )
         .await??;
         if let Some(s) = &self.sender {
-            s.send(tag.etag.to_string()).await?;
+            trace_err!(s.send(tag.etag.to_string()).await)?;
         }
         self.tags.push(tag);
         self.part_number = Some(pnumber + 1);
-
-        log::debug!(
-            "Uploaded part: {:?}, number:{}, size: {}",
-            self.upload_id,
-            pnumber,
-            expected_len
-        );
-
+        debug!(self.upload_id, pnumber, expected_len, "uploaded part");
         Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
     async fn finish_multipart(&mut self) -> Result<()> {
-        let up_id = self
+        trace!("Finishing multipart");
+        let up_id = trace_err!(self
             .upload_id
             .clone()
-            .ok_or_else(|| anyhow!("Upload ID not found"))?;
-        self.backend
-            .finish_multipart_upload(self.target_location.clone(), self.tags.clone(), up_id)
-            .await?;
-
-        log::debug!("Finished multipart: {:?}", self.upload_id);
-
-        log::info!("Finished with: {:?}", self.sum);
+            .ok_or_else(|| anyhow!("Upload ID not found")))?;
+        trace_err!(
+            self.backend
+                .finish_multipart_upload(
+                    self.target_location.clone(),
+                    self.tags.clone(),
+                    up_id.clone()
+                )
+                .await
+        )?;
+        debug!(up_id, "finished multipart");
         Ok(())
     }
     #[tracing::instrument(level = "trace", skip(self))]
     async fn _get_parts(&self) -> Vec<PartETag> {
+        debug!(?self.tags, "get_parts");
         self.tags.clone()
     }
 }
@@ -184,6 +191,7 @@ impl Transformer for BufferedS3Sink {
             Ok(false)
         } else {
             if self.buffer.len() > 5242880 {
+                trace!("exceeds 5 Mib -> upload multi part");
                 // 5 Mib -> initialize multipart
                 if self.upload_id.is_none() {
                     self.initialize_multipart().await?;
@@ -198,6 +206,7 @@ impl Transformer for BufferedS3Sink {
                     // Upload den Rest +
                     self.upload_part().await?;
                     if !self.single_part_upload {
+                        trace!("finishing multipart");
                         self.finish_multipart().await?;
                     }
                 }

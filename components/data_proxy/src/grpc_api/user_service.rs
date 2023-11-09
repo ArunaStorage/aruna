@@ -1,10 +1,14 @@
-use crate::caching::{auth::get_token_from_md, cache::Cache};
+use crate::{
+    caching::{auth::get_token_from_md, cache::Cache},
+    trace_err,
+};
 use aruna_rust_api::api::dataproxy::services::v2::{
     dataproxy_user_service_server::DataproxyUserService, GetCredentialsRequest,
     GetCredentialsResponse, PullReplicaRequest, PullReplicaResponse, PushReplicaRequest,
     PushReplicaResponse, ReplicationStatusRequest, ReplicationStatusResponse,
 };
 use std::sync::Arc;
+use tracing::error;
 
 pub struct DataproxyUserServiceImpl {
     pub cache: Arc<Cache>,
@@ -31,42 +35,33 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
         request: tonic::Request<GetCredentialsRequest>,
     ) -> Result<tonic::Response<GetCredentialsResponse>, tonic::Status> {
         if let Some(a) = self.cache.auth.read().await.as_ref() {
-            let token = get_token_from_md(request.metadata())
+            let token = trace_err!(get_token_from_md(request.metadata()))
                 .map_err(|e| tonic::Status::unauthenticated(e.to_string()))?;
 
-            let (u, tid) = a.check_permissions(&token).map_err(|e| {
-                log::debug!("Error checking permissions: {}", e);
-                tonic::Status::unauthenticated("Unable to authenticate user")
-            })?;
+            let (u, tid) = trace_err!(a.check_permissions(&token))
+                .map_err(|_| tonic::Status::unauthenticated("Unable to authenticate user"))?;
 
             if let Some(q_handler) = self.cache.aruna_client.read().await.as_ref() {
-                let user = q_handler.get_user(u, "".to_string()).await.map_err(|e| {
-                    log::debug!("Error getting user from queue handler {e}");
-                    tonic::Status::unauthenticated("Unable to authenticate user")
-                })?;
+                let user = trace_err!(q_handler.get_user(u, "".to_string()).await)
+                    .map_err(|_| tonic::Status::unauthenticated("Unable to authenticate user"))?;
 
-                let (access_key, secret_key) = self
-                    .cache
-                    .clone()
-                    .create_or_get_secret(user, tid)
-                    .await
-                    .map_err(|e| {
-                        log::debug!("Error creating secret: {}", e);
-                        tonic::Status::unauthenticated("Unable to authenticate user")
-                    })?;
+                let (access_key, secret_key) = trace_err!(
+                    self.cache.clone().create_or_get_secret(user, tid).await
+                )
+                .map_err(|_| tonic::Status::unauthenticated("Unable to authenticate user"))?;
 
                 return Ok(tonic::Response::new(GetCredentialsResponse {
                     access_key,
                     secret_key,
                 }));
             } else {
-                log::error!("[Get Credentials] Query handler not available");
+                error!("query handler not available");
                 return Err(tonic::Status::unauthenticated(
                     "Unable to authenticate user",
                 ));
             }
         } else {
-            log::error!("[Get Credentials] Authentication handler not available");
+            error!("authentication handler not available");
             return Err(tonic::Status::unauthenticated(
                 "Unable to authenticate user",
             ));
@@ -83,6 +78,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
         &self,
         _request: tonic::Request<PushReplicaRequest>,
     ) -> Result<tonic::Response<PushReplicaResponse>, tonic::Status> {
+        error!("PushReplica not implemented");
         Err(tonic::Status::unimplemented("Not implemented"))
     }
 
@@ -96,6 +92,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
         &self,
         _request: tonic::Request<PullReplicaRequest>,
     ) -> Result<tonic::Response<PullReplicaResponse>, tonic::Status> {
+        error!("PullReplica not implemented");
         Err(tonic::Status::unimplemented("Not implemented"))
     }
 
@@ -109,6 +106,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
         &self,
         _request: tonic::Request<ReplicationStatusRequest>,
     ) -> Result<tonic::Response<ReplicationStatusResponse>, tonic::Status> {
+        error!("ReplicationStatus not implemented");
         Err(tonic::Status::unimplemented("Not implemented"))
     }
 }

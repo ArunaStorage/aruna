@@ -36,8 +36,8 @@ impl Display for Table {
 pub trait WithGenericBytes<X: ToSql + for<'a> FromSql<'a> + Send + Sync>:
     TryFrom<GenericBytes<X>> + TryInto<GenericBytes<X>> + Clone
 where
-    <Self as TryFrom<GenericBytes<X>>>::Error: Debug,
-    <Self as TryInto<GenericBytes<X>>>::Error: Debug,
+    <Self as TryFrom<GenericBytes<X>>>::Error: Debug + Display,
+    <Self as TryInto<GenericBytes<X>>>::Error: Debug + Display,
 {
     fn get_table() -> Table;
     async fn upsert(&self, client: &Client) -> Result<()> {

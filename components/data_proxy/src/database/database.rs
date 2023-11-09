@@ -11,7 +11,8 @@ impl Database {
     #[tracing::instrument(level = "trace", skip())]
     pub async fn new() -> Result<Self> {
         let database_host = trace_err!(dotenvy::var("PERSISTENCE_DB_HOST"))?;
-        let database_port = trace_err!(trace_err!(dotenvy::var("PERSISTENCE_DB_PORT"))?.parse())?;
+        let database_port =
+            trace_err!(trace_err!(dotenvy::var("PERSISTENCE_DB_PORT"))?.parse::<u16>())?;
         let database_name = trace_err!(dotenvy::var("PERSISTENCE_DB_NAME"))?;
         let database_user = trace_err!(dotenvy::var("PERSISTENCE_DB_USER"))?;
         let database_password = trace_err!(dotenvy::var("PERSISTENCE_DB_PASSWORD"))?;

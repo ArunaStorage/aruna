@@ -3,6 +3,7 @@ use aruna_file::{
     notifications::{Message, Response},
     transformer::Transformer,
 };
+use tracing::debug;
 
 #[derive(Default)]
 pub struct DebugTransformer {
@@ -27,7 +28,7 @@ impl Transformer for DebugTransformer {
         finished: bool,
         should_flush: bool,
     ) -> Result<bool> {
-        dbg!((buf.len(), &self.id, finished, should_flush));
+        debug!(len = buf.len(), ?self.id, finished, should_flush);
         Ok(finished)
     }
     #[tracing::instrument(level = "trace", skip(self, message))]

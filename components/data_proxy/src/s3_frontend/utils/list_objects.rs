@@ -1,6 +1,7 @@
 use crate::caching::cache::Cache;
 use crate::structs::{Object, ObjectLocation};
 use crate::structs::{ResourceIds, ResourceString};
+use crate::trace_err;
 use ahash::RandomState;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::DataClass;
@@ -140,11 +141,11 @@ pub fn list_response(
                     // If None split -> Entry
                     let entry: Contents = (
                         path,
-                        cache
+                        trace_err!(cache
                             .resources
                             .get(id)
-                            .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
-                            .value(),
+                            .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path")))?
+                        .value(),
                     )
                         .into();
                     if idx == max_keys + 1 {
@@ -161,11 +162,11 @@ pub fn list_response(
                 let entry: Contents = if path.strip_prefix(&prefix).is_some() {
                     (
                         path,
-                        cache
+                        trace_err!(cache
                             .resources
                             .get(id)
-                            .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
-                            .value(),
+                            .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path")))?
+                        .value(),
                     )
                         .into()
                 } else {
@@ -183,11 +184,11 @@ pub fn list_response(
             for (idx, (path, id)) in sorted.range(start_after.to_owned()..).enumerate() {
                 let entry: Contents = (
                     path,
-                    cache
+                    trace_err!(cache
                         .resources
                         .get(id)
-                        .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
-                        .value(),
+                        .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path")))?
+                    .value(),
                 )
                     .into();
                 if idx == max_keys + 1 {
