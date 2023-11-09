@@ -824,6 +824,7 @@ impl ResourceString {
 
 impl PartialOrd for ResourceString {
     #[tracing::instrument(level = "trace", skip(self, other))]
+    #[allow(clippy::incorrect_partial_ord_impl_on_ord_type)]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
@@ -1002,9 +1003,7 @@ impl ResourceResults {
                             found: found_three,
                             missing: missing_three,
                         })
-                    }
-                    // else compare number of found objects and return combination with max hits
-                    else if (found_one.len() > found_two.len())
+                    } else if (found_one.len() > found_two.len())
                         && (found_one.len() > found_three.len())
                     {
                         found_one.sort();
@@ -1019,14 +1018,6 @@ impl ResourceResults {
                         Ok(ResourceResults {
                             found: found_two,
                             missing: missing_two,
-                        })
-                    } else if (found_three.len() > found_one.len())
-                        && (found_three.len() > found_two.len())
-                    {
-                        found_three.sort();
-                        Ok(ResourceResults {
-                            found: found_three,
-                            missing: missing_three,
                         })
                     } else {
                         found_three.sort();
@@ -1124,9 +1115,7 @@ impl ResourceResults {
                             found: found_four,
                             missing: missing_four,
                         })
-                    }
-                    // else compare number of found objects and return combination with max hits
-                    else if (found_one.len() > found_two.len())
+                    } else if (found_one.len() > found_two.len())
                         && (found_one.len() > found_three.len())
                         && (found_one.len() > found_four.len())
                     {
@@ -1152,15 +1141,6 @@ impl ResourceResults {
                         Ok(ResourceResults {
                             found: found_three,
                             missing: missing_three,
-                        })
-                    } else if (found_four.len() > found_one.len())
-                        && (found_four.len() > found_two.len())
-                        && (found_four.len() > found_three.len())
-                    {
-                        found_four.sort();
-                        Ok(ResourceResults {
-                            found: found_four,
-                            missing: missing_four,
                         })
                     } else {
                         found_four.sort();

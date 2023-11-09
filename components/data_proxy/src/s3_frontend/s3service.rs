@@ -263,10 +263,6 @@ impl S3 for ArunaS3Service {
         let (final_sha_trans, final_sha_recv) = HashingTransformer::new(Sha256::new());
         let (final_size_trans, final_size_recv) = SizeProbe::new();
 
-        let sha_final: String;
-        let initial_size: u64;
-        let final_size: u64;
-
         match req.input.body {
             Some(data) => {
                 let mut awr = ArunaStreamReadWriter::new_with_sink(
@@ -418,11 +414,11 @@ impl S3 for ArunaS3Service {
             trace_err!(initial_sha_recv.try_recv())
                 .map_err(|_| s3_error!(InternalError, "Unable to sha hash initial data"))?,
         );
-        sha_final = trace_err!(final_sha_recv.try_recv())
+        let sha_final: String = trace_err!(final_sha_recv.try_recv())
             .map_err(|_| s3_error!(InternalError, "Unable to sha hash final data"))?;
-        initial_size = trace_err!(initial_size_recv.try_recv())
+        let initial_size: u64 = trace_err!(initial_size_recv.try_recv())
             .map_err(|_| s3_error!(InternalError, "Unable to get size"))?;
-        final_size = trace_err!(final_size_recv.try_recv())
+        let final_size: u64 = trace_err!(final_size_recv.try_recv())
             .map_err(|_| s3_error!(InternalError, "Unable to get size"))?;
 
         object.hashes = vec![
