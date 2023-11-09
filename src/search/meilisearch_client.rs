@@ -37,7 +37,8 @@ impl Display for MeilisearchIndexes {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ObjectDocument {
     pub id: DieselUlid,
-    pub object_type: u8, // 256 should be enough
+    pub object_type: ObjectType,
+    pub object_type_id: u8, // 256 should be enough
     pub status: ObjectStatus,
     pub name: String,
     pub description: String,
@@ -65,7 +66,8 @@ impl From<DbObject> for ObjectDocument {
 
         ObjectDocument {
             id: db_object.id,
-            object_type: db_object.object_type as u8,
+            object_type: db_object.object_type,
+            object_type_id: db_object.object_type as u8,
             status: db_object.object_status,
             name: db_object.name,
             description: db_object.description,
@@ -84,13 +86,12 @@ impl From<DbObject> for ObjectDocument {
 impl TryFrom<ObjectDocument> for Resource {
     type Error = anyhow::Error;
 
-    fn try_from(val: ObjectDocument) -> Result<Self, Self::Error> {
-        Ok(match val.object_type {
-            0 => Resource::Project(val.into()),    // ObjectType::PROJECT
-            1 => Resource::Collection(val.into()), // ObjectType::COLLECTION
-            2 => Resource::Dataset(val.into()),    // ObjectType::DATASET
-            3 => Resource::Object(val.into()),     // ObjectType::OBJECT
-            _ => bail!("Invalid resource type"),
+    fn try_from(index_object: ObjectDocument) -> Result<Self, Self::Error> {
+        Ok(match index_object.object_type {
+            ObjectType::PROJECT => Resource::Project(index_object.into()), // ObjectType::PROJECT
+            ObjectType::COLLECTION => Resource::Collection(index_object.into()), // ObjectType::COLLECTION
+            ObjectType::DATASET => Resource::Dataset(index_object.into()), // ObjectType::DATASET
+            ObjectType::OBJECT => Resource::Object(index_object.into()),   // ObjectType::OBJECT
         })
     }
 }
@@ -140,7 +141,8 @@ impl TryFrom<Project> for ObjectDocument {
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&project.id)?,
-            object_type: ObjectType::PROJECT as u8,
+            object_type: ObjectType::PROJECT,
+            object_type_id: ObjectType::PROJECT as u8,
             status: ObjectStatus::try_from(project.status)?,
             name: project.name,
             description: project.description,
@@ -191,7 +193,8 @@ impl TryFrom<Collection> for ObjectDocument {
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&collection.id)?,
-            object_type: ObjectType::COLLECTION as u8,
+            object_type: ObjectType::COLLECTION,
+            object_type_id: ObjectType::COLLECTION as u8,
             status: ObjectStatus::try_from(collection.status)?,
             name: collection.name,
             description: collection.description,
@@ -242,7 +245,8 @@ impl TryFrom<Dataset> for ObjectDocument {
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&dataset.id)?,
-            object_type: ObjectType::DATASET as u8,
+            object_type: ObjectType::DATASET,
+            object_type_id: ObjectType::DATASET as u8,
             status: ObjectStatus::try_from(dataset.status)?,
             name: dataset.name,
             description: dataset.description,
@@ -294,7 +298,8 @@ impl TryFrom<Object> for ObjectDocument {
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&object.id)?,
-            object_type: ObjectType::OBJECT as u8,
+            object_type: ObjectType::OBJECT,
+            object_type_id: ObjectType::OBJECT as u8,
             status: ObjectStatus::try_from(object.status)?,
             name: object.name,
             description: object.description,

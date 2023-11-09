@@ -119,13 +119,15 @@ fn generate_random_object_document() -> ObjectDocument {
         .choose_multiple(&mut rng, 2)
         .to_vec()
         .join("-");
+    let object_type = ObjectType::try_from(rng.gen_range(1..5)).unwrap();
     let rand_size = rng.gen_range(123..123456789);
     let hook_run_success = rng.gen_bool(0.5).to_string();
     let created_at = format!("{}-01-01 23:59:59", rng.gen_range(2001..2023));
 
     ObjectDocument {
         id: DieselUlid::generate(),
-        object_type: ObjectType::try_from(rng.gen_range(1..5)).unwrap() as u8,
+        object_type: object_type,
+        object_type_id: object_type as u8,
         status: ObjectStatus::try_from(rng.gen_range(1..6)).unwrap(),
         name: project_name,
         description: "ChatGPT should create some hallucinated description of this project."
