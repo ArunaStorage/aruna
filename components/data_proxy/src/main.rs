@@ -17,6 +17,7 @@ mod bundler;
 mod caching;
 mod data_backends;
 mod database;
+mod replication;
 mod s3_frontend;
 // mod helpers;
 mod grpc_api;
