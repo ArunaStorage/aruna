@@ -1,6 +1,7 @@
 use crate::structs::Object;
 use crate::structs::ObjectLocation;
 use crate::structs::PartETag;
+use crate::trace_err;
 
 use super::storage_backend::StorageBackend;
 use anyhow::anyhow;
@@ -27,9 +28,10 @@ pub struct S3Backend {
 }
 
 impl S3Backend {
-    #[tracing::instrument(level = "trace", skip(endpoint_id))]
+    #[tracing::instrument]
     pub async fn new(endpoint_id: String) -> Result<Self> {
-        let s3_endpoint = dotenvy::var("AWS_S3_HOST").unwrap();
+        let s3_endpoint = trace_err!(dotenvy::var("AWS_S3_HOST"))?;
+        tracing::debug!("S3 Endpoint: {}", s3_endpoint);
 
         let config = aws_config::load_from_env().await;
         let s3_config = aws_sdk_s3::config::Builder::from(&config)

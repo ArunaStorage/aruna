@@ -15,3 +15,14 @@ macro_rules! log_received {
         log::debug!("{:?}", $request);
     };
 }
+
+#[macro_export]
+macro_rules! trace_err {
+    ($request:expr) => {
+        $request.map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })
+    };
+}
+

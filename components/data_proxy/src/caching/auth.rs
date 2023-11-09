@@ -7,6 +7,7 @@ use crate::structs::ObjectLocation;
 use crate::structs::ObjectType;
 use crate::structs::ResourceIds;
 use crate::structs::ResourceResults;
+use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
@@ -21,6 +22,9 @@ use s3s::auth::Credentials;
 use s3s::path::S3Path;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
+use tracing::debug;
+use tracing::error;
+use tracing::trace;
 use std::ops::Add;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -119,7 +123,7 @@ impl AuthHandler {
             "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
             encode_secret
         );
-        let encoding_key = EncodingKey::from_ed_pem(private_pem.as_bytes()).unwrap();
+        let encoding_key = trace_err!(EncodingKey::from_ed_pem(private_pem.as_bytes())).unwrap();
 
         Self {
             cache,
@@ -130,10 +134,10 @@ impl AuthHandler {
 
     #[tracing::instrument(level = "trace", skip(self, token))]
     pub fn check_permissions(&self, token: &str) -> Result<(DieselUlid, Option<String>)> {
-        let kid = decode_header(token)?
+        let kid = trace_err!(decode_header(token)?
             .kid
-            .ok_or_else(|| anyhow!("Unspecified kid"))?;
-        let (_, dec_key) = self.cache.get_pubkey(i32::from_str(&kid)?)?;
+            .ok_or_else(|| anyhow!("Unspecified kid")))?;
+        let (_, dec_key) = trace_err!(self.cache.get_pubkey(trace_err!(i32::from_str(&kid))?))?;
         let claims = self.extract_claims(token, &dec_key)?;
 
         if let Some(it) = claims.it {
@@ -143,14 +147,18 @@ impl AuthHandler {
                     if it.target == self.self_id {
                         Ok((DieselUlid::from_str(&claims.sub)?, claims.tid))
                     } else {
+                        error!("Token is not valid for this Dataproxy");
                         bail!("Token is not valid for this Dataproxy")
                     }
                 }
-                _ => bail!("Action not allowed for Dataproxy"),
+                _ => {
+                    error!("Action not allowed for Dataproxy");
+                    bail!("Action not allowed for Dataproxy")
+                },
             }
         } else {
             // No intent, no Dataproxy/Action check
-            Ok((DieselUlid::from_str(&claims.sub)?, claims.tid))
+            Ok((trace_err!(DieselUlid::from_str(&claims.sub))?, claims.tid))
         }
     }
 
@@ -160,11 +168,11 @@ impl AuthHandler {
         token: &str,
         dec_key: &DecodingKey,
     ) -> Result<ArunaTokenClaims> {
-        let token = decode::<ArunaTokenClaims>(token, dec_key, &Validation::new(Algorithm::EdDSA))?;
+        let token = trace_err!(decode::<ArunaTokenClaims>(token, dec_key, &Validation::new(Algorithm::EdDSA)))?;
         Ok(token.claims)
     }
 
-    #[tracing::instrument(level = "trace", skip(self, creds, method, path))]
+    #[tracing::instrument(level = "debug", skip(self, creds, method, path))]
     pub async fn check_access(
         &self,
         creds: Option<&Credentials>,
@@ -172,12 +180,15 @@ impl AuthHandler {
         path: &S3Path,
     ) -> Result<CheckAccessResult> {
         let db_perm_from_method = DbPermissionLevel::from(method);
+        trace!(extracted_perm = ?db_perm_from_method);
         if let Some(b) = path.as_bucket() {
+            trace!("detected as_bucket");
             if method == Method::POST || method == Method::PUT {
-                let user = self
+                trace!("detected POST/PUT");
+                let user = trace_err!(self
                     .cache
-                    .get_user_by_key(&creds.ok_or_else(|| anyhow!("Unknown user"))?.access_key)
-                    .ok_or_else(|| anyhow!("Unknown user"))?;
+                    .get_user_by_key(&trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key)
+                    .ok_or_else(|| anyhow!("Unknown user")))?;
 
                 let token_id = if user.user_id.to_string() == user.access_key {
                     None
@@ -199,10 +210,11 @@ impl AuthHandler {
                     bundle: None,
                 });
             } else {
-                let user = self
+                trace!("detected not POST/PUT");
+                let user = trace_err!(self
                     .cache
-                    .get_user_by_key(&creds.ok_or_else(|| anyhow!("Unknown user"))?.access_key)
-                    .ok_or_else(|| anyhow!("Unknown user"))?;
+                    .get_user_by_key(&trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key)
+                    .ok_or_else(|| anyhow!("Unknown user")))?;
 
                 return Ok(CheckAccessResult::new(
                     Some(user.user_id.to_string()),
@@ -222,12 +234,13 @@ impl AuthHandler {
 
         let ((obj, loc), ids, missing, bundle) = self.extract_object_from_path(path, method)?;
         if let Some(bundle) = bundle {
+            debug!(bundle, "bundle_detected");
             if obj.object_type == ObjectType::Bundle {
                 // Check if user has access to Bundle Object
-                let user = self
+                let user = trace_err!(self
                     .cache
-                    .get_user_by_key(&creds.ok_or_else(|| anyhow!("Unknown user"))?.access_key)
-                    .ok_or_else(|| anyhow!("Unknown user"))?;
+                    .get_user_by_key(&trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key)
+                    .ok_or_else(|| anyhow!("Unknown user")))?;
 
                 for (res, perm) in user.permissions {
                     // ResourceIds only contain Bundle Id as Project
@@ -252,6 +265,7 @@ impl AuthHandler {
 
             if db_perm_from_method == DbPermissionLevel::Read && obj.data_class == DataClass::Public
             {
+                debug!("public_bundle");
                 return Ok(CheckAccessResult {
                     user_id: None,
                     token_id: None,
@@ -261,10 +275,11 @@ impl AuthHandler {
                     bundle: Some(bundle),
                 });
             } else {
-                let user = self
+                debug!("bundle_not_public");
+                let user = trace_err!(self
                     .cache
-                    .get_user_by_key(&creds.ok_or_else(|| anyhow!("Unknown user"))?.access_key)
-                    .ok_or_else(|| anyhow!("Unknown user"))?;
+                    .get_user_by_key(&trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key)
+                    .ok_or_else(|| anyhow!("Unknown user")))?;
 
                 for (res, perm) in user.permissions {
                     if ids.check_if_in(res) && perm >= db_perm_from_method {
@@ -273,7 +288,7 @@ impl AuthHandler {
                         } else {
                             Some(user.access_key.clone())
                         };
-
+                        trace!(resource_id = ?res, permission = ?perm, "permission match found");
                         return Ok(CheckAccessResult::new(
                             Some(user.user_id.to_string()),
                             token_id,
@@ -288,6 +303,7 @@ impl AuthHandler {
         }
 
         if db_perm_from_method == DbPermissionLevel::Read && obj.data_class == DataClass::Public {
+            debug!("public_object");
             return Ok(CheckAccessResult::new(
                 None,
                 None,
@@ -297,10 +313,11 @@ impl AuthHandler {
                 None,
             ));
         } else if let Some(creds) = creds {
-            let user = self
+            debug!("private object");
+            let user = trace_err!(self
                 .cache
                 .get_user_by_key(&creds.access_key)
-                .ok_or_else(|| anyhow!("Unknown user"))?;
+                .ok_or_else(|| anyhow!("Unknown user")))?;
 
             for (res, perm) in user.permissions {
                 if ids.check_if_in(res) && perm >= db_perm_from_method {
@@ -309,7 +326,7 @@ impl AuthHandler {
                     } else {
                         Some(user.access_key.clone())
                     };
-
+                    trace!(resource_id = ?res, permission = ?perm, "permission match found");
                     return Ok(CheckAccessResult::new(
                         Some(user.user_id.to_string()),
                         token_id,
@@ -333,10 +350,10 @@ impl AuthHandler {
         target_perm_level: DbPermissionLevel,
         get_secret: bool,
     ) -> Result<Option<String>> {
-        let user = self
+        let user = trace_err!(self
             .cache
             .get_user_by_key(access_key)
-            .ok_or_else(|| anyhow!("Unknown user"))?;
+            .ok_or_else(|| anyhow!("Unknown user")))?;
 
         for (res, perm) in user.permissions {
             'id_vec: for vec_ids in vec_vec_ids {
@@ -350,8 +367,10 @@ impl AuthHandler {
         }
 
         if get_secret {
+            trace!("secret SOME");
             Ok(Some(user.secret.clone()))
         } else {
+            trace!("secret NONE");
             Ok(None)
         }
     }
@@ -427,42 +446,31 @@ impl AuthHandler {
             }
         }
 
-        //let res_strings = ResourceString::try_from(path)?;
-        //
-
         let ResourceResults { found, missing } =
             ResourceResults::from_path(path, self.cache.clone())?;
-        dbg!(&found);
-        dbg!(&missing);
-        // let mut found = Vec::new();
-        // let mut missing = Vec::new();
+        trace!(?found);
+        trace!(?missing);
 
-        //for resource in res_strings.into_parts() {
-        //    if let Some(e) = self.cache.get_res_by_res_string(resource.clone()) {
-        //        found.push(e);
-        //    } else {
-        //        missing.push(resource.clone());
-        //    }
-        //}
-        //found.sort();
         let missing = if missing.is_empty() {
             None
         } else {
             Some(missing.into())
         };
 
-        let resource_id = found
+        let resource_id = trace_err!(found
             .last()
-            .ok_or_else(|| anyhow!("No object found in path"))?
+            .ok_or_else(|| anyhow!("No object found in path")))?
             .clone();
 
-        let (object, location) = self
+        let (object, location) = trace_err!(self
             .cache
             .resources
             .get(&resource_id.get_id())
-            .ok_or_else(|| anyhow!("No object found in path"))?
+            .ok_or_else(|| anyhow!("No object found in path")))?
             .value()
             .clone();
+
+        trace!(?object, ?location, ?resource_id, ?missing, "extracted object from path");
 
         Ok(((object, location), resource_id, missing, None))
     }

@@ -8,15 +8,14 @@ use data_backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
 use futures_util::TryFutureExt;
 use grpc_api::bundler::BundlerServiceImpl;
 use grpc_api::{proxy_service::DataproxyServiceImpl, user_service::DataproxyUserServiceImpl};
-use simple_logger::SimpleLogger;
 use std::{net::SocketAddr, str::FromStr, sync::Arc};
 use tokio::try_join;
 use tonic::transport::Server;
 use tracing::info_span;
-use tracing::span;
-use tracing::{debug, Level};
+use tracing::debug;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::prelude::*;
 
 mod bundler;
 mod caching;
@@ -35,11 +34,14 @@ mod helpers;
 async fn main() -> Result<()> {
     dotenvy::from_filename(".env").ok();
 
+    let filter = EnvFilter::try_from_default_env().unwrap_or("none".into()).add_directive("aos_data_proxy=trace".parse()?);
+
     let subscriber = tracing_subscriber::fmt()
         .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
         // Use a more compact, abbreviated log format
         .compact()
-        .with_env_filter("none,aos_data_proxy=trace")
+        // Set LOG_LEVEL to
+        .with_env_filter(filter)
         // Display source code file paths
         .with_file(true)
         // Display source code line numbers
