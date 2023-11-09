@@ -285,16 +285,18 @@ impl DatabaseHandler {
     ) -> Result<Endpoint> {
         // Only gets first endpoint
         let project_endpoint = Vec::from_iter(
-            cache
+            &cache
                 .get_object(&project_id)
                 .ok_or_else(|| anyhow!("Parent project not found"))?
                 .object
                 .endpoints
                 .0,
-        )[0];
+        )[0]
+        .key()
+        .clone();
         // Fetch endpoint from cache/database
         self.get_endpoint(GetEP(GetEndpointRequest {
-            endpoint: Some(APIEndpointEnum::EndpointId(project_endpoint.0.to_string())),
+            endpoint: Some(APIEndpointEnum::EndpointId(project_endpoint.to_string())),
         }))
         .await
     }

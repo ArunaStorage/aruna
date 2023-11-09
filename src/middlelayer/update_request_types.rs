@@ -4,7 +4,7 @@ use crate::database::dsls::internal_relation_dsl::{
 };
 use crate::database::dsls::license_dsl::License;
 use crate::database::dsls::object_dsl::{
-    Hashes, KeyValue as DBKeyValue, KeyValues, Object, ObjectWithRelations,
+    EndpointInfo, Hashes, KeyValue as DBKeyValue, KeyValues, Object, ObjectWithRelations,
 };
 use crate::database::enums::{DataClass, ObjectType};
 use ahash::RandomState;
@@ -283,7 +283,10 @@ impl UpdateObject {
         // False because triggers no new revision
         Ok((new.try_into()?, false))
     }
-    pub fn get_endpoints(&self, old: Object) -> Result<DashMap<DieselUlid, bool, RandomState>> {
+    pub fn get_endpoints(
+        &self,
+        old: Object,
+    ) -> Result<DashMap<DieselUlid, EndpointInfo, RandomState>> {
         // TODO -> Currently not implemented in APICall
         Ok(old.endpoints.0)
     }

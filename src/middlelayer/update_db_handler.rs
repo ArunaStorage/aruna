@@ -247,7 +247,30 @@ impl DatabaseHandler {
             .ok_or_else(|| anyhow!("Resource not found"))?;
         let (metadata_tag, data_tag) = request.get_licenses(&old, &client).await?;
         Object::update_licenses(id, data_tag, metadata_tag, &client).await?;
-        Object::get_object_with_relations(&id, &client).await
+
+        // Fetch hierarchies and object relations for notifications
+        let object_plus = Object::get_object_with_relations(&id, &client).await?;
+        let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
+
+        // Try to emit object updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_resource_event(
+                &object_plus,
+                hierarchies,
+                EventVariant::Updated,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
+            .await
+        {
+            // Log error, rollback transaction and return
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            Err(anyhow::anyhow!("Notification emission failed"))
+        } else {
+            //transaction.commit().await?;
+            Ok(object_plus)
+        }
     }
 
     pub async fn update_grpc_object(

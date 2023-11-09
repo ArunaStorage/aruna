@@ -208,3 +208,17 @@ pub enum NotificationReferenceType {
     User,
     Resource,
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+pub enum ReplicationStatus {
+    Waiting,
+    Running,
+    Finished,
+    Error,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+pub enum ReplicationType {
+    FullSync(diesel_ulid::DieselUlid), // always Projects
+    PartialSync(ObjectMapping<diesel_ulid::DieselUlid>),
+}

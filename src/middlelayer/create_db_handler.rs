@@ -27,7 +27,7 @@ impl DatabaseHandler {
         let mut client = self.database.get_client().await?;
 
         // query endpoints
-        let endpoint_ids = request.get_endpoint(self.cache.clone(), &client).await?;
+        //let endpoint_ids = request.get_endpoint(self.cache.clone(), &client).await?;
 
         // check if resource with same name on same hierarchy exists
         match request.get_type() {
@@ -119,9 +119,9 @@ impl DatabaseHandler {
 
         // Create object in database
         let mut object = request
-            .as_new_db_object(user_id, DieselUlid::default(), transaction_client)
+            .as_new_db_object(user_id, transaction_client, self.cache.clone())
             .await?;
-        object.endpoints = Json(endpoint_ids);
+        //object.endpoints = Json(endpoint_ids);
         object.create(transaction_client).await?;
 
         // Create internal relation for parent and add user permissions for resource
