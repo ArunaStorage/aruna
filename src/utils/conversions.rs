@@ -485,9 +485,9 @@ pub fn convert_token_to_proto(token_id: &DieselUlid, db_token: APIToken) -> Toke
         name: db_token.name,
         created_at: Some(db_token.created_at.into()),
         expires_at: Some(db_token.expires_at.into()),
-        permission: Some(Permission {
+        permission: db_token.object_id.map(|id| Permission {
             permission_level: Into::<PermissionLevel>::into(db_token.user_rights) as i32,
-            resource_id: db_token.object_id.map(ResourceId::from),
+            resource_id: Some(ResourceId::from(id)),
         }),
     }
 }

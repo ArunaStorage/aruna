@@ -18,6 +18,7 @@ use async_nats::jetstream::{consumer::DeliverPolicy, Message};
 use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use futures::StreamExt;
+use log::debug;
 use std::collections::hash_map::RandomState;
 use std::collections::HashSet;
 use std::str::FromStr;
@@ -159,7 +160,7 @@ impl EventNotificationService for NotificationServiceImpl {
     ) -> Result<Response<GetEventMessageBatchResponse>, Status> {
         // Log some stuff
         log::info!("Received GetEventMessageBatchRequest.");
-        log::debug!("{:?}", &request);
+        debug!("{:?}", &request);
 
         // Consume gRPC request into its parts
         let (request_metadata, _, inner_request) = request.into_parts();
@@ -262,7 +263,7 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Log some stuff and return response
         log::info!("Sending GetEventMessageBatchResponse back to client.");
-        log::debug!("{:?}", &grpc_response);
+        debug!("{:?}", &grpc_response);
         return Ok(grpc_response);
     }
 
@@ -277,7 +278,7 @@ impl EventNotificationService for NotificationServiceImpl {
     ) -> Result<Response<Self::GetEventMessageStreamStream>, Status> {
         // Log some stuff
         log::info!("Received GetEventMessageBatchStreamRequest.");
-        log::debug!("{:?}", &request);
+        debug!("{:?}", &request);
 
         // Consume gRPC request into its parts
         let (request_metadata, _, inner_request) = request.into_parts();
@@ -370,10 +371,11 @@ impl EventNotificationService for NotificationServiceImpl {
         // Send messages in batches if present
         let cloned_reply_signing_secret = self.natsio_handler.reply_secret.clone();
         tokio::spawn(async move {
+            debug!("Starting event notification fetch loop");
             let mut already_seen: HashSet<String, RandomState> = HashSet::default();
             loop {
                 if let Some(Ok(nats_message)) = message_stream.next().await {
-                    log::debug!("Sending message to client: {}", nats_message.subject);
+                    debug!("Sending message to client: {}", nats_message.subject);
 
                     // Deduplication time
                     if let Some(header_map) = &nats_message.headers {
@@ -419,7 +421,7 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Log some stuff and return response
         log::info!("Sending GetEventMessageBatchStreamStreamResponse back to client.");
-        log::debug!("{:?}", &grpc_response);
+        debug!("{:?}", &grpc_response);
         return Ok(grpc_response);
     }
 
@@ -442,7 +444,7 @@ impl EventNotificationService for NotificationServiceImpl {
         request: tonic::Request<AcknowledgeMessageBatchRequest>,
     ) -> Result<Response<AcknowledgeMessageBatchResponse>, Status> {
         log::info!("Received AcknowledgeMessageBatchRequest.");
-        log::debug!("{:?}", &request);
+        debug!("{:?}", &request);
 
         // Consume gRPC request into its parts
         let (request_metadata, _, inner_request) = request.into_parts();
@@ -474,7 +476,7 @@ impl EventNotificationService for NotificationServiceImpl {
         let grpc_response = Response::new(AcknowledgeMessageBatchResponse {});
 
         log::info!("Sending AcknowledgeMessageBatchResponse back to client.");
-        log::debug!("{:?}", &grpc_response);
+        debug!("{:?}", &grpc_response);
         return Ok(grpc_response);
     }
 
@@ -493,7 +495,7 @@ impl EventNotificationService for NotificationServiceImpl {
         request: tonic::Request<DeleteStreamConsumerRequest>,
     ) -> Result<Response<DeleteStreamConsumerResponse>, Status> {
         log::info!("Received DeleteStreamConsumerRequest.");
-        log::debug!("{:?}", &request);
+        debug!("{:?}", &request);
 
         // Consume gRPC request into its parts
         let (request_metadata, _, inner_request) = request.into_parts();
@@ -571,7 +573,7 @@ impl EventNotificationService for NotificationServiceImpl {
         let grpc_response = Response::new(DeleteStreamConsumerResponse {});
 
         log::info!("Sending DeleteStreamConsumerResponse back to client.");
-        log::debug!("{:?}", &grpc_response);
+        debug!("{:?}", &grpc_response);
         return Ok(grpc_response);
     }
 }
