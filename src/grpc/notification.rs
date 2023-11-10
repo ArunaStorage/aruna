@@ -18,7 +18,7 @@ use async_nats::jetstream::{consumer::DeliverPolicy, Message};
 use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use futures::StreamExt;
-use log::debug;
+use log::{debug, error};
 use std::collections::hash_map::RandomState;
 use std::collections::HashSet;
 use std::str::FromStr;
@@ -373,10 +373,12 @@ impl EventNotificationService for NotificationServiceImpl {
         let tx_clone = tx.clone();
         tokio::spawn(async move {
             loop {
-                let result = tx_clone
+                if let Err(_) = tx_clone
                     .send(Ok(GetEventMessageStreamResponse { message: None }))
-                    .await;
-                debug!("{:?}", result);
+                    .await {
+                        error!("Keep-alive connection to DataProxy {} terminated", consumer_id);
+                        break
+                    }
                 tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
             }
         });
