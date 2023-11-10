@@ -527,7 +527,7 @@ impl GrpcQueryHandler {
 
         let mut inner_stream = stream.into_inner();
 
-        // TODO: Fullsync
+        // Fullsync
         let mut req = Request::new(FullSyncEndpointRequest {});
         req.metadata_mut().append(
             trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
@@ -565,6 +565,7 @@ impl GrpcQueryHandler {
                 _ => (),
             }
         }
+
         sort_resources(&mut resources);
         for res in resources {
             self.cache
@@ -574,7 +575,7 @@ impl GrpcQueryHandler {
         debug!("querying events");
         while let Some(m) = inner_stream.message().await? {
             if let Some(message) = m.message {
-                debug!(?message, "Received message");
+                debug!(?message, "received event message");
 
                 if let Ok(Some(r)) = self.process_message(message).await {
                     let mut resp =

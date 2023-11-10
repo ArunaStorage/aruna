@@ -55,6 +55,7 @@ impl Cache {
         encoding_key: String,
         encoding_key_serial: i32,
     ) -> Result<Arc<Self>> {
+        // Initialize cache
         let cache = Arc::new(Cache {
             users: DashMap::default(),
             resources: DashMap::default(),
@@ -64,10 +65,21 @@ impl Cache {
             aruna_client: RwLock::new(None),
             auth: RwLock::new(None),
         });
+
+        // Initialize auth handler
         let auth_handler =
             AuthHandler::new(cache.clone(), self_id, encoding_key, encoding_key_serial);
+
+        // Set auth handler in cache
         cache.set_auth(auth_handler).await;
-        debug!("initialize auth handler");
+
+        // Set database conn in cache
+        if with_persistence {
+            let persistence = Database::new().await?;
+            cache.set_persistence(persistence).await?;
+        }
+
+        // Fully sync cache (and database if persistent DataProxy)
         if let Some(url) = notifications_url {
             let notication_handler: Arc<GrpcQueryHandler> = Arc::new(trace_err!(
                 GrpcQueryHandler::new(url, cache.clone(), self_id.to_string()).await
@@ -88,12 +100,6 @@ impl Cache {
             cache.set_notifications(notication_handler).await;
             debug!("initialized notification handler");
         };
-
-        if with_persistence {
-            let persistence = Database::new().await?;
-            cache.set_persistence(persistence).await?;
-            debug!("initialized persistence");
-        }
 
         Ok(cache)
     }
@@ -728,6 +734,7 @@ impl Cache {
         trace!(object_id = ?object.id, with_location = location.is_some());
         if let Some(persistence) = self.persistence.read().await.as_ref() {
             object.upsert(&persistence.get_client().await?).await?;
+
             if let Some(l) = &location {
                 l.upsert(&persistence.get_client().await?).await?;
             }
