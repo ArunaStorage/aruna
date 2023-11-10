@@ -448,6 +448,15 @@ impl MeilisearchClient {
     }
 
     ///ToDo: Rust Doc
+    pub async fn clear_index(&self, index: MeilisearchIndexes) -> anyhow::Result<TaskInfo> {
+        // Extract index name of enum variant
+        let index_name = index.to_string();
+
+        // Delete documents to search
+        Ok(self.client.index(index_name).delete_all_documents().await?)
+    }
+
+    ///ToDo: Rust Doc
     pub async fn list_index<T: 'static + DeserializeOwned>(
         &self,
         index_name: &str,
