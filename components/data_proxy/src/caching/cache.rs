@@ -44,6 +44,7 @@ impl Cache {
         encoding_key: String,
         encoding_key_serial: i32,
     ) -> Result<Arc<Self>> {
+        // Initialize cache
         let cache = Arc::new(Cache {
             users: DashMap::default(),
             resources: DashMap::default(),
@@ -53,9 +54,21 @@ impl Cache {
             aruna_client: RwLock::new(None),
             auth: RwLock::new(None),
         });
+
+        // Initialize auth handler
         let auth_handler =
             AuthHandler::new(cache.clone(), self_id, encoding_key, encoding_key_serial);
+
+        // Set auth handler in cache
         cache.set_auth(auth_handler).await;
+
+        // Set database conn in cache
+        if with_persistence {
+            let persistence = Database::new().await?;
+            cache.set_persistence(persistence).await?;
+        }
+
+        // Fully sync cache (and database if persistent DataProxy)
         if let Some(url) = notifications_url {
             let notication_handler: Arc<GrpcQueryHandler> =
                 Arc::new(GrpcQueryHandler::new(url, cache.clone(), self_id.to_string()).await?);
@@ -71,11 +84,6 @@ impl Cache {
 
             cache.set_notifications(notication_handler).await
         };
-
-        if with_persistence {
-            let persistence = Database::new().await?;
-            cache.set_persistence(persistence).await?;
-        }
 
         Ok(cache)
     }
@@ -535,10 +543,9 @@ impl Cache {
 
                             mut_entry.clone()
                         };
+
                         if let Some(persistence) = self.persistence.read().await.as_ref() {
-                            let result = user.upsert(&persistence.get_client().await?).await;
-                            debug!("User database update result: {:#?}", result);
-                            result?
+                            user.upsert(&persistence.get_client().await?).await?;
                         }
                         break;
                     }
@@ -623,9 +630,7 @@ impl Cache {
         location: Option<ObjectLocation>,
     ) -> Result<()> {
         if let Some(persistence) = self.persistence.read().await.as_ref() {
-            let result = object.upsert(&persistence.get_client().await?).await;
-            debug!("Resource database update result: {:#?}", result);
-            result?;
+            object.upsert(&persistence.get_client().await?).await?;
 
             if let Some(l) = &location {
                 l.upsert(&persistence.get_client().await?).await?;
