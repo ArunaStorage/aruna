@@ -53,6 +53,7 @@ use tracing::error;
 use tracing::info_span;
 use tracing::trace;
 use tracing::Instrument;
+use tracing::debug;
 
 pub struct ArunaS3Service {
     backend: Arc<Box<dyn StorageBackend>>,
@@ -78,7 +79,7 @@ impl ArunaS3Service {
 
 #[async_trait::async_trait]
 impl S3 for ArunaS3Service {
-    #[tracing::instrument]
+    #[tracing::instrument(err)]
     async fn create_bucket(
         &self,
         req: S3Request<CreateBucketInput>,
@@ -117,10 +118,11 @@ impl S3 for ArunaS3Service {
         trace_err!(self.cache.upsert_object(new_object, None).await)
             .map_err(|_| s3_error!(InternalError, "Unable to cache new bucket"))?;
 
+        debug!(?output);
         Ok(S3Response::new(output))
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(err)]
     async fn put_object(
         &self,
         req: S3Request<PutObjectInput>,
@@ -507,10 +509,11 @@ impl S3 for ArunaS3Service {
             version_id: Some(object.id.to_string()),
             ..Default::default()
         };
+        debug!(?output);
         Ok(S3Response::new(output))
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(err)]
     async fn create_multipart_upload(
         &self,
         req: S3Request<CreateMultipartUploadInput>,
@@ -749,10 +752,11 @@ impl S3 for ArunaS3Service {
             upload_id: Some(init_response),
             ..Default::default()
         };
+        debug!(?output);
         Ok(S3Response::new(output))
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(err)]
     async fn upload_part(
         &self,
         req: S3Request<UploadPartInput>,
@@ -839,10 +843,11 @@ impl S3 for ArunaS3Service {
             e_tag: Some(format!("-{}", etag)),
             ..Default::default()
         };
+        debug!(?output);
         Ok(S3Response::new(output))
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(err)]
     async fn complete_multipart_upload(
         &self,
         req: S3Request<CompleteMultipartUploadInput>,
@@ -948,11 +953,11 @@ impl S3 for ArunaS3Service {
                     .map_err(|_| s3_error!(InternalError, "Unable to delete old object"))?;
             }
         }
-
+        debug!(?response);
         Ok(S3Response::new(response))
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(err)]
     async fn get_object(
         &self,
         req: S3Request<GetObjectInput>,
@@ -1145,17 +1150,20 @@ impl S3 for ArunaS3Service {
                 s3_error!(InternalError, "Internal processing error")
             })));
 
-        Ok(S3Response::new(GetObjectOutput {
+        
+        let output = GetObjectOutput {
             body,
             content_length: calc_content_len,
             last_modified: None,
             e_tag: Some(format!("-{}", id)),
             version_id: None,
             ..Default::default()
-        }))
+        };
+        debug!(?output);
+        Ok(S3Response::new(output))
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(err)]
     async fn head_object(
         &self,
         req: S3Request<HeadObjectInput>,
@@ -1197,7 +1205,8 @@ impl S3 for ArunaS3Service {
 
         let content_len = location.map(|l| l.raw_content_len).unwrap_or_default();
 
-        Ok(S3Response::new(HeadObjectOutput {
+
+        let output = HeadObjectOutput {
             content_length: content_len,
             last_modified: Some(
                 // FIXME: Real time ...
@@ -1207,10 +1216,14 @@ impl S3 for ArunaS3Service {
             ),
             e_tag: Some(object.id.to_string()),
             ..Default::default()
-        }))
+        };
+
+        debug!(?output);
+
+        Ok(S3Response::new(output))
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(err)]
     async fn list_objects(
         &self,
         _req: S3Request<ListObjectsInput>,
@@ -1222,7 +1235,7 @@ impl S3 for ArunaS3Service {
         ))
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(err)]
     async fn list_objects_v2(
         &self,
         req: S3Request<ListObjectsV2Input>,
@@ -1316,6 +1329,7 @@ impl S3 for ArunaS3Service {
             start_after: Some(start_after),
             ..Default::default()
         };
+        debug!(?result);
         Ok(S3Response::new(result))
     }
 }
