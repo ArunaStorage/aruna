@@ -60,6 +60,7 @@ use tonic::Request;
 use tracing::debug;
 use tracing::error;
 use tracing::trace;
+use tracing::Instrument;
 
 use super::cache::Cache;
 
@@ -572,6 +573,18 @@ impl GrpcQueryHandler {
                 .upsert_object(trace_err!(DPObject::try_from(res))?, None)
                 .await?
         }
+
+
+        let (keep_alive_tx, mut keep_alive_rx) = tokio::sync::mpsc::channel::<()>(1);
+        tokio::spawn(async move {
+            while let Ok(_) = keep_alive_rx.try_recv() {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            }
+            // ABORT!
+            error!("keep alive failed");
+            panic!("keep alive failed");
+        }.instrument(tracing::info_span!("keep_alive")));
+
         debug!("querying events");
         while let Some(m) = inner_stream.message().await? {
             if let Some(message) = m.message {
@@ -597,6 +610,9 @@ impl GrpcQueryHandler {
                     )?;
                     debug!("acknowledged message");
                 }
+            } else {
+                let _ = keep_alive_tx.try_send(());
+                trace!("received ping");
             }
         }
         error!("Stream was closed by sender");
