@@ -1,8 +1,25 @@
+use crate::trace_err;
 use anyhow::Result;
 use http::Method;
 use reqsign::{AwsCredential, AwsV4Signer};
 use url::Url;
 
+#[tracing::instrument(
+    level = "trace",
+    skip(
+        method,
+        access_key,
+        secret_key,
+        ssl,
+        multipart,
+        part_number,
+        upload_id,
+        bucket,
+        key,
+        endpoint,
+        duration
+    )
+)]
 /// Creates a fully customized presigned S3 url.
 ///
 /// ## Arguments:
@@ -54,21 +71,21 @@ pub fn sign_url(
 
     // Construct request
     let url = if multipart {
-        Url::parse(&format!(
+        trace_err!(Url::parse(&format!(
             "{}{}.{}/{}?partNumber={}&uploadId={}",
             protocol, bucket, endpoint_sanitized, key, part_number, upload_id
-        ))?
+        )))?
     } else {
-        Url::parse(&format!(
+        trace_err!(Url::parse(&format!(
             "{}{}.{}/{}",
             protocol, bucket, endpoint_sanitized, key
-        ))?
+        )))?
     };
 
     let mut req = reqwest::Request::new(method, url);
 
     // Signing request with Signer
-    signer.sign_query(
+    trace_err!(signer.sign_query(
         &mut req,
         std::time::Duration::new(duration as u64, 0), // Sec, nano
         &AwsCredential {
@@ -77,10 +94,14 @@ pub fn sign_url(
             session_token: None,
             expires_in: None,
         },
-    )?;
+    ))?;
     Ok(req.url().to_string())
 }
 
+#[tracing::instrument(
+    level = "trace",
+    skip(access_key, secret_key, ssl, bucket, key, endpoint)
+)]
 /// Convenience wrapper function for sign_url(...) to reduce unused parameters for download url.
 pub fn sign_download_url(
     access_key: &str,

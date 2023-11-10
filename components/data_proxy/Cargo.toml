@@ -6,7 +6,6 @@ version = "2.0.0-rc.1"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-simple_logger = "4.2.0"
 anyhow = "1.0.75"
 aruna-file = "0.3.4"
 aruna-rust-api = "2.0.0-beta.7"
@@ -30,7 +29,6 @@ hex = "0.4"
 hmac = "0.12.1"
 http = "0.2.9"
 hyper = {version = "0.14.27", features = ["full"]}
-log = "0.4.20"
 md-5 = "0.10.6"
 rand = "0.8.5"
 reqwest = "0.11.22"
@@ -42,8 +40,7 @@ tokio-stream = "0.1.14"
 tower = { version = "0.4.13", features = ["retry"] }
 tonic = {version = "0.10.2", features = ["tls", "tls-roots"]}
 tracing = "0.1.40"
-tracing-error = "0.2.0"
-tracing-subscriber = {version = "0.3.17", optional = true, features = ["env-filter", "time"]}
+tracing-subscriber = {version = "0.3.17", features = ["env-filter", "time"]}
 url = "2.4.1"
 zstd = "0.13.0"
 diesel-ulid = "0.3.1"
@@ -60,3 +57,6 @@ prost-wkt-types = "0.5.0"
 time = "0.3.30"
 digest = "0.10.7"
 reqsign = "0.14.2"
+
+[profile.release]
+panic = 'abort'

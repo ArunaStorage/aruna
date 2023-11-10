@@ -9,9 +9,11 @@ macro_rules! required {
 }
 
 #[macro_export]
-macro_rules! log_received {
+macro_rules! trace_err {
     ($request:expr) => {
-        log::info!("Received {}", $crate::structs::type_name_of($request));
-        log::debug!("{:?}", $request);
+        $request.map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })
     };
 }
