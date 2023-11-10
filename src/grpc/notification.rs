@@ -312,7 +312,9 @@ impl EventNotificationService for NotificationServiceImpl {
                         generate_endpoint_subject(&consumer_id),
                         DeliverPolicy::ByStartTime {
                             start_time: tonic_invalid!(
-                                OffsetDateTime::from_unix_timestamp(Utc::now().timestamp()),
+                                OffsetDateTime::from_unix_timestamp(
+                                    Utc::now().timestamp() - (60 * 60)
+                                ),
                                 "Incorrect timestamp format"
                             ),
                         },
@@ -375,10 +377,14 @@ impl EventNotificationService for NotificationServiceImpl {
             loop {
                 if let Err(_) = tx_clone
                     .send(Ok(GetEventMessageStreamResponse { message: None }))
-                    .await {
-                        error!("Keep-alive connection to DataProxy {} terminated", consumer_id);
-                        break
-                    }
+                    .await
+                {
+                    error!(
+                        "Keep-alive connection to DataProxy {} terminated",
+                        consumer_id
+                    );
+                    break;
+                }
                 tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
             }
         });
