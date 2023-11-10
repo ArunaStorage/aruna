@@ -12,7 +12,7 @@ FROM alpine:3.18
 WORKDIR /run
 RUN apk update
 RUN apk upgrade
-RUN apk add ca-certificates libpq-dev musl-dev
+RUN apk add libgcc gcompat ca-certificates libpq
 COPY --from=builder /build/target/release/aos_data_proxy .
 COPY --from=builder /build/.env .
 COPY --from=builder /build/src/database/schema.sql .
