@@ -375,9 +375,10 @@ impl EventNotificationService for NotificationServiceImpl {
         let tx_clone = tx.clone();
         tokio::spawn(async move {
             loop {
-                if let Err(_) = tx_clone
+                if tx_clone
                     .send(Ok(GetEventMessageStreamResponse { message: None }))
                     .await
+                    .is_err()
                 {
                     error!(
                         "Keep-alive connection to DataProxy {} terminated",

@@ -126,7 +126,7 @@ fn generate_random_object_document() -> ObjectDocument {
 
     ObjectDocument {
         id: DieselUlid::generate(),
-        object_type: object_type,
+        object_type,
         object_type_id: object_type as u8,
         status: ObjectStatus::try_from(rng.gen_range(1..6)).unwrap(),
         name: project_name,

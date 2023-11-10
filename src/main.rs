@@ -37,7 +37,7 @@ use aruna_server::{
     utils::search_utils,
 };
 use diesel_ulid::DieselUlid;
-use log::{warn, info};
+use log::{info, warn};
 use simple_logger::SimpleLogger;
 use tonic::transport::Server;
 
