@@ -5,7 +5,7 @@ use crate::database::crud::CrudDb;
 use crate::database::dsls::persistent_notification_dsl::{
     NotificationReference, NotificationReferences, PersistentNotification,
 };
-use crate::database::dsls::user_dsl::{User, UserAttributes};
+use crate::database::dsls::user_dsl::{OIDCMapping, User, UserAttributes};
 use crate::database::enums::{
     DbPermissionLevel, NotificationReferenceType, ObjectMapping, PersistentNotificationVariant,
 };
@@ -24,7 +24,7 @@ impl DatabaseHandler {
     pub async fn register_user(
         &self,
         request: RegisterUser,
-        external_id: String,
+        external_id: OIDCMapping,
     ) -> Result<(DieselUlid, User)> {
         let client = self.database.get_client().await?;
         let user_id = DieselUlid::generate();
@@ -35,11 +35,11 @@ impl DatabaseHandler {
             trusted_endpoints: Default::default(),
             custom_attributes: vec![],
             permissions: Default::default(),
+            external_ids: vec![external_id],
         };
         let mut user = User {
             id: user_id,
             display_name: request.get_display_name(),
-            external_id: Some(external_id),
             email: request.get_email(),
             attributes: Json(new_attributes),
             active: false,

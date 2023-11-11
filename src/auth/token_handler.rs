@@ -154,9 +154,6 @@ impl<'de> Deserialize<'de> for Action {
 
 pub struct TokenHandler {
     cache: Arc<Cache>,
-    oidc_realminfo: String,
-    oidc_token_issuer: String,
-    oidc_pubkey: Arc<RwLock<Option<DecodingKey>>>,
     signing_info: Arc<RwLock<(i64, EncodingKey, DecodingKey)>>, //<PublicKey Serial; PrivateKey; PublicKey>
 }
 
@@ -465,6 +462,7 @@ impl TokenHandler {
     async fn validate_oidc_token(
         &self,
         token: &str,
+        issuer: &str,
     ) -> Result<(
         DieselUlid,
         Option<DieselUlid>,
@@ -474,6 +472,8 @@ impl TokenHandler {
         Option<Intent>,
     )> {
         let claims = self.process_oidc_token(token).await?;
+
+        let oidc_mapping = 
         // Fetch user from oidc provider
         let user = match self.cache.get_user_by_oidc(&claims.sub) {
             Some(u) => u,

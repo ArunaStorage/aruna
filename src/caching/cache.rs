@@ -4,11 +4,13 @@ use crate::auth::structs::Context;
 use crate::auth::structs::ContextVariant;
 use crate::database::connection::Database;
 use crate::database::crud::CrudDb;
+use crate::database::dsls::identity_provider_dsl::IdentityProvider;
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::internal_relation_dsl::INTERNAL_RELATION_VARIANT_BELONGS_TO;
 use crate::database::dsls::object_dsl::get_all_objects_with_relations;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::dsls::pub_key_dsl::PubKey as DbPubkey;
+use crate::database::dsls::user_dsl::OIDCMapping;
 use crate::database::dsls::user_dsl::User;
 use crate::database::enums::DbPermissionLevel;
 use crate::database::enums::ObjectMapping;
@@ -27,6 +29,7 @@ use aruna_rust_api::api::storage::models::v2::PermissionLevel;
 use aruna_rust_api::api::storage::models::v2::User as APIUser;
 use aruna_rust_api::api::storage::services::v2::get_hierarchy_response::Graph;
 use aruna_rust_api::api::storage::services::v2::UserPermission;
+use dashmap::DashSet;
 use itertools::Itertools;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
@@ -39,6 +42,7 @@ pub struct Cache {
     pub object_cache: DashMap<DieselUlid, ObjectWithRelations, RandomState>,
     pub user_cache: DashMap<DieselUlid, User, RandomState>,
     pub pubkeys: DashMap<i32, PubKeyEnum, RandomState>,
+    pub issuer_urls: DashSet<String>,
     lock: AtomicBool,
 }
 
@@ -54,6 +58,7 @@ impl Cache {
             object_cache: DashMap::default(),
             user_cache: DashMap::default(),
             pubkeys: DashMap::default(),
+            issuer_urls: DashSet::default(),
             lock: AtomicBool::new(false),
         }
     }
@@ -79,6 +84,11 @@ impl Cache {
         for pubkey in pubkeys {
             self.pubkeys
                 .insert(pubkey.id as i32, PubKeyEnum::try_from(pubkey)?);
+        }
+
+        let issuers = IdentityProvider::all(&client).await?;
+        for issuer in issuers {
+            self.issuer_urls.insert(issuer.issuer_url);
         }
 
         self.lock.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -200,13 +210,12 @@ impl Cache {
         self.user_cache.remove(id);
     }
 
-    pub fn get_user_by_oidc(&self, external_id: &str) -> Option<User> {
+    pub fn get_user_by_oidc(&self, external: &OIDCMapping) -> Option<User> {
         self.check_lock();
         self.user_cache
             .iter()
-            .find(|x| x.value().external_id == Some(external_id.to_string()))
+            .find(|x| x.value().attributes.0.external_ids.contains(external))
             .map(|x| x.value().clone())
-        //.ok_or_else(|| anyhow!("User not found"))
     }
 
     pub async fn get_all_users(&self) -> Vec<APIUser> {
@@ -613,7 +622,6 @@ mod tests {
             User {
                 id: user_1,
                 display_name: "user-1".to_string(),
-                external_id: Some("my-external-id".to_string()),
                 email: "test-1@example.com".to_string(),
                 attributes: Json(UserAttributes {
                     global_admin: false,
@@ -625,6 +633,7 @@ mod tests {
                     ]),
                     custom_attributes: vec![],
                     permissions: DashMap::default(),
+                    external_ids: vec![],
                 }),
                 active: true,
             },
@@ -637,7 +646,6 @@ mod tests {
             User {
                 id: user_2,
                 display_name: "user-2".to_string(),
-                external_id: Some("my-other-external-id".to_string()),
                 email: "test-2@example.com".to_string(),
                 attributes: Json(UserAttributes {
                     global_admin: false,
@@ -646,6 +654,7 @@ mod tests {
                     trusted_endpoints: DashMap::from_iter([(endpoint_id, Empty {})]),
                     custom_attributes: vec![],
                     permissions: DashMap::default(),
+                    external_ids: vec![],
                 }),
                 active: true,
             },

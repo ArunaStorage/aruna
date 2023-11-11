@@ -19,7 +19,6 @@ use super::{
 pub struct User {
     pub id: DieselUlid,
     pub display_name: String,
-    pub external_id: Option<String>,
     pub email: String,
     pub attributes: Json<UserAttributes>,
     pub active: bool,
@@ -35,6 +34,12 @@ pub struct APIToken {
     pub user_rights: DbPermissionLevel,
 }
 
+#[derive(Serialize, Deserialize, Clone, FromRow, Debug, Eq, PartialEq, PartialOrd)]
+pub struct OIDCMapping {
+    pub external_id: String,
+    pub oidc_url: String,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UserAttributes {
     pub global_admin: bool,
@@ -43,6 +48,7 @@ pub struct UserAttributes {
     pub trusted_endpoints: DashMap<DieselUlid, Empty, RandomState>,
     pub custom_attributes: Vec<CustomAttributes>,
     pub permissions: DashMap<DieselUlid, ObjectMapping<DbPermissionLevel>, RandomState>,
+    pub external_ids: Vec<OIDCMapping>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
@@ -68,7 +74,6 @@ impl CrudDb for User {
                 &[
                     &self.id,
                     &self.display_name,
-                    &self.external_id,
                     &self.email,
                     &self.attributes,
                     &self.active,
@@ -349,7 +354,6 @@ impl PartialEq for User {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
             && self.display_name == other.display_name
-            && self.external_id == other.external_id
             && self.email == other.email
             && self.attributes.0.to_string() == other.attributes.0.to_string()
             && self.active == other.active

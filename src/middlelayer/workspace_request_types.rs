@@ -85,8 +85,7 @@ impl CreateWorkspace {
         let endpoints = endpoints.into_iter().map(|id| (id, Empty {}));
         User {
             id: user_id,
-            display_name: ["SERVICE_ACCOUNT".to_string(), user_id.to_string()].join("#"),
-            external_id: None,
+            display_name: format!("SERVICE_ACCOUNT#{}", user_id.to_string()),
             email: String::new(),
             attributes: Json(UserAttributes {
                 global_admin: false,
@@ -94,6 +93,7 @@ impl CreateWorkspace {
                 tokens: DashMap::default(),
                 trusted_endpoints: DashMap::from_iter(endpoints),
                 custom_attributes: vec![],
+                external_ids: vec![],
                 permissions: DashMap::from_iter(vec![(
                     workspace_id,
                     ObjectMapping::PROJECT(crate::database::enums::DbPermissionLevel::APPEND),

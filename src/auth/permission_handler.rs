@@ -2,7 +2,10 @@ use super::{
     structs::{Context, ContextVariant},
     token_handler::{Action, OIDCError, TokenHandler},
 };
-use crate::{caching::cache::Cache, database::enums::DbPermissionLevel};
+use crate::{
+    caching::cache::Cache,
+    database::{dsls::user_dsl::OIDCMapping, enums::DbPermissionLevel},
+};
 use anyhow::Result;
 use diesel_ulid::DieselUlid;
 use std::sync::Arc;
@@ -122,7 +125,7 @@ impl PermissionHandler {
         Ok(user_id)
     }
 
-    pub async fn check_unregistered_oidc(&self, token: &str) -> Result<String> {
+    pub async fn check_unregistered_oidc(&self, token: &str) -> Result<OIDCMapping> {
         Ok(self.token_handler.process_oidc_token(token).await?.sub)
     }
 }
