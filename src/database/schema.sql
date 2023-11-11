@@ -118,10 +118,22 @@ CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY,
     display_name TEXT NOT NULL DEFAULT '',
     email VARCHAR(511) NOT NULL DEFAULT '',
-    external_id VARCHAR(511) UNIQUE,
     attributes JSONB NOT NULL,
     active BOOL NOT NULL DEFAULT FALSE
 );
+
+CREATE TABLE IF NOT EXISTS oidc_issuer (
+    issuer VARCHAR(255) PRIMARY KEY,
+);
+
+CREATE TABLE IF NOT EXISTS oidc_mapping (
+    external_id VARCHAR(511) NOT NULL,
+    issuer VARCHAR(255) NOT NULL REFERENCES oidc_issuer(issuer) ON DELETE CASCADE,
+    user UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY(external_id, issuer),
+);
+
+CREATE INDEX IF NOT EXISTS oidc_mapping_user ON oidc_mapping (user);
 
 /* ----- Licenses -------------------------------------- */
 -- Table for licenses
