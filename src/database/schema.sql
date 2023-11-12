@@ -110,6 +110,18 @@ DO $$
         END IF;
     END
 $$;
+
+DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'IssuerType') THEN
+            CREATE TYPE "IssuerType" AS ENUM (
+                'SERVER',
+                'DATAPROXY',
+                'OIDC',
+                );
+        END IF;
+    END
+$$;
 /* ----- Authorization --------------------------------------------- */
 -- Table with users imported from some aai
 -- Join table to map users to multiple identity providers
@@ -117,6 +129,7 @@ $$;
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY,
     display_name TEXT NOT NULL DEFAULT '',
+    external_id TEXT,
     email VARCHAR(511) NOT NULL DEFAULT '',
     attributes JSONB NOT NULL,
     active BOOL NOT NULL DEFAULT FALSE
@@ -124,6 +137,9 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS identity_provider (
     issuer_url VARCHAR(255) PRIMARY KEY,
+    jwks_endpoint VARCHAR(255),
+    issuer_type IssuerType NOT NULL,
+    audiences []VARCHAR(255) NOT NULL,
 );
 
 /* ----- Licenses -------------------------------------- */

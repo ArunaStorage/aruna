@@ -3,6 +3,8 @@ use anyhow::bail;
 use anyhow::Result;
 use base64::engine::general_purpose;
 use base64::Engine;
+use chrono::NaiveDate;
+use chrono::NaiveDateTime;
 use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use hmac::{Hmac, Mac};
@@ -63,6 +65,7 @@ impl std::error::Error for OIDCError {}
 pub(crate) struct ArunaTokenClaims {
     iss: String,     // Currently always 'aruna'
     pub sub: String, // User_ID / DataProxy_ID
+    aud: String,     // Audience;
     exp: usize,      // Expiration timestamp
     // Token_ID; None if OIDC or ... ?
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -295,11 +298,13 @@ impl TokenHandler {
             .ok_or_else(|| anyhow!("Invalid token"))?;
         let decoded = general_purpose::STANDARD_NO_PAD.decode(split)?;
         let claims: ArunaTokenClaims = serde_json::from_slice(&decoded)?;
-        let oidc_issuer = self.oidc_token_issuer.as_str();
 
         match claims.iss.as_str() {
             "aruna" => self.validate_server_token(token).await,
             "aruna_dataproxy" => self.validate_dataproxy_token(token).await,
+
+
+            _ => self.cache.get_i
             iss if iss == oidc_issuer => self.validate_oidc_token(token).await,
             _ => Err(anyhow!("Unknown issuer")),
         }

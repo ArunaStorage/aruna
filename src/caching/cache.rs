@@ -1,5 +1,6 @@
 use super::structs::ProxyCacheIterator;
 use super::structs::PubKeyEnum;
+use crate::auth::issuer_handler::Issuer;
 use crate::auth::structs::Context;
 use crate::auth::structs::ContextVariant;
 use crate::database::connection::Database;
@@ -29,20 +30,18 @@ use aruna_rust_api::api::storage::models::v2::PermissionLevel;
 use aruna_rust_api::api::storage::models::v2::User as APIUser;
 use aruna_rust_api::api::storage::services::v2::get_hierarchy_response::Graph;
 use aruna_rust_api::api::storage::services::v2::UserPermission;
-use dashmap::DashSet;
+use dashmap::DashMap;
+use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use dashmap::DashMap;
-use diesel_ulid::DieselUlid;
-
 pub struct Cache {
     pub object_cache: DashMap<DieselUlid, ObjectWithRelations, RandomState>,
     pub user_cache: DashMap<DieselUlid, User, RandomState>,
     pub pubkeys: DashMap<i32, PubKeyEnum, RandomState>,
-    pub issuer_urls: DashSet<String>,
+    pub issuer_info: DashMap<String, Issuer>,
     lock: AtomicBool,
 }
 
@@ -58,7 +57,7 @@ impl Cache {
             object_cache: DashMap::default(),
             user_cache: DashMap::default(),
             pubkeys: DashMap::default(),
-            issuer_urls: DashSet::default(),
+            issuer_info: DashMap::default(),
             lock: AtomicBool::new(false),
         }
     }
@@ -88,7 +87,8 @@ impl Cache {
 
         let issuers = IdentityProvider::all(&client).await?;
         for issuer in issuers {
-            self.issuer_urls.insert(issuer.issuer_url);
+            self.issuer_info
+                .insert(issuer.issuer_url, Issuer::new(issuer).await?);
         }
 
         self.lock.store(false, std::sync::atomic::Ordering::Relaxed);
