@@ -136,9 +136,8 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS identity_provider (
-    issuer_url VARCHAR(255) PRIMARY KEY,
+    issuer_name VARCHAR(255) PRIMARY KEY,
     jwks_endpoint VARCHAR(255),
-    issuer_type IssuerType NOT NULL,
     audiences []VARCHAR(255) NOT NULL,
 );
 

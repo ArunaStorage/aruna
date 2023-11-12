@@ -3,16 +3,14 @@ use anyhow::bail;
 use anyhow::Result;
 use base64::engine::general_purpose;
 use base64::Engine;
-use chrono::NaiveDate;
-use chrono::NaiveDateTime;
 use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use hmac::{Hmac, Mac};
 use jsonwebtoken::encode;
 use jsonwebtoken::Algorithm;
+use jsonwebtoken::DecodingKey;
 use jsonwebtoken::EncodingKey;
 use jsonwebtoken::Header;
-use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -25,7 +23,10 @@ use crate::caching::cache::Cache;
 use crate::caching::structs::PubKeyEnum;
 use crate::database::connection::Database;
 use crate::database::dsls::pub_key_dsl::PubKey as DbPubKey;
+use crate::database::dsls::user_dsl::OIDCMapping;
 use crate::database::enums::DbPermissionLevel;
+
+use super::issuer_handler::IssuerType;
 
 #[derive(Deserialize, Debug)]
 struct KeyCloakResponse {
@@ -63,7 +64,7 @@ impl std::error::Error for OIDCError {}
 ///           Strongly restricts the usability of the token.
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct ArunaTokenClaims {
-    iss: String,     // Currently always 'aruna'
+    pub iss: String, // Currently always 'aruna'
     pub sub: String, // User_ID / DataProxy_ID
     aud: String,     // Audience;
     exp: usize,      // Expiration timestamp
@@ -98,7 +99,7 @@ impl From<u8> for Action {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Intent {
     pub target: DieselUlid,
     pub action: Action,
@@ -164,10 +165,8 @@ impl TokenHandler {
     pub async fn new(
         cache: Arc<Cache>,
         database: Arc<Database>,
-        oidc_realminfo: String,
         encode_secret: String,
         decode_secret: String,
-        token_issuer: String,
     ) -> Result<Self> {
         let private_pem = format!(
             "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
@@ -203,10 +202,7 @@ impl TokenHandler {
         // Return initialized TokenHandler
         Ok(TokenHandler {
             cache,
-            oidc_realminfo,
-            oidc_pubkey: Arc::new(RwLock::new(None)),
             signing_info: Arc::new(RwLock::new((pubkey_serial, encoding_key, decoding_key))),
-            oidc_token_issuer: token_issuer,
         })
     }
 
@@ -240,6 +236,7 @@ impl TokenHandler {
             },
             tid: Some(token_id.to_string()),
             it: None,
+            aud: "aruna".to_string(),
         };
 
         let header = Header {
@@ -270,6 +267,7 @@ impl TokenHandler {
             exp: (Utc::now().timestamp() as usize) + 86400, // One day for now.
             tid: token_id,
             it: intent,
+            aud: "proxy".to_string(),
         };
 
         let header = Header {
@@ -299,21 +297,24 @@ impl TokenHandler {
         let decoded = general_purpose::STANDARD_NO_PAD.decode(split)?;
         let claims: ArunaTokenClaims = serde_json::from_slice(&decoded)?;
 
-        match claims.iss.as_str() {
-            "aruna" => self.validate_server_token(token).await,
-            "aruna_dataproxy" => self.validate_dataproxy_token(token).await,
+        let issuer = self
+            .cache
+            .get_issuer(&claims.iss)
+            .ok_or_else(|| anyhow!("Unknown issuer"))?;
 
+        let (kid, validated_claims) = issuer.check_token(token).await?;
 
-            _ => self.cache.get_i
-            iss if iss == oidc_issuer => self.validate_oidc_token(token).await,
-            _ => Err(anyhow!("Unknown issuer")),
+        match issuer.issuer_type {
+            IssuerType::OIDC => self.validate_oidc_token(&validated_claims).await,
+            IssuerType::ARUNA => self.validate_server_token(&validated_claims).await,
+            IssuerType::DATAPROXY => self.validate_dataproxy_token(&validated_claims, &kid).await,
         }
     }
 
     ///ToDo: Rust Doc
     async fn validate_server_token(
         &self,
-        token: &str,
+        claims: &ArunaTokenClaims,
     ) -> Result<(
         DieselUlid,         // User_ID or Endpoint_ID
         Option<DieselUlid>, // Maybe Token_ID
@@ -322,37 +323,12 @@ impl TokenHandler {
         bool,                                 //Option<DieselUlid> extrahiert aus Claims.sub (?)
         Option<Intent>,
     )> {
-        // Extract pubkey id from JWT header
-        let kid = decode_header(token)?
-            .kid
-            .ok_or_else(|| anyhow!("Unspecified kid"))?;
-
-        // Fetch pubkey from cache
-        let cached_key = self
-            .cache
-            .pubkeys
-            .get(&kid.parse::<i32>()?)
-            .ok_or_else(|| anyhow!("Unspecified kid"))?
-            .clone();
-
-        // Check if pubkey is from ArunaServer or Dataproxy.
-        let (_, dec_key) = match cached_key {
-            PubKeyEnum::Server(key) => key,
-            PubKeyEnum::DataProxy((_, _, _)) => {
-                return Err(anyhow::anyhow!("Token not signed from ArunaServer"))
-            }
-        };
-
-        // Decode claims with pubkey
-        let claims =
-            decode::<ArunaTokenClaims>(token, &dec_key, &Validation::new(Algorithm::EdDSA))?;
-
         // Fetch user from cache
-        let uid = DieselUlid::from_str(&claims.claims.sub)?;
+        let uid = DieselUlid::from_str(&claims.sub)?;
         let user = self.cache.get_user(&uid);
 
         // Convert token id if present
-        let maybe_token = match claims.claims.tid {
+        let maybe_token = match &claims.tid {
             Some(token_id) => Some(DieselUlid::from_str(&token_id)?),
             None => None,
         };
@@ -368,7 +344,8 @@ impl TokenHandler {
     ///ToDo: Rust Doc
     async fn validate_dataproxy_token(
         &self,
-        token: &str,
+        claims: &ArunaTokenClaims,
+        kid: &str,
     ) -> Result<(
         DieselUlid,
         Option<DieselUlid>,
@@ -377,11 +354,6 @@ impl TokenHandler {
         bool,
         Option<Intent>,
     )> {
-        // Extract pubkey id from JWT header
-        let kid = decode_header(token)?
-            .kid
-            .ok_or_else(|| anyhow!("Unspecified kid"))?;
-
         // Fetch pubkey from cache
         let key = self
             .cache
@@ -392,32 +364,30 @@ impl TokenHandler {
 
         // Check if pubkey is from ArunaServer or Dataproxy.
         match key {
-            PubKeyEnum::DataProxy((_, key, endpoint_id)) => {
-                // Decode claims with pubkey
-                let claims =
-                    decode::<ArunaTokenClaims>(token, &key, &Validation::new(Algorithm::EdDSA))?;
-
+            PubKeyEnum::DataProxy((_, _, endpoint_id)) => {
                 // Intent is mandatory with Dataproxy signed tokens
-                if let Some(intent) = claims.claims.it {
+                if let Some(intent) = &claims.it {
                     // Check if endpoint id matches the id associated with the pubkey
                     if endpoint_id != intent.target {
                         bail!("Invalid intent target id")
                     }
 
                     // Convert claims sub to ULID
-                    let sub_id = DieselUlid::from_str(&claims.claims.sub)?;
+                    let sub_id = DieselUlid::from_str(&claims.sub)?;
 
                     // Check if intent action is valid
                     match intent.action {
                         //Case 1: Dataproxy notification fetch
-                        Action::FetchInfo => Ok((sub_id, None, false, vec![], true, Some(intent))),
+                        Action::FetchInfo => {
+                            Ok((sub_id, None, false, vec![], true, Some(intent.clone())))
+                        }
                         //Case 2: Dataproxy user impersonation
                         Action::Impersonate => {
                             // Fetch user from cache
                             let user = self.cache.get_user(&sub_id);
 
                             // Convert token id if present
-                            let token = match claims.claims.tid {
+                            let token = match &claims.tid {
                                 Some(token_id) => Some(DieselUlid::from_str(&token_id)?),
                                 None => None,
                             };
@@ -425,7 +395,14 @@ impl TokenHandler {
                             // Fetch permissions associated with token
                             if let Some(user) = user {
                                 let perms = user.get_permissions(token)?;
-                                return Ok((user.id, token, false, perms.0, true, Some(intent)));
+                                return Ok((
+                                    user.id,
+                                    token,
+                                    false,
+                                    perms.0,
+                                    true,
+                                    Some(intent.clone()),
+                                ));
                             }
                             bail!("Invalid user provided")
                         }
@@ -439,35 +416,10 @@ impl TokenHandler {
         }
     }
 
-    pub(crate) async fn process_oidc_token(&self, token: &str) -> Result<ArunaTokenClaims> {
-        // Read current oidc public key
-        let read = {
-            let lock = self.oidc_pubkey.try_read().unwrap();
-            lock.clone()
-        };
-        // Extract header from JWT
-        let header = decode_header(token)?;
-
-        // Decode JWT claims
-        let token_data = match read {
-            Some(pubkey) => {
-                decode::<ArunaTokenClaims>(token, &pubkey, &Validation::new(header.alg))?
-            }
-            None => decode::<ArunaTokenClaims>(
-                token,
-                &self.get_token_realminfo().await?,
-                &Validation::new(header.alg),
-            )?,
-        };
-
-        Ok(token_data.claims)
-    }
-
     ///ToDo: Rust Doc
     async fn validate_oidc_token(
         &self,
-        token: &str,
-        issuer: &str,
+        claims: &ArunaTokenClaims,
     ) -> Result<(
         DieselUlid,
         Option<DieselUlid>,
@@ -476,11 +428,13 @@ impl TokenHandler {
         bool,
         Option<Intent>,
     )> {
-        let claims = self.process_oidc_token(token).await?;
+        let oidc_mapping = OIDCMapping {
+            oidc_name: claims.sub.clone(),
+            external_id: claims.sub.clone(),
+        };
 
-        let oidc_mapping = 
         // Fetch user from oidc provider
-        let user = match self.cache.get_user_by_oidc(&claims.sub) {
+        let user = match self.cache.get_user_by_oidc(&oidc_mapping) {
             Some(u) => u,
             None => return Err(anyhow!(OIDCError::NotFound("Not registered".to_string()))),
         };
@@ -489,27 +443,6 @@ impl TokenHandler {
         Ok((user.id, None, true, perms.0, false, None))
     }
 
-    /// Fetches the public key from the OIDC provider.
-    async fn get_token_realminfo(&self) -> Result<DecodingKey> {
-        let resp = reqwest::get(&self.oidc_realminfo)
-            .await?
-            .json::<KeyCloakResponse>()
-            .await?;
-
-        let dec_key = DecodingKey::from_rsa_pem(
-            format!(
-                "{}\n{}\n{}",
-                "-----BEGIN PUBLIC KEY-----", resp.public_key, "-----END PUBLIC KEY-----"
-            )
-            .as_bytes(),
-        )?;
-
-        let pks = self.oidc_pubkey.clone();
-        let mut lck = pks.write().unwrap();
-        *lck = Some(dec_key.clone());
-
-        Ok(dec_key)
-    }
     pub async fn sign_hook_secret(
         &self,
         cache: Arc<Cache>,

@@ -37,7 +37,7 @@ pub struct APIToken {
 #[derive(Serialize, Deserialize, Clone, FromRow, Debug, Eq, PartialEq, PartialOrd)]
 pub struct OIDCMapping {
     pub external_id: String,
-    pub oidc_url: String,
+    pub oidc_name: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

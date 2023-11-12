@@ -205,6 +205,11 @@ impl Cache {
         self.pubkeys.remove(id);
     }
 
+    pub fn get_issuer(&self, kid: &str) -> Option<&mut Issuer> {
+        self.check_lock();
+        self.issuer_info.get_mut(kid).as_deref_mut()
+    }
+
     pub fn remove_user(&self, id: &DieselUlid) {
         self.check_lock();
         self.user_cache.remove(id);
