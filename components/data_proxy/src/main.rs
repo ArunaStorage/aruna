@@ -69,8 +69,10 @@ async fn main() -> Result<()> {
     let with_persistence =
         trace_err!(trace_err!(dotenvy::var("DATA_PROXY_PERSISTENCE"))?.parse::<bool>())?;
     debug!(target = "DATA_PROXY_PERSISTENCE", value = with_persistence);
-    let hostname = trace_err!(dotenvy::var("DATA_PROXY_DATA_SERVER"))?;
-    debug!(target = "DATA_PROXY_DATA_SERVER", value = hostname);
+    let address = trace_err!(dotenvy::var("DATA_PROXY_DATA_SERVER"))?;
+    debug!(target = "DATA_PROXY_DATA_SERVER", value = address);
+    let hostname = trace_err!(dotenvy::var("DATA_PROXY_DATA_HOSTNAME"))?;
+    debug!(target = "DATA_PROXY_DATA_HOSTNAME", value = hostname);
     // ULID of the endpoint
     let endpoint_id = trace_err!(dotenvy::var("DATA_PROXY_ENDPOINT_ID"))?;
     debug!(target = "DATA_PROXY_ENDPOINT_ID", value = endpoint_id);
@@ -105,7 +107,7 @@ async fn main() -> Result<()> {
 
     trace!("init s3 server");
     let s3_server = s3_frontend::s3server::S3Server::new(
-        &hostname,
+        &address,
         hostname.to_string(),
         storage_backend,
         cache,
