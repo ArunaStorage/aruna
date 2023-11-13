@@ -2,6 +2,7 @@ use super::{
     auth::AuthHandler, grpc_query_handler::GrpcQueryHandler,
     transforms::ExtractAccessKeyPermissions,
 };
+use crate::caching::grpc_query_handler::sort_objects;
 use crate::structs::{DbPermissionLevel, TypedRelation};
 use crate::trace_err;
 use crate::{
@@ -148,7 +149,11 @@ impl Cache {
         self.sync_pubkeys(PubKey::get_all(&client).await?).await?;
         debug!("synced pubkeys");
 
-        for object in Object::get_all(&client).await? {
+        // Sort objects from database before sync
+        let mut database_objects = Object::get_all(&client).await?;
+        sort_objects(&mut database_objects);
+
+        for object in database_objects {
             let location = ObjectLocation::get_opt(&object.id, &client).await?;
             self.resources.insert(object.id, (object.clone(), location));
 

@@ -1,5 +1,6 @@
 use crate::structs::Object as DPObject;
 use crate::structs::ObjectLocation;
+use crate::structs::ObjectType;
 use crate::structs::PubKey;
 use crate::trace_err;
 use anyhow::anyhow;
@@ -50,6 +51,7 @@ use aruna_rust_api::api::{
 };
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
+use tracing::info;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::metadata::AsciiMetadataKey;
@@ -574,16 +576,18 @@ impl GrpcQueryHandler {
                 .await?
         }
 
-
         let (keep_alive_tx, mut keep_alive_rx) = tokio::sync::mpsc::channel::<()>(1);
-        tokio::spawn(async move {
-            while let Ok(_) = keep_alive_rx.try_recv() {
-                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        tokio::spawn(
+            async move {
+                while let Ok(_) = keep_alive_rx.try_recv() {
+                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                }
+                // ABORT!
+                error!("keep alive failed");
+                panic!("keep alive failed");
             }
-            // ABORT!
-            error!("keep alive failed");
-            panic!("keep alive failed");
-        }.instrument(tracing::info_span!("keep_alive")));
+            .instrument(tracing::info_span!("keep_alive")),
+        );
 
         debug!("querying events");
         while let Some(m) = inner_stream.message().await? {
@@ -766,4 +770,39 @@ pub fn sort_resources(res: &mut [Resource]) {
         (Resource::Object(_), Resource::Dataset(_)) => std::cmp::Ordering::Greater,
         (Resource::Object(_), Resource::Object(_)) => std::cmp::Ordering::Equal,
     })
+}
+
+#[tracing::instrument(level = "trace", skip(res))]
+pub fn sort_objects(res: &mut [DPObject]) {
+    res.sort_by(|x, y| match (&x.object_type, &y.object_type) {
+    (ObjectType::Bundle, ObjectType::Bundle) => std::cmp::Ordering::Equal,
+    (ObjectType::Bundle, ObjectType::Project) |
+    (ObjectType::Bundle, ObjectType::Collection) |
+    (ObjectType::Bundle, ObjectType::Dataset) | 
+    (ObjectType::Bundle, ObjectType::Object) => std::cmp::Ordering::Less,
+
+    (ObjectType::Project, ObjectType::Bundle) => std::cmp::Ordering::Greater,
+    (ObjectType::Project, ObjectType::Project) => std::cmp::Ordering::Equal,
+    (ObjectType::Project, ObjectType::Collection)|
+    (ObjectType::Project, ObjectType::Dataset) |
+    (ObjectType::Project, ObjectType::Object) => std::cmp::Ordering::Less,
+
+    (ObjectType::Collection, ObjectType::Bundle) |
+    (ObjectType::Collection, ObjectType::Project) => std::cmp::Ordering::Greater,
+    (ObjectType::Collection, ObjectType::Collection) => std::cmp::Ordering::Equal,
+    (ObjectType::Collection, ObjectType::Dataset) |
+    (ObjectType::Collection, ObjectType::Object) => std::cmp::Ordering::Less,
+
+    (ObjectType::Dataset, ObjectType::Bundle) |
+    (ObjectType::Dataset, ObjectType::Project) |
+    (ObjectType::Dataset, ObjectType::Collection) => std::cmp::Ordering::Greater,
+    (ObjectType::Dataset, ObjectType::Dataset) => std::cmp::Ordering::Equal,
+    (ObjectType::Dataset, ObjectType::Object) => std::cmp::Ordering::Less,
+
+    (ObjectType::Object, ObjectType::Bundle) |
+    (ObjectType::Object, ObjectType::Project) |
+    (ObjectType::Object, ObjectType::Collection) |
+    (ObjectType::Object, ObjectType::Dataset) => std::cmp::Ordering::Greater,
+    (ObjectType::Object, ObjectType::Object) => std::cmp::Ordering::Equal,
+})
 }
