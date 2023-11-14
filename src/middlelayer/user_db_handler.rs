@@ -347,6 +347,51 @@ impl DatabaseHandler {
         Ok(())
     }
 
+    pub async fn add_oidc_provider(
+        &self,
+        user_id: DieselUlid,
+        mapping: &OIDCMapping,
+    ) -> Result<User> {
+        let client = self.database.get_client().await?;
+        let user = self
+            .cache
+            .get_user(&user_id)
+            .ok_or_else(|| anyhow!("User not found"))?;
+
+        let mut new_attributes = user.attributes.0.clone();
+        new_attributes.external_ids.push(mapping.clone());
+        let user = User::set_user_attributes(&client, &user_id, Json(new_attributes)).await?;
+        self.cache.update_user(&user_id, user.clone());
+        Ok(user)
+    }
+
+    pub async fn remove_oidc_provider(
+        &self,
+        user_id: DieselUlid,
+        provider_name: &str,
+    ) -> Result<User> {
+        let client = self.database.get_client().await?;
+        let user = self
+            .cache
+            .get_user(&user_id)
+            .ok_or_else(|| anyhow!("User not found"))?;
+
+        let mut new_attributes = user.attributes.0.clone();
+        if user.attributes.0.external_ids.len() == 1 {
+            bail!("Cannot remove last external id");
+        }
+        new_attributes.external_ids.retain(|e| {
+            if e.oidc_name != provider_name {
+                true
+            } else {
+                false
+            }
+        });
+        let user = User::set_user_attributes(&client, &user_id, Json(new_attributes)).await?;
+        self.cache.update_user(&user_id, user.clone());
+        Ok(user)
+    }
+
     //ToDo: Rust Doc
     pub async fn request_resource_access(
         &self,

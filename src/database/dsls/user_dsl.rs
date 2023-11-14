@@ -151,17 +151,17 @@ impl User {
         client: &Client,
         user_id: &DieselUlid,
         user_attributes: Json<UserAttributes>,
-    ) -> Result<()> {
+    ) -> Result<User> {
         let query = "UPDATE users
         SET attributes = $1
-        WHERE id = $2;";
+        WHERE id = $2 RETURNING *;";
 
         let prepared = client.prepare(query).await?;
-        client
-            .execute(&prepared, &[&user_attributes, user_id])
+        let user = client
+            .query_one(&prepared, &[&user_attributes, user_id])
             .await?;
 
-        Ok(())
+        Ok(User::from_row(&user))
     }
 
     //ToDo: Rust Doc
