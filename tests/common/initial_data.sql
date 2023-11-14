@@ -52,3 +52,8 @@ INSERT INTO pub_keys(id, proxy, pubkey) VALUES (1337, '018a03c0-7e8b-293c-eb14-e
 
 INSERT INTO licenses(tag, name, text, url) VALUES ('AllRightsReserved', 'All rights reserved', 'All rights reserved', 'license.test.org');
 
+INSERT INTO identity_provider (
+    issuer_name,
+    jwks_endpoint,
+    audiences,
+) VALUES ('http://localhost:1998/realms/test', 'http://localhost:1998/realms/test/protocol/openid-connect/certs', '{"test", "test-long"}');
