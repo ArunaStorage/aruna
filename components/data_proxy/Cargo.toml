@@ -7,9 +7,9 @@ version = "2.0.0-rc.1"
 
 [dependencies]
 anyhow = "1.0.75"
-aruna-file = "0.3.4"
+aruna-file = { path = "../aruna-file" }
 aruna-rust-api = "2.0.0-beta.7"
-async-channel = "1.9.0"
+async-channel = "2.1.0"
 async-stream = "0.3.5"
 async-trait = "0.1.74"
 axum = "0.6.20"
