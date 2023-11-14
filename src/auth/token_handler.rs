@@ -416,7 +416,7 @@ impl TokenHandler {
         Option<Intent>,
     )> {
         let oidc_mapping = OIDCMapping {
-            oidc_name: claims.sub.clone(),
+            oidc_name: claims.iss.clone(),
             external_id: claims.sub.clone(),
         };
 
