@@ -135,7 +135,7 @@ impl PermissionHandler {
         let decoded = general_purpose::STANDARD_NO_PAD.decode(split)?;
         let claims: ArunaTokenClaims = serde_json::from_slice(&decoded)?;
 
-        let issuer = self
+        let mut issuer = self
             .cache
             .get_issuer(&claims.iss)
             .ok_or_else(|| anyhow!("Unknown issuer"))?;

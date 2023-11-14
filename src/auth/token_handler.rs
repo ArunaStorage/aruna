@@ -28,19 +28,6 @@ use crate::database::enums::DbPermissionLevel;
 
 use super::issuer_handler::IssuerType;
 
-#[derive(Deserialize, Debug)]
-struct KeyCloakResponse {
-    #[serde(alias = "realm")]
-    _realm: String,
-    public_key: String,
-    #[serde(alias = "token-service")]
-    _token_service: String,
-    #[serde(alias = "account-service")]
-    _account_service: String,
-    #[serde(alias = "tokens-not-before")]
-    _tokens_not_before: i64,
-}
-
 #[derive(Debug)]
 pub enum OIDCError {
     NotFound(String),
@@ -63,7 +50,7 @@ impl std::error::Error for OIDCError {}
 /// - intent: Combination of specific endpoint and action.
 ///           Strongly restricts the usability of the token.
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct ArunaTokenClaims {
+pub struct ArunaTokenClaims {
     pub iss: String, // Currently always 'aruna'
     pub sub: String, // User_ID / DataProxy_ID
     aud: String,     // Audience;
@@ -297,7 +284,7 @@ impl TokenHandler {
         let decoded = general_purpose::STANDARD_NO_PAD.decode(split)?;
         let claims: ArunaTokenClaims = serde_json::from_slice(&decoded)?;
 
-        let issuer = self
+        let mut issuer = self
             .cache
             .get_issuer(&claims.iss)
             .ok_or_else(|| anyhow!("Unknown issuer"))?;

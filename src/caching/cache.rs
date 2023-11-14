@@ -31,6 +31,7 @@ use aruna_rust_api::api::storage::models::v2::PermissionLevel;
 use aruna_rust_api::api::storage::models::v2::User as APIUser;
 use aruna_rust_api::api::storage::services::v2::get_hierarchy_response::Graph;
 use aruna_rust_api::api::storage::services::v2::UserPermission;
+use dashmap::mapref::one::RefMut;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
@@ -226,9 +227,9 @@ impl Cache {
         self.pubkeys.remove(id);
     }
 
-    pub fn get_issuer(&self, kid: &str) -> Option<&mut Issuer> {
+    pub fn get_issuer(&self, kid: &str) -> Option<RefMut<'_, String, Issuer>> {
         self.check_lock();
-        self.issuer_info.get_mut(kid).as_deref_mut()
+        self.issuer_info.get_mut(kid)
     }
 
     pub fn remove_user(&self, id: &DieselUlid) {

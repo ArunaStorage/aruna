@@ -42,8 +42,8 @@ use aruna_rust_api::api::hooks::services::v2::{
 };
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, CustomAttributes, DataClass as APIDataClass, DataEndpoint,
-    License as APILicense, Permission, PermissionLevel, ResourceVariant, Status, Token,
-    User as ApiUser, UserAttributes,
+    License as APILicense, OidcMapping, Permission, PermissionLevel, ResourceVariant, Status,
+    Token, User as ApiUser, UserAttributes,
 };
 use aruna_rust_api::api::storage::models::v2::{
     permission::ResourceId, relation::Relation as RelationEnum, Collection as GRPCCollection,
@@ -433,7 +433,6 @@ impl From<DBUser> for ApiUser {
         // Return proto user
         ApiUser {
             id: db_user.id.to_string(),
-            external_id: db_user.external_id.unwrap_or_default(),
             display_name: db_user.display_name,
             active: db_user.active,
             email: db_user.email,
@@ -449,6 +448,16 @@ impl From<DBUser> for ApiUser {
                     .trusted_endpoints
                     .iter()
                     .map(|e| e.key().to_string())
+                    .collect(),
+                external_ids: db_user
+                    .attributes
+                    .0
+                    .external_ids
+                    .iter()
+                    .map(|e| OidcMapping {
+                        external_id: e.external_id.to_string(),
+                        oidc_url: e.oidc_name.to_string(),
+                    })
                     .collect(),
             }),
         }
@@ -1073,6 +1082,14 @@ impl From<DBUserAttributes> for UserAttributes {
                 .iter()
                 .map(|e| e.key().to_string())
                 .collect(),
+            external_ids: attr
+                .external_ids
+                .iter()
+                .map(|a| OidcMapping {
+                    external_id: a.external_id.to_string(),
+                    oidc_url: a.oidc_name.to_string(),
+                })
+                .collect(),
         }
     }
 }
@@ -1104,7 +1121,9 @@ impl DBUser {
         let mut user: User = self.into();
         user.email = String::new();
         user.display_name = String::new();
-        user.external_id = String::new();
+        if let Some(attr) = user.attributes.as_mut() {
+            attr.external_ids = Vec::new();
+        }
         user
     }
 }
