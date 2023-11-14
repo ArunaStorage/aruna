@@ -334,7 +334,7 @@ impl DatabaseHandler {
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: ObjectStatus::INITIALIZING, // New revisions must be finished
                 dynamic: false,
-                endpoints: Json(req.get_endpoints(old.clone())?),
+                endpoints: Json(req.get_endpoints(old.clone(), true)?),
                 metadata_license,
                 data_license,
             };
@@ -398,7 +398,7 @@ impl DatabaseHandler {
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: old.object_status.clone(),
                 dynamic: false,
-                endpoints: Json(req.get_endpoints(old.clone())?),
+                endpoints: Json(req.get_endpoints(old.clone(), false)?),
                 metadata_license: old.metadata_license,
                 data_license: old.data_license,
             };
@@ -591,6 +591,12 @@ impl DatabaseHandler {
                 log::error!("{:?}", call);
             }
         });
+
+        // TODO
+        // - UpdateObjectEvent
+        // - Replication logic
+        //  ->  DataProxy, that calls finish, is updated to
+        //      ReplicationStatus::Finished
         Ok(object)
     }
 }
