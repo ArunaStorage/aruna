@@ -54,6 +54,7 @@ use tracing::info_span;
 use tracing::trace;
 use tracing::Instrument;
 use tracing::debug;
+use tokio::pin;
 
 pub struct ArunaS3Service {
     backend: Arc<Box<dyn StorageBackend>>,
@@ -122,7 +123,7 @@ impl S3 for ArunaS3Service {
         Ok(S3Response::new(output))
     }
 
-    #[tracing::instrument(err)]
+    #[tracing::instrument(err, skip(self, req))]
     async fn put_object(
         &self,
         req: S3Request<PutObjectInput>,
@@ -1029,6 +1030,8 @@ impl S3 for ArunaS3Service {
             trace!("getting footer");
             // Without encryption block because this is already checked inside
             let (footer_sender, footer_receiver) = async_channel::unbounded();
+            pin!(footer_receiver);
+
             let parser = match encryption_key.clone() {
                 Some(key) => {
                     trace_err!(
@@ -1119,6 +1122,7 @@ impl S3 for ArunaS3Service {
         // Spawn final part
         tokio::spawn(
             async move {
+                pin!(receiver);
                 let mut asrw = ArunaStreamReadWriter::new_with_sink(
                     receiver,
                     AsyncSenderSink::new(final_send),

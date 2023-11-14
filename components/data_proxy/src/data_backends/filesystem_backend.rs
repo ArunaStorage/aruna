@@ -11,6 +11,7 @@ use rand::{
 };
 use std::path::Path;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::pin;
 
 use crate::{
     structs::{Object, ObjectLocation, PartETag},
@@ -56,7 +57,7 @@ impl StorageBackend for FSBackend {
     #[tracing::instrument(level = "trace", skip(self, recv, location, _content_len))]
     async fn put_object(
         &self,
-        mut recv: Receiver<Result<bytes::Bytes>>,
+        recv: Receiver<Result<bytes::Bytes>>,
         location: ObjectLocation,
         _content_len: i64,
     ) -> Result<()> {
@@ -74,6 +75,7 @@ impl StorageBackend for FSBackend {
             .await
         )?;
 
+        pin!(recv);
         while let Some(data) = recv.next().await {
             let data = trace_err!(data)?;
             trace_err!(file.write_all(&data).await)?;
@@ -150,7 +152,7 @@ impl StorageBackend for FSBackend {
     )]
     async fn upload_multi_object(
         &self,
-        mut recv: Receiver<Result<bytes::Bytes>>,
+        recv: Receiver<Result<bytes::Bytes>>,
         _location: ObjectLocation,
         upload_id: String,
         _content_len: i64,
@@ -166,6 +168,7 @@ impl StorageBackend for FSBackend {
         )?;
         let mut md5 = Md5::new();
 
+        pin!(recv);
         while let Some(data) = recv.next().await {
             let data = trace_err!(data)?;
             md5.update(&data);

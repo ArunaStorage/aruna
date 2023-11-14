@@ -51,7 +51,6 @@ use aruna_rust_api::api::{
 };
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
-use tracing::info;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::metadata::AsciiMetadataKey;

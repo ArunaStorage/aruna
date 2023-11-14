@@ -21,6 +21,7 @@ use std::sync::Arc;
 use tracing::debug;
 use tracing::info_span;
 use tracing::Instrument;
+use tokio::pin;
 
 #[derive(Debug)]
 pub struct DataHandler {}
@@ -62,8 +63,9 @@ impl DataHandler {
                     false,
                 );
 
+                pin!(tx_receive);
                 // Bind to variable to extend the lifetime of arsw to the end of the function
-                let mut asr = ArunaStreamReadWriter::new_with_sink(tx_receive.clone(), sink);
+                let mut asr = ArunaStreamReadWriter::new_with_sink(tx_receive, sink);
                 let (orig_probe, orig_size_stream) = SizeProbe::new();
                 asr = asr.add_transformer(orig_probe);
 

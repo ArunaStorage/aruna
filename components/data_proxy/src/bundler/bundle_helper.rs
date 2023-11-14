@@ -12,6 +12,7 @@ use aruna_file::{
 use futures_util::TryStreamExt;
 use s3s::{dto::StreamingBlob, s3_error};
 use tracing::{debug, info_span, trace, Instrument};
+use tokio::pin;
 
 #[tracing::instrument(level = "trace", skip(path_level_vec, backend))]
 pub async fn get_bundle(
@@ -88,8 +89,10 @@ pub async fn get_bundle(
 
     tokio::spawn(
         async move {
+            pin!(data_clone);
+
             let mut aruna_stream_writer = ArunaStreamReadWriter::new_with_sink(
-                data_clone.clone(),
+                data_clone,
                 AsyncSenderSink::new(final_sender_clone.clone()),
             )
             .add_transformer(trace_err!(ChaCha20Dec::new(None))?)
