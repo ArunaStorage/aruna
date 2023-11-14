@@ -119,12 +119,12 @@ async fn test_update_name() {
             ObjectType::PROJECT => {
                 let request = NameUpdate::Project(UpdateProjectNameRequest {
                     project_id: r.id.to_string(),
-                    name: "project_name".to_string(),
+                    name: "project-name".to_string(),
                 });
                 db_handler.update_name(request).await.unwrap();
                 assert_eq!(
                     Object::get(r.id, &client).await.unwrap().unwrap().name,
-                    *"project_name"
+                    *"project-name"
                 );
             }
             ObjectType::COLLECTION => {
