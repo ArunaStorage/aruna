@@ -6,7 +6,7 @@ use diesel_ulid::DieselUlid;
 use std::sync::Arc;
 use tracing::error;
 
-use crate::{caching::cache::Cache, database::database::Database};
+use crate::{caching::cache::Cache, database::database::Database, trace_err};
 
 pub struct ReplicationMessage {
     pub object_id: DieselUlid,
@@ -60,9 +60,9 @@ impl ReplicationHandler {
                 ReplicationHandler::process(id, url, direction, cache.clone(), db.clone()).await;
             }
         });
-        // Run both simultaneous
+        // Run both tasks simultaneously
         tokio::join!(recieve, process);
-        Err(anyhow!("Not implemented!"))
+        trace_err!(Err(anyhow!("Not implemented!")))
     }
 
     #[tracing::instrument(level = "trace", skip(cache, db))]
@@ -77,7 +77,6 @@ impl ReplicationHandler {
         cache: Arc<Cache>,
         db: Arc<Database>,
     ) -> Result<()> {
-        error!("Not implemented!");
-        Err(anyhow!("Not implemented!"))
+        trace_err!(Err(anyhow!("Not implemented!")))
     }
 }

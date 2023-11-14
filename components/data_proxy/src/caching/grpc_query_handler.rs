@@ -51,7 +51,6 @@ use aruna_rust_api::api::{
 };
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
-use tracing::info;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::metadata::AsciiMetadataKey;
@@ -61,6 +60,7 @@ use tonic::transport::ClientTlsConfig;
 use tonic::Request;
 use tracing::debug;
 use tracing::error;
+use tracing::info;
 use tracing::trace;
 use tracing::Instrument;
 
@@ -730,6 +730,34 @@ impl GrpcQueryHandler {
                                 )
                                 .await
                             )?;
+
+                            // if ObjectStatus::AVAILABLE ...
+                            if object.status == 3 {
+                                // ... object should be synced in at least one ep
+                                for ep in &object.endpoints {
+                                    match (ep.status(), ep.id) {
+                                        (ReplicationStatus::WAITING, id)
+                                            if id == self.endpoint_id =>
+                                        {
+                                            // TODO
+                                            // - Get proxy with available object
+                                            // - get s3-bucket with available object
+                                            // - send message to replication handler
+                                            todo!("Try pull")
+                                        }
+                                        (ReplicationStatus::WAITING, id)
+                                            if id != self.endpoint_id =>
+                                        {
+                                            // TODO
+                                            // - Check if object location exists here
+                                            // - Create presigned url for object
+                                            // - send message to replication handler
+                                            todo!("Try push")
+                                        }
+                                        _ => (),
+                                    }
+                                }
+                            }
                             self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         _ => (),
@@ -775,34 +803,34 @@ pub fn sort_resources(res: &mut [Resource]) {
 #[tracing::instrument(level = "trace", skip(res))]
 pub fn sort_objects(res: &mut [DPObject]) {
     res.sort_by(|x, y| match (&x.object_type, &y.object_type) {
-    (ObjectType::Bundle, ObjectType::Bundle) => std::cmp::Ordering::Equal,
-    (ObjectType::Bundle, ObjectType::Project) |
-    (ObjectType::Bundle, ObjectType::Collection) |
-    (ObjectType::Bundle, ObjectType::Dataset) | 
-    (ObjectType::Bundle, ObjectType::Object) => std::cmp::Ordering::Less,
+        (ObjectType::Bundle, ObjectType::Bundle) => std::cmp::Ordering::Equal,
+        (ObjectType::Bundle, ObjectType::Project)
+        | (ObjectType::Bundle, ObjectType::Collection)
+        | (ObjectType::Bundle, ObjectType::Dataset)
+        | (ObjectType::Bundle, ObjectType::Object) => std::cmp::Ordering::Less,
 
-    (ObjectType::Project, ObjectType::Bundle) => std::cmp::Ordering::Greater,
-    (ObjectType::Project, ObjectType::Project) => std::cmp::Ordering::Equal,
-    (ObjectType::Project, ObjectType::Collection)|
-    (ObjectType::Project, ObjectType::Dataset) |
-    (ObjectType::Project, ObjectType::Object) => std::cmp::Ordering::Less,
+        (ObjectType::Project, ObjectType::Bundle) => std::cmp::Ordering::Greater,
+        (ObjectType::Project, ObjectType::Project) => std::cmp::Ordering::Equal,
+        (ObjectType::Project, ObjectType::Collection)
+        | (ObjectType::Project, ObjectType::Dataset)
+        | (ObjectType::Project, ObjectType::Object) => std::cmp::Ordering::Less,
 
-    (ObjectType::Collection, ObjectType::Bundle) |
-    (ObjectType::Collection, ObjectType::Project) => std::cmp::Ordering::Greater,
-    (ObjectType::Collection, ObjectType::Collection) => std::cmp::Ordering::Equal,
-    (ObjectType::Collection, ObjectType::Dataset) |
-    (ObjectType::Collection, ObjectType::Object) => std::cmp::Ordering::Less,
+        (ObjectType::Collection, ObjectType::Bundle)
+        | (ObjectType::Collection, ObjectType::Project) => std::cmp::Ordering::Greater,
+        (ObjectType::Collection, ObjectType::Collection) => std::cmp::Ordering::Equal,
+        (ObjectType::Collection, ObjectType::Dataset)
+        | (ObjectType::Collection, ObjectType::Object) => std::cmp::Ordering::Less,
 
-    (ObjectType::Dataset, ObjectType::Bundle) |
-    (ObjectType::Dataset, ObjectType::Project) |
-    (ObjectType::Dataset, ObjectType::Collection) => std::cmp::Ordering::Greater,
-    (ObjectType::Dataset, ObjectType::Dataset) => std::cmp::Ordering::Equal,
-    (ObjectType::Dataset, ObjectType::Object) => std::cmp::Ordering::Less,
+        (ObjectType::Dataset, ObjectType::Bundle)
+        | (ObjectType::Dataset, ObjectType::Project)
+        | (ObjectType::Dataset, ObjectType::Collection) => std::cmp::Ordering::Greater,
+        (ObjectType::Dataset, ObjectType::Dataset) => std::cmp::Ordering::Equal,
+        (ObjectType::Dataset, ObjectType::Object) => std::cmp::Ordering::Less,
 
-    (ObjectType::Object, ObjectType::Bundle) |
-    (ObjectType::Object, ObjectType::Project) |
-    (ObjectType::Object, ObjectType::Collection) |
-    (ObjectType::Object, ObjectType::Dataset) => std::cmp::Ordering::Greater,
-    (ObjectType::Object, ObjectType::Object) => std::cmp::Ordering::Equal,
-})
+        (ObjectType::Object, ObjectType::Bundle)
+        | (ObjectType::Object, ObjectType::Project)
+        | (ObjectType::Object, ObjectType::Collection)
+        | (ObjectType::Object, ObjectType::Dataset) => std::cmp::Ordering::Greater,
+        (ObjectType::Object, ObjectType::Object) => std::cmp::Ordering::Equal,
+    })
 }
