@@ -1,6 +1,7 @@
 use crate::caching::cache::Cache;
 use crate::structs::{Object, ObjectLocation};
 use crate::structs::{ResourceIds, ResourceString};
+use crate::trace_err;
 use ahash::RandomState;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::DataClass;
@@ -20,6 +21,7 @@ pub struct Contents {
     pub storage_class: DataClass,
 }
 impl From<(&String, &(Object, Option<ObjectLocation>))> for Contents {
+    #[tracing::instrument(level = "trace", skip(value))]
     fn from(value: (&String, &(Object, Option<ObjectLocation>))) -> Self {
         Contents {
             key: value.0.clone(),
@@ -33,6 +35,7 @@ impl From<(&String, &(Object, Option<ObjectLocation>))> for Contents {
     }
 }
 
+#[tracing::instrument(level = "trace", skip(map, root))]
 /// Creates a filtered and ordered BTreeMap for ListObjectsV2
 pub fn filter_list_objects(
     map: &DashMap<ResourceString, ResourceIds, RandomState>,
@@ -66,6 +69,10 @@ pub fn filter_list_objects(
         })
         .collect()
 }
+#[tracing::instrument(
+    level = "trace",
+    skip(sorted, cache, delimiter, prefix, start_after, max_keys)
+)]
 pub fn list_response(
     sorted: BTreeMap<String, DieselUlid>,
     cache: &Arc<Cache>,
@@ -134,11 +141,11 @@ pub fn list_response(
                     // If None split -> Entry
                     let entry: Contents = (
                         path,
-                        cache
+                        trace_err!(cache
                             .resources
                             .get(id)
-                            .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
-                            .value(),
+                            .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path")))?
+                        .value(),
                     )
                         .into();
                     if idx == max_keys + 1 {
@@ -155,11 +162,11 @@ pub fn list_response(
                 let entry: Contents = if path.strip_prefix(&prefix).is_some() {
                     (
                         path,
-                        cache
+                        trace_err!(cache
                             .resources
                             .get(id)
-                            .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
-                            .value(),
+                            .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path")))?
+                        .value(),
                     )
                         .into()
                 } else {
@@ -177,11 +184,11 @@ pub fn list_response(
             for (idx, (path, id)) in sorted.range(start_after.to_owned()..).enumerate() {
                 let entry: Contents = (
                     path,
-                    cache
+                    trace_err!(cache
                         .resources
                         .get(id)
-                        .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?
-                        .value(),
+                        .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path")))?
+                    .value(),
                 )
                     .into();
                 if idx == max_keys + 1 {

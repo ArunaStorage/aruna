@@ -2,6 +2,7 @@ use super::auth::AuthProvider;
 use super::s3service::ArunaS3Service;
 use crate::caching::cache;
 use crate::data_backends::storage_backend::StorageBackend;
+use crate::trace_err;
 use anyhow::Result;
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
@@ -18,6 +19,8 @@ use std::future::Ready;
 use std::task::{Context, Poll};
 use std::{net::TcpListener, sync::Arc};
 use tracing::info;
+use tracing::info_span;
+use tracing::Instrument;
 
 pub struct S3Server {
     s3service: S3Service,
@@ -28,13 +31,14 @@ pub struct S3Server {
 pub struct WrappingService(SharedS3Service);
 
 impl S3Server {
+    #[tracing::instrument(level = "trace", skip(address, hostname, backend, cache))]
     pub async fn new(
         address: impl Into<String> + Copy,
         hostname: impl Into<String>,
         backend: Arc<Box<dyn StorageBackend>>,
         cache: Arc<cache::Cache>,
     ) -> Result<Self> {
-        let s3service = ArunaS3Service::new(backend, cache.clone()).await?;
+        let s3service = trace_err!(ArunaS3Service::new(backend, cache.clone()).await)?;
 
         let service = {
             let mut b = S3ServiceBuilder::new(s3service);
@@ -48,14 +52,18 @@ impl S3Server {
             address: address.into(),
         })
     }
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn run(self) -> Result<()> {
         // Run server
-        let listener = TcpListener::bind(&self.address)?;
-        let server = Server::from_tcp(listener)?
+        let listener = trace_err!(TcpListener::bind(&self.address))?;
+        let server = trace_err!(Server::from_tcp(listener))?
             .serve(WrappingService(self.s3service.into_shared()).into_make_service());
-
         info!("server is running at http(s)://{}/", self.address);
-        Ok(tokio::spawn(server).await??)
+        Ok(trace_err!(trace_err!(
+            tokio::spawn(server)
+                .instrument(info_span!("s3_server_run"))
+                .await
+        )?)?)
     }
 }
 
@@ -66,10 +74,12 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
 
     type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
+    #[tracing::instrument(level = "trace", skip(self))]
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, req))]
     fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
         let mut service = self.0.clone();
         let resp = service.call(req);
@@ -86,12 +96,14 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
 }
 
 impl AsRef<S3Service> for WrappingService {
+    #[tracing::instrument(level = "trace", skip(self))]
     fn as_ref(&self) -> &S3Service {
         self.0.as_ref()
     }
 }
 
 impl WrappingService {
+    #[tracing::instrument(level = "trace", skip(self))]
     #[must_use]
     pub fn into_make_service(self) -> MakeService<Self> {
         MakeService(self)
@@ -108,10 +120,12 @@ impl<T, S: Clone> Service<T> for MakeService<S> {
 
     type Future = Ready<Result<Self::Response, Self::Error>>;
 
+    #[tracing::instrument(level = "trace", skip(self))]
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     fn call(&mut self, _: T) -> Self::Future {
         ready(Ok(self.0.clone()))
     }

@@ -7,6 +7,7 @@ use crate::structs::ObjectLocation;
 use crate::structs::ObjectType;
 use crate::structs::ResourceIds;
 use crate::structs::ResourceResults;
+use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
@@ -27,6 +28,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
 use tonic::metadata::MetadataMap;
+use tracing::debug;
+use tracing::error;
+use tracing::trace;
 
 pub struct AuthHandler {
     pub cache: Arc<Cache>,
@@ -59,6 +63,7 @@ pub enum Action {
 }
 
 impl From<u8> for Action {
+    #[tracing::instrument(level = "trace", skip(input))]
     fn from(input: u8) -> Self {
         match input {
             0 => Action::All,
@@ -77,6 +82,7 @@ pub struct Intent {
 }
 
 impl Serialize for Intent {
+    #[tracing::instrument(level = "trace", skip(self, serializer))]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -87,6 +93,7 @@ impl Serialize for Intent {
 }
 
 impl<'de> Deserialize<'de> for Intent {
+    #[tracing::instrument(level = "trace", skip(deserializer))]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -105,6 +112,10 @@ impl<'de> Deserialize<'de> for Intent {
 }
 
 impl AuthHandler {
+    #[tracing::instrument(
+        level = "trace",
+        skip(cache, self_id, encode_secret, encoding_key_serial)
+    )]
     pub fn new(
         cache: Arc<Cache>,
         self_id: DieselUlid,
@@ -115,7 +126,7 @@ impl AuthHandler {
             "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
             encode_secret
         );
-        let encoding_key = EncodingKey::from_ed_pem(private_pem.as_bytes()).unwrap();
+        let encoding_key = trace_err!(EncodingKey::from_ed_pem(private_pem.as_bytes())).unwrap();
 
         Self {
             cache,
@@ -124,11 +135,12 @@ impl AuthHandler {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self, token))]
     pub fn check_permissions(&self, token: &str) -> Result<(DieselUlid, Option<String>)> {
-        let kid = decode_header(token)?
+        let kid = trace_err!(decode_header(token)?
             .kid
-            .ok_or_else(|| anyhow!("Unspecified kid"))?;
-        let (_, dec_key) = self.cache.get_pubkey(i32::from_str(&kid)?)?;
+            .ok_or_else(|| anyhow!("Unspecified kid")))?;
+        let (_, dec_key) = trace_err!(self.cache.get_pubkey(trace_err!(i32::from_str(&kid))?))?;
         let claims = self.extract_claims(token, &dec_key)?;
 
         if let Some(it) = claims.it {
@@ -138,26 +150,36 @@ impl AuthHandler {
                     if it.target == self.self_id {
                         Ok((DieselUlid::from_str(&claims.sub)?, claims.tid))
                     } else {
+                        error!("Token is not valid for this Dataproxy");
                         bail!("Token is not valid for this Dataproxy")
                     }
                 }
-                _ => bail!("Action not allowed for Dataproxy"),
+                _ => {
+                    error!("Action not allowed for Dataproxy");
+                    bail!("Action not allowed for Dataproxy")
+                }
             }
         } else {
             // No intent, no Dataproxy/Action check
-            Ok((DieselUlid::from_str(&claims.sub)?, claims.tid))
+            Ok((trace_err!(DieselUlid::from_str(&claims.sub))?, claims.tid))
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self, token, dec_key))]
     pub(crate) fn extract_claims(
         &self,
         token: &str,
         dec_key: &DecodingKey,
     ) -> Result<ArunaTokenClaims> {
-        let token = decode::<ArunaTokenClaims>(token, dec_key, &Validation::new(Algorithm::EdDSA))?;
+        let token = trace_err!(decode::<ArunaTokenClaims>(
+            token,
+            dec_key,
+            &Validation::new(Algorithm::EdDSA)
+        ))?;
         Ok(token.claims)
     }
 
+    #[tracing::instrument(level = "debug", skip(self, creds, method, path))]
     pub async fn check_access(
         &self,
         creds: Option<&Credentials>,
@@ -165,12 +187,17 @@ impl AuthHandler {
         path: &S3Path,
     ) -> Result<CheckAccessResult> {
         let db_perm_from_method = DbPermissionLevel::from(method);
+        trace!(extracted_perm = ?db_perm_from_method);
         if let Some(b) = path.as_bucket() {
+            trace!("detected as_bucket");
             if method == Method::POST || method == Method::PUT {
-                let user = self
+                trace!("detected POST/PUT");
+                let user = trace_err!(self
                     .cache
-                    .get_user_by_key(&creds.ok_or_else(|| anyhow!("Unknown user"))?.access_key)
-                    .ok_or_else(|| anyhow!("Unknown user"))?;
+                    .get_user_by_key(
+                        &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
+                    )
+                    .ok_or_else(|| anyhow!("Unknown user")))?;
 
                 let token_id = if user.user_id.to_string() == user.access_key {
                     None
@@ -192,10 +219,13 @@ impl AuthHandler {
                     bundle: None,
                 });
             } else {
-                let user = self
+                trace!("detected not POST/PUT");
+                let user = trace_err!(self
                     .cache
-                    .get_user_by_key(&creds.ok_or_else(|| anyhow!("Unknown user"))?.access_key)
-                    .ok_or_else(|| anyhow!("Unknown user"))?;
+                    .get_user_by_key(
+                        &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
+                    )
+                    .ok_or_else(|| anyhow!("Unknown user")))?;
 
                 return Ok(CheckAccessResult::new(
                     Some(user.user_id.to_string()),
@@ -215,12 +245,15 @@ impl AuthHandler {
 
         let ((obj, loc), ids, missing, bundle) = self.extract_object_from_path(path, method)?;
         if let Some(bundle) = bundle {
+            debug!(bundle, "bundle_detected");
             if obj.object_type == ObjectType::Bundle {
                 // Check if user has access to Bundle Object
-                let user = self
+                let user = trace_err!(self
                     .cache
-                    .get_user_by_key(&creds.ok_or_else(|| anyhow!("Unknown user"))?.access_key)
-                    .ok_or_else(|| anyhow!("Unknown user"))?;
+                    .get_user_by_key(
+                        &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
+                    )
+                    .ok_or_else(|| anyhow!("Unknown user")))?;
 
                 for (res, perm) in user.permissions {
                     // ResourceIds only contain Bundle Id as Project
@@ -245,6 +278,7 @@ impl AuthHandler {
 
             if db_perm_from_method == DbPermissionLevel::Read && obj.data_class == DataClass::Public
             {
+                debug!("public_bundle");
                 return Ok(CheckAccessResult {
                     user_id: None,
                     token_id: None,
@@ -254,10 +288,13 @@ impl AuthHandler {
                     bundle: Some(bundle),
                 });
             } else {
-                let user = self
+                debug!("bundle_not_public");
+                let user = trace_err!(self
                     .cache
-                    .get_user_by_key(&creds.ok_or_else(|| anyhow!("Unknown user"))?.access_key)
-                    .ok_or_else(|| anyhow!("Unknown user"))?;
+                    .get_user_by_key(
+                        &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
+                    )
+                    .ok_or_else(|| anyhow!("Unknown user")))?;
 
                 for (res, perm) in user.permissions {
                     if ids.check_if_in(res) && perm >= db_perm_from_method {
@@ -266,7 +303,7 @@ impl AuthHandler {
                         } else {
                             Some(user.access_key.clone())
                         };
-
+                        trace!(resource_id = ?res, permission = ?perm, "permission match found");
                         return Ok(CheckAccessResult::new(
                             Some(user.user_id.to_string()),
                             token_id,
@@ -281,6 +318,7 @@ impl AuthHandler {
         }
 
         if db_perm_from_method == DbPermissionLevel::Read && obj.data_class == DataClass::Public {
+            debug!("public_object");
             return Ok(CheckAccessResult::new(
                 None,
                 None,
@@ -290,10 +328,11 @@ impl AuthHandler {
                 None,
             ));
         } else if let Some(creds) = creds {
-            let user = self
+            debug!("private object");
+            let user = trace_err!(self
                 .cache
                 .get_user_by_key(&creds.access_key)
-                .ok_or_else(|| anyhow!("Unknown user"))?;
+                .ok_or_else(|| anyhow!("Unknown user")))?;
 
             for (res, perm) in user.permissions {
                 if ids.check_if_in(res) && perm >= db_perm_from_method {
@@ -302,7 +341,7 @@ impl AuthHandler {
                     } else {
                         Some(user.access_key.clone())
                     };
-
+                    trace!(resource_id = ?res, permission = ?perm, "permission match found");
                     return Ok(CheckAccessResult::new(
                         Some(user.user_id.to_string()),
                         token_id,
@@ -318,6 +357,10 @@ impl AuthHandler {
         Err(anyhow!("Invalid permissions"))
     }
 
+    #[tracing::instrument(
+        level = "trace",
+        skip(self, vec_vec_ids, access_key, target_perm_level, get_secret)
+    )]
     pub fn check_ids(
         &self,
         vec_vec_ids: &Vec<Vec<ResourceIds>>,
@@ -325,10 +368,10 @@ impl AuthHandler {
         target_perm_level: DbPermissionLevel,
         get_secret: bool,
     ) -> Result<Option<String>> {
-        let user = self
+        let user = trace_err!(self
             .cache
             .get_user_by_key(access_key)
-            .ok_or_else(|| anyhow!("Unknown user"))?;
+            .ok_or_else(|| anyhow!("Unknown user")))?;
 
         for (res, perm) in user.permissions {
             'id_vec: for vec_ids in vec_vec_ids {
@@ -337,17 +380,21 @@ impl AuthHandler {
                         continue 'id_vec;
                     }
                 }
+                error!(?res, ?perm, ?vec_ids, "Invalid permissions");
                 return Err(anyhow!("Invalid permissions"));
             }
         }
 
         if get_secret {
+            trace!("secret SOME");
             Ok(Some(user.secret.clone()))
         } else {
+            trace!("secret NONE");
             Ok(None)
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self, path, _method))]
     #[allow(clippy::type_complexity)]
     pub fn extract_object_from_path(
         &self,
@@ -360,51 +407,56 @@ impl AuthHandler {
         Option<String>,
     )> {
         if let Some((bucket, mut path)) = path.as_object() {
+            debug!("bucket as object");
             if bucket == "objects" {
+                debug!("special bucket detected");
                 path = path.trim_matches('/');
                 if let Some((prefix, name)) = path.split_once('/') {
-                    let id = DieselUlid::from_str(prefix)?;
-                    dbg!(id);
-                    let obj = self
+                    let id = trace_err!(DieselUlid::from_str(prefix))?;
+                    trace!(?id, "extracted id from path");
+                    let obj = trace_err!(self
                         .cache
                         .resources
                         .get(&id)
-                        .ok_or_else(|| anyhow!("No object found in path"))?
-                        .value()
-                        .clone();
+                        .ok_or_else(|| anyhow!("No object found in path")))?
+                    .value()
+                    .clone();
 
-                    let mut ids = self.cache.get_resource_ids_from_id(id)?.0;
+                    let mut ids = trace_err!(self.cache.get_resource_ids_from_id(id))?.0;
                     ids.sort();
 
+                    trace!(?ids, "extracted ids from path");
                     return Ok((
                         obj,
-                        ids.last()
-                            .ok_or_else(|| anyhow!("No object found in path"))?
+                        trace_err!(ids.last().ok_or_else(|| anyhow!("No object found in path")))?
                             .clone(),
                         None,
                         Some(name.to_string()),
                     ));
                 }
             } else if bucket == "bundles" {
+                debug!("special bundle bucket detected");
                 path = path.trim_matches('/');
                 if let Some((prefix, name)) = path.split_once('/') {
-                    let id = DieselUlid::from_str(prefix)?;
-                    log::debug!("Bundle ID: {}", id);
+                    let id = trace_err!(DieselUlid::from_str(prefix))?;
+                    trace!(?id, "extracted bundle id from path");
 
-                    let (bundle_object, _) = self
+                    let (bundle_object, _) = trace_err!(self
                         .cache
                         .resources
                         .get(&id)
-                        .ok_or_else(|| anyhow!("No object found in path"))?
-                        .value()
-                        .clone();
+                        .ok_or_else(|| anyhow!("No object found in path")))?
+                    .value()
+                    .clone();
 
                     // Check if Bundle is empty
                     if let Some(children) = &bundle_object.children {
                         if children.is_empty() {
+                            error!(?children, "Empty bundle: Children is empty");
                             bail!("Empty bundle: Children is empty")
                         }
                     } else {
+                        error!("empty bundle, children is None");
                         bail!("Empty bundle: Children is None")
                     }
 
@@ -418,46 +470,42 @@ impl AuthHandler {
             }
         }
 
-        //let res_strings = ResourceString::try_from(path)?;
-        //
-
         let ResourceResults { found, missing } =
             ResourceResults::from_path(path, self.cache.clone())?;
-        dbg!(&found);
-        dbg!(&missing);
-        // let mut found = Vec::new();
-        // let mut missing = Vec::new();
+        trace!(?found);
+        trace!(?missing);
 
-        //for resource in res_strings.into_parts() {
-        //    if let Some(e) = self.cache.get_res_by_res_string(resource.clone()) {
-        //        found.push(e);
-        //    } else {
-        //        missing.push(resource.clone());
-        //    }
-        //}
-        //found.sort();
         let missing = if missing.is_empty() {
             None
         } else {
             Some(missing.into())
         };
 
-        let resource_id = found
+        let resource_id = trace_err!(found
             .last()
-            .ok_or_else(|| anyhow!("No object found in path"))?
-            .clone();
+            .ok_or_else(|| anyhow!("No object found in path")))?
+        .clone();
 
-        let (object, location) = self
+        let (object, location) = trace_err!(self
             .cache
             .resources
             .get(&resource_id.get_id())
-            .ok_or_else(|| anyhow!("No object found in path"))?
-            .value()
-            .clone();
+            .ok_or_else(|| anyhow!("No object found in path")))?
+        .value()
+        .clone();
+
+        trace!(
+            ?object,
+            ?location,
+            ?resource_id,
+            ?missing,
+            "extracted object from path"
+        );
 
         Ok(((object, location), resource_id, missing, None))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, user_id, tid))]
     pub(crate) fn sign_impersonating_token(
         &self,
         user_id: impl Into<String>,
@@ -477,9 +525,10 @@ impl AuthHandler {
             }),
         };
 
-        self.sign_token(claims)
+        trace_err!(self.sign_token(claims))
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     pub(crate) fn sign_notification_token(&self) -> Result<String> {
         let claims = ArunaTokenClaims {
             iss: "aruna_dataproxy".to_string(),
@@ -495,9 +544,10 @@ impl AuthHandler {
             }),
         };
 
-        self.sign_token(claims)
+        trace_err!(self.sign_token(claims))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, claims))]
     pub(crate) fn sign_token(&self, claims: ArunaTokenClaims) -> Result<String> {
         let header = Header {
             kid: Some(format!("{}", &self.encoding_key.0)),
@@ -505,45 +555,34 @@ impl AuthHandler {
             ..Default::default()
         };
 
-        let token = jsonwebtoken::encode(&header, &claims, &self.encoding_key.1)?;
+        let token = trace_err!(jsonwebtoken::encode(&header, &claims, &self.encoding_key.1))?;
 
         Ok(token)
     }
 }
 
+#[tracing::instrument(level = "trace", skip(md))]
 pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
-    let token_string = md
+    let token_string = trace_err!(md
         .get("Authorization")
-        .ok_or(anyhow!("Metadata token not found"))?
-        .to_str()?;
+        .ok_or(anyhow!("Metadata token not found")))?
+    .to_str()?;
 
     let split = token_string.split(' ').collect::<Vec<_>>();
 
     if split.len() != 2 {
-        log::debug!(
-            "Could not get token from metadata: Wrong length, expected: 2, got: {:?}",
-            split.len()
-        );
+        error!(split_len = split.len(), "wrong token length, expected: 2");
         return Err(anyhow!("Authorization flow error"));
     }
 
     if split[0] != "Bearer" {
-        log::debug!(
-            "Could not get token from metadata: Invalid token type, expected: Bearer, got: {:?}",
-            split[0]
-        );
-
+        error!(split = split[0], "wrong token type, expected: Bearer");
         return Err(anyhow!("Authorization flow error"));
     }
 
     if split[1].is_empty() {
-        log::debug!(
-            "Could not get token from metadata: Invalid token length, expected: >0, got: {:?}",
-            split[1].len()
-        );
-
+        error!(?split, "empty token");
         return Err(anyhow!("Authorization flow error"));
     }
-
     Ok(split[1].to_string())
 }
