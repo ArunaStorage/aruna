@@ -1,5 +1,6 @@
 use super::structs::ProxyCacheIterator;
 use super::structs::PubKeyEnum;
+use crate::auth::issuer_handler::convert_to_pubkeys_issuers;
 use crate::auth::issuer_handler::Issuer;
 use crate::auth::structs::Context;
 use crate::auth::structs::ContextVariant;
@@ -79,16 +80,36 @@ impl Cache {
             self.user_cache.insert(user.id, user);
         }
 
-        let pubkeys = DbPubkey::all(&client).await?;
-        for pubkey in pubkeys {
-            self.pubkeys
-                .insert(pubkey.id as i32, PubKeyEnum::try_from(pubkey)?);
+        let pubkeys: Vec<(i32, PubKeyEnum)> = DbPubkey::all(&client)
+            .await?
+            .into_iter()
+            .map(|x| {
+                let id = x.id as i32;
+                match PubKeyEnum::try_from(x) {
+                    Ok(e) => Ok((id as i32, e)),
+                    Err(e) => Err(e),
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        for i in convert_to_pubkeys_issuers(&pubkeys).await? {
+            self.issuer_info.insert(i.issuer_name.clone(), i);
+        }
+        for (id, pubkey) in pubkeys {
+            self.pubkeys.insert(id, pubkey);
         }
 
         let issuers = IdentityProvider::all(&client).await?;
-        for issuer in issuers {
-            self.issuer_info
-                .insert(issuer.issuer_url, Issuer::new(issuer).await?);
+        for IdentityProvider {
+            issuer_name,
+            jwks_endpoint,
+            audiences,
+        } in issuers
+        {
+            self.issuer_info.insert(
+                issuer_name.to_string(),
+                Issuer::new_with_endpoint(issuer_name.clone(), jwks_endpoint, audiences).await?,
+            );
         }
 
         self.lock.store(false, std::sync::atomic::Ordering::Relaxed);

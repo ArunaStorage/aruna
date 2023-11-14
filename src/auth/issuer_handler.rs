@@ -1,8 +1,7 @@
+use crate::caching::structs::PubKeyEnum;
 use anyhow::{anyhow, bail, Result};
 use chrono::{NaiveDateTime, Utc};
 use jsonwebtoken::{decode_header, jwk::JwkSet, DecodingKey};
-
-use crate::database::dsls::pub_key_dsl::PubKey;
 
 use super::token_handler::ArunaTokenClaims;
 
@@ -127,9 +126,6 @@ impl Issuer {
         decoding_key: &DecodingKey,
         audiences: &[String],
     ) -> Result<ArunaTokenClaims> {
-        // if !jwk.is_supported() {
-        //     return Err(anyhow::anyhow!("Unsupported algorithm"));
-        // }
         let header = decode_header(token)?;
         let alg = header.alg;
         let mut validation = jsonwebtoken::Validation::new(alg);
@@ -140,6 +136,35 @@ impl Issuer {
     }
 }
 
-impl From<Vec<PubKey>> for Vec<Issuer> {
-    fn from(value: Vec<PubKey>) -> Self {}
+pub async fn convert_to_pubkeys_issuers(pubkeys: &Vec<(i32, PubKeyEnum)>) -> Result<Vec<Issuer>> {
+    let mut server_encoding_keys = vec![];
+    let mut issuers = vec![];
+
+    for (id, pubkey) in pubkeys {
+        match pubkey {
+            PubKeyEnum::DataProxy((_, dec_key, key)) => {
+                let issuer = Issuer::new_with_keys(
+                    key.to_string(),
+                    vec![(id.to_string(), dec_key.clone())],
+                    vec!["aruna".to_string()],
+                    IssuerType::DATAPROXY,
+                )
+                .await?;
+                issuers.push(issuer);
+            }
+            PubKeyEnum::Server((_, dec_key)) => {
+                server_encoding_keys.push((id.to_string(), dec_key.clone()));
+            }
+        }
+    }
+    issuers.push(
+        Issuer::new_with_keys(
+            "aruna".to_string(),
+            server_encoding_keys,
+            vec!["aruna".to_string()],
+            IssuerType::ARUNA,
+        )
+        .await?,
+    );
+    Ok(issuers)
 }
