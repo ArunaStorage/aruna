@@ -13,6 +13,7 @@ pub enum ContextVariant {
     Resource((DieselUlid, DbPermissionLevel)),
     User((DieselUlid, DbPermissionLevel)),
     SelfUser, // True: Registered, False: Unregistered
+    Registered,
     GlobalProxy,
     GlobalAdmin,
 }
@@ -60,6 +61,14 @@ impl Context {
         Self {
             variant: ContextVariant::GlobalProxy,
             allow_service_account: false,
+            is_self: false,
+        }
+    }
+
+    pub fn registered() -> Self {
+        Self {
+            variant: ContextVariant::Registered,
+            allow_service_account: true,
             is_self: false,
         }
     }

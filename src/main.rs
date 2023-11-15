@@ -37,6 +37,7 @@ use aruna_server::{
     utils::search_utils,
 };
 use diesel_ulid::DieselUlid;
+use log::{info, warn};
 use simple_logger::SimpleLogger;
 use tonic::transport::Server;
 
@@ -46,6 +47,11 @@ pub async fn main() -> Result<()> {
     // Init logger
     SimpleLogger::new()
         .with_level(log::LevelFilter::Debug)
+        .with_module_level("async_nats", log::LevelFilter::Error)
+        .with_module_level("h2", log::LevelFilter::Error)
+        .with_module_level("hyper", log::LevelFilter::Error)
+        .with_module_level("isahc", log::LevelFilter::Error)
+        .with_module_level("tokio_postgres", log::LevelFilter::Error)
         .env()
         .init()?;
 
@@ -120,9 +126,20 @@ pub async fn main() -> Result<()> {
     let db_clone = db_arc.clone();
     let search_clone = meilisearch_arc.clone();
     tokio::spawn(async move {
-        if let Err(err) = search_utils::full_sync_search_index(db_clone, search_clone).await {
-            log::warn!("Search index full sync failed: {}", err)
+        // Create index if not exists on startup
+        search_clone
+            .get_or_create_index(&MeilisearchIndexes::OBJECT.to_string(), Some("id"))
+            .await?;
+
+        if let Err(err) = search_clone.clear_index(MeilisearchIndexes::OBJECT).await {
+            warn!("Search index clearing failed: {}", err)
         }
+
+        if let Err(err) = search_utils::full_sync_search_index(db_clone, search_clone).await {
+            warn!("Search index full sync failed: {}", err)
+        };
+
+        Ok::<(), anyhow::Error>(())
     });
 
     // NotificationHandler
@@ -133,11 +150,6 @@ pub async fn main() -> Result<()> {
         meilisearch_arc.clone(),
     )
     .await?;
-
-    // Create index if not exists on startup
-    meilisearch_arc
-        .get_or_create_index(&MeilisearchIndexes::OBJECT.to_string(), Some("id"))
-        .await?;
 
     // init MailClient
     let _: Option<MailClient> = if !dotenvy::var("ARUNA_DEV_ENV")?.parse::<bool>()? {
@@ -277,7 +289,7 @@ pub async fn main() -> Result<()> {
     // Do it.
     //let addr: std::net::SocketAddr = "0.0.0.0:50051".parse()?;
     let addr: std::net::SocketAddr = dotenvy::var("ARUNA_SOCKET_ADDRESS")?.parse()?;
-    log::info!("ArunaServer listening on {}", addr);
+    info!("ArunaServer listening on {}", addr);
     builder.serve(addr).await?;
 
     // Cron scheduler?

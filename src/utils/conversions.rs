@@ -41,8 +41,9 @@ use aruna_rust_api::api::hooks::services::v2::{
     AddHook, AddLabel, Credentials, ExternalHook, Hook as APIHook, HookInfo, InternalHook, Trigger,
 };
 use aruna_rust_api::api::storage::models::v2::{
-    generic_resource, CustomAttributes, DataEndpoint, License as APILicense, Permission,
-    PermissionLevel, ResourceVariant, Status, Token, User as ApiUser, UserAttributes,
+    generic_resource, CustomAttributes, DataClass as APIDataClass, DataEndpoint,
+    License as APILicense, Permission, PermissionLevel, ResourceVariant, Status, Token,
+    User as ApiUser, UserAttributes,
 };
 use aruna_rust_api::api::storage::models::v2::{
     permission::ResourceId, relation::Relation as RelationEnum, Collection as GRPCCollection,
@@ -170,6 +171,19 @@ impl TryFrom<&ExternalRelation> for DBExternalRelation {
     }
 }
 
+impl TryFrom<APIDataClass> for DataClass {
+    type Error = anyhow::Error;
+
+    fn try_from(value: APIDataClass) -> std::result::Result<Self, Self::Error> {
+        match value {
+            APIDataClass::Unspecified => bail!("Unsepcified data class is invalid"),
+            APIDataClass::Public => Ok(DataClass::PUBLIC),
+            APIDataClass::Private => Ok(DataClass::PRIVATE),
+            APIDataClass::Workspace => Ok(DataClass::WORKSPACE),
+            APIDataClass::Confidential => Ok(DataClass::CONFIDENTIAL),
+        }
+    }
+}
 impl TryFrom<i32> for DataClass {
     type Error = anyhow::Error;
     fn try_from(var: i32) -> Result<Self> {
@@ -179,6 +193,17 @@ impl TryFrom<i32> for DataClass {
             4 => Ok(DataClass::WORKSPACE),
             5 => Ok(DataClass::CONFIDENTIAL),
             _ => Err(anyhow!("Dataclass not defined")),
+        }
+    }
+}
+
+impl From<DataClass> for APIDataClass {
+    fn from(value: DataClass) -> Self {
+        match value {
+            DataClass::PUBLIC => APIDataClass::Public,
+            DataClass::PRIVATE => APIDataClass::Private,
+            DataClass::WORKSPACE => APIDataClass::Workspace,
+            DataClass::CONFIDENTIAL => APIDataClass::Confidential,
         }
     }
 }
@@ -192,6 +217,7 @@ impl From<DataClass> for i32 {
         }
     }
 }
+
 impl From<ObjectStatus> for i32 {
     fn from(var: ObjectStatus) -> Self {
         match var {
@@ -461,9 +487,9 @@ pub fn convert_token_to_proto(token_id: &DieselUlid, db_token: APIToken) -> Toke
         name: db_token.name,
         created_at: Some(db_token.created_at.into()),
         expires_at: Some(db_token.expires_at.into()),
-        permission: Some(Permission {
+        permission: db_token.object_id.map(|id| Permission {
             permission_level: Into::<PermissionLevel>::into(db_token.user_rights) as i32,
-            resource_id: db_token.object_id.map(ResourceId::from),
+            resource_id: Some(ResourceId::from(id)),
         }),
     }
 }
@@ -1529,5 +1555,44 @@ impl TryFrom<Vec<Relation>> for ContextContainer {
             })
             .collect::<Result<Vec<Context>, tonic::Status>>()?;
         Ok(ContextContainer(vec))
+    }
+}
+
+// Conversion tests
+#[cfg(test)]
+mod tests {
+    use crate::database::enums::DataClass;
+    use aruna_rust_api::api::storage::models::v2::DataClass as APIDataClass;
+
+    #[test]
+    fn data_class_conversion_tests() {
+        // Direct enum conversion in both directions
+        assert_eq!(APIDataClass::Public, DataClass::PUBLIC.into());
+        assert_eq!(APIDataClass::Private, DataClass::PRIVATE.into());
+        assert_eq!(APIDataClass::Workspace, DataClass::WORKSPACE.into());
+        assert_eq!(APIDataClass::Confidential, DataClass::CONFIDENTIAL.into());
+
+        assert_eq!(DataClass::PUBLIC, APIDataClass::Public.try_into().unwrap());
+        assert_eq!(
+            DataClass::PRIVATE,
+            APIDataClass::Private.try_into().unwrap()
+        );
+        assert_eq!(
+            DataClass::WORKSPACE,
+            APIDataClass::Workspace.try_into().unwrap()
+        );
+        assert_eq!(
+            DataClass::CONFIDENTIAL,
+            APIDataClass::Confidential.try_into().unwrap()
+        );
+
+        // i32 conversion in both directions
+        assert_eq!(APIDataClass::Public as i32, DataClass::PUBLIC as i32);
+        assert_eq!(APIDataClass::Private as i32, DataClass::PRIVATE as i32);
+        assert_eq!(APIDataClass::Workspace as i32, DataClass::WORKSPACE as i32);
+        assert_eq!(
+            APIDataClass::Confidential as i32,
+            DataClass::CONFIDENTIAL as i32
+        );
     }
 }

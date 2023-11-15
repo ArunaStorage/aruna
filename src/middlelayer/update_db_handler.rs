@@ -71,7 +71,7 @@ impl DatabaseHandler {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
-        let name = request.get_name();
+        let name = request.get_name()?;
         let id = request.get_id()?;
         Object::update_name(id, name, transaction_client).await?;
         transaction.commit().await?;

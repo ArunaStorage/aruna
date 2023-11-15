@@ -350,7 +350,7 @@ impl Cache {
                 }
             }
             ContextVariant::GlobalAdmin | ContextVariant::SelfUser => false,
-            ContextVariant::GlobalProxy => true,
+            ContextVariant::Registered | ContextVariant::GlobalProxy => true,
         })
     }
 
@@ -390,6 +390,7 @@ impl Cache {
                         false
                     }
                 }
+                ContextVariant::Registered => return user.active,
                 ContextVariant::SelfUser => return user.active && personal,
                 ContextVariant::GlobalProxy | ContextVariant::GlobalAdmin => return false,
             }

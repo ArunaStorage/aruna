@@ -37,7 +37,8 @@ impl Display for MeilisearchIndexes {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ObjectDocument {
     pub id: DieselUlid,
-    pub object_type: u8, // 256 should be enough
+    pub object_type: ObjectType,
+    pub object_type_id: u8, // 256 should be enough
     pub status: ObjectStatus,
     pub name: String,
     pub description: String,
@@ -65,7 +66,8 @@ impl From<DbObject> for ObjectDocument {
 
         ObjectDocument {
             id: db_object.id,
-            object_type: db_object.object_type as u8,
+            object_type: db_object.object_type,
+            object_type_id: db_object.object_type as u8,
             status: db_object.object_status,
             name: db_object.name,
             description: db_object.description,
@@ -84,13 +86,12 @@ impl From<DbObject> for ObjectDocument {
 impl TryFrom<ObjectDocument> for Resource {
     type Error = anyhow::Error;
 
-    fn try_from(val: ObjectDocument) -> Result<Self, Self::Error> {
-        Ok(match val.object_type {
-            0 => Resource::Project(val.into()),    // ObjectType::PROJECT
-            1 => Resource::Collection(val.into()), // ObjectType::COLLECTION
-            2 => Resource::Dataset(val.into()),    // ObjectType::DATASET
-            3 => Resource::Object(val.into()),     // ObjectType::OBJECT
-            _ => bail!("Invalid resource type"),
+    fn try_from(index_object: ObjectDocument) -> Result<Self, Self::Error> {
+        Ok(match index_object.object_type {
+            ObjectType::PROJECT => Resource::Project(index_object.into()), // ObjectType::PROJECT
+            ObjectType::COLLECTION => Resource::Collection(index_object.into()), // ObjectType::COLLECTION
+            ObjectType::DATASET => Resource::Dataset(index_object.into()), // ObjectType::DATASET
+            ObjectType::OBJECT => Resource::Object(index_object.into()),   // ObjectType::OBJECT
         })
     }
 }
@@ -118,7 +119,7 @@ impl From<ObjectDocument> for Project {
             key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
             stats: None,
-            data_class: object_document.data_class as i32,
+            data_class: object_document.data_class.into(),
             created_at: Some(Timestamp {
                 seconds: object_document.created_at,
                 nanos: 0,
@@ -140,7 +141,8 @@ impl TryFrom<Project> for ObjectDocument {
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&project.id)?,
-            object_type: ObjectType::PROJECT as u8,
+            object_type: ObjectType::PROJECT,
+            object_type_id: ObjectType::PROJECT as u8,
             status: ObjectStatus::try_from(project.status)?,
             name: project.name,
             description: project.description,
@@ -169,7 +171,7 @@ impl From<ObjectDocument> for Collection {
             key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
             stats: None,
-            data_class: object_document.data_class as i32,
+            data_class: object_document.data_class.into(),
             created_at: Some(Timestamp {
                 seconds: object_document.created_at,
                 nanos: 0,
@@ -191,7 +193,8 @@ impl TryFrom<Collection> for ObjectDocument {
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&collection.id)?,
-            object_type: ObjectType::COLLECTION as u8,
+            object_type: ObjectType::COLLECTION,
+            object_type_id: ObjectType::COLLECTION as u8,
             status: ObjectStatus::try_from(collection.status)?,
             name: collection.name,
             description: collection.description,
@@ -220,7 +223,7 @@ impl From<ObjectDocument> for Dataset {
             key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
             stats: None,
-            data_class: object_document.data_class as i32,
+            data_class: object_document.data_class.into(),
             created_at: Some(Timestamp {
                 seconds: object_document.created_at,
                 nanos: 0,
@@ -242,7 +245,8 @@ impl TryFrom<Dataset> for ObjectDocument {
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&dataset.id)?,
-            object_type: ObjectType::DATASET as u8,
+            object_type: ObjectType::DATASET,
+            object_type_id: ObjectType::DATASET as u8,
             status: ObjectStatus::try_from(dataset.status)?,
             name: dataset.name,
             description: dataset.description,
@@ -271,7 +275,7 @@ impl From<ObjectDocument> for Object {
             key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
             content_len: object_document.size,
-            data_class: object_document.data_class as i32,
+            data_class: object_document.data_class.into(),
             created_at: Some(Timestamp {
                 seconds: object_document.created_at,
                 nanos: 0,
@@ -294,7 +298,8 @@ impl TryFrom<Object> for ObjectDocument {
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&object.id)?,
-            object_type: ObjectType::OBJECT as u8,
+            object_type: ObjectType::OBJECT,
+            object_type_id: ObjectType::OBJECT as u8,
             status: ObjectStatus::try_from(object.status)?,
             name: object.name,
             description: object.description,
@@ -401,23 +406,28 @@ impl MeilisearchClient {
             // Set the filterable attributes of the index
             index
                 .set_filterable_attributes([
-                    "object_type", // e.g. object_type = 1 or object_type > 2
-                    //"object_type_name", //e.g. = OBJECT or IN [PROJECT, DATASET]
-                    "object_status", // e.g. = "AVAILABLE" or IN [AVAILABLE, ERROR]
-                    "size",          // e.g. size > 12345
+                    "name",
+                    "description",    // e.g. description = ""
+                    "object_type",    //e.g. = OBJECT or IN [PROJECT, DATASET]
+                    "object_type_id", // e.g. object_type = 1 or object_type > 2
+                    "status",         // e.g. = "AVAILABLE" or IN [AVAILABLE, ERROR]
+                    "size",           // e.g. size > 12345
                     "labels.key",
                     "labels.value",
-                    "labels.variant", // e.g. labels.variant = "LABEL"
-                    "data_class",     // e.g. data_class = "PUBLIC"
-                    "created_at",     // e.g. created_at < 1692824072 (2023-08-23T20:54:32+00:00)
+                    "labels.variant",   // e.g. labels.variant = "LABEL"
+                    "data_class",       // e.g. data_class = "PUBLIC"
+                    "created_at",       // e.g. created_at < 1692824072 (2023-08-23T20:54:32+00:00)
+                    "metadata_license", // e.g. metadata_license = CC0
+                    "data_license",     // e.g. data_license = CC0
                 ])
                 .await?
                 .wait_for_completion(&self.client, None, None)
                 .await?;
 
             // Set the sortable attributes of the index
+            //TODO: Implement in API
             index
-                .set_sortable_attributes(["size", "object_type", "created_at"])
+                .set_sortable_attributes(["size", "object_type_id", "created_at"])
                 .await?
                 .wait_for_completion(&self.client, None, None)
                 .await?;
@@ -435,6 +445,15 @@ impl MeilisearchClient {
 
             index
         })
+    }
+
+    ///ToDo: Rust Doc
+    pub async fn clear_index(&self, index: MeilisearchIndexes) -> anyhow::Result<TaskInfo> {
+        // Extract index name of enum variant
+        let index_name = index.to_string();
+
+        // Delete documents to search
+        Ok(self.client.index(index_name).delete_all_documents().await?)
     }
 
     ///ToDo: Rust Doc

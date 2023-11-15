@@ -18,6 +18,7 @@ use async_nats::jetstream::{consumer::DeliverPolicy, Message};
 use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use futures::StreamExt;
+use log::{debug, error};
 use std::collections::hash_map::RandomState;
 use std::collections::HashSet;
 use std::str::FromStr;
@@ -159,7 +160,7 @@ impl EventNotificationService for NotificationServiceImpl {
     ) -> Result<Response<GetEventMessageBatchResponse>, Status> {
         // Log some stuff
         log::info!("Received GetEventMessageBatchRequest.");
-        log::debug!("{:?}", &request);
+        debug!("{:?}", &request);
 
         // Consume gRPC request into its parts
         let (request_metadata, _, inner_request) = request.into_parts();
@@ -179,7 +180,7 @@ impl EventNotificationService for NotificationServiceImpl {
         // Check empty permission context just to validate registered and active user
         tonic_auth!(
             self.authorizer
-                .check_permissions(&token, vec![Context::proxy()])
+                .check_permissions(&token, vec![Context::default()])
                 .await,
             "Permission denied"
         );
@@ -262,7 +263,7 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Log some stuff and return response
         log::info!("Sending GetEventMessageBatchResponse back to client.");
-        log::debug!("{:?}", &grpc_response);
+        debug!("{:?}", &grpc_response);
         return Ok(grpc_response);
     }
 
@@ -277,7 +278,7 @@ impl EventNotificationService for NotificationServiceImpl {
     ) -> Result<Response<Self::GetEventMessageStreamStream>, Status> {
         // Log some stuff
         log::info!("Received GetEventMessageBatchStreamRequest.");
-        log::debug!("{:?}", &request);
+        debug!("{:?}", &request);
 
         // Consume gRPC request into its parts
         let (request_metadata, _, inner_request) = request.into_parts();
@@ -297,7 +298,7 @@ impl EventNotificationService for NotificationServiceImpl {
         // Check empty permission context just to validate registered and active user
         let (_, _, is_proxy) = tonic_auth!(
             self.authorizer
-                .check_permissions_verbose(&token, vec![Context::proxy()])
+                .check_permissions_verbose(&token, vec![Context::registered()])
                 .await,
             "Permission denied"
         );
@@ -311,7 +312,9 @@ impl EventNotificationService for NotificationServiceImpl {
                         generate_endpoint_subject(&consumer_id),
                         DeliverPolicy::ByStartTime {
                             start_time: tonic_invalid!(
-                                OffsetDateTime::from_unix_timestamp(Utc::now().timestamp()),
+                                OffsetDateTime::from_unix_timestamp(
+                                    Utc::now().timestamp() - (60 * 60)
+                                ),
                                 "Incorrect timestamp format"
                             ),
                         },
@@ -367,13 +370,34 @@ impl EventNotificationService for NotificationServiceImpl {
             pull_consumer.messages().await,
             "Message stream creation failed"
         );
+
+        // Keep-alive spawn
+        let tx_clone = tx.clone();
+        tokio::spawn(async move {
+            loop {
+                if tx_clone
+                    .send(Ok(GetEventMessageStreamResponse { message: None }))
+                    .await
+                    .is_err()
+                {
+                    error!(
+                        "Keep-alive connection to DataProxy {} terminated",
+                        consumer_id
+                    );
+                    break;
+                }
+                tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+            }
+        });
+
         // Send messages in batches if present
         let cloned_reply_signing_secret = self.natsio_handler.reply_secret.clone();
         tokio::spawn(async move {
+            debug!("Starting event notification fetch loop");
             let mut already_seen: HashSet<String, RandomState> = HashSet::default();
             loop {
                 if let Some(Ok(nats_message)) = message_stream.next().await {
-                    log::debug!("Sending message to client: {}", nats_message.subject);
+                    debug!("Sending message to client: {}", nats_message.subject);
 
                     // Deduplication time
                     if let Some(header_map) = &nats_message.headers {
@@ -419,7 +443,7 @@ impl EventNotificationService for NotificationServiceImpl {
 
         // Log some stuff and return response
         log::info!("Sending GetEventMessageBatchStreamStreamResponse back to client.");
-        log::debug!("{:?}", &grpc_response);
+        debug!("{:?}", &grpc_response);
         return Ok(grpc_response);
     }
 
@@ -442,7 +466,7 @@ impl EventNotificationService for NotificationServiceImpl {
         request: tonic::Request<AcknowledgeMessageBatchRequest>,
     ) -> Result<Response<AcknowledgeMessageBatchResponse>, Status> {
         log::info!("Received AcknowledgeMessageBatchRequest.");
-        log::debug!("{:?}", &request);
+        debug!("{:?}", &request);
 
         // Consume gRPC request into its parts
         let (request_metadata, _, inner_request) = request.into_parts();
@@ -456,7 +480,7 @@ impl EventNotificationService for NotificationServiceImpl {
         // Check empty permission context just to validate registered and active user
         tonic_auth!(
             self.authorizer
-                .check_permissions(&token, vec![Context::proxy()])
+                .check_permissions(&token, vec![Context::registered()])
                 .await,
             "Permission denied"
         );
@@ -474,7 +498,7 @@ impl EventNotificationService for NotificationServiceImpl {
         let grpc_response = Response::new(AcknowledgeMessageBatchResponse {});
 
         log::info!("Sending AcknowledgeMessageBatchResponse back to client.");
-        log::debug!("{:?}", &grpc_response);
+        debug!("{:?}", &grpc_response);
         return Ok(grpc_response);
     }
 
@@ -493,7 +517,7 @@ impl EventNotificationService for NotificationServiceImpl {
         request: tonic::Request<DeleteStreamConsumerRequest>,
     ) -> Result<Response<DeleteStreamConsumerResponse>, Status> {
         log::info!("Received DeleteStreamConsumerRequest.");
-        log::debug!("{:?}", &request);
+        debug!("{:?}", &request);
 
         // Consume gRPC request into its parts
         let (request_metadata, _, inner_request) = request.into_parts();
@@ -513,7 +537,7 @@ impl EventNotificationService for NotificationServiceImpl {
         // Check empty permission context just to validate registered and active user
         let _test = tonic_auth!(
             self.authorizer
-                .check_permissions(&token, vec![Context::proxy()])
+                .check_permissions(&token, vec![Context::registered()])
                 .await,
             "Permission denied"
         );
@@ -571,7 +595,7 @@ impl EventNotificationService for NotificationServiceImpl {
         let grpc_response = Response::new(DeleteStreamConsumerResponse {});
 
         log::info!("Sending DeleteStreamConsumerResponse back to client.");
-        log::debug!("{:?}", &grpc_response);
+        debug!("{:?}", &grpc_response);
         return Ok(grpc_response);
     }
 }
@@ -640,7 +664,7 @@ fn extract_context_event_type_from_target(
 
             (context, event_type)
         }
-        Target::Announcements(_) => (Context::default(), EventType::Announcement(None)),
+        Target::Announcements(_) => (Context::registered(), EventType::Announcement(None)),
         Target::All(_) => (Context::proxy(), EventType::All),
     })
 }
@@ -689,7 +713,7 @@ impl TryInto<Context> for EventType {
                 tonic_invalid!(DieselUlid::from_str(&user_id), "Invalid user id"),
                 DbPermissionLevel::READ,
             )),
-            EventType::Announcement(_) => Ok(Context::default()),
+            EventType::Announcement(_) => Ok(Context::registered()),
             EventType::All => Ok(Context::proxy()),
         }
     }

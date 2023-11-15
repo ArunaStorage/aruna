@@ -15,8 +15,8 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: recursive
-      - name: SetupDB
-        run: ./tests/setup.sh
+      - name: Setup
+        run: docker compose -f compose.yaml up -d
         shell: bash
       - uses: actions-rs/cargo@v1
         with:
