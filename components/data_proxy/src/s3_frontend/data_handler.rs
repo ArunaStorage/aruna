@@ -18,10 +18,10 @@ use md5::{Digest, Md5};
 use sha2::Sha256;
 use std::fmt::Debug;
 use std::sync::Arc;
+use tokio::pin;
 use tracing::debug;
 use tracing::info_span;
 use tracing::Instrument;
-use tokio::pin;
 
 #[derive(Debug)]
 pub struct DataHandler {}

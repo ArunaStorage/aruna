@@ -376,7 +376,7 @@ impl AuthHandler {
             .cache
             .get_user_by_key(access_key)
             .ok_or_else(|| anyhow!("Unknown user")))?;
-       
+
         'id_vec: for vec_ids in vec_vec_ids {
             for (res, perm) in &user.permissions {
                 for id in vec_ids {

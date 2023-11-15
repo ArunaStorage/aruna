@@ -11,8 +11,8 @@ use aruna_file::{
 };
 use futures_util::TryStreamExt;
 use s3s::{dto::StreamingBlob, s3_error};
-use tracing::{debug, info_span, trace, Instrument};
 use tokio::pin;
+use tracing::{debug, info_span, trace, Instrument};
 
 #[tracing::instrument(level = "trace", skip(path_level_vec, backend))]
 pub async fn get_bundle(

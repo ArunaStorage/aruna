@@ -49,12 +49,12 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::sync::Arc;
+use tokio::pin;
+use tracing::debug;
 use tracing::error;
 use tracing::info_span;
 use tracing::trace;
 use tracing::Instrument;
-use tracing::debug;
-use tokio::pin;
 
 pub struct ArunaS3Service {
     backend: Arc<Box<dyn StorageBackend>>,
@@ -1154,7 +1154,6 @@ impl S3 for ArunaS3Service {
                 s3_error!(InternalError, "Internal processing error")
             })));
 
-        
         let output = GetObjectOutput {
             body,
             content_length: calc_content_len,
@@ -1208,7 +1207,6 @@ impl S3 for ArunaS3Service {
             trace_err!(object.ok_or_else(|| s3_error!(NoSuchKey, "No object found")))?;
 
         let content_len = location.map(|l| l.raw_content_len).unwrap_or_default();
-
 
         let output = HeadObjectOutput {
             content_length: content_len,

@@ -824,7 +824,7 @@ impl ResourceString {
 
 impl PartialOrd for ResourceString {
     #[tracing::instrument(level = "trace", skip(self, other))]
-    #[allow(clippy::incorrect_partial_ord_impl_on_ord_type)]
+    #[allow(clippy::non_canonical_partial_ord_impl)]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
