@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use aruna_rust_api::api::storage::{
     models::v2::{
-        relation::Relation::Internal, DataClass, DataEndpoint, InternalRelation,
+        relation::Relation::Internal, DataClass, DataEndpoint, FullSync, InternalRelation,
         InternalRelationVariant, KeyValue, KeyValueVariant, Relation, RelationDirection,
         ResourceVariant, Status,
     },
@@ -82,7 +82,14 @@ async fn grpc_create_dataset() {
         proto_dataset.endpoints,
         vec![DataEndpoint {
             id: DEFAULT_ENDPOINT_ULID.to_string(),
-            full_synced: true,
+            variant: Some(
+                aruna_rust_api::api::storage::models::v2::data_endpoint::Variant::FullSync(
+                    FullSync {
+                        project_id: project.id.to_string()
+                    }
+                )
+            ),
+            status: None
         }]
     );
 
@@ -90,7 +97,7 @@ async fn grpc_create_dataset() {
     let collection = fast_track_grpc_collection_create(
         &collection_service,
         ADMIN_OIDC_TOKEN,
-        create_collection_request::Parent::ProjectId(project.id),
+        create_collection_request::Parent::ProjectId(project.id.clone()),
     )
     .await;
 
@@ -129,7 +136,14 @@ async fn grpc_create_dataset() {
         proto_dataset.endpoints,
         vec![DataEndpoint {
             id: DEFAULT_ENDPOINT_ULID.to_string(),
-            full_synced: true,
+            variant: Some(
+                aruna_rust_api::api::storage::models::v2::data_endpoint::Variant::FullSync(
+                    FullSync {
+                        project_id: project.id.to_string()
+                    }
+                )
+            ),
+            status: None
         }]
     );
 }

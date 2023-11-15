@@ -84,7 +84,7 @@ impl NameUpdate {
                 } else {
                     Ok(name)
                 }
-            },
+            }
             NameUpdate::Collection(req) => {
                 let name = req.name.to_string();
                 if !S3_KEY_SCHEMA.is_match(&name) {
@@ -92,7 +92,7 @@ impl NameUpdate {
                 } else {
                     Ok(name)
                 }
-            },
+            }
             NameUpdate::Dataset(req) => {
                 let name = req.name.to_string();
                 if !S3_KEY_SCHEMA.is_match(&name) {
@@ -100,7 +100,7 @@ impl NameUpdate {
                 } else {
                     Ok(name)
                 }
-            },
+            }
         }
     }
     pub fn get_id(&self) -> Result<DieselUlid> {
@@ -316,7 +316,7 @@ impl UpdateObject {
                 (
                     id,
                     EndpointInfo {
-                        replication: info.replication.clone(), // If not cloned, this could deadlock, right?
+                        replication: info.replication, // If not cloned, this could deadlock, right?
                         status: Some(ReplicationStatus::Waiting),
                     },
                 )

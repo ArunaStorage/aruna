@@ -80,8 +80,7 @@ impl Issuer {
             bail!("Only OIDC issuers can refresh JWKS");
         }
         let (decodings_keys, last_updated) = Self::fetch_jwks(
-            &self
-                .pubkey_endpoint
+            self.pubkey_endpoint
                 .as_ref()
                 .ok_or_else(|| anyhow!("Invalid endpoint type"))?,
         )
@@ -112,7 +111,7 @@ impl Issuer {
                 if let Some(decoding_key) = self.find(&kid) {
                     Ok((
                         kid,
-                        Self::get_validate_claims(token, &decoding_key, &self.audiences)?,
+                        Self::get_validate_claims(token, decoding_key, &self.audiences)?,
                     ))
                 } else {
                     bail!("No matching key found")
@@ -130,8 +129,7 @@ impl Issuer {
         let alg = header.alg;
         let mut validation = jsonwebtoken::Validation::new(alg);
         validation.set_audience(audiences);
-        let tokendata =
-            jsonwebtoken::decode::<ArunaTokenClaims>(token, &decoding_key, &validation)?;
+        let tokendata = jsonwebtoken::decode::<ArunaTokenClaims>(token, decoding_key, &validation)?;
         Ok(tokendata.claims)
     }
 }

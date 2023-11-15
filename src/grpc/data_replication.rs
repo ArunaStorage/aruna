@@ -39,7 +39,7 @@ impl DataReplicationService for DataReplicationServiceImpl {
             crate::database::enums::DbPermissionLevel::ADMIN,
             false,
         );
-        let user_id = tonic_auth!(
+        let _user_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
@@ -66,10 +66,10 @@ impl DataReplicationService for DataReplicationServiceImpl {
         // Consume gRPC request into its parts
         let (metadata, _, request) = request.into_parts();
         let resource_id = match request.data_variant {
-            Some(res) => match res {
-                DataVariant::CollectionId(id) => diesel_ulid::DieselUlid::from_str(&id),
-                DataVariant::DatasetId(id) => diesel_ulid::DieselUlid::from_str(&id),
-                DataVariant::ObjectId(id) => diesel_ulid::DieselUlid::from_str(&id),
+            Some(ref res) => match res {
+                DataVariant::CollectionId(id) => diesel_ulid::DieselUlid::from_str(id),
+                DataVariant::DatasetId(id) => diesel_ulid::DieselUlid::from_str(id),
+                DataVariant::ObjectId(id) => diesel_ulid::DieselUlid::from_str(id),
             },
             None => {
                 return Err(tonic::Status::invalid_argument("Invalid resource id"));
@@ -85,7 +85,7 @@ impl DataReplicationService for DataReplicationServiceImpl {
             crate::database::enums::DbPermissionLevel::ADMIN,
             false,
         );
-        let user_id = tonic_auth!(
+        let _user_id = tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );

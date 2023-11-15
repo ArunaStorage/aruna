@@ -316,7 +316,7 @@ impl TokenHandler {
 
         // Convert token id if present
         let maybe_token = match &claims.tid {
-            Some(token_id) => Some(DieselUlid::from_str(&token_id)?),
+            Some(token_id) => Some(DieselUlid::from_str(token_id)?),
             None => None,
         };
 
@@ -375,7 +375,7 @@ impl TokenHandler {
 
                             // Convert token id if present
                             let token = match &claims.tid {
-                                Some(token_id) => Some(DieselUlid::from_str(&token_id)?),
+                                Some(token_id) => Some(DieselUlid::from_str(token_id)?),
                                 None => None,
                             };
 

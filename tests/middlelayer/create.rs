@@ -9,6 +9,7 @@ use aruna_rust_api::api::storage::services::v2::{
 use aruna_server::caching::cache::Cache;
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::license_dsl::ALL_RIGHTS_RESERVED;
+use aruna_server::database::dsls::object_dsl::EndpointInfo;
 use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType};
 use aruna_server::middlelayer::create_request_types::CreateRequest;
 use diesel_ulid::DieselUlid;
@@ -69,12 +70,13 @@ async fn create_project() {
     assert!(proj.object.hashes.0 .0.is_empty());
     assert!(proj.object.key_values.0 .0.is_empty());
     assert!(proj.object.external_relations.0 .0.is_empty());
-    assert!(proj
-        .object
-        .endpoints
-        .0
-        .into_iter()
-        .contains(&(default_endpoint, true)));
+    assert!(proj.object.endpoints.0.into_iter().contains(&(
+        default_endpoint,
+        EndpointInfo {
+            replication: aruna_server::database::enums::ReplicationType::FullSync(proj.object.id),
+            status: None,
+        }
+    )));
     assert!(proj.inbound.0.is_empty());
     assert!(proj.inbound_belongs_to.0.is_empty());
     assert!(proj.outbound.0.is_empty());
@@ -143,12 +145,13 @@ async fn create_collection() {
     assert!(coll.object.hashes.0 .0.is_empty());
     assert!(coll.object.key_values.0 .0.is_empty());
     assert!(coll.object.external_relations.0 .0.is_empty());
-    assert!(coll
-        .object
-        .endpoints
-        .0
-        .into_iter()
-        .contains(&(default_endpoint, true)));
+    assert!(coll.object.endpoints.0.into_iter().contains(&(
+        default_endpoint,
+        EndpointInfo {
+            replication: aruna_server::database::enums::ReplicationType::FullSync(parent.object.id),
+            status: None,
+        }
+    )));
     assert!(coll.inbound.0.is_empty());
     assert!(coll.inbound_belongs_to.0.get(&parent.object.id).is_some());
     assert!(coll.outbound.0.is_empty());
@@ -216,12 +219,13 @@ async fn create_dataset() {
     assert!(ds.object.hashes.0 .0.is_empty());
     assert!(ds.object.key_values.0 .0.is_empty());
     assert!(ds.object.external_relations.0 .0.is_empty());
-    assert!(ds
-        .object
-        .endpoints
-        .0
-        .into_iter()
-        .contains(&(default_endpoint, true)));
+    assert!(ds.object.endpoints.0.into_iter().contains(&(
+        default_endpoint,
+        EndpointInfo {
+            replication: aruna_server::database::enums::ReplicationType::FullSync(parent.object.id),
+            status: None,
+        }
+    )));
     assert!(ds.inbound.0.is_empty());
     assert!(ds.inbound_belongs_to.0.get(&parent.object.id).is_some());
     assert!(ds.outbound.0.is_empty());
@@ -311,12 +315,13 @@ async fn create_object() {
     assert!(obj.object.hashes.0 .0.is_empty());
     assert!(obj.object.key_values.0 .0.is_empty());
     assert!(obj.object.external_relations.0 .0.is_empty());
-    assert!(obj
-        .object
-        .endpoints
-        .0
-        .into_iter()
-        .contains(&(default_endpoint, true)));
+    assert!(obj.object.endpoints.0.into_iter().contains(&(
+        default_endpoint,
+        EndpointInfo {
+            replication: aruna_server::database::enums::ReplicationType::FullSync(parent.object.id),
+            status: None,
+        }
+    )));
     assert!(obj.inbound.0.is_empty());
     assert!(obj.inbound_belongs_to.0.get(&parent.object.id).is_some());
     assert!(obj.outbound.0.is_empty());

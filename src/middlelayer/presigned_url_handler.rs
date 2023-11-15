@@ -284,7 +284,7 @@ impl DatabaseHandler {
         cache: Arc<Cache>,
     ) -> Result<Endpoint> {
         // Only gets first endpoint
-        let project_endpoint = Vec::from_iter(
+        let project_endpoint = *Vec::from_iter(
             &cache
                 .get_object(&project_id)
                 .ok_or_else(|| anyhow!("Parent project not found"))?
@@ -292,8 +292,7 @@ impl DatabaseHandler {
                 .endpoints
                 .0,
         )[0]
-        .key()
-        .clone();
+        .key();
         // Fetch endpoint from cache/database
         self.get_endpoint(GetEP(GetEndpointRequest {
             endpoint: Some(APIEndpointEnum::EndpointId(project_endpoint.to_string())),

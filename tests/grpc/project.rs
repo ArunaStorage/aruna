@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use aruna_rust_api::api::storage::{
-    models::v2::{DataClass, DataEndpoint, KeyValue, KeyValueVariant, Status},
+    models::v2::{DataClass, DataEndpoint, FullSync, KeyValue, KeyValueVariant, Status},
     services::v2::{
         project_service_server::ProjectService, ArchiveProjectRequest, CreateProjectRequest,
         DeleteProjectRequest, GetProjectRequest, GetProjectsRequest, UpdateProjectDataClassRequest,
@@ -66,7 +66,14 @@ async fn grpc_create_project() {
         proto_project.endpoints,
         vec![DataEndpoint {
             id: DEFAULT_ENDPOINT_ULID.to_string(),
-            full_synced: true,
+            variant: Some(
+                aruna_rust_api::api::storage::models::v2::data_endpoint::Variant::FullSync(
+                    FullSync {
+                        project_id: proto_project.id.to_string()
+                    }
+                )
+            ),
+            status: None
         }]
     );
 }

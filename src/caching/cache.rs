@@ -87,7 +87,7 @@ impl Cache {
             .map(|x| {
                 let id = x.id as i32;
                 match PubKeyEnum::try_from(x) {
-                    Ok(e) => Ok((id as i32, e)),
+                    Ok(e) => Ok((id, e)),
                     Err(e) => Err(e),
                 }
             })

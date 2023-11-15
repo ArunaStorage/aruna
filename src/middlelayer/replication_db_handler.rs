@@ -3,7 +3,7 @@ use crate::{
     database::{
         crud::CrudDb,
         dsls::object_dsl::{EndpointInfo, Object},
-        enums::{ObjectMapping, ObjectType, ReplicationStatus},
+        enums::{ObjectType, ReplicationStatus, SyncObject},
     },
     middlelayer::db_handler::DatabaseHandler,
 };
@@ -67,29 +67,34 @@ impl DatabaseHandler {
                             return Err(anyhow!("Invalid resource id"));
                         }
                     };
-                    let mapping = if let Some(object) = Object::get(resource_id, &client).await? {
-                        if object.object_type != request_type {
-                            return Err(anyhow!("Wrong ObjectType"));
-                        } else {
-                            match object.object_type {
-                                ObjectType::PROJECT => {
-                                    return Err(anyhow!("Projects can only be full sync"));
+                    let sync_object =
+                        if let Some(object) = Object::get(resource_id, &client).await? {
+                            if object.object_type != request_type {
+                                return Err(anyhow!("Wrong ObjectType"));
+                            } else {
+                                match object.object_type {
+                                    ObjectType::PROJECT => {
+                                        return Err(anyhow!("Projects can only be full sync"));
+                                    }
+                                    ObjectType::COLLECTION => SyncObject::CollectionId(resource_id),
+                                    ObjectType::DATASET => SyncObject::DatasetId(resource_id),
+                                    ObjectType::OBJECT => SyncObject::ObjectId(resource_id),
                                 }
-                                ObjectType::COLLECTION => ObjectMapping::COLLECTION(resource_id),
-                                ObjectType::DATASET => ObjectMapping::DATASET(resource_id),
-                                ObjectType::OBJECT => ObjectMapping::OBJECT(resource_id),
                             }
-                        }
-                    } else {
-                        return Err(anyhow!("Resource not found"));
-                    };
+                        } else {
+                            return Err(anyhow!("Resource not found"));
+                        };
                     let proxy_id = DieselUlid::from_str(&request.endpoint_id)?;
                     let endpoint_status_objects = EndpointInfo {
-                        replication: crate::database::enums::ReplicationType::PartialSync(mapping),
+                        replication: crate::database::enums::ReplicationType::PartialSync(
+                            sync_object,
+                        ),
                         status: Some(ReplicationStatus::Waiting),
                     };
                     let endpoint_status_hierarchy = EndpointInfo {
-                        replication: crate::database::enums::ReplicationType::PartialSync(mapping),
+                        replication: crate::database::enums::ReplicationType::PartialSync(
+                            sync_object,
+                        ),
                         status: None,
                     };
 
@@ -128,7 +133,7 @@ impl DatabaseHandler {
                 proxy_id,
                 endpoint_status_objects,
                 objects,
-                &transaction_client,
+                transaction_client,
             )
             .await?;
         } else {
@@ -140,7 +145,7 @@ impl DatabaseHandler {
                 proxy_id,
                 endpoint_status_hierarchy,
                 hierarchy_resources,
-                &transaction_client,
+                transaction_client,
             )
             .await?;
         }

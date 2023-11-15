@@ -19,7 +19,7 @@ use crate::database::dsls::user_dsl::{
 use crate::database::dsls::workspaces_dsl::WorkspaceTemplate;
 use crate::database::enums::{
     DbPermissionLevel, EndpointVariant, NotificationReferenceType, ObjectMapping,
-    PersistentNotificationVariant,
+    PersistentNotificationVariant, ReplicationStatus, ReplicationType, SyncObject,
 };
 use crate::database::{
     dsls::endpoint_dsl::{Endpoint as DBEndpoint, HostConfig, HostConfigs},
@@ -40,10 +40,12 @@ use aruna_rust_api::api::hooks::services::v2::Filter as APIFilter;
 use aruna_rust_api::api::hooks::services::v2::{
     AddHook, AddLabel, Credentials, ExternalHook, Hook as APIHook, HookInfo, InternalHook, Trigger,
 };
+use aruna_rust_api::api::storage::models::v2::data_endpoint::Variant;
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, CustomAttributes, DataClass as APIDataClass, DataEndpoint,
-    License as APILicense, OidcMapping, Permission, PermissionLevel, ResourceVariant, Status,
-    Token, User as ApiUser, UserAttributes,
+    License as APILicense, OidcMapping, Permission, PermissionLevel,
+    ReplicationStatus as APIReplicationStatus, ResourceVariant, Status, Token, User as ApiUser,
+    UserAttributes,
 };
 use aruna_rust_api::api::storage::models::v2::{
     permission::ResourceId, relation::Relation as RelationEnum, Collection as GRPCCollection,
@@ -601,7 +603,8 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                     .iter()
                     .map(|e| DataEndpoint {
                         id: e.key().to_string(),
-                        full_synced: *e.value(),
+                        variant: Some(e.replication.into()),
+                        status: None,
                     })
                     .collect(),
                 metadata_license_tag: object_with_relations.object.metadata_license,
@@ -626,7 +629,8 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                     .iter()
                     .map(|e| DataEndpoint {
                         id: e.key().to_string(),
-                        full_synced: *e.value(),
+                        variant: Some(e.replication.into()),
+                        status: None,
                     })
                     .collect(),
                 metadata_license_tag: object_with_relations.object.metadata_license,
@@ -651,7 +655,8 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                     .iter()
                     .map(|e| DataEndpoint {
                         id: e.key().to_string(),
-                        full_synced: *e.value(),
+                        variant: Some(e.replication.into()),
+                        status: None,
                     })
                     .collect(),
                 metadata_license_tag: object_with_relations.object.metadata_license,
@@ -677,7 +682,8 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                     .iter()
                     .map(|e| DataEndpoint {
                         id: e.key().to_string(),
-                        full_synced: *e.value(),
+                        variant: Some(e.replication.into()),
+                        status: e.status.map(|s| APIReplicationStatus::from(s) as i32),
                     })
                     .collect(),
                 metadata_license_tag: object_with_relations.object.metadata_license,
@@ -767,7 +773,8 @@ pub fn from_db_object(
                 .iter()
                 .map(|e| DataEndpoint {
                     id: e.key().to_string(),
-                    full_synced: *e.value(),
+                    variant: Some(e.replication.into()),
+                    status: None,
                 })
                 .collect(),
             metadata_license_tag: object.metadata_license,
@@ -791,7 +798,8 @@ pub fn from_db_object(
                 .iter()
                 .map(|e| DataEndpoint {
                     id: e.key().to_string(),
-                    full_synced: *e.value(),
+                    variant: Some(e.replication.into()),
+                    status: None,
                 })
                 .collect(),
             metadata_license_tag: object.metadata_license,
@@ -815,7 +823,8 @@ pub fn from_db_object(
                 .iter()
                 .map(|e| DataEndpoint {
                     id: e.key().to_string(),
-                    full_synced: *e.value(),
+                    variant: Some(e.replication.into()),
+                    status: None,
                 })
                 .collect(),
             metadata_license_tag: object.metadata_license,
@@ -840,7 +849,8 @@ pub fn from_db_object(
                 .iter()
                 .map(|e| DataEndpoint {
                     id: e.key().to_string(),
-                    full_synced: *e.value(),
+                    variant: Some(e.replication.into()),
+                    status: e.status.map(|s| APIReplicationStatus::from(s) as i32),
                 })
                 .collect(),
             metadata_license_tag: object.metadata_license,
@@ -1574,6 +1584,32 @@ impl TryFrom<Vec<Relation>> for ContextContainer {
             })
             .collect::<Result<Vec<Context>, tonic::Status>>()?;
         Ok(ContextContainer(vec))
+    }
+}
+
+impl From<ReplicationType> for Variant {
+    fn from(input: ReplicationType) -> Self {
+        match input {
+            ReplicationType::FullSync(project_id) => Variant::FullSync(aruna_rust_api::api::storage::models::v2::FullSync { project_id: project_id.to_string()}),
+            ReplicationType::PartialSync(sync_object) => {
+                match sync_object {
+                    SyncObject::CollectionId(id) => Variant::PartialSync(aruna_rust_api::api::storage::models::v2::PartialSync { origin: Some(aruna_rust_api::api::storage::models::v2::partial_sync::Origin::CollectionId(id.to_string())) }),
+                    SyncObject::DatasetId(id) => Variant::PartialSync(aruna_rust_api::api::storage::models::v2::PartialSync { origin: Some(aruna_rust_api::api::storage::models::v2::partial_sync::Origin::DatasetId(id.to_string())) }),
+                    SyncObject::ObjectId(id) => Variant::PartialSync(aruna_rust_api::api::storage::models::v2::PartialSync { origin: Some(aruna_rust_api::api::storage::models::v2::partial_sync::Origin::ObjectId(id.to_string())) }),
+                }
+            }
+        }
+    }
+}
+
+impl From<ReplicationStatus> for APIReplicationStatus {
+    fn from(input: ReplicationStatus) -> Self {
+        match input {
+            ReplicationStatus::Waiting => APIReplicationStatus::Waiting,
+            ReplicationStatus::Running => APIReplicationStatus::Running,
+            ReplicationStatus::Finished => APIReplicationStatus::Finished,
+            ReplicationStatus::Error => APIReplicationStatus::Error,
+        }
     }
 }
 
