@@ -381,6 +381,13 @@ impl DatabaseHandler {
         mapping: &OIDCMapping,
     ) -> Result<User> {
         let client = self.database.get_client().await?;
+        for u in self.cache.user_cache.iter() {
+            for existing_oidc in &u.attributes.0.external_ids {
+                if existing_oidc == mapping {
+                    return Err(anyhow!("Already registered"));
+                }
+            }
+        }
         let user = self
             .cache
             .get_user(&user_id)

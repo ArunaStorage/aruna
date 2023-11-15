@@ -141,9 +141,19 @@ impl PermissionHandler {
             .ok_or_else(|| anyhow!("Unknown issuer"))?;
 
         let (_, validated_claims) = issuer.check_token(token).await?;
-        Ok(OIDCMapping {
+
+        let mapping = OIDCMapping {
             external_id: validated_claims.sub,
             oidc_name: issuer.issuer_name.to_string(),
-        })
+        };
+
+        for u in self.cache.user_cache.iter() {
+            for existing_oidc in &u.attributes.0.external_ids {
+                if existing_oidc == &mapping {
+                    return Err(anyhow!("User already registered"));
+                }
+            }
+        }
+        Ok(mapping)
     }
 }
