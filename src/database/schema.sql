@@ -110,6 +110,7 @@ DO $$
         END IF;
     END
 $$;
+
 /* ----- Authorization --------------------------------------------- */
 -- Table with users imported from some aai
 -- Join table to map users to multiple identity providers
@@ -118,9 +119,14 @@ CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY,
     display_name TEXT NOT NULL DEFAULT '',
     email VARCHAR(511) NOT NULL DEFAULT '',
-    external_id VARCHAR(511) UNIQUE,
     attributes JSONB NOT NULL,
     active BOOL NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE IF NOT EXISTS identity_providers (
+    issuer_name VARCHAR(255) PRIMARY KEY,
+    jwks_endpoint VARCHAR(255),
+    audiences VARCHAR(255)[] NOT NULL
 );
 
 /* ----- Licenses -------------------------------------- */

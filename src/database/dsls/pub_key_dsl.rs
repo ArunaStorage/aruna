@@ -90,7 +90,6 @@ impl PubKey {
         Ok(pubkey)
     }
 }
-
 /*
 impl Eq for PubKey {}
 impl PartialEq for PubKey {

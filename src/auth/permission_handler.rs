@@ -1,9 +1,14 @@
 use super::{
     structs::{Context, ContextVariant},
-    token_handler::{Action, OIDCError, TokenHandler},
+    token_handler::{Action, ArunaTokenClaims, OIDCError, TokenHandler},
 };
-use crate::{caching::cache::Cache, database::enums::DbPermissionLevel};
+use crate::{
+    caching::cache::Cache,
+    database::{dsls::user_dsl::OIDCMapping, enums::DbPermissionLevel},
+};
+use anyhow::anyhow;
 use anyhow::Result;
+use base64::{engine::general_purpose, Engine};
 use diesel_ulid::DieselUlid;
 use std::sync::Arc;
 
@@ -122,7 +127,23 @@ impl PermissionHandler {
         Ok(user_id)
     }
 
-    pub async fn check_unregistered_oidc(&self, token: &str) -> Result<String> {
-        Ok(self.token_handler.process_oidc_token(token).await?.sub)
+    pub async fn check_unregistered_oidc(&self, token: &str) -> Result<OIDCMapping> {
+        let split = token
+            .split('.')
+            .nth(1)
+            .ok_or_else(|| anyhow!("Invalid token"))?;
+        let decoded = general_purpose::STANDARD_NO_PAD.decode(split)?;
+        let claims: ArunaTokenClaims = serde_json::from_slice(&decoded)?;
+
+        let mut issuer = self
+            .cache
+            .get_issuer(&claims.iss)
+            .ok_or_else(|| anyhow!("Unknown issuer"))?;
+
+        let (_, validated_claims) = issuer.check_token(token).await?;
+        Ok(OIDCMapping {
+            external_id: validated_claims.sub,
+            oidc_name: issuer.issuer_name.to_string(),
+        })
     }
 }

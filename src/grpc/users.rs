@@ -729,22 +729,82 @@ impl UserService for UserServiceImpl {
         return_with_log!(response);
     }
 
-    async fn add_oidc_provider(
+    async fn add_oidc_provier(
         &self,
-        request: Request<AddOidcProviderRequest>,
-    ) -> tonic::Result<Response<AddOidcProviderResponse>> {
-        //TODO!
-        Err(tonic::Status::unimplemented(
-            "AddOidcProvider is not yet implemented!",
-        ))
+        request: tonic::Request<AddOidcProviderRequest>,
+    ) -> std::result::Result<tonic::Response<AddOidcProviderResponse>, tonic::Status> {
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        // Extract token from request and check permissions
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Token authentication error"
+        );
+
+        let ctx = Context::self_ctx();
+        let user_id = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        let new_mapping = tonic_internal!(
+            self.authorizer
+                .check_unregistered_oidc(&inner_request.new_access_token)
+                .await,
+            "Failed to add OIDC provider"
+        );
+
+        // Acknowledge personal notifications in database
+        let user = tonic_internal!(
+            self.database_handler
+                .add_oidc_provider(user_id, &new_mapping)
+                .await,
+            "Failed to add oidc_provider to user"
+        );
+
+        // Return empty response on success
+        let response = AddOidcProviderResponse {
+            user: Some(user.into()),
+        };
+        return_with_log!(response);
     }
+
     async fn remove_oidc_provider(
         &self,
-        request: Request<RemoveOidcProviderRequest>,
-    ) -> tonic::Result<Response<RemoveOidcProviderResponse>> {
-        //TODO!
-        Err(tonic::Status::unimplemented(
-            "RemoveOIDCProvider is not yet implemented!",
-        ))
+        request: tonic::Request<RemoveOidcProviderRequest>,
+    ) -> std::result::Result<tonic::Response<RemoveOidcProviderResponse>, tonic::Status> {
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        // Extract token from request and check permissions
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Token authentication error"
+        );
+
+        let ctx = Context::self_ctx();
+        let user_id = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        // Acknowledge personal notifications in database
+        let user = tonic_internal!(
+            self.database_handler
+                .remove_oidc_provider(user_id, &inner_request.provider_url)
+                .await,
+            "Failed to add oidc_provider to user"
+        );
+
+        // Return empty response on success
+        let response = RemoveOidcProviderResponse {
+            user: Some(user.into()),
+        };
+        return_with_log!(response);
     }
 }
