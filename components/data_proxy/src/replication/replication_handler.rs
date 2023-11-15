@@ -30,8 +30,8 @@ impl ReplicationHandler {
         Self { receiver }
     }
 
-    #[tracing::instrument(level = "trace", skip(self, cache, db))]
-    pub async fn run(self, cache: Arc<Cache>, db: Arc<Database>) -> Result<()> {
+    #[tracing::instrument(level = "trace", skip(self, cache))]
+    pub async fn run(self, cache: Arc<Cache>) -> Result<()> {
         let queue: Arc<DashSet<(DieselUlid, String, Direction), RandomState>> =
             Arc::new(DashSet::default());
 
@@ -57,7 +57,7 @@ impl ReplicationHandler {
                     None => continue,
                 };
                 let (id, url, direction) = next.key();
-                ReplicationHandler::process(id, url, direction, cache.clone(), db.clone()).await;
+                ReplicationHandler::process(id, url, direction, cache.clone()).await;
             }
         });
         // Run both tasks simultaneously
@@ -65,7 +65,7 @@ impl ReplicationHandler {
         trace_err!(Err(anyhow!("Not implemented!")))
     }
 
-    #[tracing::instrument(level = "trace", skip(cache, db))]
+    #[tracing::instrument(level = "trace", skip(cache))]
     // TODO
     // - Pull/Push logic
     // - write objects into storage backend
@@ -74,8 +74,7 @@ impl ReplicationHandler {
         id: &DieselUlid,
         url: &str,
         direction: &Direction,
-        cache: Arc<Cache>,
-        db: Arc<Database>,
+        _cache: Arc<Cache>,
     ) -> Result<()> {
         trace_err!(Err(anyhow!("Not implemented!")))
     }

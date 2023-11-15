@@ -1,3 +1,4 @@
+use crate::replication::replication_handler::ReplicationMessage;
 use crate::structs::Object as DPObject;
 use crate::structs::ObjectLocation;
 use crate::structs::ObjectType;
@@ -5,6 +6,10 @@ use crate::structs::PubKey;
 use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::Result;
+use aruna_rust_api::api::dataproxy::services::v2::dataproxy_service_client::DataproxyServiceClient;
+use aruna_rust_api::api::dataproxy::services::v2::DataProxyInfo;
+use aruna_rust_api::api::dataproxy::services::v2::PullReplicationRequest;
+use aruna_rust_api::api::dataproxy::services::v2::PullReplicationResponse;
 use aruna_rust_api::api::notification::services::v2::announcement_event;
 use aruna_rust_api::api::notification::services::v2::event_message::MessageVariant;
 use aruna_rust_api::api::notification::services::v2::AcknowledgeMessageBatchRequest;
@@ -15,14 +20,18 @@ use aruna_rust_api::api::notification::services::v2::GetEventMessageStreamReques
 use aruna_rust_api::api::notification::services::v2::Reply;
 use aruna_rust_api::api::notification::services::v2::ResourceEvent;
 use aruna_rust_api::api::notification::services::v2::UserEvent;
+use aruna_rust_api::api::storage::models::v2::data_endpoint::Variant;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
 use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
+use aruna_rust_api::api::storage::models::v2::FullSync;
 use aruna_rust_api::api::storage::models::v2::GenericResource;
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Object;
+use aruna_rust_api::api::storage::models::v2::PartialSync;
 use aruna_rust_api::api::storage::models::v2::Project;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
+use aruna_rust_api::api::storage::models::v2::ReplicationStatus;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use aruna_rust_api::api::storage::services::v2::full_sync_endpoint_response::Target;
 use aruna_rust_api::api::storage::services::v2::CreateCollectionRequest;
@@ -75,6 +84,7 @@ pub struct GrpcQueryHandler {
     endpoint_service: EndpointServiceClient<Channel>,
     storage_status_service: StorageStatusServiceClient<Channel>,
     event_notification_service: EventNotificationServiceClient<Channel>,
+    dataproxy_service: DataproxyServiceClient<Channel>,
     cache: Arc<Cache>,
     endpoint_id: String,
     long_lived_token: String,
@@ -113,7 +123,9 @@ impl GrpcQueryHandler {
 
         let storage_status_service = StorageStatusServiceClient::new(channel.clone());
 
-        let event_notification_service = EventNotificationServiceClient::new(channel);
+        let event_notification_service = EventNotificationServiceClient::new(channel.clone());
+
+        let dataproxy_service = DataproxyServiceClient::new(channel);
 
         let long_lived_token = trace_err!(cache
             .auth
@@ -132,6 +144,7 @@ impl GrpcQueryHandler {
             endpoint_service,
             storage_status_service,
             event_notification_service,
+            dataproxy_service,
             cache,
             endpoint_id,
             long_lived_token,
@@ -622,6 +635,24 @@ impl GrpcQueryHandler {
         error!("Stream was closed by sender");
         Err(anyhow!("Stream was closed by sender"))
     }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    async fn pull_replication(
+        &self,
+        request: PullReplicationRequest,
+    ) -> Result<PullReplicationResponse> {
+        let mut req = Request::new(request);
+
+        req.metadata_mut().append(
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!(
+                "Bearer {}",
+                self.long_lived_token.as_str()
+            )))?,
+        );
+
+        Ok(trace_err!(self.dataproxy_service.clone().pull_replication(req).await)?.into_inner())
+    }
 }
 
 /// Request handling section
@@ -731,33 +762,10 @@ impl GrpcQueryHandler {
                                 .await
                             )?;
 
-                            // if ObjectStatus::AVAILABLE ...
-                            if object.status == 3 {
-                                // ... object should be synced in at least one ep
-                                for ep in &object.endpoints {
-                                    match (ep.status(), ep.id) {
-                                        (ReplicationStatus::WAITING, id)
-                                            if id == self.endpoint_id =>
-                                        {
-                                            // TODO
-                                            // - Get proxy with available object
-                                            // - get s3-bucket with available object
-                                            // - send message to replication handler
-                                            todo!("Try pull")
-                                        }
-                                        (ReplicationStatus::WAITING, id)
-                                            if id != self.endpoint_id =>
-                                        {
-                                            // TODO
-                                            // - Check if object location exists here
-                                            // - Create presigned url for object
-                                            // - send message to replication handler
-                                            todo!("Try push")
-                                        }
-                                        _ => (),
-                                    }
-                                }
-                            }
+                            // Replication only needs to be evaluated, if objects are
+                            // created/updated
+                            self.handle_replication(object.clone());
+
                             self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         _ => (),
@@ -775,6 +783,107 @@ impl GrpcQueryHandler {
             _ => (),
         }
         Ok(event.reply)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    async fn handle_replication(&self, object: Object) -> Result<()> {
+        // if ObjectStatus::AVAILABLE ...
+        if object.status == 3 {
+            // ... object should be synced in at least one ep
+            for ep in &object.endpoints {
+                // find out if I have to do anything ...
+                match (ep.status(), &ep.id, &ep.variant) {
+                    // ... I should request a FullSync
+                    (
+                        ReplicationStatus::Waiting,
+                        id,
+                        Some(Variant::FullSync(FullSync { project_id: wanted })),
+                    ) if id == &self.endpoint_id => {
+                        // Find a proxy that has a fullsync
+                        let state_of_truth = &object.endpoints.iter().find_map(|ep| {
+                            match (&ep.variant, ep.status()) {
+                                (
+                                    Some(Variant::FullSync(FullSync { project_id })),
+                                    ReplicationStatus::Finished,
+                                ) if wanted == project_id => Some(ep.id.clone()),
+                                _ => None,
+                            }
+                        });
+                        match state_of_truth {
+                            Some(endpoint_id) => {
+                                let request = PullReplicationRequest {
+                                    info: Some(DataProxyInfo {
+                                        dataproxy_id: self.endpoint_id.clone(),
+                                        available_space: 8000000000000, // TODO: Replace
+                                                                        // placeholder with
+                                                                        // something meaningful
+                                    }),
+                                    user_initialized: false,
+                                    object_ids: vec![object.id.to_string()],
+                                };
+                                let info = &self.pull_replication(request).await?;
+                                // TODO
+                                // - send message to replication handler
+                                todo!("Try pull")
+                            }
+                            None => {
+                                todo!(
+                                    "This should not happen, right? 
+                                      I mean, if any ObjectObject is available 
+                                      and no proxy with data can be found 
+                                      someone messed with the dataproxies, right? RIGHT?"
+                                )
+                            }
+                        }
+                    }
+                    // ... I should request a PartialSync
+                    (ReplicationStatus::Waiting, id, Some(Variant::PartialSync(origin)))
+                        if id == &self.endpoint_id =>
+                    {
+                        // Find the full sync proxy and partial sync from there
+                        let state_of_truth = &object.endpoints.iter().find_map(|ep| {
+                            match (&ep.variant, ep.status()) {
+                                (
+                                    Some(Variant::FullSync(FullSync { project_id })),
+                                    ReplicationStatus::Finished,
+                                ) => Some((ep.id.clone(), project_id.clone())),
+                                (_, _) => None,
+                            }
+                        });
+                        match state_of_truth {
+                            Some((endpoint_id, project_id)) => {
+                                tokio::spawn(async move {
+                                    // TODO
+                                    // - get s3-bucket with available object
+                                    // - send message to replication handler
+                                    todo!("Try pull")
+                                });
+                            }
+                            None => {
+                                todo!(
+                                    "This should not happen, right? 
+                                      I mean, if any ObjectObject is available 
+                                      and no proxy with data can be found 
+                                      someone messed with the dataproxies, right? RIGHT?"
+                                )
+                            }
+                        }
+                    }
+                    // ... I should sync to other dataproxies
+                    (ReplicationStatus::Waiting, id, _) if id != &self.endpoint_id => {
+                        // TODO
+                        // - How to find out if pushing is appropriate for a given dataproxy that is
+                        //   not this one?
+                        // - Check if object location exists here
+                        // - Create presigned url for object
+                        // - send message to replication handler
+                        ()
+                    }
+                    _ => (),
+                }
+            }
+        }
+        todo!()
     }
 }
 

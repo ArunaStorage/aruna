@@ -3,6 +3,7 @@ use super::{
     transforms::ExtractAccessKeyPermissions,
 };
 use crate::caching::grpc_query_handler::sort_objects;
+use crate::replication::replication_handler::ReplicationMessage;
 use crate::structs::{DbPermissionLevel, TypedRelation};
 use crate::trace_err;
 use crate::{
@@ -13,6 +14,7 @@ use ahash::RandomState;
 use anyhow::Result;
 use anyhow::{anyhow, bail};
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
+use async_channel::Sender;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
@@ -36,6 +38,7 @@ pub struct Cache {
     pub persistence: RwLock<Option<Database>>,
     pub aruna_client: RwLock<Option<Arc<GrpcQueryHandler>>>,
     pub auth: RwLock<Option<AuthHandler>>,
+    pub sender: Sender<ReplicationMessage>,
 }
 
 impl Cache {
@@ -55,6 +58,7 @@ impl Cache {
         self_id: DieselUlid,
         encoding_key: String,
         encoding_key_serial: i32,
+        sender: Sender<ReplicationMessage>,
     ) -> Result<Arc<Self>> {
         // Initialize cache
         let cache = Arc::new(Cache {
@@ -65,6 +69,7 @@ impl Cache {
             persistence: RwLock::new(None),
             aruna_client: RwLock::new(None),
             auth: RwLock::new(None),
+            sender,
         });
 
         // Initialize auth handler

@@ -31,6 +31,8 @@ mod macros;
 mod helpers;
 use futures_util::TryFutureExt;
 
+use crate::replication::replication_handler::ReplicationHandler;
+
 #[tracing::instrument(level = "trace", skip())]
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -95,18 +97,26 @@ async fn main() -> Result<()> {
         Arc::new(Box::new(S3Backend::new(endpoint_id.to_string()).await?));
 
     trace!("init cache");
+    let (sender, receiver) = async_channel::unbounded();
     let cache = Cache::new(
         aruna_host_url,
         with_persistence,
         diesel_ulid::DieselUlid::from_str(&endpoint_id)?,
         encoding_key,
         encoding_key_serial,
+        sender,
     )
     .await?;
 
     let cache_clone = cache.clone();
 
+    trace!("init replication handler");
+    let replication_handler = ReplicationHandler::new(receiver);
+    tokio::spawn(async move {
+        replication_handler.run(cache);
+    });
     trace!("init s3 server");
+
     let s3_server = s3_frontend::s3server::S3Server::new(
         &address,
         hostname.to_string(),
@@ -121,6 +131,7 @@ async fn main() -> Result<()> {
             Server::builder()
                 .add_service(DataproxyServiceServer::new(DataproxyServiceImpl::new(
                     cache_clone.clone(),
+                    sender,
                 )))
                 .add_service(DataproxyUserServiceServer::new(
                     DataproxyUserServiceImpl::new(cache_clone.clone()),
