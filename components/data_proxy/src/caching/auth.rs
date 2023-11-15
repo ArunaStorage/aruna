@@ -43,6 +43,7 @@ pub(crate) struct ArunaTokenClaims {
     iss: String, // Currently always 'aruna'
     sub: String, // User_ID / DataProxy_ID
     exp: usize,  // Expiration timestamp
+    aud: String, // Valid audiences
     // Token_ID; None if OIDC or ... ?
     #[serde(skip_serializing_if = "Option::is_none")]
     tid: Option<String>,
@@ -171,10 +172,13 @@ impl AuthHandler {
         token: &str,
         dec_key: &DecodingKey,
     ) -> Result<ArunaTokenClaims> {
+        let mut validation = Validation::new(Algorithm::EdDSA);
+        validation.set_audience(&["proxy"]);
+
         let token = trace_err!(decode::<ArunaTokenClaims>(
             token,
             dec_key,
-            &Validation::new(Algorithm::EdDSA)
+            &validation //&Validation::new(Algorithm::EdDSA)
         ))?;
         Ok(token.claims)
     }
@@ -512,8 +516,9 @@ impl AuthHandler {
         tid: Option<impl Into<String>>,
     ) -> Result<String> {
         let claims = ArunaTokenClaims {
-            iss: "aruna_dataproxy".to_string(),
+            iss: self.self_id.to_string(),
             sub: user_id.into(),
+            aud: "aruna".to_string(),
             exp: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)?
                 .add(Duration::from_secs(15 * 60))
@@ -531,8 +536,9 @@ impl AuthHandler {
     #[tracing::instrument(level = "trace", skip(self))]
     pub(crate) fn sign_notification_token(&self) -> Result<String> {
         let claims = ArunaTokenClaims {
-            iss: "aruna_dataproxy".to_string(),
+            iss: self.self_id.to_string(),
             sub: self.self_id.to_string(),
+            aud: "aruna".to_string(),
             exp: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)?
                 .add(Duration::from_secs(60 * 60 * 24 * 365 * 10))
