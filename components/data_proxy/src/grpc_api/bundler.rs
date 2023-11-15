@@ -58,7 +58,7 @@ impl BundlerService for BundlerServiceImpl {
             };
             let mut check_vec = Vec::new();
             let mut trels = Vec::new();
-            for id in request.get_ref().resource_id.iter() {
+            for id in request.get_ref().resource_ids.iter() {
                 let ulid = trace_err!(DieselUlid::from_str(id.as_str()))
                     .map_err(|_| tonic::Status::invalid_argument("Unable to parse ULID"))?;
 
