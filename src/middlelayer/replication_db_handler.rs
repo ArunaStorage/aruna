@@ -8,10 +8,12 @@ use crate::{
     middlelayer::db_handler::DatabaseHandler,
 };
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::storage::services::v2::partial_replicate_data_request::Response as Resource;
 use aruna_rust_api::api::{
     notification::services::v2::EventVariant,
-    storage::services::v2::ReplicationStatus as APIReplicationStatus,
+    storage::{
+        models::v2::ReplicationStatus as APIReplicationStatus,
+        services::v2::partial_replicate_data_request::DataVariant,
+    },
 };
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -48,16 +50,16 @@ impl DatabaseHandler {
                     )
                 }
                 ReplicationVariant::Partial(request) => {
-                    let (request_type, resource_id) = match request.response {
+                    let (request_type, resource_id) = match request.data_variant {
                         Some(res) => match res {
-                            Resource::CollectionId(id) => (
+                            DataVariant::CollectionId(id) => (
                                 ObjectType::COLLECTION,
                                 diesel_ulid::DieselUlid::from_str(&id)?,
                             ),
-                            Resource::DatasetId(id) => {
+                            DataVariant::DatasetId(id) => {
                                 (ObjectType::DATASET, diesel_ulid::DieselUlid::from_str(&id)?)
                             }
-                            Resource::ObjectId(id) => {
+                            DataVariant::ObjectId(id) => {
                                 (ObjectType::OBJECT, diesel_ulid::DieselUlid::from_str(&id)?)
                             }
                         },

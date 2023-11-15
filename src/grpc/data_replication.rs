@@ -2,7 +2,8 @@ use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::{auth::permission_handler::PermissionHandler, utils::conversions::get_token_from_md};
-use aruna_rust_api::api::storage::services::v2::partial_replicate_data_request::Response as Resource;
+use aruna_rust_api::api::storage::services::v2::partial_replicate_data_request::DataVariant;
+//use aruna_rust_api::api::storage::services::v2::partial_replicate_data_request::Response as Resource;
 use aruna_rust_api::api::storage::services::v2::{
     data_replication_service_server::DataReplicationService, DeleteReplicationRequest,
     DeleteReplicationResponse, GetReplicationStatusRequest, GetReplicationStatusResponse,
@@ -64,11 +65,11 @@ impl DataReplicationService for DataReplicationServiceImpl {
 
         // Consume gRPC request into its parts
         let (metadata, _, request) = request.into_parts();
-        let resource_id = match request.response {
+        let resource_id = match request.data_variant {
             Some(res) => match res {
-                Resource::CollectionId(id) => diesel_ulid::DieselUlid::from_str(&id),
-                Resource::DatasetId(id) => diesel_ulid::DieselUlid::from_str(&id),
-                Resource::ObjectId(id) => diesel_ulid::DieselUlid::from_str(&id),
+                DataVariant::CollectionId(id) => diesel_ulid::DieselUlid::from_str(&id),
+                DataVariant::DatasetId(id) => diesel_ulid::DieselUlid::from_str(&id),
+                DataVariant::ObjectId(id) => diesel_ulid::DieselUlid::from_str(&id),
             },
             None => {
                 return Err(tonic::Status::invalid_argument("Invalid resource id"));

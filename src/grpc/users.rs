@@ -19,16 +19,18 @@ use aruna_rust_api::api::storage::services::v2::get_endpoint_request::Endpoint a
 use aruna_rust_api::api::storage::services::v2::user_service_server::UserService;
 use aruna_rust_api::api::storage::services::v2::{
     AcknowledgePersonalNotificationsRequest, AcknowledgePersonalNotificationsResponse,
-    ActivateUserRequest, ActivateUserResponse, CreateApiTokenRequest, CreateApiTokenResponse,
-    DeactivateUserRequest, DeactivateUserResponse, DeleteApiTokenRequest, DeleteApiTokenResponse,
-    DeleteApiTokensRequest, DeleteApiTokensResponse, GetAllUsersRequest, GetAllUsersResponse,
-    GetApiTokenRequest, GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse,
-    GetDataproxyTokenUserRequest, GetDataproxyTokenUserResponse, GetEndpointRequest,
-    GetNotActivatedUsersRequest, GetNotActivatedUsersResponse, GetPersonalNotificationsRequest,
+    ActivateUserRequest, ActivateUserResponse, AddOidcProviderRequest, AddOidcProviderResponse,
+    CreateApiTokenRequest, CreateApiTokenResponse, DeactivateUserRequest, DeactivateUserResponse,
+    DeleteApiTokenRequest, DeleteApiTokenResponse, DeleteApiTokensRequest, DeleteApiTokensResponse,
+    GetAllUsersRequest, GetAllUsersResponse, GetApiTokenRequest, GetApiTokenResponse,
+    GetApiTokensRequest, GetApiTokensResponse, GetDataproxyTokenUserRequest,
+    GetDataproxyTokenUserResponse, GetEndpointRequest, GetNotActivatedUsersRequest,
+    GetNotActivatedUsersResponse, GetPersonalNotificationsRequest,
     GetPersonalNotificationsResponse, GetS3CredentialsUserRequest, GetS3CredentialsUserResponse,
     GetUserRedactedRequest, GetUserRedactedResponse, GetUserRequest, GetUserResponse,
-    RegisterUserRequest, RegisterUserResponse, UpdateUserDisplayNameRequest,
-    UpdateUserDisplayNameResponse, UpdateUserEmailRequest, UpdateUserEmailResponse,
+    RegisterUserRequest, RegisterUserResponse, RemoveOidcProviderRequest,
+    RemoveOidcProviderResponse, UpdateUserDisplayNameRequest, UpdateUserDisplayNameResponse,
+    UpdateUserEmailRequest, UpdateUserEmailResponse,
 };
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -725,5 +727,24 @@ impl UserService for UserServiceImpl {
         // Return empty response on success
         let response = AcknowledgePersonalNotificationsResponse {};
         return_with_log!(response);
+    }
+
+    async fn add_oidc_provider(
+        &self,
+        request: Request<AddOidcProviderRequest>,
+    ) -> tonic::Result<Response<AddOidcProviderResponse>> {
+        //TODO!
+        Err(tonic::Status::unimplemented(
+            "AddOidcProvider is not yet implemented!",
+        ))
+    }
+    async fn remove_oidc_provider(
+        &self,
+        request: Request<RemoveOidcProviderRequest>,
+    ) -> tonic::Result<Response<RemoveOidcProviderResponse>> {
+        //TODO!
+        Err(tonic::Status::unimplemented(
+            "RemoveOIDCProvider is not yet implemented!",
+        ))
     }
 }
