@@ -19,16 +19,18 @@ use aruna_rust_api::api::storage::services::v2::get_endpoint_request::Endpoint a
 use aruna_rust_api::api::storage::services::v2::user_service_server::UserService;
 use aruna_rust_api::api::storage::services::v2::{
     AcknowledgePersonalNotificationsRequest, AcknowledgePersonalNotificationsResponse,
-    ActivateUserRequest, ActivateUserResponse, CreateApiTokenRequest, CreateApiTokenResponse,
-    DeactivateUserRequest, DeactivateUserResponse, DeleteApiTokenRequest, DeleteApiTokenResponse,
-    DeleteApiTokensRequest, DeleteApiTokensResponse, GetAllUsersRequest, GetAllUsersResponse,
-    GetApiTokenRequest, GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse,
-    GetDataproxyTokenUserRequest, GetDataproxyTokenUserResponse, GetEndpointRequest,
-    GetNotActivatedUsersRequest, GetNotActivatedUsersResponse, GetPersonalNotificationsRequest,
+    ActivateUserRequest, ActivateUserResponse, AddOidcProviderRequest, AddOidcProviderResponse,
+    CreateApiTokenRequest, CreateApiTokenResponse, DeactivateUserRequest, DeactivateUserResponse,
+    DeleteApiTokenRequest, DeleteApiTokenResponse, DeleteApiTokensRequest, DeleteApiTokensResponse,
+    GetAllUsersRequest, GetAllUsersResponse, GetApiTokenRequest, GetApiTokenResponse,
+    GetApiTokensRequest, GetApiTokensResponse, GetDataproxyTokenUserRequest,
+    GetDataproxyTokenUserResponse, GetEndpointRequest, GetNotActivatedUsersRequest,
+    GetNotActivatedUsersResponse, GetPersonalNotificationsRequest,
     GetPersonalNotificationsResponse, GetS3CredentialsUserRequest, GetS3CredentialsUserResponse,
     GetUserRedactedRequest, GetUserRedactedResponse, GetUserRequest, GetUserResponse,
-    RegisterUserRequest, RegisterUserResponse, UpdateUserDisplayNameRequest,
-    UpdateUserDisplayNameResponse, UpdateUserEmailRequest, UpdateUserEmailResponse,
+    RegisterUserRequest, RegisterUserResponse, RemoveOidcProviderRequest,
+    RemoveOidcProviderResponse, UpdateUserDisplayNameRequest, UpdateUserDisplayNameResponse,
+    UpdateUserEmailRequest, UpdateUserEmailResponse,
 };
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -733,6 +735,85 @@ impl UserService for UserServiceImpl {
 
         // Return empty response on success
         let response = AcknowledgePersonalNotificationsResponse {};
+        return_with_log!(response);
+    }
+
+    async fn add_oidc_provier(
+        &self,
+        request: tonic::Request<AddOidcProviderRequest>,
+    ) -> std::result::Result<tonic::Response<AddOidcProviderResponse>, tonic::Status> {
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        // Extract token from request and check permissions
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Token authentication error"
+        );
+
+        let ctx = Context::self_ctx();
+        let user_id = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        let new_mapping = tonic_internal!(
+            self.authorizer
+                .check_unregistered_oidc(&inner_request.new_access_token)
+                .await,
+            "Failed to add OIDC provider"
+        );
+
+        // Acknowledge personal notifications in database
+        let user = tonic_internal!(
+            self.database_handler
+                .add_oidc_provider(user_id, &new_mapping)
+                .await,
+            "Failed to add oidc_provider to user"
+        );
+
+        // Return empty response on success
+        let response = AddOidcProviderResponse {
+            user: Some(user.into()),
+        };
+        return_with_log!(response);
+    }
+
+    async fn remove_oidc_provider(
+        &self,
+        request: tonic::Request<RemoveOidcProviderRequest>,
+    ) -> std::result::Result<tonic::Response<RemoveOidcProviderResponse>, tonic::Status> {
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        // Extract token from request and check permissions
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Token authentication error"
+        );
+
+        let ctx = Context::self_ctx();
+        let user_id = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        // Acknowledge personal notifications in database
+        let user = tonic_internal!(
+            self.database_handler
+                .remove_oidc_provider(user_id, &inner_request.provider_url)
+                .await,
+            "Failed to add oidc_provider to user"
+        );
+
+        // Return empty response on success
+        let response = RemoveOidcProviderResponse {
+            user: Some(user.into()),
+        };
         return_with_log!(response);
     }
 }

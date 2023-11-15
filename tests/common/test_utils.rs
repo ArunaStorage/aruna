@@ -56,7 +56,6 @@ pub fn new_user(object_ids: Vec<ObjectMapping<DieselUlid>>) -> User {
     User {
         id: DieselUlid::generate(),
         display_name: "test1".to_string(),
-        external_id: None,
         email: "test2@test3".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -76,6 +75,7 @@ pub fn new_user(object_ids: Vec<ObjectMapping<DieselUlid>>) -> User {
                 }
                 ObjectMapping::OBJECT(id) => (*id, ObjectMapping::OBJECT(DbPermissionLevel::WRITE)),
             })),
+            external_ids: vec![],
         }),
         active: true,
     }

@@ -29,7 +29,6 @@ async fn create_user_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
-        external_id: None,
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -38,6 +37,7 @@ async fn create_user_test() {
             tokens: DashMap::default(),
             custom_attributes: vec![],
             permissions: DashMap::default(),
+            external_ids: vec![],
         }),
         active: true,
     };
@@ -65,7 +65,6 @@ async fn update_user_name_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
-        external_id: None,
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -74,6 +73,7 @@ async fn update_user_name_test() {
             tokens: DashMap::default(),
             permissions: DashMap::default(),
             custom_attributes: vec![],
+            external_ids: vec![],
         }),
         active: true,
     };
@@ -106,7 +106,6 @@ async fn update_user_email_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
-        external_id: None,
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -115,6 +114,7 @@ async fn update_user_email_test() {
             tokens: DashMap::default(),
             permissions: DashMap::default(),
             custom_attributes: vec![],
+            external_ids: vec![],
         }),
         active: true,
     };
@@ -147,7 +147,6 @@ async fn update_user_admin_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
-        external_id: None,
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -156,6 +155,7 @@ async fn update_user_admin_test() {
             tokens: DashMap::default(),
             permissions: DashMap::default(),
             custom_attributes: vec![],
+            external_ids: vec![],
         }),
         active: true,
     };
@@ -188,7 +188,6 @@ async fn update_user_service_account_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
-        external_id: None,
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -197,6 +196,7 @@ async fn update_user_service_account_test() {
             tokens: DashMap::default(),
             permissions: DashMap::default(),
             custom_attributes: vec![],
+            external_ids: vec![],
         }),
         active: true,
     };
@@ -229,7 +229,6 @@ async fn delete_user_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
-        external_id: None,
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -238,6 +237,7 @@ async fn delete_user_test() {
             tokens: DashMap::default(),
             permissions: DashMap::default(),
             custom_attributes: vec![],
+            external_ids: vec![],
         }),
         active: true,
     };
@@ -262,7 +262,6 @@ async fn add_permission_user_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
-        external_id: None,
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -271,6 +270,7 @@ async fn add_permission_user_test() {
             tokens: DashMap::default(),
             permissions: DashMap::default(),
             custom_attributes: vec![],
+            external_ids: vec![],
         }),
         active: true,
     };
@@ -328,7 +328,6 @@ async fn remove_user_permission_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
-        external_id: None,
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -341,6 +340,7 @@ async fn remove_user_permission_test() {
                 (perm3, ObjectMapping::COLLECTION(DbPermissionLevel::WRITE)),
             ]),
             custom_attributes: vec![],
+            external_ids: vec![],
         }),
         active: true,
     };
@@ -419,7 +419,6 @@ async fn update_user_permission_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
-        external_id: None,
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -428,6 +427,7 @@ async fn update_user_permission_test() {
             tokens: DashMap::default(),
             permissions: DashMap::default(),
             custom_attributes: vec![],
+            external_ids: vec![],
         }),
         active: true,
     };
@@ -482,13 +482,13 @@ async fn user_token_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
-        external_id: None,
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
             service_account: true,
             permissions: DashMap::default(),
             trusted_endpoints: DashMap::default(),
+            external_ids: vec![],
             tokens: [
                 (
                     perm1,
@@ -587,7 +587,6 @@ async fn user_status_test() {
     let mut user = User {
         id,
         display_name: "aha".to_string(),
-        external_id: None,
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -596,6 +595,7 @@ async fn user_status_test() {
             trusted_endpoints: DashMap::default(),
             tokens: DashMap::default(),
             custom_attributes: Vec::new(),
+            external_ids: vec![],
         }),
         active: false,
     };
