@@ -13,7 +13,7 @@ aws-sdk-s3 = "0.34.0"
 aws-config = "0.56.1"
 aws-types = "0.56.1"
 anyhow = "1.0.75"
-aruna-rust-api = "2.0.0-beta.7"
+aruna-rust-api = { git = "https://github.com/ArunaStorage/rust-api.git", branch = "feat/replication" }
 async-nats = "0.32.1"
 async-channel = "2.0.0"
 bigdecimal = "0.4.2"
