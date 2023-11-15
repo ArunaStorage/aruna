@@ -41,6 +41,7 @@ crate::impl_grpc_server!(UserServiceImpl, token_handler: Arc<TokenHandler>);
 
 #[tonic::async_trait]
 impl UserService for UserServiceImpl {
+    //ToDo: Docs
     async fn register_user(
         &self,
         request: Request<RegisterUserRequest>,
@@ -64,21 +65,19 @@ impl UserService for UserServiceImpl {
             self.authorizer.check_unregistered_oidc(&token).await,
             "Unauthorized"
         );
-        let (user_id, new_user) = tonic_internal!(
+        let user_id = tonic_internal!(
             self.database_handler
                 .register_user(request, external_id)
                 .await,
             "Internal register user error"
         );
-        self.cache.add_user(user_id, new_user);
 
-        let response = RegisterUserResponse {
+        return_with_log!(RegisterUserResponse {
             user_id: user_id.to_string(),
-        };
-
-        return_with_log!(response);
+        });
     }
 
+    //ToDo: Docs
     async fn deactivate_user(
         &self,
         request: Request<DeactivateUserRequest>,
@@ -94,15 +93,16 @@ impl UserService for UserServiceImpl {
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
-        let (user_id, user) = tonic_internal!(
+
+        tonic_internal!(
             self.database_handler.deactivate_user(request).await,
             "Internal deactivate user error"
         );
-        self.cache.update_user(&user_id, user);
 
         return_with_log!(DeactivateUserResponse {});
     }
 
+    //ToDo: Docs
     async fn activate_user(
         &self,
         request: Request<ActivateUserRequest>,
@@ -118,15 +118,16 @@ impl UserService for UserServiceImpl {
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
-        let (user_id, user) = tonic_internal!(
+
+        tonic_internal!(
             self.database_handler.activate_user(request).await,
             "Internal activate user error"
         );
-        self.cache.update_user(&user_id, user);
 
         return_with_log!(ActivateUserResponse {});
     }
 
+    //ToDo: Docs
     async fn create_api_token(
         &self,
         request: Request<CreateApiTokenRequest>,
@@ -165,7 +166,7 @@ impl UserService for UserServiceImpl {
                 &token_ulid,
                 middlelayer_request.0.expires_at,
             ),
-            "Token creation failed"
+            "Token signing failed"
         );
 
         // Create and return response
@@ -176,6 +177,7 @@ impl UserService for UserServiceImpl {
         return_with_log!(response);
     }
 
+    //ToDo: Docs
     async fn get_api_token(
         &self,
         request: Request<GetApiTokenRequest>,
@@ -208,6 +210,7 @@ impl UserService for UserServiceImpl {
         return_with_log!(response);
     }
 
+    //ToDo: Docs
     async fn get_api_tokens(
         &self,
         request: Request<GetApiTokensRequest>,
@@ -240,6 +243,7 @@ impl UserService for UserServiceImpl {
         return_with_log!(response);
     }
 
+    //ToDo: Docs
     async fn delete_api_token(
         &self,
         request: Request<DeleteApiTokenRequest>,
@@ -256,14 +260,15 @@ impl UserService for UserServiceImpl {
             "Unauthorized"
         );
 
-        let user = tonic_internal!(
+        tonic_internal!(
             self.database_handler.delete_token(user_id, request).await,
             "Internal database request error"
         );
-        self.cache.update_user(&user_id, user);
+
         return_with_log!(DeleteApiTokenResponse {});
     }
 
+    //ToDo: Docs
     async fn delete_api_tokens(
         &self,
         request: Request<DeleteApiTokensRequest>,
@@ -278,14 +283,15 @@ impl UserService for UserServiceImpl {
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
-        let user = tonic_internal!(
+        tonic_internal!(
             self.database_handler.delete_all_tokens(user_id).await,
             "Internal database request error"
         );
-        self.cache.update_user(&user_id, user);
+
         return_with_log!(DeleteApiTokensResponse {});
     }
 
+    //ToDo: Docs
     async fn get_user(
         &self,
         request: Request<GetUserRequest>,
@@ -313,6 +319,7 @@ impl UserService for UserServiceImpl {
         return_with_log!(response);
     }
 
+    //ToDo: Docs
     async fn get_user_redacted(
         &self,
         request: Request<GetUserRedactedRequest>,
@@ -348,6 +355,7 @@ impl UserService for UserServiceImpl {
         return_with_log!(response);
     }
 
+    //ToDo: Docs
     async fn update_user_display_name(
         &self,
         request: Request<UpdateUserDisplayNameRequest>,
@@ -371,14 +379,13 @@ impl UserService for UserServiceImpl {
             "Internal deactivate user error"
         );
 
-        self.cache.update_user(&user_id, user.clone());
-
         let response = UpdateUserDisplayNameResponse {
             user: Some(user.into()),
         };
         return_with_log!(response);
     }
 
+    //ToDo: Docs
     async fn update_user_email(
         &self,
         request: Request<UpdateUserEmailRequest>,
@@ -400,7 +407,6 @@ impl UserService for UserServiceImpl {
             self.database_handler.update_email(request, user_id).await,
             "Internal deactivate user error"
         );
-        self.cache.update_user(&user_id, user.clone());
 
         let response = UpdateUserEmailResponse {
             user: Some(user.into()),
@@ -408,6 +414,7 @@ impl UserService for UserServiceImpl {
         return_with_log!(response);
     }
 
+    //ToDo: Docs
     async fn get_not_activated_users(
         &self,
         request: Request<GetNotActivatedUsersRequest>,
@@ -449,7 +456,7 @@ impl UserService for UserServiceImpl {
         return_with_log!(response);
     }
 
-    ///ToDo: Rust Doc
+    //ToDo: Docs
     async fn get_s3_credentials_user(
         &self,
         request: Request<GetS3CredentialsUserRequest>,
@@ -468,7 +475,7 @@ impl UserService for UserServiceImpl {
             "Unauthorized"
         );
 
-        // Validate endpoint id format
+        // Validate format of provided endpoint id and user id
         let endpoint_ulid = tonic_invalid!(
             DieselUlid::from_str(&inner_request.endpoint_id),
             "Invalid endpoint id format"
@@ -477,6 +484,7 @@ impl UserService for UserServiceImpl {
             .cache
             .get_user(&user_id)
             .ok_or_else(|| Status::not_found("User not found"))?;
+
         // Service accounts are not allowed to get additional trusted endpoints
         if user.attributes.0.service_account
             && !user
@@ -513,14 +521,12 @@ impl UserService for UserServiceImpl {
             "Token signing failed"
         );
 
-        let user = tonic_internal!(
+        tonic_internal!(
             self.database_handler
                 .add_endpoint_to_user(user_id, endpoint.id)
                 .await,
             "Failed to add endpoint to user"
         );
-
-        self.cache.update_user(&user_id, user);
 
         // Request S3 credentials from Dataproxy
         let mut endpoint_host_url: String = String::new();
@@ -579,6 +585,7 @@ impl UserService for UserServiceImpl {
         return_with_log!(response);
     }
 
+    //ToDo: Docs
     async fn get_dataproxy_token_user(
         &self,
         request: Request<GetDataproxyTokenUserRequest>,
@@ -659,6 +666,7 @@ impl UserService for UserServiceImpl {
         return_with_log!(response);
     }
 
+    //ToDo: Docs
     async fn get_personal_notifications(
         &self,
         request: Request<GetPersonalNotificationsRequest>,
@@ -693,6 +701,7 @@ impl UserService for UserServiceImpl {
         return_with_log!(response);
     }
 
+    //ToDo: Docs
     async fn acknowledge_personal_notifications(
         &self,
         request: Request<AcknowledgePersonalNotificationsRequest>,

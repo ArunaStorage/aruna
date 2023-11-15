@@ -1,9 +1,9 @@
+use crate::database::dsls::user_dsl::APIToken;
 use crate::database::dsls::user_dsl::User;
-use crate::database::{crud::CrudDb, dsls::user_dsl::APIToken};
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::token_request_types::{CreateToken, DeleteToken};
 use ahash::HashMap;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use aruna_rust_api::api::notification::services::v2::EventVariant;
 use diesel_ulid::DieselUlid;
 
@@ -56,13 +56,15 @@ impl DatabaseHandler {
         let token_ulid = DieselUlid::generate();
         let token = request.build_token(pubkey_serial)?;
 
-        // Add token to user attributes
+        // Add token to user attributes in database
         let mut token_map: HashMap<DieselUlid, &APIToken> = HashMap::default();
         token_map.insert(token_ulid, &token);
         let user = User::add_user_token(client, user_id, token_map).await?;
         transaction.commit().await?;
 
+        // Update user in cache
         self.cache.update_user(&user.id, user.clone());
+
         // Try to emit user updated notification(s)
         if let Err(err) = self
             .natsio_handler
@@ -79,13 +81,15 @@ impl DatabaseHandler {
         Ok((token_ulid, token))
     }
 
-    pub async fn delete_token(&self, user_id: DieselUlid, request: DeleteToken) -> Result<User> {
+    pub async fn delete_token(&self, user_id: DieselUlid, request: DeleteToken) -> Result<()> {
         let client = self.database.get_client().await?;
         let token_id = request.get_token_id()?;
-        User::remove_user_token(&client, &user_id, &token_id).await?;
-        let user = User::get(user_id, &client)
-            .await?
-            .ok_or_else(|| anyhow!("User not found"))?;
+
+        // Remove token from user attributes in database
+        let user = User::remove_user_token(&client, &user_id, &token_id).await?;
+
+        // Update user in cache
+        self.cache.update_user(&user.id, user.clone());
 
         // Try to emit user updated notification(s)
         if let Err(err) = self
@@ -99,14 +103,17 @@ impl DatabaseHandler {
             return Err(anyhow::anyhow!("Notification emission failed"));
         }
 
-        Ok(user)
+        Ok(())
     }
-    pub async fn delete_all_tokens(&self, user_id: DieselUlid) -> Result<User> {
+
+    pub async fn delete_all_tokens(&self, user_id: DieselUlid) -> Result<()> {
         let client = self.database.get_client().await?;
-        User::remove_all_tokens(&client, &user_id).await?;
-        let user = User::get(user_id, &client)
-            .await?
-            .ok_or_else(|| anyhow!("User not found"))?;
+
+        // Remove all tokens from user attributes in database
+        let user = User::remove_all_tokens(&client, &user_id).await?;
+
+        // Update user in cache
+        self.cache.update_user(&user.id, user.clone());
 
         // Try to emit user updated notification(s)
         if let Err(err) = self
@@ -120,6 +127,6 @@ impl DatabaseHandler {
             return Err(anyhow::anyhow!("Notification emission failed"));
         }
 
-        Ok(user)
+        Ok(())
     }
 }
