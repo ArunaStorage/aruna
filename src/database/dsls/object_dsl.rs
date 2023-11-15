@@ -166,6 +166,7 @@ impl CrudDb for Object {
 }
 
 impl Object {
+    //ToDo: Docs
     pub async fn add_key_value(id: &DieselUlid, client: &Client, kv: KeyValue) -> Result<()> {
         let query = "UPDATE objects
         SET key_values = key_values || $1::jsonb
@@ -176,6 +177,7 @@ impl Object {
         Ok(())
     }
 
+    //ToDo: Docs
     pub async fn remove_key_value(&self, client: &Client, kv: KeyValue) -> Result<()> {
         let element: i32 = self
             .key_values
@@ -195,6 +197,7 @@ impl Object {
         Ok(())
     }
 
+    //ToDo: Docs
     pub async fn add_external_relations(
         id: &DieselUlid,
         client: &Client,
@@ -210,6 +213,7 @@ impl Object {
         Ok(())
     }
 
+    //ToDo: Docs
     pub async fn remove_external_relation(
         id: &DieselUlid,
         client: &Client,
@@ -223,6 +227,7 @@ impl Object {
         Ok(())
     }
 
+    //ToDo: Docs
     pub async fn finish_object_staging(
         id: &DieselUlid,
         client: &Client,
@@ -253,7 +258,7 @@ impl Object {
         Ok(())
     }
 
-    ///ToDo: Rust Doc
+    // ToDo: Rust Doc
     pub async fn fetch_subresources(&self, client: &Client) -> Result<Vec<DieselUlid>> {
         // Return the obvious case before unnecessary query
         if self.object_type == ObjectType::OBJECT {
@@ -285,7 +290,7 @@ impl Object {
         Ok(subresource_ids)
     }
 
-    ///ToDo: Rust Doc
+    // ToDo: Rust Doc
     pub async fn fetch_subresources_by_id(
         resource_id: &DieselUlid,
         client: &Client,
@@ -315,7 +320,7 @@ impl Object {
         Ok(subresource_ids)
     }
 
-    ///ToDo: Rust Doc
+    // ToDo: Rust Doc
     pub async fn fetch_object_hierarchies(&self, client: &Client) -> Result<Vec<Hierarchy>> {
         // Return the obvious case before unnecessary query
         if self.object_type == ObjectType::PROJECT {
@@ -377,6 +382,7 @@ impl Object {
         extract_paths_from_graph(relations)
     }
 
+    //ToDo: Docs
     pub async fn get_object_with_relations(
         id: &DieselUlid,
         client: &Client,
@@ -395,6 +401,7 @@ impl Object {
         Ok(ObjectWithRelations::from_row(&row))
     }
 
+    //ToDo: Docs
     pub async fn get_objects_with_relations(
         ids: &Vec<DieselUlid>,
         client: &Client,
@@ -448,6 +455,8 @@ impl Object {
             .await?;
         Ok(())
     }
+
+    //ToDo: Docs
     pub async fn batch_claim(
         user_id: &DieselUlid,
         objects: &Vec<DieselUlid>,
@@ -460,56 +469,75 @@ impl Object {
         client.execute(&prepared, &[user_id, objects]).await?;
         Ok(())
     }
-    pub async fn update_name(id: DieselUlid, name: String, client: &Client) -> Result<()> {
+
+    //ToDo: Docs
+    pub async fn update_name(id: DieselUlid, name: String, client: &Client) -> Result<Object> {
         let query = "UPDATE objects 
         SET name = $2
-        WHERE id = $1 ;";
+        WHERE id = $1
+        RETURNING *;";
+
         let prepared = client.prepare(query).await?;
-        client.query(&prepared, &[&id, &name]).await?;
-        Ok(())
+        let row = client.query_one(&prepared, &[&id, &name]).await?;
+
+        Ok(Object::from_row(&row))
     }
 
+    //ToDo: Docs
     pub async fn update_description(
         id: DieselUlid,
         description: String,
         client: &Client,
-    ) -> Result<()> {
+    ) -> Result<Object> {
         let query = "UPDATE objects 
         SET description = $2
-        WHERE id = $1 ;";
+        WHERE id = $1
+        RETURNING *;";
+
         let prepared = client.prepare(query).await?;
-        client.query(&prepared, &[&id, &description]).await?;
-        Ok(())
+        let row = client.query_one(&prepared, &[&id, &description]).await?;
+
+        Ok(Object::from_row(&row))
     }
 
+    //ToDo: Docs
     pub async fn update_licenses(
         id: DieselUlid,
         data_license: String,
         metadata_license: String,
         client: &Client,
-    ) -> Result<()> {
+    ) -> Result<Object> {
         let query = "UPDATE objects 
         SET metadata_license = $2, data_license = $3
-        WHERE id = $1 ;";
+        WHERE id = $1 
+        RETURNING *;";
+
         let prepared = client.prepare(query).await?;
-        client
-            .query(&prepared, &[&id, &metadata_license, &data_license])
+        let row = client
+            .query_one(&prepared, &[&id, &metadata_license, &data_license])
             .await?;
-        Ok(())
+
+        Ok(Object::from_row(&row))
     }
 
+    //ToDo: Docs
     pub async fn update_dataclass(
         id: DieselUlid,
         dataclass: DataClass,
         client: &Client,
-    ) -> Result<()> {
+    ) -> Result<Object> {
         let query = "UPDATE objects 
         SET data_class = $2
-        WHERE id = $1 ;";
+        WHERE id = $1 
+        RETURNING *;";
+
         let prepared = client.prepare(query).await?;
-        client.query(&prepared, &[&id, &dataclass]).await?;
-        Ok(())
+        let row = client.query_one(&prepared, &[&id, &dataclass]).await?;
+
+        Ok(Object::from_row(&row))
     }
+
+    //ToDo: Docs
     pub async fn set_deleted(ids: &Vec<DieselUlid>, client: &Client) -> Result<()> {
         let query_one = "UPDATE objects 
             SET object_status = 'DELETED'
@@ -524,6 +552,8 @@ impl Object {
         client.execute(&prepared, &inserts).await?;
         Ok(())
     }
+
+    //ToDo: Docs
     pub fn get_cloned_persistent(&self, new_id: DieselUlid) -> Self {
         let object = self.clone();
         Object {
@@ -547,6 +577,8 @@ impl Object {
             data_license: object.data_license,
         }
     }
+
+    //ToDo: Docs
     pub async fn archive(
         ids: &Vec<DieselUlid>,
         client: &Client,
@@ -584,6 +616,8 @@ impl Object {
 
         Ok(result)
     }
+
+    //ToDo: Docs
     pub async fn get_objects(ids: &Vec<DieselUlid>, client: &Client) -> Result<Vec<Object>> {
         let query_one = "SELECT * FROM objects WHERE objects.id IN ";
         let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
@@ -600,6 +634,8 @@ impl Object {
             .map(Object::from_row)
             .collect())
     }
+
+    //ToDo: Docs
     pub async fn batch_create(objects: &Vec<Object>, client: &Client) -> Result<()> {
         //let query = "INSERT INTO objects
         //    (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints)
@@ -659,6 +695,7 @@ impl Object {
         Ok(())
     }
 
+    //ToDo: Docs
     pub async fn check_existing_projects(
         name: String,
         client: &Client,
@@ -793,6 +830,7 @@ impl PartialEq for ObjectWithRelations {
 }
 impl Eq for ObjectWithRelations {}
 
+//ToDo: Docs
 pub async fn get_all_objects_with_relations(client: &Client) -> Result<Vec<ObjectWithRelations>> {
     let query = "SELECT o.*,
         COALESCE(JSON_OBJECT_AGG(ir1.id, ir1.*) FILTER (WHERE ir1.target_pid = o.id AND NOT ir1.relation_name = 'BELONGS_TO'), '{}') inbound,
@@ -809,6 +847,7 @@ pub async fn get_all_objects_with_relations(client: &Client) -> Result<Vec<Objec
 }
 
 impl ObjectWithRelations {
+    //ToDo: Docs
     pub fn as_object_mapping<T>(&self, mapping: T) -> ObjectMapping<T> {
         match self.object.object_type {
             ObjectType::PROJECT => ObjectMapping::PROJECT(mapping),
@@ -818,6 +857,7 @@ impl ObjectWithRelations {
         }
     }
 
+    //ToDo: Docs
     pub fn random_object_to(id: &DieselUlid, to: &DieselUlid) -> Self {
         Self {
             object: Object {
@@ -847,6 +887,7 @@ impl ObjectWithRelations {
         }
     }
 
+    //ToDo: Docs
     pub fn random_object_v2(
         id: &DieselUlid,
         object_type: ObjectType,

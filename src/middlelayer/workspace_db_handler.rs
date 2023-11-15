@@ -76,17 +76,20 @@ impl DatabaseHandler {
         Hook::add_workspace_to_hook(workspace.id, &hooks, transaction_client).await?;
 
         // Create service account
-        let mut user = CreateWorkspace::create_service_account(endpoints, workspace.id);
-        user.create(transaction_client).await?;
+        let mut service_user = CreateWorkspace::create_service_account(endpoints, workspace.id);
+        service_user.create(transaction_client).await?;
         transaction.commit().await?;
-        self.cache.add_user(user.id, user.clone());
+
+        // Add service account user to cache
+        self.cache.add_user(service_user.id, service_user.clone());
+
         // Create token
         let (token_ulid, token) = self
             .create_token(
-                &user.id,
+                &service_user.id,
                 authorizer.token_handler.get_current_pubkey_serial() as i32,
                 CreateToken(CreateApiTokenRequest {
-                    name: user.display_name,
+                    name: service_user.display_name,
                     permission: Some(Permission {
                         permission_level: PermissionLevel::Append as i32,
                         resource_id: Some(aruna_rust_api::api::storage::models::v2::permission::ResourceId::ProjectId(workspace.id.to_string())),
@@ -95,22 +98,26 @@ impl DatabaseHandler {
                 }),
             )
             .await?;
-        // Update service account
-        user.attributes.0.tokens.insert(token_ulid, token);
+
+        // Update service account without explicit fetch
+        service_user.attributes.0.tokens.insert(token_ulid, token);
+
         // Sign token
-        let token_secret = authorizer
-            .token_handler
-            .sign_user_token(&user.id, &token_ulid, None)?;
+        let token_secret =
+            authorizer
+                .token_handler
+                .sign_user_token(&service_user.id, &token_ulid, None)?;
 
         // Create creds
         let slt = authorizer.token_handler.sign_dataproxy_slt(
-            &user.id,
+            &service_user.id,
             Some(token_ulid.to_string()),
             Some(Intent {
                 target: default.id,
                 action: Action::CreateSecrets,
             }),
         )?;
+
         let mut credentials_request = Request::new(GetCredentialsRequest {});
         credentials_request.metadata_mut().append(
             AsciiMetadataKey::from_bytes("Authorization".as_bytes())?,
@@ -122,7 +129,8 @@ impl DatabaseHandler {
                 access_key,
                 secret_key,
             },
-        ) = DatabaseHandler::get_credentials(authorizer.clone(), user.id, None, default).await?;
+        ) = DatabaseHandler::get_credentials(authorizer.clone(), service_user.id, None, default)
+            .await?;
 
         Ok((workspace.id, access_key, secret_key, token_secret))
     }

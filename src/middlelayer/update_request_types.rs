@@ -23,6 +23,8 @@ use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use tokio_postgres::Client;
 
+use super::create_request_types::{PROJECT_SCHEMA, S3_KEY_SCHEMA};
+
 pub struct UpdateObject(pub UpdateObjectRequest);
 
 pub enum DataClassUpdate {
@@ -73,11 +75,32 @@ impl DataClassUpdate {
 }
 
 impl NameUpdate {
-    pub fn get_name(&self) -> String {
+    pub fn get_name(&self) -> Result<String> {
         match self {
-            NameUpdate::Project(req) => req.name.to_string(),
-            NameUpdate::Collection(req) => req.name.to_string(),
-            NameUpdate::Dataset(req) => req.name.to_string(),
+            NameUpdate::Project(req) => {
+                let name = req.name.to_string();
+                if !PROJECT_SCHEMA.is_match(&name) {
+                    Err(anyhow!("Invalid project name"))
+                } else {
+                    Ok(name)
+                }
+            }
+            NameUpdate::Collection(req) => {
+                let name = req.name.to_string();
+                if !S3_KEY_SCHEMA.is_match(&name) {
+                    Err(anyhow!("Invalid collection name"))
+                } else {
+                    Ok(name)
+                }
+            }
+            NameUpdate::Dataset(req) => {
+                let name = req.name.to_string();
+                if !S3_KEY_SCHEMA.is_match(&name) {
+                    Err(anyhow!("Invalid dataset name"))
+                } else {
+                    Ok(name)
+                }
+            }
         }
     }
     pub fn get_id(&self) -> Result<DieselUlid> {
