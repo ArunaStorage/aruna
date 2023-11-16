@@ -98,7 +98,7 @@ impl Issuer {
             .map(|(_, key)| key)
     }
 
-    pub async fn check_token(&mut self, token: &str) -> Result<(String, ArunaTokenClaims)> {
+    pub async fn check_token(&self, token: &str) -> Result<(String, ArunaTokenClaims)> {
         let kid = decode_header(token)?
             .kid
             .ok_or_else(|| anyhow!("No kid in header"))?;
@@ -108,15 +108,7 @@ impl Issuer {
                 Self::get_validate_claims(token, decoding_key, &self.audiences)?,
             )),
             None => {
-                self.refresh_jwks().await?;
-                if let Some(decoding_key) = self.find(&kid) {
-                    Ok((
-                        kid,
-                        Self::get_validate_claims(token, &decoding_key, &self.audiences)?,
-                    ))
-                } else {
-                    bail!("No matching key found")
-                }
+                bail!("No matching key found");
             }
         }
     }

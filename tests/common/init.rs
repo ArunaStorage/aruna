@@ -67,7 +67,7 @@ pub async fn init_database() -> Arc<Database> {
 #[allow(dead_code)]
 pub async fn init_cache(db: Arc<Database>, sync: bool) -> Arc<Cache> {
     // Init cache
-    let cache = Arc::new(Cache::default());
+    let cache = Cache::new();
 
     // Sync cache on demand
     if sync {

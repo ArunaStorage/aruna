@@ -284,12 +284,20 @@ impl TokenHandler {
         let decoded = general_purpose::STANDARD_NO_PAD.decode(split)?;
         let claims: ArunaTokenClaims = serde_json::from_slice(&decoded)?;
 
-        let mut issuer = self
+        let issuer = self
             .cache
             .get_issuer(&claims.iss)
             .ok_or_else(|| anyhow!("Unknown issuer"))?;
 
-        let (kid, validated_claims) = issuer.check_token(token).await?;
+        let (kid, validated_claims) = match issuer.check_token(token).await {
+            Ok((kid, validated_claims)) => (kid, validated_claims),
+            Err(_) => {
+                self.cache
+                    .issuer_sender
+                    .try_send(issuer.issuer_name.clone())?;
+                bail!("Invalid token")
+            }
+        };
 
         match issuer.issuer_type {
             IssuerType::OIDC => self.validate_oidc_token(&validated_claims).await,

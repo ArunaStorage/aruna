@@ -32,7 +32,8 @@ use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::models::v2::User as APIUser;
 use aruna_rust_api::api::storage::services::v2::get_hierarchy_response::Graph;
 use aruna_rust_api::api::storage::services::v2::UserPermission;
-use dashmap::mapref::one::RefMut;
+use async_channel::Sender;
+use dashmap::mapref::one::Ref;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
@@ -45,24 +46,32 @@ pub struct Cache {
     user_cache: DashMap<DieselUlid, User, RandomState>,
     pubkeys: DashMap<i32, PubKeyEnum, RandomState>,
     issuer_info: DashMap<String, Issuer>,
+    pub issuer_sender: Sender<String>,
     lock: AtomicBool,
 }
 
-impl Default for Cache {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Cache {
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Arc<Self> {
+        let (issuer_sender, issuer_recv) = async_channel::bounded(50);
+
+        let cache = Arc::new(Self {
             object_cache: DashMap::default(),
             user_cache: DashMap::default(),
             pubkeys: DashMap::default(),
             issuer_info: DashMap::default(),
+            issuer_sender,
             lock: AtomicBool::new(false),
-        }
+        });
+
+        let cache_clone = cache.clone();
+
+        tokio::spawn(async move {
+            while let Some(issuer_name) = issuer_recv.recv().await.ok() {
+                cache_clone.update_issuer(&issuer_name).await.ok();
+            }
+        });
+
+        cache
     }
 
     pub async fn sync_cache(&self, db: Arc<Database>) -> Result<()> {
@@ -142,6 +151,20 @@ impl Cache {
     pub fn get_pubkey(&self, serial: i32) -> Option<PubKeyEnum> {
         self.check_lock();
         self.pubkeys.get(&serial).map(|x| x.value().clone())
+    }
+
+    pub async fn update_issuer(&self, issuer_name: &str) -> Result<()> {
+        self.check_lock();
+        self.issuer_info
+            .get_mut(issuer_name)
+            .ok_or_else(|| {
+                anyhow!(
+                    "Issuer {} not found in cache, cannot update",
+                    issuer_name.to_string()
+                )
+            })?
+            .refresh_jwks()
+            .await
     }
 
     pub fn get_pubkeys(&self) -> Vec<Pubkey> {
@@ -244,9 +267,9 @@ impl Cache {
         self.pubkeys.remove(id);
     }
 
-    pub fn get_issuer(&self, kid: &str) -> Option<RefMut<'_, String, Issuer>> {
+    pub fn get_issuer(&self, kid: &str) -> Option<Ref<'_, String, Issuer>> {
         self.check_lock();
-        self.issuer_info.get_mut(kid)
+        self.issuer_info.get(kid)
     }
 
     pub fn remove_user(&self, id: &DieselUlid) {
