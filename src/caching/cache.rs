@@ -658,8 +658,8 @@ mod tests {
     use diesel_ulid::DieselUlid;
     use postgres_types::Json;
 
-    #[test]
-    fn test_remove_object() {
+    #[tokio::test]
+    async fn test_remove_object() {
         let cache = Cache::new();
         let object_ulid = DieselUlid::generate();
         let object_plus = ObjectWithRelations::random_object_v2(
@@ -681,8 +681,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_remove_endpoint_from_users() {
+    #[tokio::test]
+    async fn test_remove_endpoint_from_users() {
         let cache = Cache::new();
 
         // Generate random endpoint id
@@ -751,8 +751,8 @@ mod tests {
         assert!(user_2_upd.attributes.0.trusted_endpoints.is_empty())
     }
 
-    #[test]
-    fn test_traverse_down_with_relations() {
+    #[tokio::test]
+    async fn test_traverse_down_with_relations() {
         let cache = Cache::new();
         let id1 = DieselUlid::generate();
         let id2 = DieselUlid::generate();
@@ -787,8 +787,8 @@ mod tests {
         assert_eq!(result.unwrap_err().to_string(), "Invalid permissions");
     }
 
-    #[test]
-    fn test_upstream_dfs_001() {
+    #[tokio::test]
+    async fn test_upstream_dfs_001() {
         // Init new cache
         let cache = Cache::new();
 
