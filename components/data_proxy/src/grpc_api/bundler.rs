@@ -1,7 +1,7 @@
 use crate::{
     caching::{auth::get_token_from_md, cache::Cache},
     helpers::sign_download_url,
-    structs::{DbPermissionLevel, Object, ObjectType, ALL_RIGHTS_RESERVED},
+    structs::{DbPermissionLevel, Endpoint, Object, ObjectType, Origin, ALL_RIGHTS_RESERVED},
     trace_err,
 };
 use aruna_rust_api::api::{
@@ -17,7 +17,7 @@ use std::{
     str::FromStr,
     sync::Arc,
 };
-use tracing::error;
+use tracing::{error, trace};
 
 pub struct BundlerServiceImpl {
     pub cache: Arc<Cache>,
@@ -96,6 +96,17 @@ impl BundlerService for BundlerServiceImpl {
         };
 
         let bundle_id = DieselUlid::generate();
+        let id = if let Some(auth) = self.cache.auth.read().await.as_ref() {
+            auth.self_id
+        } else {
+            trace!("AuthorizationHandler could not provide self_id");
+            return Err(tonic::Status::internal("Internal conversion error"));
+        };
+        let ep = Endpoint {
+            id,
+            variant: crate::structs::SyncVariant::PartialSync(Origin::BundleId(bundle_id)),
+            status: None,
+        };
         let bundler_object = Object {
             id: bundle_id,
             name: request.filename.clone(),
@@ -110,6 +121,7 @@ impl BundlerService for BundlerServiceImpl {
             children: Some(HashSet::from_iter(trels)),
             parents: None,
             synced: true,
+            endpoints: vec![ep],
         };
 
         trace_err!(self.cache.upsert_object(bundler_object, None).await)

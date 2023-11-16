@@ -209,6 +209,7 @@ impl GrpcQueryHandler {
     pub async fn create_project(&self, object: DPObject, token: &str) -> Result<DPObject> {
         let mut req = Request::new(CreateProjectRequest::from(object));
 
+        req.get_mut().preferred_endpoint = self.endpoint_id.clone();
         req.metadata_mut().append(
             trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
             trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,

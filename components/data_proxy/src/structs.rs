@@ -4,7 +4,6 @@ use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
-use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
@@ -12,6 +11,7 @@ use aruna_rust_api::api::storage::models::v2::{
     relation::Relation, DataClass, InternalRelationVariant, KeyValue, Object as GrpcObject,
     PermissionLevel, Project, RelationDirection, Status,
 };
+use aruna_rust_api::api::storage::models::v2::{Collection, DataEndpoint};
 use aruna_rust_api::api::storage::services::v2::create_collection_request;
 use aruna_rust_api::api::storage::services::v2::create_dataset_request;
 use aruna_rust_api::api::storage::services::v2::create_object_request;
@@ -115,38 +115,38 @@ pub struct Object {
     pub children: Option<HashSet<TypedRelation>>,
     pub parents: Option<HashSet<TypedRelation>>,
     pub synced: bool,
-    // TODO! ENDPOINTS
-    //pub endpoints: Vec<Endpoint>,
+    pub endpoints: Vec<Endpoint>, // TODO
 }
 
 // TODO! ENDPOINTS
-//#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-//pub struct Endpoint {
-//    pub id: DieselUlid,
-//    pub variant: SyncVariant,
-//    pub status: Option<SyncStatus>,
-//}
-//
-//#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-//pub enum SyncVariant {
-//    FullSync(DieselUlid),
-//    PartialSync(Origin),
-//}
-//
-//#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-//pub enum SyncStatus {
-//    Waiting,
-//    Running,
-//    Finished,
-//    Error,
-//}
-//
-//#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-//pub enum Origin {
-//    CollectionId(DieselUlid),
-//    DatasetId(DieselUlid),
-//    ObjectId(DieselUlid),
-//}
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Endpoint {
+    pub id: DieselUlid,
+    pub variant: SyncVariant,
+    pub status: Option<SyncStatus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum SyncVariant {
+    FullSync(DieselUlid),
+    PartialSync(Origin),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum SyncStatus {
+    Waiting,
+    Running,
+    Finished,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum Origin {
+    BundleId(DieselUlid),
+    CollectionId(DieselUlid),
+    DatasetId(DieselUlid),
+    ObjectId(DieselUlid),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PartETag {
@@ -416,6 +416,51 @@ impl TryFrom<Resource> for Object {
     }
 }
 
+impl TryFrom<&DataEndpoint> for Endpoint {
+    type Error = anyhow::Error;
+
+    #[tracing::instrument(level = "trace", skip(value))]
+    fn try_from(value: &DataEndpoint) -> Result<Self> {
+        Ok(Endpoint {
+            id: DieselUlid::from_str(&value.id)?,
+            variant: match value
+                .variant
+                .as_ref()
+                .ok_or_else(|| anyhow!("No endpoint sync variant found"))?
+            {
+                aruna_rust_api::api::storage::models::v2::data_endpoint::Variant::FullSync(
+                    aruna_rust_api::api::storage::models::v2::FullSync { ref project_id },
+                ) => SyncVariant::FullSync(DieselUlid::from_str(project_id)?),
+                aruna_rust_api::api::storage::models::v2::data_endpoint::Variant::PartialSync(
+                    map,
+                ) => {
+                    let origin = match map.origin.as_ref().ok_or_else(|| anyhow!("No origin found"))? {
+                                aruna_rust_api::api::storage::models::v2::partial_sync::Origin::CollectionId(ref id) => Origin::CollectionId(DieselUlid::from_str(id)?),
+                                aruna_rust_api::api::storage::models::v2::partial_sync::Origin::DatasetId(ref id) => Origin::DatasetId(DieselUlid::from_str(id)?),
+                                aruna_rust_api::api::storage::models::v2::partial_sync::Origin::ObjectId(ref id) => Origin::ObjectId(DieselUlid::from_str(id)?),
+                            };
+                    SyncVariant::PartialSync(origin)
+                }
+            },
+            status: match value.status() {
+                aruna_rust_api::api::storage::models::v2::ReplicationStatus::Unspecified => None,
+                aruna_rust_api::api::storage::models::v2::ReplicationStatus::Waiting => {
+                    Some(SyncStatus::Waiting)
+                }
+                aruna_rust_api::api::storage::models::v2::ReplicationStatus::Running => {
+                    Some(SyncStatus::Running)
+                }
+                aruna_rust_api::api::storage::models::v2::ReplicationStatus::Finished => {
+                    Some(SyncStatus::Finished)
+                }
+                aruna_rust_api::api::storage::models::v2::ReplicationStatus::Error => {
+                    Some(SyncStatus::Error)
+                }
+            },
+        })
+    }
+}
+
 impl TryFrom<Project> for Object {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(value))]
@@ -472,6 +517,11 @@ impl TryFrom<Project> for Object {
             parents: Some(inbounds),
             children: Some(outbounds),
             synced: false,
+            endpoints: value
+                .endpoints
+                .iter()
+                .map(Endpoint::try_from)
+                .collect::<Result<Vec<Endpoint>>>()?,
         })
     }
 }
@@ -532,6 +582,11 @@ impl TryFrom<Collection> for Object {
             parents: Some(inbounds),
             children: Some(outbounds),
             synced: false,
+            endpoints: value
+                .endpoints
+                .iter()
+                .map(Endpoint::try_from)
+                .collect::<Result<Vec<Endpoint>>>()?,
         })
     }
 }
@@ -592,6 +647,11 @@ impl TryFrom<Dataset> for Object {
             parents: Some(inbounds),
             children: Some(outbounds),
             synced: false,
+            endpoints: value
+                .endpoints
+                .iter()
+                .map(Endpoint::try_from)
+                .collect::<Result<Vec<Endpoint>>>()?,
         })
     }
 }
@@ -652,6 +712,11 @@ impl TryFrom<GrpcObject> for Object {
             parents: Some(inbounds),
             children: Some(outbounds),
             synced: false,
+            endpoints: value
+                .endpoints
+                .iter()
+                .map(Endpoint::try_from)
+                .collect::<Result<Vec<Endpoint>>>()?,
         })
     }
 }
@@ -677,7 +742,7 @@ impl From<Object> for CreateProjectRequest {
             key_values: vec![],
             relations: vec![],
             data_class: value.data_class.into(),
-            preferred_endpoint: "".to_string(),
+            preferred_endpoint: "".to_string(), // Gets endpoint id from grpc_query_handler::create_project()
             metadata_license_tag: value.metadata_license,
             default_data_license_tag: value.data_license,
         }
@@ -739,6 +804,7 @@ impl From<CreateBucketInput> for Object {
             parents: None,
             children: None,
             synced: false,
+            endpoints: vec![],
         }
     }
 }

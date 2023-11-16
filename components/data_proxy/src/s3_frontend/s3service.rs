@@ -8,6 +8,7 @@ use crate::data_backends::storage_backend::StorageBackend;
 use crate::s3_frontend::utils::list_objects::filter_list_objects;
 use crate::s3_frontend::utils::list_objects::list_response;
 use crate::structs::CheckAccessResult;
+use crate::structs::Endpoint;
 use crate::structs::Object as ProxyObject;
 use crate::structs::PartETag;
 use crate::structs::ResourceString;
@@ -108,6 +109,9 @@ impl S3 for ArunaS3Service {
             )
             .map_err(|_| s3_error!(NotSignedUp, "Unauthorized: Impersonating error"))?;
 
+            // TODO: EndpointInfo
+            // -> CreateProject adds matching EndpointId to create project request, and then returns a
+            //    correctly parsed Object where Endpoint infos are added
             new_object = trace_err!(client.create_project(new_object, &token).await)
                 .map_err(|_| s3_error!(InternalError, "[BACKEND] Unable to create project"))?;
         }
@@ -198,6 +202,7 @@ impl S3 for ArunaS3Service {
                         children: None,
                         parents: new_revision.parents,
                         synced: false,
+                        endpoints: new_revision.endpoints,
                     }
                 }
             } else {
@@ -222,6 +227,7 @@ impl S3 for ArunaS3Service {
                     children: None,
                     parents: None,
                     synced: false,
+                    endpoints: vec![], // Can be empty IF this gets updated by the gRPC response
                 }
             }
         } else {
@@ -245,6 +251,7 @@ impl S3 for ArunaS3Service {
                 children: None,
                 parents: None,
                 synced: false,
+                endpoints: vec![], // Can be empty IF this gets updated by the gRPC response
             }
         };
 
@@ -339,6 +346,7 @@ impl S3 for ArunaS3Service {
                         res_ids.get_project(),
                     )])),
                     synced: false,
+                    endpoints: vec![], // Can be empty IF this gets updated by the gRPC response
                 };
 
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
@@ -377,6 +385,7 @@ impl S3 for ArunaS3Service {
                     children: None,
                     parents: Some(HashSet::from([parent])),
                     synced: false,
+                    endpoints: vec![], // Can be empty IF this gets updated by the gRPC response
                 };
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                     if let Some(token) = &impersonating_token {
@@ -580,6 +589,7 @@ impl S3 for ArunaS3Service {
                         children: None,
                         parents: new_revision.parents,
                         synced: false,
+                        endpoints: new_revision.endpoints,
                     }
                 }
             } else {
@@ -605,6 +615,8 @@ impl S3 for ArunaS3Service {
                     children: None,
                     parents: None,
                     synced: false,
+                    endpoints: vec![], // Can be empty, as long as create_object overwrites this
+                                       // object with gRPC response
                 }
             }
         } else {
@@ -628,6 +640,8 @@ impl S3 for ArunaS3Service {
                 children: None,
                 parents: None,
                 synced: false,
+                endpoints: vec![], // Can be empty, as long as create_object overwrites this
+                                   // object with gRPC response
             }
         };
 
@@ -667,6 +681,8 @@ impl S3 for ArunaS3Service {
                         res_ids.get_project(),
                     )])),
                     synced: false,
+                    endpoints: vec![], // Can be empty, as long as create_object overwrites this
+                                       // object with gRPC response
                 };
 
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
@@ -705,6 +721,8 @@ impl S3 for ArunaS3Service {
                     children: None,
                     parents: Some(HashSet::from([parent])),
                     synced: false,
+                    endpoints: vec![], // Can be empty, as long as create_object overwrites this
+                                       // object with gRPC response
                 };
 
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
@@ -739,6 +757,7 @@ impl S3 for ArunaS3Service {
                 if let Some(token) = &impersonating_token {
                     trace_err!(
                         handler
+                            // Overwrites endpoints with gRPC response
                             .create_object(new_object.clone(), Some(location), token)
                             .await
                     )
