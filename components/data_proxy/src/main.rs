@@ -104,19 +104,20 @@ async fn main() -> Result<()> {
         diesel_ulid::DieselUlid::from_str(&endpoint_id)?,
         encoding_key,
         encoding_key_serial,
-        sender,
+        sender.clone(),
     )
     .await?;
 
-    let cache_clone = cache.clone();
+    let replication_cache_clone = cache.clone();
 
     trace!("init replication handler");
     let replication_handler = ReplicationHandler::new(receiver);
     tokio::spawn(async move {
-        replication_handler.run(cache);
+        replication_handler.run(replication_cache_clone);
     });
-    trace!("init s3 server");
 
+    trace!("init s3 server");
+    let cache_clone = cache.clone();
     let s3_server = s3_frontend::s3server::S3Server::new(
         &address,
         hostname.to_string(),

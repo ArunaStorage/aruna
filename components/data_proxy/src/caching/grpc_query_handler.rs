@@ -731,6 +731,8 @@ impl GrpcQueryHandler {
                                 )
                                 .await
                             )?;
+                            // TODO
+                            // - If PartialSync, upsert only to special bucket
                             self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Collection => {
@@ -741,6 +743,8 @@ impl GrpcQueryHandler {
                                 )
                                 .await
                             )?;
+                            // TODO
+                            // - If PartialSync, upsert only to special bucket
                             self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Dataset => {
@@ -751,6 +755,8 @@ impl GrpcQueryHandler {
                                 )
                                 .await
                             )?;
+                            // TODO
+                            // - If PartialSync, upsert only to special bucket
                             self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Object => {
@@ -762,8 +768,6 @@ impl GrpcQueryHandler {
                                 .await
                             )?;
 
-                            // Replication only needs to be evaluated, if objects are
-                            // created/updated
                             self.handle_replication(object.clone());
 
                             self.cache.upsert_object(object.try_into()?, None).await?;
@@ -810,7 +814,7 @@ impl GrpcQueryHandler {
                             }
                         });
                         match state_of_truth {
-                            Some(endpoint_id) => {
+                            Some(_ep_id) => {
                                 let request = PullReplicationRequest {
                                     info: Some(DataProxyInfo {
                                         dataproxy_id: self.endpoint_id.clone(),
@@ -819,12 +823,25 @@ impl GrpcQueryHandler {
                                                                         // something meaningful
                                     }),
                                     user_initialized: false,
-                                    object_ids: vec![object.id.to_string()],
+                                    object_ids: vec![object.id.clone()],
                                 };
-                                let info = &self.pull_replication(request).await?;
-                                // TODO
-                                // - send message to replication handler
-                                todo!("Try pull")
+                                let outer_info = trace_err!(self
+                                    .pull_replication(request)
+                                    .await?
+                                    .data_infos
+                                    .ok_or_else(|| anyhow!("No replication infos recieved")))?;
+                                let info =
+                                    trace_err!(outer_info.data_info.iter().next().ok_or_else(
+                                        || anyhow!("Emtpy replication info response")
+                                    ))?;
+                                &self.cache.sender.send(ReplicationMessage {
+                                    object_id: DieselUlid::from_str(&object.id)?,
+                                    download_url: info.download_url.clone(),
+                                    encryption_key: info.encryption_key.clone(),
+                                    is_compressed: info.is_compressed,
+                                    direction:
+                                        crate::replication::replication_handler::Direction::Pull,
+                                });
                             }
                             None => {
                                 todo!(
@@ -873,7 +890,7 @@ impl GrpcQueryHandler {
                     (ReplicationStatus::Waiting, id, _) if id != &self.endpoint_id => {
                         // TODO
                         // - How to find out if pushing is appropriate for a given dataproxy that is
-                        //   not this one?
+                        //   not this one? -> Am I the only one/main dataproxy?
                         // - Check if object location exists here
                         // - Create presigned url for object
                         // - send message to replication handler

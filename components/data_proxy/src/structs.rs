@@ -115,7 +115,38 @@ pub struct Object {
     pub children: Option<HashSet<TypedRelation>>,
     pub parents: Option<HashSet<TypedRelation>>,
     pub synced: bool,
+    // TODO! ENDPOINTS
+    //pub endpoints: Vec<Endpoint>,
 }
+
+// TODO! ENDPOINTS
+//#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+//pub struct Endpoint {
+//    pub id: DieselUlid,
+//    pub variant: SyncVariant,
+//    pub status: Option<SyncStatus>,
+//}
+//
+//#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+//pub enum SyncVariant {
+//    FullSync(DieselUlid),
+//    PartialSync(Origin),
+//}
+//
+//#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+//pub enum SyncStatus {
+//    Waiting,
+//    Running,
+//    Finished,
+//    Error,
+//}
+//
+//#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+//pub enum Origin {
+//    CollectionId(DieselUlid),
+//    DatasetId(DieselUlid),
+//    ObjectId(DieselUlid),
+//}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PartETag {

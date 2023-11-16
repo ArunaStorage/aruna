@@ -11,6 +11,8 @@ use crate::{caching::cache::Cache, database::database::Database, trace_err};
 pub struct ReplicationMessage {
     pub object_id: DieselUlid,
     pub download_url: String,
+    pub encryption_key: String,
+    pub is_compressed: bool,
     pub direction: Direction,
 }
 
@@ -32,7 +34,7 @@ impl ReplicationHandler {
 
     #[tracing::instrument(level = "trace", skip(self, cache))]
     pub async fn run(self, cache: Arc<Cache>) -> Result<()> {
-        let queue: Arc<DashSet<(DieselUlid, String, Direction), RandomState>> =
+        let queue: Arc<DashSet<(DieselUlid, String, String, bool, Direction), RandomState>> =
             Arc::new(DashSet::default());
 
         // Push messages into DashMap for deduplication
@@ -42,10 +44,18 @@ impl ReplicationHandler {
             while let Ok(ReplicationMessage {
                 object_id,
                 download_url,
+                encryption_key,
+                is_compressed,
                 direction,
             }) = receiver.recv().await
             {
-                queue_clone.insert((object_id, download_url, direction));
+                queue_clone.insert((
+                    object_id,
+                    download_url,
+                    encryption_key,
+                    is_compressed,
+                    direction,
+                ));
             }
         });
 
@@ -56,8 +66,9 @@ impl ReplicationHandler {
                     Some(entry) => entry,
                     None => continue,
                 };
-                let (id, url, direction) = next.key();
-                ReplicationHandler::process(id, url, direction, cache.clone()).await;
+                let (id, url, key, compressed, direction) = next.key();
+                ReplicationHandler::process(id, url, key, compressed, direction, cache.clone())
+                    .await;
             }
         });
         // Run both tasks simultaneously
@@ -73,8 +84,10 @@ impl ReplicationHandler {
     async fn process(
         id: &DieselUlid,
         url: &str,
+        encryption_key: &str,
+        compressed: &bool,
         direction: &Direction,
-        _cache: Arc<Cache>,
+        cache: Arc<Cache>,
     ) -> Result<()> {
         trace_err!(Err(anyhow!("Not implemented!")))
     }
