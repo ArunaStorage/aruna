@@ -344,8 +344,7 @@ impl TokenHandler {
         // Fetch pubkey from cache
         let key = self
             .cache
-            .pubkeys
-            .get(&kid.parse::<i32>()?)
+            .get_pubkey(kid.parse::<i32>()?)
             .ok_or_else(|| anyhow!("Unspecified kid"))?
             .clone();
 

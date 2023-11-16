@@ -207,7 +207,7 @@ async fn process_resource_event(
                     .await;
 
                     // Add to cache
-                    cache.object_cache.insert(res_ulid, object_plus);
+                    cache.insert_object(object_plus);
                 }
             }
         } else {

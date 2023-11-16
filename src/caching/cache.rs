@@ -28,6 +28,7 @@ use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::PermissionLevel;
+use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::models::v2::User as APIUser;
 use aruna_rust_api::api::storage::services::v2::get_hierarchy_response::Graph;
 use aruna_rust_api::api::storage::services::v2::UserPermission;
@@ -40,10 +41,10 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 pub struct Cache {
-    pub object_cache: DashMap<DieselUlid, ObjectWithRelations, RandomState>,
-    pub user_cache: DashMap<DieselUlid, User, RandomState>,
-    pub pubkeys: DashMap<i32, PubKeyEnum, RandomState>,
-    pub issuer_info: DashMap<String, Issuer>,
+    object_cache: DashMap<DieselUlid, ObjectWithRelations, RandomState>,
+    user_cache: DashMap<DieselUlid, User, RandomState>,
+    pubkeys: DashMap<i32, PubKeyEnum, RandomState>,
+    issuer_info: DashMap<String, Issuer>,
     lock: AtomicBool,
 }
 
@@ -128,6 +129,11 @@ impl Cache {
         self.object_cache.get(id).map(|x| x.value().clone())
     }
 
+    pub fn insert_object(&self, object: ObjectWithRelations) {
+        self.check_lock();
+        self.object_cache.insert(object.object.id, object);
+    }
+
     pub fn get_user(&self, id: &DieselUlid) -> Option<User> {
         self.check_lock();
         self.user_cache.get(id).map(|x| x.value().clone())
@@ -136,6 +142,17 @@ impl Cache {
     pub fn get_pubkey(&self, serial: i32) -> Option<PubKeyEnum> {
         self.check_lock();
         self.pubkeys.get(&serial).map(|x| x.value().clone())
+    }
+
+    pub fn get_pubkeys(&self) -> Vec<Pubkey> {
+        self.pubkeys
+            .iter()
+            .map(|pk| Pubkey {
+                id: *pk.key(),
+                key: pk.value().get_key_string(),
+                location: pk.value().get_name(),
+            })
+            .collect()
     }
 
     pub fn get_pubkey_serial(&self, raw_pubkey: &str) -> Option<i32> {
@@ -600,6 +617,13 @@ impl Cache {
             Box::new(self.pubkeys.iter()),
             *endpoint_id,
         )
+    }
+
+    pub fn oidc_mapping_exists(&self, mapping: &OIDCMapping) -> bool {
+        self.check_lock();
+        self.user_cache
+            .iter()
+            .any(|x| x.value().attributes.0.external_ids.contains(mapping))
     }
 }
 

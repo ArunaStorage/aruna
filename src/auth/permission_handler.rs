@@ -147,12 +147,8 @@ impl PermissionHandler {
             oidc_name: issuer.issuer_name.to_string(),
         };
 
-        for u in self.cache.user_cache.iter() {
-            for existing_oidc in &u.attributes.0.external_ids {
-                if existing_oidc == &mapping {
-                    return Err(anyhow!("User already registered"));
-                }
-            }
+        if self.cache.oidc_mapping_exists(&mapping) {
+            return Err(anyhow!("User already registered"));
         }
         Ok(mapping)
     }
