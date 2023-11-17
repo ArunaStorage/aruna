@@ -48,7 +48,7 @@ impl PermissionHandler {
                     return match err.downcast_ref::<OIDCError>() {
                         Some(_) => Err(tonic::Status::unauthenticated("Not registered")),
                         None => Err(tonic::Status::unauthenticated("Unauthorized")),
-                    }
+                    };
                 }
             };
 

@@ -54,7 +54,7 @@ impl std::error::Error for OIDCError {}
 pub struct ArunaTokenClaims {
     pub iss: String, // Currently always 'aruna'
     pub sub: String, // User_ID / DataProxy_ID
-    aud: Audience,     // Audience;
+    aud: Audience,   // Audience;
     exp: usize,      // Expiration timestamp
     // Token_ID; None if OIDC or ... ?
     #[serde(skip_serializing_if = "Option::is_none")]
