@@ -1,9 +1,9 @@
 use crate::{caching::cache::Cache, trace_err};
 use s3s::{
-    auth::{S3Auth, S3AuthContext, SecretKey},
+    auth::{Credentials, S3Auth, S3AuthContext, SecretKey},
     s3_error, S3Result,
 };
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 use tracing::debug;
 
 /// Aruna authprovider
@@ -33,16 +33,43 @@ impl S3Auth for AuthProvider {
         debug!(path = ?cx.s3_path());
         match self.cache.auth.read().await.as_ref() {
             Some(auth) => {
-                let result = trace_err!(
-                    auth.check_access(cx.credentials(), cx.method(), cx.s3_path())
-                        .await
-                )
-                .map_err(|_| s3_error!(AccessDenied, "Access denied"))?;
+                if check_self_credentials(cx.credentials(), auth.self_id, auth.self_secret.clone())
+                {
+                    Ok(())
+                } else {
+                    let result = trace_err!(
+                        auth.check_access(cx.credentials(), cx.method(), cx.s3_path())
+                            .await
+                    )
+                    .map_err(|_| s3_error!(AccessDenied, "Access denied"))?;
 
-                cx.extensions_mut().insert(result);
-                Ok(())
+                    cx.extensions_mut().insert(result);
+                    Ok(())
+                }
             }
             None => Ok(()),
         }
+    }
+}
+
+fn check_self_credentials(
+    creds: Option<&Credentials>,
+    self_key: diesel_ulid::DieselUlid,
+    self_secret: String,
+) -> bool {
+    if let Some(creds) = creds {
+        let try_compare = if let Ok(self_id) = diesel_ulid::DieselUlid::from_str(&creds.access_key)
+        {
+            self_id
+        } else {
+            return false;
+        };
+        if (try_compare == self_key) && (creds.secret_key.expose() == self_secret) {
+            true
+        } else {
+            false
+        }
+    } else {
+        false
     }
 }

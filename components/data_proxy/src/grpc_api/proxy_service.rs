@@ -8,6 +8,7 @@ use aruna_rust_api::api::dataproxy::services::v2::{
     PushReplicationRequest, PushReplicationResponse,
 };
 use async_channel::Sender;
+use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use std::{str::FromStr, sync::Arc};
 use tracing::{error, trace};
@@ -45,27 +46,47 @@ impl DataproxyService for DataproxyServiceImpl {
                 tonic::Status::invalid_argument("Invalid id provided")
             }))
             .collect::<Result<Vec<DieselUlid>, tonic::Status>>())?;
+
         // TODO
         // 1. get all objects & endpoints from server
+        let mut objects = Vec::new();
+        let object_endpoint_map = DashMap::new();
+        for id in ids {
+            if let Some(o) = self.cache.resources.get(&id) {
+                let (_, (object, location)) = o.pair();
+                objects.push((object.clone(), location.clone()));
+                object_endpoint_map.insert(object.id, object.endpoints.clone());
+            }
+        }
+
         // 2. check if proxy has permissions to pull everything
-        if let Some(a) = self.cache.auth.read().await.as_ref() {
+        if let Some(auth) = self.cache.auth.read().await.as_ref() {
             let token = trace_err!(get_token_from_md(&metadata))
                 .map_err(|e| tonic::Status::unauthenticated(e.to_string()))?;
+            // Returns claims.sub as id -> Can return UserIds or DataproxyIds
+            // -> UserIds cannot be found in object.endpoints, so this should be safe
+            let (dataproxy_id, _) = trace_err!(auth.check_permissions(&token))
+                .map_err(|_| tonic::Status::unauthenticated("DataProxy not authenticated"))?;
+            if !object_endpoint_map.iter().all(|map| {
+                let (_, eps) = map.pair();
+                eps.iter().find(|ep| ep.id == dataproxy_id).is_some()
+            }) {
+                error!("Unauthorized DataProxy request");
+                return Err(tonic::Status::unauthenticated(
+                    "DataProxy is not allowed to access requested objects",
+                ));
+            };
         } else {
             error!("authentication handler not available");
             return Err(tonic::Status::unauthenticated(
                 "Unable to authenticate user",
             ));
         }
-        // 3. find objects & encryption keys in local storage
-        let mut objects = Vec::new();
-        for id in ids {
-            if let Some(o) = self.cache.resources.get(&id) {
-                let (_, (object, location)) = o.pair();
-                objects.push((object.clone(), location.clone()));
-            }
-        }
-        // 4. sign download url
+
+        // 3. sign download url
+        // - With this dataproxys access & secret keys, scoped and timed
+
+        // 4. Return DataInfos
         error!("RequestReplication not implemented");
         Err(tonic::Status::unimplemented("Currently not implemented"))
     }

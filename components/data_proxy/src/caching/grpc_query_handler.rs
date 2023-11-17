@@ -28,7 +28,6 @@ use aruna_rust_api::api::storage::models::v2::FullSync;
 use aruna_rust_api::api::storage::models::v2::GenericResource;
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Object;
-use aruna_rust_api::api::storage::models::v2::PartialSync;
 use aruna_rust_api::api::storage::models::v2::Project;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::models::v2::ReplicationStatus;
@@ -835,14 +834,14 @@ impl GrpcQueryHandler {
                                     trace_err!(outer_info.data_info.iter().next().ok_or_else(
                                         || anyhow!("Emtpy replication info response")
                                     ))?;
-                                &self.cache.sender.send(ReplicationMessage {
+                                self.cache.sender.send(ReplicationMessage {
                                     object_id: DieselUlid::from_str(&object.id)?,
                                     download_url: info.download_url.clone(),
                                     encryption_key: info.encryption_key.clone(),
                                     is_compressed: info.is_compressed,
                                     direction:
                                         crate::replication::replication_handler::Direction::Pull,
-                                });
+                                }).await?;
                             }
                             None => {
                                 todo!(

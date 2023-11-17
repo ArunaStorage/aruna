@@ -8,7 +8,6 @@ use crate::data_backends::storage_backend::StorageBackend;
 use crate::s3_frontend::utils::list_objects::filter_list_objects;
 use crate::s3_frontend::utils::list_objects::list_response;
 use crate::structs::CheckAccessResult;
-use crate::structs::Endpoint;
 use crate::structs::Object as ProxyObject;
 use crate::structs::PartETag;
 use crate::structs::ResourceString;

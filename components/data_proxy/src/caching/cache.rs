@@ -59,6 +59,7 @@ impl Cache {
         encoding_key: String,
         encoding_key_serial: i32,
         sender: Sender<ReplicationMessage>,
+        self_secret: String,
     ) -> Result<Arc<Self>> {
         // Initialize cache
         let cache = Arc::new(Cache {
@@ -73,8 +74,13 @@ impl Cache {
         });
 
         // Initialize auth handler
-        let auth_handler =
-            AuthHandler::new(cache.clone(), self_id, encoding_key, encoding_key_serial);
+        let auth_handler = AuthHandler::new(
+            cache.clone(),
+            self_id,
+            self_secret,
+            encoding_key,
+            encoding_key_serial,
+        );
 
         // Set auth handler in cache
         cache.set_auth(auth_handler).await;

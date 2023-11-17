@@ -35,6 +35,7 @@ use tracing::trace;
 pub struct AuthHandler {
     pub cache: Arc<Cache>,
     pub self_id: DieselUlid,
+    pub self_secret: String,
     pub encoding_key: (i32, EncodingKey),
 }
 
@@ -119,6 +120,7 @@ impl AuthHandler {
     pub fn new(
         cache: Arc<Cache>,
         self_id: DieselUlid,
+        self_secret: String,
         encode_secret: String,
         encoding_key_serial: i32,
     ) -> Self {
@@ -131,6 +133,7 @@ impl AuthHandler {
         Self {
             cache,
             self_id,
+            self_secret,
             encoding_key: (encoding_key_serial, encoding_key),
         }
     }
