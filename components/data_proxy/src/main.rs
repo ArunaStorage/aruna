@@ -135,6 +135,7 @@ async fn main() -> Result<()> {
                 .add_service(DataproxyServiceServer::new(DataproxyServiceImpl::new(
                     cache_clone.clone(),
                     sender,
+                    hostname.clone(),
                 )))
                 .add_service(DataproxyUserServiceServer::new(
                     DataproxyUserServiceImpl::new(cache_clone.clone()),

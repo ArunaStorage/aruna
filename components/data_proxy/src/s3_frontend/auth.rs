@@ -46,25 +46,3 @@ impl S3Auth for AuthProvider {
         }
     }
 }
-
-fn check_self_credentials(
-    creds: Option<&Credentials>,
-    self_key: diesel_ulid::DieselUlid,
-    self_secret: String,
-) -> bool {
-    if let Some(creds) = creds {
-        let try_compare = if let Ok(self_id) = diesel_ulid::DieselUlid::from_str(&creds.access_key)
-        {
-            self_id
-        } else {
-            return false;
-        };
-        if (try_compare == self_key) && (creds.secret_key.expose() == self_secret) {
-            true
-        } else {
-            false
-        }
-    } else {
-        false
-    }
-}

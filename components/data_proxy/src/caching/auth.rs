@@ -260,7 +260,7 @@ impl AuthHandler {
 
                 for (res, perm) in user.permissions {
                     // ResourceIds only contain Bundle Id as Project
-                    if ids.check_if_in(res) && perm >= db_perm_from_method {
+                    if ids.check_if_in(res) && ((perm >= db_perm_from_method) || user.admin) {
                         let token_id = if user.user_id.to_string() == user.access_key {
                             None
                         } else {
@@ -300,7 +300,7 @@ impl AuthHandler {
                     .ok_or_else(|| anyhow!("Unknown user")))?;
 
                 for (res, perm) in user.permissions {
-                    if ids.check_if_in(res) && perm >= db_perm_from_method {
+                    if ids.check_if_in(res) && ((perm >= db_perm_from_method) || user.admin) {
                         let token_id = if user.user_id.to_string() == user.access_key {
                             None
                         } else {
@@ -338,7 +338,7 @@ impl AuthHandler {
                 .ok_or_else(|| anyhow!("Unknown user")))?;
 
             for (res, perm) in user.permissions {
-                if ids.check_if_in(res) && perm >= db_perm_from_method {
+                if ids.check_if_in(res) && ((perm >= db_perm_from_method) || user.admin) {
                     let token_id = if user.user_id.to_string() == user.access_key {
                         None
                     } else {
