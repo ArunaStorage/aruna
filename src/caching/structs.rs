@@ -79,7 +79,7 @@ pub struct ProxyCacheIterator<'a> {
     user_iter:
         Box<(dyn Iterator<Item = RefMulti<'a, DieselUlid, User, RandomState>> + 'a + Send + Sync)>,
     pub_key_iter:
-        Box<(dyn Iterator<Item = RefMulti<'a, i32, PubKeyEnum, RandomState>> + 'a + Send + Sync)>,
+        Box<(dyn Iterator<Item = RefMulti<'a, i16, PubKeyEnum, RandomState>> + 'a + Send + Sync)>,
     endpoint_id: DieselUlid,
 }
 
@@ -95,7 +95,7 @@ impl<'a> ProxyCacheIterator<'a> {
             (dyn Iterator<Item = RefMulti<'a, DieselUlid, User, RandomState>> + 'a + Send + Sync),
         >,
         pub_key_iter: Box<
-            (dyn Iterator<Item = RefMulti<'a, i32, PubKeyEnum, RandomState>> + 'a + Send + Sync),
+            (dyn Iterator<Item = RefMulti<'a, i16, PubKeyEnum, RandomState>> + 'a + Send + Sync),
         >,
         endpoint_id: DieselUlid,
     ) -> ProxyCacheIterator<'a> {
@@ -130,7 +130,7 @@ impl<'a> Iterator for ProxyCacheIterator<'a> {
         }
         if let Some(pk) = self.pub_key_iter.next() {
             return Some(GrpcProxyInfos::PubKey(APIPubkey {
-                id: *pk.key(),
+                id: *pk.key() as i32,
                 key: pk.value().get_key_string(),
                 location: pk.value().get_name(),
             }));

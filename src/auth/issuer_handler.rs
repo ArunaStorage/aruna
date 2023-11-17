@@ -128,7 +128,7 @@ impl Issuer {
     }
 }
 
-pub async fn convert_to_pubkeys_issuers(pubkeys: &Vec<(i32, PubKeyEnum)>) -> Result<Vec<Issuer>> {
+pub async fn convert_to_pubkeys_issuers(pubkeys: &Vec<(i16, PubKeyEnum)>) -> Result<Vec<Issuer>> {
     let mut server_encoding_keys = vec![];
     let mut issuers = vec![];
 

@@ -61,7 +61,7 @@ impl LicenseService for LicensesServiceImpl {
 
         let license = tonic_internal!(
             self.database_handler.get_license(request.tag).await,
-            "Internal license creation error"
+            "License fetching error"
         );
 
         let response = GetLicenseResponse {
@@ -88,7 +88,7 @@ impl LicenseService for LicensesServiceImpl {
 
         let licenses = tonic_internal!(
             self.database_handler.list_licenses().await,
-            "Internal license creation error"
+            "License fetching error"
         );
 
         let response = ListLicensesResponse {
