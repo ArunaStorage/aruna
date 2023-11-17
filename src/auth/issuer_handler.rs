@@ -80,8 +80,7 @@ impl Issuer {
             bail!("Only OIDC issuers can refresh JWKS");
         }
         let (decodings_keys, last_updated) = Self::fetch_jwks(
-            &self
-                .pubkey_endpoint
+            self.pubkey_endpoint
                 .as_ref()
                 .ok_or_else(|| anyhow!("Invalid endpoint type"))?,
         )
@@ -122,13 +121,12 @@ impl Issuer {
         let alg = header.alg;
         let mut validation = jsonwebtoken::Validation::new(alg);
         validation.set_audience(audiences);
-        let tokendata =
-            jsonwebtoken::decode::<ArunaTokenClaims>(token, &decoding_key, &validation)?;
+        let tokendata = jsonwebtoken::decode::<ArunaTokenClaims>(token, decoding_key, &validation)?;
         Ok(tokendata.claims)
     }
 }
 
-pub async fn convert_to_pubkeys_issuers(pubkeys: &Vec<(i32, PubKeyEnum)>) -> Result<Vec<Issuer>> {
+pub async fn convert_to_pubkeys_issuers(pubkeys: &Vec<(i16, PubKeyEnum)>) -> Result<Vec<Issuer>> {
     let mut server_encoding_keys = vec![];
     let mut issuers = vec![];
 

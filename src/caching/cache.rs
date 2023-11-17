@@ -44,7 +44,7 @@ use std::sync::Arc;
 pub struct Cache {
     object_cache: DashMap<DieselUlid, ObjectWithRelations, RandomState>,
     user_cache: DashMap<DieselUlid, User, RandomState>,
-    pubkeys: DashMap<i32, PubKeyEnum, RandomState>,
+    pubkeys: DashMap<i16, PubKeyEnum, RandomState>,
     issuer_info: DashMap<String, Issuer>,
     pub issuer_sender: Sender<String>,
     lock: AtomicBool,
@@ -66,7 +66,7 @@ impl Cache {
         let cache_clone = cache.clone();
 
         tokio::spawn(async move {
-            while let Some(issuer_name) = issuer_recv.recv().await.ok() {
+            while let Ok(issuer_name) = issuer_recv.recv().await {
                 cache_clone.update_issuer(&issuer_name).await.ok();
             }
         });
@@ -91,13 +91,13 @@ impl Cache {
             self.user_cache.insert(user.id, user);
         }
 
-        let pubkeys: Vec<(i32, PubKeyEnum)> = DbPubkey::all(&client)
+        let pubkeys: Vec<(i16, PubKeyEnum)> = DbPubkey::all(&client)
             .await?
             .into_iter()
             .map(|x| {
-                let id = x.id as i32;
+                let id = x.id;
                 match PubKeyEnum::try_from(x) {
-                    Ok(e) => Ok((id as i32, e)),
+                    Ok(e) => Ok((id, e)),
                     Err(e) => Err(e),
                 }
             })
@@ -148,7 +148,7 @@ impl Cache {
         self.user_cache.get(id).map(|x| x.value().clone())
     }
 
-    pub fn get_pubkey(&self, serial: i32) -> Option<PubKeyEnum> {
+    pub fn get_pubkey(&self, serial: i16) -> Option<PubKeyEnum> {
         self.check_lock();
         self.pubkeys.get(&serial).map(|x| x.value().clone())
     }
@@ -171,14 +171,14 @@ impl Cache {
         self.pubkeys
             .iter()
             .map(|pk| Pubkey {
-                id: *pk.key(),
+                id: *pk.key() as i32,
                 key: pk.value().get_key_string(),
                 location: pk.value().get_name(),
             })
             .collect()
     }
 
-    pub fn get_pubkey_serial(&self, raw_pubkey: &str) -> Option<i32> {
+    pub fn get_pubkey_serial(&self, raw_pubkey: &str) -> Option<i16> {
         self.check_lock();
         for entry in &self.pubkeys {
             match entry.value() {
@@ -257,14 +257,14 @@ impl Cache {
         self.user_cache.insert(id, user);
     }
 
-    pub fn add_pubkey(&self, id: i32, key: PubKeyEnum) {
+    pub fn add_pubkey(&self, id: i16, key: PubKeyEnum) {
         self.check_lock();
         self.pubkeys.insert(id, key);
     }
 
-    pub fn remove_pubkey(&self, id: &i32) {
+    pub fn remove_pubkey(&self, id: i16) {
         self.check_lock();
-        self.pubkeys.remove(id);
+        self.pubkeys.remove(&id);
     }
 
     pub fn get_issuer(&self, kid: &str) -> Option<Ref<'_, String, Issuer>> {

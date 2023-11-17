@@ -58,6 +58,8 @@ impl DatabaseHandler {
         let id = request.get_id()?;
         Endpoint::delete_by_id(&id, client.client()).await?;
 
+        //ToDo Clean user/resources from endpoint
+
         // Emit announcement notification
         if let Err(err) = self
             .natsio_handler
