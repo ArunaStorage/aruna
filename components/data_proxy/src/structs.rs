@@ -67,6 +67,7 @@ pub struct User {
     pub access_key: String,
     pub user_id: DieselUlid,
     pub secret: String,
+    pub admin: bool,
     pub permissions: HashMap<DieselUlid, DbPermissionLevel>,
 }
 

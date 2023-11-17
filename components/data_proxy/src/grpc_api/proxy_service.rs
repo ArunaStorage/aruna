@@ -1,5 +1,6 @@
 use crate::{
     caching::{auth::get_token_from_md, cache::Cache},
+    helpers::sign_download_url,
     replication::replication_handler::ReplicationMessage,
     trace_err,
 };
@@ -47,7 +48,6 @@ impl DataproxyService for DataproxyServiceImpl {
             }))
             .collect::<Result<Vec<DieselUlid>, tonic::Status>>())?;
 
-        // TODO
         // 1. get all objects & endpoints from server
         let mut objects = Vec::new();
         let object_endpoint_map = DashMap::new();
@@ -60,7 +60,7 @@ impl DataproxyService for DataproxyServiceImpl {
         }
 
         // 2. check if proxy has permissions to pull everything
-        if let Some(auth) = self.cache.auth.read().await.as_ref() {
+        let url = if let Some(auth) = self.cache.auth.read().await.as_ref() {
             let token = trace_err!(get_token_from_md(&metadata))
                 .map_err(|e| tonic::Status::unauthenticated(e.to_string()))?;
             // Returns claims.sub as id -> Can return UserIds or DataproxyIds
@@ -76,16 +76,26 @@ impl DataproxyService for DataproxyServiceImpl {
                     "DataProxy is not allowed to access requested objects",
                 ));
             };
+
+            // TODO
+            // 3. sign download url
+            // - With this dataproxys access & secret keys, scoped and timed
+            //sign_download_url(
+            //    auth.self_id.to_string().as_str(),
+            //    &auth.self_secret,
+            //    true,
+            //    "objects",
+            //    key,
+            //    endpoint,
+            //);
         } else {
             error!("authentication handler not available");
             return Err(tonic::Status::unauthenticated(
                 "Unable to authenticate user",
             ));
-        }
+        };
 
-        // 3. sign download url
-        // - With this dataproxys access & secret keys, scoped and timed
-
+        // TODO
         // 4. Return DataInfos
         error!("RequestReplication not implemented");
         Err(tonic::Status::unimplemented("Currently not implemented"))

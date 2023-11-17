@@ -77,7 +77,7 @@ impl Cache {
         let auth_handler = AuthHandler::new(
             cache.clone(),
             self_id,
-            self_secret,
+            self_secret.clone(),
             encoding_key,
             encoding_key_serial,
         );
@@ -85,10 +85,25 @@ impl Cache {
         // Set auth handler in cache
         cache.set_auth(auth_handler).await;
 
+        // Initialize DataProxy as User
+        let self_user = User {
+            access_key: self_id.to_string(),
+            user_id: self_id,
+            secret: self_secret.clone(),
+            admin: true,
+            permissions: HashMap::default(),
+        };
+        cache.users.insert(self_id.to_string(), self_user.clone());
+
         // Set database conn in cache
         if with_persistence {
             let persistence = Database::new().await?;
             cache.set_persistence(persistence).await?;
+
+            // Initialize DataProxy as User in database
+            if let Some(persistence) = cache.persistence.read().await.as_ref() {
+                self_user.upsert(&persistence.get_client().await?).await?;
+            }
         }
 
         // Fully sync cache (and database if persistent DataProxy)
@@ -210,6 +225,7 @@ impl Cache {
                                     access_key: access_key.to_string(),
                                     user_id: DieselUlid::from_str(&user.id)?,
                                     secret: "".to_string(),
+                                    admin: false,
                                     permissions: perm,
                                 })
                             }))?;
@@ -645,6 +661,7 @@ impl Cache {
                                         access_key: key.to_string(),
                                         user_id,
                                         secret: "".to_string(),
+                                        admin: false,
                                         permissions: HashMap::default(),
                                     })
                                 }))?;

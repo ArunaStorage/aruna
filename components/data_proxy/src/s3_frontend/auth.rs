@@ -33,19 +33,14 @@ impl S3Auth for AuthProvider {
         debug!(path = ?cx.s3_path());
         match self.cache.auth.read().await.as_ref() {
             Some(auth) => {
-                if check_self_credentials(cx.credentials(), auth.self_id, auth.self_secret.clone())
-                {
-                    Ok(())
-                } else {
-                    let result = trace_err!(
-                        auth.check_access(cx.credentials(), cx.method(), cx.s3_path())
-                            .await
-                    )
-                    .map_err(|_| s3_error!(AccessDenied, "Access denied"))?;
+                let result = trace_err!(
+                    auth.check_access(cx.credentials(), cx.method(), cx.s3_path())
+                        .await
+                )
+                .map_err(|_| s3_error!(AccessDenied, "Access denied"))?;
 
-                    cx.extensions_mut().insert(result);
-                    Ok(())
-                }
+                cx.extensions_mut().insert(result);
+                Ok(())
             }
             None => Ok(()),
         }
