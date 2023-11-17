@@ -10,6 +10,7 @@ use anyhow::anyhow;
 use anyhow::Result;
 use base64::{engine::general_purpose, Engine};
 use diesel_ulid::DieselUlid;
+use log::error;
 use std::sync::Arc;
 
 pub struct PermissionHandler {
@@ -43,6 +44,7 @@ impl PermissionHandler {
             match self.token_handler.process_token(token).await {
                 Ok(results) => results,
                 Err(err) => {
+                    error!("Error in auth: {:?}", err);
                     return match err.downcast_ref::<OIDCError>() {
                         Some(_) => Err(tonic::Status::unauthenticated("Not registered")),
                         None => Err(tonic::Status::unauthenticated("Unauthorized")),

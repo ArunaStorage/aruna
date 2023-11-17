@@ -11,6 +11,7 @@ use jsonwebtoken::Algorithm;
 use jsonwebtoken::DecodingKey;
 use jsonwebtoken::EncodingKey;
 use jsonwebtoken::Header;
+use log::error;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -53,7 +54,7 @@ impl std::error::Error for OIDCError {}
 pub struct ArunaTokenClaims {
     pub iss: String, // Currently always 'aruna'
     pub sub: String, // User_ID / DataProxy_ID
-    aud: String,     // Audience;
+    aud: Audience,     // Audience;
     exp: usize,      // Expiration timestamp
     // Token_ID; None if OIDC or ... ?
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -61,6 +62,13 @@ pub struct ArunaTokenClaims {
     // Intent: <endpoint-ulid>_<action>
     #[serde(skip_serializing_if = "Option::is_none")]
     it: Option<Intent>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Clone)]
+#[serde(untagged)]
+enum Audience {
+    String(String),
+    Vec(Vec<String>),
 }
 
 #[repr(u8)]
@@ -223,7 +231,7 @@ impl TokenHandler {
             },
             tid: Some(token_id.to_string()),
             it: None,
-            aud: "aruna".to_string(),
+            aud: Audience::String("aruna".to_string()),
         };
 
         let header = Header {
@@ -254,7 +262,7 @@ impl TokenHandler {
             exp: (Utc::now().timestamp() as usize) + 86400, // One day for now.
             tid: token_id,
             it: intent,
-            aud: "proxy".to_string(),
+            aud: Audience::String("proxy".to_string()),
         };
 
         let header = Header {
@@ -291,7 +299,8 @@ impl TokenHandler {
 
         let (kid, validated_claims) = match issuer.check_token(token).await {
             Ok((kid, validated_claims)) => (kid, validated_claims),
-            Err(_) => {
+            Err(e) => {
+                error!("Possible invalid token: {}", e);
                 self.cache
                     .issuer_sender
                     .try_send(issuer.issuer_name.clone())?;
