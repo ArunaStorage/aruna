@@ -1,9 +1,13 @@
+use std::str::FromStr;
 use std::sync::Arc;
 
 use super::db_handler::DatabaseHandler;
-use super::service_account_request_types::CreateServiceAccountToken;
+use super::service_account_request_types::{
+    CreateServiceAccountToken, SetServiceAccountPermission,
+};
 use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
+use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::user_dsl::{User, UserAttributes};
 use crate::database::enums::ObjectMapping;
 use crate::middlelayer::service_account_request_types::CreateServiceAccount;
@@ -109,5 +113,20 @@ impl DatabaseHandler {
             Some(convert_token_to_proto(&token_ulid, token)),
             token_secret,
         ))
+    }
+    pub async fn set_service_account_permission(
+        &self,
+        request: SetServiceAccountPermission,
+    ) -> Result<User> {
+        let (id, level) = request.get_permissions()?;
+        let service_account_id = DieselUlid::from_str(&request.0.svc_account_id)?;
+        let client = self.database.get_client().await?;
+        let object = Object::get(id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("Resource not found"))?;
+        let user = self
+            .add_permission_to_user(service_account_id, id, &object.name, level, false)
+            .await?;
+        Ok(user)
     }
 }

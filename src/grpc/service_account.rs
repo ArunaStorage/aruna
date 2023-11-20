@@ -2,7 +2,7 @@ use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::service_account_request_types::{
-    CreateServiceAccount, CreateServiceAccountToken,
+    CreateServiceAccount, CreateServiceAccountToken, SetServiceAccountPermission,
 };
 use crate::{auth::permission_handler::PermissionHandler, utils::conversions::get_token_from_md};
 use aruna_rust_api::api::storage::services::v2::{
@@ -82,9 +82,45 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     }
     async fn set_service_account_permission(
         &self,
-        _request: Request<SetServiceAccountPermissionRequest>,
+        request: Request<SetServiceAccountPermissionRequest>,
     ) -> Result<Response<SetServiceAccountPermissionResponse>> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let request = SetServiceAccountPermission(request.into_inner());
+        let (id, perm) = tonic_invalid!(request.get_permissions(), "Invalid permissions provided");
+        let ctx = Context::res_ctx(id, perm.into_inner(), false);
+        let client = tonic_internal!(
+            self.database_handler.database.get_client().await,
+            "Error creating database client"
+        );
+        let (prev_id, prev_perm) = tonic_auth!(
+            request.get_previous_perms(&client).await,
+            "Invalid permissions"
+        );
+        let prev_ctx = Context::res_ctx(prev_id, prev_perm.into_inner(), false);
+        tonic_auth!(
+            self.authorizer
+                .check_permissions(&token, vec![ctx, prev_ctx])
+                .await,
+            "Unauthorized"
+        );
+
+        let service_account = tonic_internal!(
+            self.database_handler
+                .set_service_account_permission(request)
+                .await,
+            "Internal create service account error"
+        );
+        let response = SetServiceAccountPermissionResponse {
+            service_account: Some(tonic_internal!(
+                service_account.try_into(),
+                "User conversion error"
+            )),
+        };
+        return_with_log!(response);
     }
     async fn get_service_account_token(
         &self,
