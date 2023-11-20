@@ -66,7 +66,7 @@ impl Cache {
         let cache_clone = cache.clone();
 
         tokio::spawn(async move {
-            while let Some(issuer_name) = issuer_recv.recv().await.ok() {
+            while let Ok(issuer_name) = issuer_recv.recv().await {
                 cache_clone.update_issuer(&issuer_name).await.ok();
             }
         });
@@ -97,7 +97,7 @@ impl Cache {
             .map(|x| {
                 let id = x.id as i32;
                 match PubKeyEnum::try_from(x) {
-                    Ok(e) => Ok((id as i32, e)),
+                    Ok(e) => Ok((id, e)),
                     Err(e) => Err(e),
                 }
             })

@@ -741,19 +741,13 @@ async fn add_remove_endpoint_test() {
     user.create(client).await.unwrap();
 
     let mut project = test_utils::new_object(user.id, project_id, ObjectType::PROJECT);
-    project.endpoints = Json(DashMap::from_iter([(endpoint1.clone(), true)]));
+    project.endpoints = Json(DashMap::from_iter([(endpoint1, true)]));
 
     let mut collection = test_utils::new_object(user.id, collection_id, ObjectType::COLLECTION);
-    collection.endpoints = Json(DashMap::from_iter([
-        (endpoint1.clone(), true),
-        (endpoint2.clone(), false),
-    ]));
+    collection.endpoints = Json(DashMap::from_iter([(endpoint1, true), (endpoint2, false)]));
 
     let mut object = test_utils::new_object(user.id, object_id, ObjectType::OBJECT);
-    object.endpoints = Json(DashMap::from_iter([
-        (endpoint1.clone(), true),
-        (endpoint2.clone(), false),
-    ]));
+    object.endpoints = Json(DashMap::from_iter([(endpoint1, true), (endpoint2, false)]));
 
     Object::batch_create(
         &vec![project.clone(), collection.clone(), object.clone()],
@@ -771,7 +765,7 @@ async fn add_remove_endpoint_test() {
         .unwrap();
 
     // Validate resources have a single endpoint
-    for resource_id in vec![project_id, collection_id, object_id] {
+    for resource_id in [project_id, collection_id, object_id] {
         let resource = Object::get(resource_id, client).await.unwrap().unwrap();
 
         if resource.id == project_id {
@@ -808,7 +802,7 @@ async fn add_remove_endpoint_test() {
         .unwrap();
 
     for resource in resources {
-        if vec![project_id, collection_id, object_id].contains(&resource.id) {
+        if [project_id, collection_id, object_id].contains(&resource.id) {
             assert_eq!(resource.endpoints.0.len(), 1);
             assert!(resource.endpoints.0.contains_key(&endpoint1));
         }
@@ -822,7 +816,7 @@ async fn add_remove_endpoint_test() {
     assert!(object.endpoints.0.contains_key(&endpoint1));
 
     // Try to remove last remaining endpoint --> Error
-    for resource_id in vec![project_id, collection_id, object_id] {
+    for resource_id in [project_id, collection_id, object_id] {
         let resource = Object::remove_endpoint(client, &resource_id, &endpoint1)
             .await
             .unwrap();

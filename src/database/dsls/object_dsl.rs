@@ -242,7 +242,7 @@ impl Object {
             RETURNING *;";
 
         let insert: DashMap<DieselUlid, bool, RandomState> =
-            DashMap::from_iter([(endpoint_id.clone(), full_sync)]);
+            DashMap::from_iter([(*endpoint_id, full_sync)]);
         let prepared = client.prepare(query).await?;
         let row = client
             .query_one(&prepared, &[&Json(insert), object_id])

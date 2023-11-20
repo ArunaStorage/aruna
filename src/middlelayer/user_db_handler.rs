@@ -411,13 +411,9 @@ impl DatabaseHandler {
         if user.attributes.0.external_ids.len() == 1 {
             bail!("Cannot remove last external id");
         }
-        new_attributes.external_ids.retain(|e| {
-            if e.oidc_name != provider_name {
-                true
-            } else {
-                false
-            }
-        });
+        new_attributes
+            .external_ids
+            .retain(|e| e.oidc_name != provider_name);
         let user = User::set_user_attributes(&client, &user_id, Json(new_attributes)).await?;
         self.cache.update_user(&user_id, user.clone());
         Ok(user)
