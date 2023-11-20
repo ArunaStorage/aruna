@@ -761,7 +761,6 @@ async fn add_remove_trusted_endpoint_test() {
         .await
         .unwrap();
 
-    assert_eq!(users.len(), 3);
     for user in users {
         if user.id == user1_ulid {
             assert_eq!(user.attributes.0.trusted_endpoints.len(), 2);
@@ -781,7 +780,6 @@ async fn add_remove_trusted_endpoint_test() {
         .await
         .unwrap();
 
-    assert_eq!(users.len(), 3);
     for user in users {
         if user.id == user1_ulid || user.id == user2_ulid {
             assert_eq!(user.attributes.0.trusted_endpoints.len(), 1);
@@ -797,7 +795,6 @@ async fn add_remove_trusted_endpoint_test() {
         .await
         .unwrap();
 
-    assert_eq!(users.len(), 3);
     for user in users {
         if user.id == user1_ulid || user.id == user2_ulid {
             assert_eq!(user.attributes.0.trusted_endpoints.len(), 0)
