@@ -203,8 +203,9 @@ impl Object {
         client: &Client,
         rel: Vec<ExternalRelation>,
     ) -> Result<()> {
-        let query_one =
-            "UPDATE objects SET external_relations = external_relations || $1::jsonb WHERE id = $2";
+        let query_one = "UPDATE objects 
+            SET external_relations = external_relations || $1::jsonb 
+            WHERE id = $2";
         let dash_map: DashMap<String, ExternalRelation, RandomState> =
             DashMap::from_iter(rel.into_iter().map(|r| (r.identifier.clone(), r)));
         let query_two = Json(ExternalRelations(dash_map));
@@ -220,11 +221,75 @@ impl Object {
         rel: Vec<ExternalRelation>,
     ) -> Result<()> {
         let keys: Vec<String> = rel.into_iter().map(|e| e.identifier).collect();
-        let query =
-            "UPDATE objects SET external_relations = external_relations - $1::text[] WHERE id = $2;";
+        let query = "UPDATE objects 
+            SET external_relations = external_relations - $1::text[] 
+            WHERE id = $2;";
         let prepared = client.prepare(query).await?;
         client.execute(&prepared, &[&keys, id]).await?;
         Ok(())
+    }
+
+    //ToDo: Docs
+    pub async fn add_endpoint(
+        client: &Client,
+        object_id: &DieselUlid,
+        endpoint_id: &DieselUlid,
+        full_sync: bool,
+    ) -> Result<Object> {
+        let query = "UPDATE objects 
+            SET endpoints = endpoints || $1::jsonb 
+            WHERE id = $2
+            RETURNING *;";
+
+        let insert: DashMap<DieselUlid, bool, RandomState> =
+            DashMap::from_iter([(endpoint_id.clone(), full_sync)]);
+        let prepared = client.prepare(query).await?;
+        let row = client
+            .query_one(&prepared, &[&Json(insert), object_id])
+            .await?;
+
+        Ok(Object::from_row(&row))
+    }
+
+    //ToDo: Docs
+    pub async fn remove_endpoint(
+        client: &Client,
+        object_id: &DieselUlid,
+        endpoint_id: &DieselUlid,
+    ) -> Result<Object> {
+        let query = "UPDATE objects 
+            SET endpoints = endpoints::jsonb #- $1::text[]
+            WHERE id = $2 
+            RETURNING *;";
+
+        let prepared = client.prepare(query).await?;
+        let row = client
+            .query_one(&prepared, &[&vec![endpoint_id.to_string()], object_id])
+            .await?;
+
+        Ok(Object::from_row(&row))
+    }
+
+    //ToDo: Docs
+    pub async fn remove_endpoint_from_objects(
+        client: &Client,
+        endpoint_id: &DieselUlid,
+    ) -> Result<Vec<Object>> {
+        let query = "UPDATE objects 
+            SET endpoints = endpoints::jsonb #- $1::text[]
+            RETURNING *;";
+
+        let prepared = client.prepare(query).await?;
+        let rows = client
+            .query(&prepared, &[&vec![endpoint_id.to_string()]])
+            .await?;
+
+        let mut users = vec![];
+        for row in rows {
+            users.push(Object::try_from_row(&row)?)
+        }
+
+        Ok(users)
     }
 
     //ToDo: Docs

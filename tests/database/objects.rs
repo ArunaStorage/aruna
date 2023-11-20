@@ -715,3 +715,117 @@ async fn archive_test() {
         assert!(!o.object.dynamic);
     }
 }
+
+#[tokio::test]
+async fn add_remove_endpoint_test() {
+    let db = init::init_database().await;
+    let client = db.get_client().await.unwrap();
+    let client = client.client();
+
+    // Create objects with endpoints
+    let project_id = DieselUlid::generate();
+    let collection_id = DieselUlid::generate();
+    let object_id = DieselUlid::generate();
+
+    let endpoint1 = DieselUlid::generate();
+    let endpoint2 = DieselUlid::generate();
+    let endpoint3 = DieselUlid::generate();
+
+    let object_mapping = vec![
+        ObjectMapping::PROJECT(project_id),
+        ObjectMapping::COLLECTION(collection_id),
+        ObjectMapping::OBJECT(object_id),
+    ];
+
+    let mut user = test_utils::new_user(object_mapping);
+    user.create(client).await.unwrap();
+
+    let mut project = test_utils::new_object(user.id, project_id, ObjectType::PROJECT);
+    project.endpoints = Json(DashMap::from_iter([(endpoint1.clone(), true)]));
+
+    let mut collection = test_utils::new_object(user.id, collection_id, ObjectType::COLLECTION);
+    collection.endpoints = Json(DashMap::from_iter([
+        (endpoint1.clone(), true),
+        (endpoint2.clone(), false),
+    ]));
+
+    let mut object = test_utils::new_object(user.id, object_id, ObjectType::OBJECT);
+    object.endpoints = Json(DashMap::from_iter([
+        (endpoint1.clone(), true),
+        (endpoint2.clone(), false),
+    ]));
+
+    Object::batch_create(
+        &vec![project.clone(), collection.clone(), object.clone()],
+        client,
+    )
+    .await
+    .unwrap();
+
+    // Create relations
+    let p_c_r = test_utils::new_internal_relation(&project, &collection);
+    let c_o_r = test_utils::new_internal_relation(&collection, &object);
+
+    InternalRelation::batch_create(&vec![p_c_r, c_o_r], client)
+        .await
+        .unwrap();
+
+    // Validate resources have a single endpoint
+    for resource_id in vec![project_id, collection_id, object_id] {
+        let resource = Object::get(resource_id, client).await.unwrap().unwrap();
+
+        if resource.id == project_id {
+            assert_eq!(resource.endpoints.0.len(), 1);
+            assert!(resource.endpoints.0.contains_key(&endpoint1));
+        } else {
+            assert_eq!(resource.endpoints.0.len(), 2);
+            assert!(resource.endpoints.0.contains_key(&endpoint1));
+            assert!(resource.endpoints.0.contains_key(&endpoint2));
+        }
+    }
+
+    // Add another endpoint to the Object
+    let object = Object::add_endpoint(client, &object_id, &endpoint3, false)
+        .await
+        .unwrap();
+
+    assert_eq!(object.endpoints.0.len(), 3);
+    assert!(object.endpoints.0.contains_key(&endpoint1));
+    assert!(object.endpoints.0.contains_key(&endpoint2));
+    assert!(object.endpoints.0.contains_key(&endpoint3));
+
+    // Remove third endpoint from object
+    let object = Object::remove_endpoint(client, &object_id, &endpoint3)
+        .await
+        .unwrap();
+    assert_eq!(object.endpoints.0.len(), 2);
+    assert!(object.endpoints.0.contains_key(&endpoint1));
+    assert!(object.endpoints.0.contains_key(&endpoint2));
+
+    // Remove second endpoint from all resources
+    let resources = Object::remove_endpoint_from_objects(client, &endpoint2)
+        .await
+        .unwrap();
+
+    for resource in resources {
+        if vec![project_id, collection_id, object_id].contains(&resource.id) {
+            assert_eq!(resource.endpoints.0.len(), 1);
+            assert!(resource.endpoints.0.contains_key(&endpoint1));
+        }
+    }
+
+    // Remove third endpoint from object
+    let object = Object::remove_endpoint(client, &object_id, &endpoint3)
+        .await
+        .unwrap();
+    assert_eq!(object.endpoints.0.len(), 1);
+    assert!(object.endpoints.0.contains_key(&endpoint1));
+
+    // Try to remove last remaining endpoint --> Error
+    for resource_id in vec![project_id, collection_id, object_id] {
+        let resource = Object::remove_endpoint(client, &resource_id, &endpoint1)
+            .await
+            .unwrap();
+        assert!(resource.endpoints.0.is_empty());
+    }
+}
