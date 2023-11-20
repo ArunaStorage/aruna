@@ -117,6 +117,12 @@ impl Cache {
             audiences,
         } in issuers
         {
+            let audiences = if audiences.is_empty() {
+                None
+            } else {
+                Some(audiences)
+            };
+
             self.issuer_info.insert(
                 issuer_name.to_string(),
                 Issuer::new_with_endpoint(issuer_name.clone(), jwks_endpoint, audiences).await?,
