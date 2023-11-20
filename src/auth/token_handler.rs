@@ -55,7 +55,7 @@ pub struct ArunaTokenClaims {
     pub iss: String, // Currently always 'aruna'
     pub sub: String, // User_ID / DataProxy_ID
     #[serde(skip_serializing_if = "Option::is_none")]
-    aud: Option<Audience>,   // Audience;
+    aud: Option<Audience>, // Audience;
     exp: usize,      // Expiration timestamp
     // Token_ID; None if OIDC or ... ?
     #[serde(skip_serializing_if = "Option::is_none")]
