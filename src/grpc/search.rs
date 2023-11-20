@@ -108,7 +108,7 @@ impl SearchService for SearchServiceImpl {
             "Invalid resource id format"
         );
 
-        let (object_plus, permission) = if request_metadata.get("Authorization").is_some() {
+        let user = if request_metadata.get("Authorization").is_some() {
             // Extract token and check permissions with empty context
             let token = tonic_auth!(
                 get_token_from_md(&request_metadata),
@@ -117,10 +117,14 @@ impl SearchService for SearchServiceImpl {
 
             // Check permissions
             let ctx = Context::res_ctx(resource_ulid, DbPermissionLevel::READ, true);
-            let user = tonic_auth!(
-                self.authorizer.check_permissions(&token, vec![ctx]).await,
-                "Permission denied"
-            );
+            self.authorizer
+                .check_permissions(&token, vec![ctx])
+                .await
+                .ok()
+        } else {
+            None
+        };
+        let (object_plus, permission) = if let Some(user) = user {
             let object = self
                 .cache
                 .get_object(&resource_ulid)
@@ -195,7 +199,6 @@ impl SearchService for SearchServiceImpl {
                 .collect::<Vec<_>>();
 
             object_plus.object.key_values = Json(KeyValues(stripped_labels));
-            object_plus.object.endpoints = Json(DashMap::default());
             (object_plus, PermissionLevel::Read)
         };
 
@@ -236,7 +239,7 @@ impl SearchService for SearchServiceImpl {
             "Invalid resource id format"
         );
 
-        let objects = if request_metadata.get("Authorization").is_some() {
+        let user = if request_metadata.get("Authorization").is_some() {
             // Extract token and check permissions with empty context
             let token = tonic_auth!(
                 get_token_from_md(&request_metadata),
@@ -248,10 +251,12 @@ impl SearchService for SearchServiceImpl {
                 .iter()
                 .map(|id| Context::res_ctx(*id, DbPermissionLevel::READ, true))
                 .collect();
-            let user = tonic_auth!(
-                self.authorizer.check_permissions(&token, ctx).await,
-                "Permission denied"
-            );
+
+            self.authorizer.check_permissions(&token, ctx).await.ok()
+        } else {
+            None
+        };
+        let objects = if let Some(user) = user {
             let mut objects: Vec<(ObjectWithRelations, PermissionLevel)> = Vec::new();
             for id in resource_ids {
                 let object = self
@@ -333,7 +338,6 @@ impl SearchService for SearchServiceImpl {
                     .collect::<Vec<_>>();
 
                 object_plus.object.key_values = Json(KeyValues(stripped_labels));
-                object_plus.object.endpoints = Json(DashMap::default());
                 objects.push((object_plus, PermissionLevel::Read));
             }
             objects
