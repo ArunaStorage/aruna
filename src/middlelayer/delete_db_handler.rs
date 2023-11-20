@@ -47,6 +47,9 @@ impl DatabaseHandler {
 
         // Fetch hierarchies and object relations for notifications
         let objects_plus = Object::get_objects_with_relations(&resources, &client).await?;
+        for o in &objects_plus {
+            self.cache.upsert_object(&o.object.id, o.clone())
+        }
 
         for object_plus in &objects_plus {
             let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;

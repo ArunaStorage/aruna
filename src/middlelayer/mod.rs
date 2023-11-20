@@ -14,6 +14,8 @@ pub mod presigned_url_handler;
 pub mod query_handler;
 pub mod relations_db_handler;
 pub mod relations_request_types;
+pub mod service_account_request_types;
+pub mod service_accounts_db_handler;
 pub mod snapshot_db_handler;
 pub mod snapshot_request_types;
 pub mod token_db_handler;

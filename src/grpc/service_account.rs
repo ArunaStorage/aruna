@@ -1,6 +1,10 @@
-use crate::auth::permission_handler::PermissionHandler;
+use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::middlelayer::service_account_request_types::{
+    CreateServiceAccount, CreateServiceAccountToken,
+};
+use crate::{auth::permission_handler::PermissionHandler, utils::conversions::get_token_from_md};
 use aruna_rust_api::api::storage::services::v2::{
     service_account_service_server::ServiceAccountService, CreateDataproxyTokenSvcAccountRequest,
     CreateDataproxyTokenSvcAccountResponse, CreateServiceAccountRequest,
@@ -22,15 +26,59 @@ crate::impl_grpc_server!(ServiceAccountServiceImpl);
 impl ServiceAccountService for ServiceAccountServiceImpl {
     async fn create_service_account(
         &self,
-        _request: Request<CreateServiceAccountRequest>,
+        request: Request<CreateServiceAccountRequest>,
     ) -> Result<Response<CreateServiceAccountResponse>> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let request = CreateServiceAccount(request.into_inner());
+        let (id, perm) = tonic_invalid!(request.get_permissions(), "Invalid request");
+        let ctx = Context::res_ctx(id, perm.into_inner(), false);
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+        let service_account = tonic_internal!(
+            self.database_handler.create_service_account(request).await,
+            "Internal create service account error"
+        );
+        let response = CreateServiceAccountResponse {
+            service_account: Some(tonic_internal!(
+                service_account.try_into(),
+                "User conversion error"
+            )),
+        };
+        return_with_log!(response);
     }
     async fn create_service_account_token(
         &self,
-        _request: Request<CreateServiceAccountTokenRequest>,
+        request: Request<CreateServiceAccountTokenRequest>,
     ) -> Result<Response<CreateServiceAccountTokenResponse>> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let request = CreateServiceAccountToken(request.into_inner());
+        let (id, perm) = tonic_invalid!(request.get_permissions(), "Invalid permissions provided");
+        let ctx = Context::res_ctx(id, perm.into_inner(), false);
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+        let (token, token_secret) = tonic_internal!(
+            self.database_handler
+                .create_service_account_token(self.authorizer.clone(), request)
+                .await,
+            "Internal create service account error"
+        );
+        let response = CreateServiceAccountTokenResponse {
+            token,
+            token_secret,
+        };
+        return_with_log!(response);
     }
     async fn set_service_account_permission(
         &self,
