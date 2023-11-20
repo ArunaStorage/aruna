@@ -277,15 +277,12 @@ async fn process_announcement_event(
                 log::info!("Received NewDataProxyId announcement for: {id}")
             }
             AnnEventVariant::RemoveDataProxyId(id) => {
-                let endpoint_id = DieselUlid::from_str(&id)?;
-                // Remove endpoint pubkeys from cache
-                cache.remove_endpoint_pubkeys(&endpoint_id);
-                // Remove endpoint from all users in cache
-                cache.remove_endpoint_from_users(&endpoint_id);
-                // Remove endpoint from all resources
-                cache.remove_endpoint_from_users(&endpoint_id);
-                //Note: No need to remove pubkeys from database here
-                //      as they are cascade deleted with the endpoint
+                log::info!("Received RemoveDataProxy announcement for: {id}");
+
+                // Removes endpoint from all users/resources in cache with full sync.
+                // As the endpoint was already removed from all users and resources on the database
+                //  level this should reset the cache to full consistency with the current database status.
+                cache.sync_cache(database).await?
             }
             AnnEventVariant::UpdateDataProxyId(id) => {
                 //Note: Endpoint cache currently not implemented

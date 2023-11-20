@@ -1,6 +1,8 @@
 use crate::database::crud::CrudDb;
 use crate::database::dsls::endpoint_dsl::Endpoint;
+use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::pub_key_dsl::PubKey;
+use crate::database::dsls::user_dsl::User;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::endpoints_request_types::{CreateEP, DeleteEP, GetBy, GetEP};
 
@@ -54,9 +56,21 @@ impl DatabaseHandler {
     }
 
     pub async fn delete_endpoint(&self, request: DeleteEP) -> Result<()> {
-        let client = self.database.get_client().await?;
+        // Open transaction
+        let mut db_client = self.database.get_client().await?;
+        let transaction = db_client.transaction().await?;
+        let transaction_client = transaction.client();
+
+        // Remove endpoint from database
         let id = request.get_id()?;
-        Endpoint::delete_by_id(&id, client.client()).await?;
+        Endpoint::delete_by_id(&id, transaction_client.client()).await?;
+
+        // Remove endpoint from users/resources
+        User::remove_endpoint_from_users(transaction_client, &id).await?;
+        Object::remove_endpoint_from_objects(transaction_client, &id).await?;
+
+        // Commit transaction
+        transaction.commit().await?;
 
         //ToDo Clean user/resources from endpoint
 

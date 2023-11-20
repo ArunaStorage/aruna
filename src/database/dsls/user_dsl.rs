@@ -300,6 +300,7 @@ impl User {
 
         Ok(User::from_row(&row))
     }
+
     pub async fn remove_all_tokens(client: &Client, user_id: &DieselUlid) -> Result<User> {
         let query = "UPDATE users 
             SET attributes = jsonb_set(attributes, '{tokens}', '{}') 
@@ -311,6 +312,7 @@ impl User {
 
         Ok(User::from_row(&row))
     }
+
     pub async fn deactivate_user(client: &Client, user_id: &DieselUlid) -> Result<User> {
         let query = "UPDATE users
             SET active = false 
@@ -353,7 +355,39 @@ impl User {
         Ok(User::from_row(&row))
     }
 
-    //TODO: Remove dataproxy
+    //ToDo: Docs
+    pub async fn remove_trusted_endpoint(
+        client: &Client,
+        user_id: &DieselUlid,
+        endpoint_id: &DieselUlid,
+    ) -> Result<User> {
+        let query = "UPDATE users 
+            SET attributes = jsonb_set(attributes, '{trusted_endpoints}', (attributes->'trusted_endpoints') - $1::TEXT) 
+            WHERE id = $2 
+            RETURNING *;";
+
+        let prepared = client.prepare(query).await?;
+        let row = client
+            .query_one(&prepared, &[&endpoint_id.to_string(), &user_id])
+            .await?;
+
+        Ok(User::from_row(&row))
+    }
+
+    //ToDo: Docs
+    pub async fn remove_endpoint_from_users(
+        client: &Client,
+        endpoint_id: &DieselUlid,
+    ) -> Result<Vec<User>> {
+        let query = "UPDATE users 
+            SET attributes = jsonb_set(attributes, '{trusted_endpoints}', (attributes->'trusted_endpoints') - $1::TEXT) 
+            RETURNING *;";
+
+        let prepared = client.prepare(query).await?;
+        let rows = client.query(&prepared, &[&endpoint_id.to_string()]).await?;
+
+        Ok(rows.iter().map(User::from_row).collect::<Vec<_>>())
+    }
 }
 
 impl Display for UserAttributes {
