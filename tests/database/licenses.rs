@@ -44,7 +44,6 @@ async fn create_and_get_licenses() {
 
     let all = License::all(&client).await.unwrap();
 
-    dbg!(&all);
     assert!(all.iter().contains(&get_license));
     assert!(all.iter().contains(&ok_license));
     assert!(!all.iter().contains(&err_license));
