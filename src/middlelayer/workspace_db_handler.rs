@@ -89,7 +89,7 @@ impl DatabaseHandler {
                 &service_user.id,
                 authorizer.token_handler.get_current_pubkey_serial() as i32,
                 CreateToken(CreateApiTokenRequest {
-                    name: service_user.display_name,
+                    name: service_user.display_name.clone(),
                     permission: Some(Permission {
                         permission_level: PermissionLevel::Append as i32,
                         resource_id: Some(aruna_rust_api::api::storage::models::v2::permission::ResourceId::ProjectId(workspace.id.to_string())),
@@ -101,6 +101,8 @@ impl DatabaseHandler {
 
         // Update service account without explicit fetch
         service_user.attributes.0.tokens.insert(token_ulid, token);
+        self.cache
+            .update_user(&service_user.id, service_user.clone());
 
         // Sign token
         let token_secret =

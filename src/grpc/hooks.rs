@@ -39,7 +39,7 @@ impl HooksService for HookServiceImpl {
 
         let ctx = project_ids
             .iter()
-            .map(|id| Context::res_ctx(*id, DbPermissionLevel::APPEND, true))
+            .map(|id| Context::res_ctx(*id, DbPermissionLevel::APPEND, false))
             .collect();
 
         let user_id = tonic_auth!(
@@ -149,7 +149,7 @@ impl HooksService for HookServiceImpl {
 
         let ctx = project_ids
             .iter()
-            .map(|id| Context::res_ctx(*id, DbPermissionLevel::ADMIN, true))
+            .map(|id| Context::res_ctx(*id, DbPermissionLevel::ADMIN, false))
             .collect();
 
         tonic_auth!(
@@ -200,7 +200,7 @@ impl HooksService for HookServiceImpl {
             .collect::<Result<Vec<DieselUlid>>>()?;
         let ctx = project_ids
             .iter()
-            .map(|id| Context::res_ctx(*id, DbPermissionLevel::ADMIN, true))
+            .map(|id| Context::res_ctx(*id, DbPermissionLevel::ADMIN, false))
             .collect();
         let user = tonic_auth!(
             self.authorizer.check_permissions(&token, ctx).await,
