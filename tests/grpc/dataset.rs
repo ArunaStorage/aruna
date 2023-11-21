@@ -808,7 +808,7 @@ async fn grpc_delete_dataset() {
 
     let response = dataset_service.delete_dataset(grpc_request).await;
 
-    assert!(response.is_ok()); // Just nothing got "deleted"
+    assert!(response.is_err()); // Dataset does not exist
 
     // Delete Dataset without token
     inner_request.dataset_id = dataset_ulid.to_string();
