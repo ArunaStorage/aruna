@@ -1,9 +1,13 @@
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
+use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::service_account_request_types::{
-    CreateServiceAccount, CreateServiceAccountToken, SetServiceAccountPermission,
+    CreateServiceAccount, CreateServiceAccountToken, DeleteServiceAccount,
+    DeleteServiceAccountToken, DeleteServiceAccountTokens, GetServiceAccountToken,
+    GetServiceAccountTokens, SetServiceAccountPermission,
 };
+use crate::utils::conversions::convert_token_to_proto;
 use crate::{auth::permission_handler::PermissionHandler, utils::conversions::get_token_from_md};
 use aruna_rust_api::api::storage::services::v2::{
     service_account_service_server::ServiceAccountService, CreateDataproxyTokenSvcAccountRequest,
@@ -35,9 +39,12 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
         );
         let request = CreateServiceAccount(request.into_inner());
         let (id, perm) = tonic_invalid!(request.get_permissions(), "Invalid request");
-        let ctx = Context::res_ctx(id, perm.into_inner(), false);
+        let ctx = vec![
+            Context::res_ctx(id, DbPermissionLevel::ADMIN, false),
+            Context::res_ctx(id, perm.into_inner(), false),
+        ];
         tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            self.authorizer.check_permissions(&token, ctx).await,
             "Unauthorized"
         );
         let service_account = tonic_internal!(
@@ -91,7 +98,7 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
         );
         let request = SetServiceAccountPermission(request.into_inner());
         let (id, perm) = tonic_invalid!(request.get_permissions(), "Invalid permissions provided");
-        let ctx = Context::res_ctx(id, perm.into_inner(), false);
+        let wanted_ctx = Context::res_ctx(id, perm.into_inner(), false);
         let client = tonic_internal!(
             self.database_handler.database.get_client().await,
             "Error creating database client"
@@ -103,7 +110,15 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
         let prev_ctx = Context::res_ctx(prev_id, prev_perm.into_inner(), false);
         tonic_auth!(
             self.authorizer
-                .check_permissions(&token, vec![ctx, prev_ctx])
+                .check_permissions(
+                    &token,
+                    vec![
+                        wanted_ctx,
+                        prev_ctx,
+                        Context::res_ctx(id, DbPermissionLevel::ADMIN, false),
+                        Context::res_ctx(prev_id, DbPermissionLevel::ADMIN, false)
+                    ]
+                )
                 .await,
             "Unauthorized"
         );
@@ -122,35 +137,184 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
         };
         return_with_log!(response);
     }
+
     async fn get_service_account_token(
         &self,
-        _request: Request<GetServiceAccountTokenRequest>,
+        request: Request<GetServiceAccountTokenRequest>,
     ) -> Result<Response<GetServiceAccountTokenResponse>> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let client = tonic_internal!(
+            self.database_handler.database.get_client().await,
+            "Could not create database client"
+        );
+        let request = GetServiceAccountToken(request.into_inner());
+        let (_, token_id) = tonic_invalid!(request.get_ids(), "Invalid id providied");
+        let service_account = tonic_invalid!(
+            request.get_service_account(&client).await,
+            "Invalid request"
+        );
+        let ctx = tonic_internal!(
+            GetServiceAccountToken::get_context(&service_account),
+            "Error retrieving permissions"
+        );
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+        let token = service_account
+            .attributes
+            .0
+            .tokens
+            .get(&token_id)
+            .ok_or_else(|| tonic::Status::not_found("Token not found"))?;
+        let (token_id, token) = token.pair();
+        let token = Some(convert_token_to_proto(token_id, token.clone()));
+        let response = GetServiceAccountTokenResponse { token };
+        return_with_log!(response);
     }
     async fn get_service_account_tokens(
         &self,
-        _request: Request<GetServiceAccountTokensRequest>,
+        request: Request<GetServiceAccountTokensRequest>,
     ) -> Result<Response<GetServiceAccountTokensResponse>> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let client = tonic_internal!(
+            self.database_handler.database.get_client().await,
+            "Could not create database client"
+        );
+        let request = GetServiceAccountTokens(request.into_inner());
+        let service_account = tonic_invalid!(
+            request.get_service_account(&client).await,
+            "Invalid request"
+        );
+        let ctx = tonic_internal!(
+            GetServiceAccountToken::get_context(&service_account),
+            "Error retrieving permissions"
+        );
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+        let tokens = service_account
+            .attributes
+            .0
+            .tokens
+            .iter()
+            .map(|token_map| {
+                let (id, token) = token_map.pair();
+                convert_token_to_proto(id, token.clone())
+            })
+            .collect();
+        let response = GetServiceAccountTokensResponse { tokens };
+        return_with_log!(response);
     }
+
     async fn delete_service_account_token(
         &self,
-        _request: Request<DeleteServiceAccountTokenRequest>,
+        request: Request<DeleteServiceAccountTokenRequest>,
     ) -> Result<Response<DeleteServiceAccountTokenResponse>> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let request = DeleteServiceAccountToken(request.into_inner());
+        let client = tonic_internal!(
+            self.database_handler.database.get_client().await,
+            "Could not create database client"
+        );
+        let service_account = tonic_invalid!(
+            request.get_service_account(&client).await,
+            "Invalid request"
+        );
+        let ctx = tonic_internal!(
+            GetServiceAccountToken::get_context(&service_account),
+            "Error retrieving permissions"
+        );
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+        tonic_internal!(
+            self.database_handler
+                .delete_service_account_token(request)
+                .await,
+            "Error while deleting service account"
+        );
+        return_with_log!(DeleteServiceAccountTokenResponse {});
     }
     async fn delete_service_account_tokens(
         &self,
-        _request: Request<DeleteServiceAccountTokensRequest>,
+        request: Request<DeleteServiceAccountTokensRequest>,
     ) -> Result<Response<DeleteServiceAccountTokensResponse>> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let request = DeleteServiceAccountTokens(request.into_inner());
+        let client = tonic_internal!(
+            self.database_handler.database.get_client().await,
+            "Could not create database client"
+        );
+        let service_account = tonic_invalid!(
+            request.get_service_account(&client).await,
+            "Invalid request"
+        );
+        let ctx = tonic_internal!(
+            GetServiceAccountToken::get_context(&service_account),
+            "Error retrieving permissions"
+        );
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+        tonic_internal!(
+            self.database_handler
+                .delete_service_account_tokens(request)
+                .await,
+            "Error while deleting service account"
+        );
+        return_with_log!(DeleteServiceAccountTokensResponse {});
     }
     async fn delete_service_account(
         &self,
-        _request: Request<DeleteServiceAccountRequest>,
+        request: Request<DeleteServiceAccountRequest>,
     ) -> Result<Response<DeleteServiceAccountResponse>> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let request = DeleteServiceAccount(request.into_inner());
+        let client = tonic_internal!(
+            self.database_handler.database.get_client().await,
+            "Could not create database client"
+        );
+        let service_account = tonic_invalid!(
+            request.get_service_account(&client).await,
+            "Invalid request"
+        );
+        let ctx = tonic_internal!(
+            GetServiceAccountToken::get_context(&service_account),
+            "Error retrieving permissions"
+        );
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+        tonic_internal!(
+            self.database_handler.delete_service_account(request).await,
+            "Error while deleting service account"
+        );
+        return_with_log!(DeleteServiceAccountResponse {});
     }
     async fn get_s3_credentials_svc_account(
         &self,
