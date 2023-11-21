@@ -47,7 +47,7 @@ impl DatabaseHandler {
                         .collect::<Vec<_>>();
 
                     // Collect objects for deletion depending if with revisions
-                    if version_ids.len() > 0 {
+                    if !version_ids.is_empty() {
                         let mut version_objects =
                             Object::get_objects_with_relations(&version_ids, transaction_client)
                                 .await?;
@@ -56,7 +56,7 @@ impl DatabaseHandler {
                             objects.append(&mut version_objects);
                         } else {
                             for version in version_objects {
-                                if !(version.object.object_status == ObjectStatus::DELETED) {
+                                if version.object.object_status != ObjectStatus::DELETED {
                                     bail!("Object has undeleted versions");
                                 }
                             }
@@ -107,7 +107,7 @@ impl DatabaseHandler {
                                     Object::get_objects(&version_ids, transaction_client).await?;
 
                                 for version in versions {
-                                    if !(version.object_status == ObjectStatus::DELETED) {
+                                    if version.object_status != ObjectStatus::DELETED {
                                         bail!(
                                             "{:?} has undeleted versions",
                                             resource.object.object_type
