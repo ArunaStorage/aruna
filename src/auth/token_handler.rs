@@ -54,7 +54,8 @@ impl std::error::Error for OIDCError {}
 pub struct ArunaTokenClaims {
     pub iss: String, // Currently always 'aruna'
     pub sub: String, // User_ID / DataProxy_ID
-    aud: Audience,   // Audience;
+    #[serde(skip_serializing_if = "Option::is_none")]
+    aud: Option<Audience>, // Audience;
     exp: usize,      // Expiration timestamp
     // Token_ID; None if OIDC or ... ?
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -231,7 +232,7 @@ impl TokenHandler {
             },
             tid: Some(token_id.to_string()),
             it: None,
-            aud: Audience::String("aruna".to_string()),
+            aud: Some(Audience::String("aruna".to_string())),
         };
 
         let header = Header {
@@ -262,7 +263,7 @@ impl TokenHandler {
             exp: (Utc::now().timestamp() as usize) + 86400, // One day for now.
             tid: token_id,
             it: intent,
-            aud: Audience::String("proxy".to_string()),
+            aud: Some(Audience::String("proxy".to_string())),
         };
 
         let header = Header {

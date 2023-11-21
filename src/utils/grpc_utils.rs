@@ -1,7 +1,7 @@
-use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::database::enums::DbPermissionLevel;
 use crate::grpc::users::UserServiceImpl;
+use crate::{auth::structs::Context, database::enums::ObjectMapping};
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, Collection, Dataset, Object, Project, User,
 };
@@ -50,6 +50,17 @@ impl IntoGenericInner<Object> for generic_resource::Resource {
         match self {
             generic_resource::Resource::Object(object) => Ok(object),
             _ => Err(Status::invalid_argument("Invalid conversion")),
+        }
+    }
+}
+
+impl IntoGenericInner<DbPermissionLevel> for ObjectMapping<DbPermissionLevel> {
+    fn into_inner(self) -> Result<DbPermissionLevel, Status> {
+        match self {
+            ObjectMapping::PROJECT(perm) => Ok(perm),
+            ObjectMapping::COLLECTION(perm) => Ok(perm),
+            ObjectMapping::DATASET(perm) => Ok(perm),
+            ObjectMapping::OBJECT(perm) => Ok(perm),
         }
     }
 }

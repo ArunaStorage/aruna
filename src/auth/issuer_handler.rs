@@ -17,7 +17,7 @@ pub struct Issuer {
     pub pubkey_endpoint: Option<String>,
     pub decoding_keys: Vec<(String, DecodingKey)>,
     pub last_updated: NaiveDateTime,
-    pub audiences: Vec<String>,
+    pub audiences: Option<Vec<String>>,
     pub issuer_type: IssuerType,
 }
 
@@ -25,7 +25,7 @@ impl Issuer {
     pub async fn new_with_endpoint(
         issuer_name: String,
         pubkey_endpoint: String,
-        audiences: Vec<String>,
+        audiences: Option<Vec<String>>,
     ) -> Result<Self> {
         let (decoding_keys, last_updated) = Self::fetch_jwks(&pubkey_endpoint).await?;
         Ok(Self {
@@ -41,7 +41,7 @@ impl Issuer {
     pub async fn new_with_keys(
         issuer_name: String,
         decoding_keys: Vec<(String, DecodingKey)>,
-        audiences: Vec<String>,
+        audiences: Option<Vec<String>>,
         issuer_type: IssuerType,
     ) -> Result<Self> {
         Ok(Self {
@@ -115,12 +115,14 @@ impl Issuer {
     pub fn get_validate_claims(
         token: &str,
         decoding_key: &DecodingKey,
-        audiences: &[String],
+        audiences: &Option<Vec<String>>,
     ) -> Result<ArunaTokenClaims> {
         let header = decode_header(token)?;
         let alg = header.alg;
         let mut validation = jsonwebtoken::Validation::new(alg);
-        validation.set_audience(audiences);
+        if let Some(aud) = audiences {
+            validation.set_audience(aud)
+        };
         let tokendata = jsonwebtoken::decode::<ArunaTokenClaims>(token, decoding_key, &validation)?;
         Ok(tokendata.claims)
     }
@@ -136,7 +138,7 @@ pub async fn convert_to_pubkeys_issuers(pubkeys: &Vec<(i16, PubKeyEnum)>) -> Res
                 let issuer = Issuer::new_with_keys(
                     key.to_string(),
                     vec![(id.to_string(), dec_key.clone())],
-                    vec!["aruna".to_string()],
+                    Some(vec!["aruna".to_string()]),
                     IssuerType::DATAPROXY,
                 )
                 .await?;
@@ -151,7 +153,7 @@ pub async fn convert_to_pubkeys_issuers(pubkeys: &Vec<(i16, PubKeyEnum)>) -> Res
         Issuer::new_with_keys(
             "aruna".to_string(),
             server_encoding_keys,
-            vec!["aruna".to_string()],
+            Some(vec!["aruna".to_string()]),
             IssuerType::ARUNA,
         )
         .await?,

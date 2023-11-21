@@ -55,7 +55,8 @@ use aruna_rust_api::api::storage::models::v2::{
 };
 use aruna_rust_api::api::storage::services::v2::{
     create_collection_request, create_dataset_request, create_object_request, CreateLicenseRequest,
-    PersonalNotification, PersonalNotificationVariant, Reference, ReferenceType, WorkspaceInfo,
+    PersonalNotification, PersonalNotificationVariant, Reference, ReferenceType, ServiceAccount,
+    WorkspaceInfo,
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -1580,7 +1581,43 @@ impl TryFrom<Vec<Relation>> for ContextContainer {
         Ok(ContextContainer(vec))
     }
 }
-
+impl TryFrom<DBUser> for ServiceAccount {
+    type Error = tonic::Status;
+    fn try_from(user: DBUser) -> Result<Self, tonic::Status> {
+        if user.attributes.0.service_account {
+            if user.attributes.0.permissions.len() > 1 {
+                // THIS SHOULD NOT HAPPEN!
+                Err(tonic::Status::invalid_argument(
+                    "Service account has more than one permission",
+                ))
+            } else {
+                let permissions = user.attributes.0.permissions.iter().next().ok_or_else(|| {
+                    tonic::Status::internal("No permissions found for service_account")
+                })?;
+                let (id, perm) = permissions.pair();
+                let permission_level = perm.into_inner().into();
+                let resource_id = Some(match perm {
+                    ObjectMapping::PROJECT(_) => ResourceId::ProjectId(id.to_string()),
+                    ObjectMapping::COLLECTION(_) => ResourceId::CollectionId(id.to_string()),
+                    ObjectMapping::DATASET(_) => ResourceId::DatasetId(id.to_string()),
+                    ObjectMapping::OBJECT(_) => ResourceId::ObjectId(id.to_string()),
+                });
+                Ok(ServiceAccount {
+                    svc_account_id: user.id.to_string(),
+                    name: user.display_name.to_string(),
+                    permission: Some(Permission {
+                        permission_level,
+                        resource_id,
+                    }),
+                })
+            }
+        } else {
+            Err(tonic::Status::invalid_argument(
+                "User is not a service_account",
+            ))
+        }
+    }
+}
 // Conversion tests
 #[cfg(test)]
 mod tests {
