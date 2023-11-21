@@ -1,7 +1,9 @@
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::database::dsls::hook_dsl::{Filter, Hook, Method};
-use crate::database::dsls::internal_relation_dsl::InternalRelation;
+use crate::database::dsls::internal_relation_dsl::{
+    InternalRelation, INTERNAL_RELATION_VARIANT_DELETED,
+};
 use crate::database::dsls::internal_relation_dsl::{
     INTERNAL_RELATION_VARIANT_BELONGS_TO, INTERNAL_RELATION_VARIANT_METADATA,
     INTERNAL_RELATION_VARIANT_ORIGIN, INTERNAL_RELATION_VARIANT_POLICY,
@@ -717,7 +719,8 @@ pub fn from_db_internal_relation(internal: InternalRelation, inbound: bool) -> R
         INTERNAL_RELATION_VARIANT_VERSION => (3, None),
         INTERNAL_RELATION_VARIANT_METADATA => (4, None),
         INTERNAL_RELATION_VARIANT_POLICY => (5, None),
-        _ => (6, Some(internal.relation_name)),
+        INTERNAL_RELATION_VARIANT_DELETED => (6, None),
+        _ => (7, Some(internal.relation_name)),
     };
 
     Relation {
@@ -1005,7 +1008,8 @@ impl IntoRelationName for i32 {
             3 => Ok(INTERNAL_RELATION_VARIANT_VERSION.to_string()),
             4 => Ok(INTERNAL_RELATION_VARIANT_METADATA.to_string()),
             5 => Ok(INTERNAL_RELATION_VARIANT_POLICY.to_string()),
-            6 => Ok(name.ok_or_else(|| anyhow!("Custom relation variant not found"))?),
+            6 => Ok(INTERNAL_RELATION_VARIANT_DELETED.to_string()),
+            7 => Ok(name.ok_or_else(|| anyhow!("Custom relation variant not found"))?),
             _ => bail!("Invalid relation variant"),
         }
     }

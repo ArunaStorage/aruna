@@ -41,6 +41,7 @@ pub const INTERNAL_RELATION_VARIANT_ORIGIN: &str = "ORIGIN";
 pub const INTERNAL_RELATION_VARIANT_VERSION: &str = "VERSION";
 pub const INTERNAL_RELATION_VARIANT_METADATA: &str = "METADATA";
 pub const INTERNAL_RELATION_VARIANT_POLICY: &str = "POLICY";
+pub const INTERNAL_RELATION_VARIANT_DELETED: &str = "DELETED";
 
 #[async_trait::async_trait]
 impl CrudDb for InternalRelation {
