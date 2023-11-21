@@ -10,10 +10,11 @@ use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::{
     models::v2::permission::ResourceId,
     services::v2::{
-        CreateServiceAccountRequest, CreateServiceAccountTokenRequest, DeleteServiceAccountRequest,
+        CreateDataproxyTokenSvcAccountRequest, CreateServiceAccountRequest,
+        CreateServiceAccountTokenRequest, DeleteServiceAccountRequest,
         DeleteServiceAccountTokenRequest, DeleteServiceAccountTokensRequest,
-        GetServiceAccountTokenRequest, GetServiceAccountTokensRequest,
-        SetServiceAccountPermissionRequest,
+        GetS3CredentialsSvcAccountRequest, GetServiceAccountTokenRequest,
+        GetServiceAccountTokensRequest, SetServiceAccountPermissionRequest,
     },
 };
 use diesel_ulid::DieselUlid;
@@ -29,6 +30,8 @@ pub struct GetServiceAccountTokens(pub GetServiceAccountTokensRequest);
 pub struct DeleteServiceAccountToken(pub DeleteServiceAccountTokenRequest);
 pub struct DeleteServiceAccountTokens(pub DeleteServiceAccountTokensRequest);
 pub struct DeleteServiceAccount(pub DeleteServiceAccountRequest);
+pub struct CreateDataProxyTokenSVCAccount(pub CreateDataproxyTokenSvcAccountRequest);
+pub struct GetS3CredentialsSVCAccount(pub GetS3CredentialsSvcAccountRequest);
 
 /// Impls for wrappers
 impl CreateServiceAccount {
@@ -258,5 +261,61 @@ impl DeleteServiceAccount {
             .ok_or_else(|| anyhow!("Expected exactly one permission for service account"))?;
         let (id, _) = perms.pair();
         Ok(Context::res_ctx(*id, DbPermissionLevel::ADMIN, false))
+    }
+}
+
+impl CreateDataProxyTokenSVCAccount {
+    pub fn get_ids(&self) -> Result<(DieselUlid, DieselUlid)> {
+        let service_account = DieselUlid::from_str(&self.0.svc_account_id)?;
+        let endpoint_id = DieselUlid::from_str(&self.0.endpoint_id)?;
+        Ok((service_account, endpoint_id))
+    }
+
+    /// Returns service_account
+    pub async fn get_service_account(&self, client: &Client) -> Result<User> {
+        let (service_account_id, _) = self.get_ids()?;
+        let service_account = User::get(service_account_id, client)
+            .await?
+            .ok_or_else(|| anyhow!("Service account not found"))?;
+        Ok(service_account)
+    }
+    pub fn get_permissions(user: &User) -> Result<(DieselUlid, ObjectMapping<DbPermissionLevel>)> {
+        let perms = user
+            .attributes
+            .0
+            .permissions
+            .iter()
+            .next()
+            .ok_or_else(|| anyhow!("Expected exactly one permission for service account"))?;
+        let (id, map) = perms.pair();
+        Ok((*id, *map))
+    }
+}
+impl GetS3CredentialsSVCAccount {
+    pub fn get_ids(&self) -> Result<(DieselUlid, DieselUlid)> {
+        let service_account = DieselUlid::from_str(&self.0.svc_account_id)?;
+        let endpoint_id = DieselUlid::from_str(&self.0.endpoint_id)?;
+        Ok((service_account, endpoint_id))
+    }
+
+    /// Returns service_account
+    pub async fn get_service_account(&self, client: &Client) -> Result<User> {
+        let (service_account_id, _) = self.get_ids()?;
+        let service_account = User::get(service_account_id, client)
+            .await?
+            .ok_or_else(|| anyhow!("Service account not found"))?;
+        Ok(service_account)
+    }
+
+    pub fn get_permissions(user: &User) -> Result<(DieselUlid, ObjectMapping<DbPermissionLevel>)> {
+        let perms = user
+            .attributes
+            .0
+            .permissions
+            .iter()
+            .next()
+            .ok_or_else(|| anyhow!("Expected exactly one permission for service account"))?;
+        let (id, map) = perms.pair();
+        Ok((*id, *map))
     }
 }

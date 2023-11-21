@@ -1,14 +1,17 @@
 use crate::auth::structs::Context;
+use crate::auth::token_handler::{Action, Intent};
 use crate::caching::cache::Cache;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::service_account_request_types::{
-    CreateServiceAccount, CreateServiceAccountToken, DeleteServiceAccount,
-    DeleteServiceAccountToken, DeleteServiceAccountTokens, GetServiceAccountToken,
-    GetServiceAccountTokens, SetServiceAccountPermission,
+    CreateDataProxyTokenSVCAccount, CreateServiceAccount, CreateServiceAccountToken,
+    DeleteServiceAccount, DeleteServiceAccountToken, DeleteServiceAccountTokens,
+    GetS3CredentialsSVCAccount, GetServiceAccountToken, GetServiceAccountTokens,
+    SetServiceAccountPermission,
 };
 use crate::utils::conversions::convert_token_to_proto;
 use crate::{auth::permission_handler::PermissionHandler, utils::conversions::get_token_from_md};
+use aruna_rust_api::api::storage::models::v2::context::Context as ProtoContext;
 use aruna_rust_api::api::storage::services::v2::{
     service_account_service_server::ServiceAccountService, CreateDataproxyTokenSvcAccountRequest,
     CreateDataproxyTokenSvcAccountResponse, CreateServiceAccountRequest,
@@ -318,14 +321,117 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     }
     async fn get_s3_credentials_svc_account(
         &self,
-        _request: Request<GetS3CredentialsSvcAccountRequest>,
+        request: Request<GetS3CredentialsSvcAccountRequest>,
     ) -> Result<Response<GetS3CredentialsSvcAccountResponse>> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let request = GetS3CredentialsSVCAccount(request.into_inner());
+        let client = tonic_internal!(
+            self.database_handler.database.get_client().await,
+            "Could not create database client"
+        );
+        let service_account = tonic_invalid!(
+            request.get_service_account(&client).await,
+            "Invalid request"
+        );
+        let (res_id, _) = tonic_internal!(
+            CreateDataProxyTokenSVCAccount::get_permissions(&service_account),
+            "Error retrieving permissions"
+        );
+        tonic_auth!(
+            self.authorizer
+                .check_permissions(
+                    &token,
+                    vec![Context::res_ctx(res_id, DbPermissionLevel::ADMIN, false)]
+                )
+                .await,
+            "Unauthorized"
+        );
+
+        let response = tonic_internal!(
+            self.database_handler
+                .get_credentials_svc_account(self.authorizer.clone(), request)
+                .await,
+            "Internal error"
+        );
+        return_with_log!(response);
     }
     async fn create_dataproxy_token_svc_account(
         &self,
-        _request: Request<CreateDataproxyTokenSvcAccountRequest>,
+        request: Request<CreateDataproxyTokenSvcAccountRequest>,
     ) -> Result<Response<CreateDataproxyTokenSvcAccountResponse>> {
-        todo!()
+        log_received!(&request);
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let request = CreateDataProxyTokenSVCAccount(request.into_inner());
+        let client = tonic_internal!(
+            self.database_handler.database.get_client().await,
+            "Could not create database client"
+        );
+        let service_account = tonic_invalid!(
+            request.get_service_account(&client).await,
+            "Invalid request"
+        );
+        let (res_id, _) = tonic_internal!(
+            CreateDataProxyTokenSVCAccount::get_permissions(&service_account),
+            "Error retrieving permissions"
+        );
+        tonic_auth!(
+            self.authorizer
+                .check_permissions(
+                    &token,
+                    vec![Context::res_ctx(res_id, DbPermissionLevel::ADMIN, false)]
+                )
+                .await,
+            "Unauthorized"
+        );
+
+        // Create token based on provided context
+        let (service_account_id, endpoint_id) =
+            tonic_invalid!(request.get_ids(), "Invalid ids provided");
+        let response_token = match request.0.context {
+            Some(con) => {
+                match con.context {
+                    Some(ProtoContext::S3Credentials(_)) => {
+                        tonic_internal!(
+                            self.authorizer.token_handler.sign_dataproxy_slt(
+                                &service_account_id,
+                                None, // Token_Id of user token; None if OIDC
+                                Some(Intent {
+                                    target: endpoint_id,
+                                    action: Action::CreateSecrets
+                                }),
+                            ),
+                            "Token signing failed"
+                        )
+                    }
+                    Some(ProtoContext::Copy(_)) => {
+                        unimplemented!(
+                            "Dataproxy data replication token creation not yet implemented"
+                        )
+                    }
+                    _ => return Err(tonic::Status::invalid_argument("No context provided")),
+                }
+            }
+            None => return Err(tonic::Status::invalid_argument("No context provided")),
+        };
+
+        tonic_internal!(
+            self.database_handler
+                .add_endpoint_to_user(service_account_id, endpoint_id)
+                .await,
+            "Failed to add endpoint to user"
+        );
+
+        // Return token to user
+        let response = CreateDataproxyTokenSvcAccountResponse {
+            token: response_token,
+        };
+        return_with_log!(response);
     }
 }
