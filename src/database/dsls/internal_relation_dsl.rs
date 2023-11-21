@@ -175,6 +175,34 @@ impl InternalRelation {
             target_name: self.target_name.clone(),
         }
     }
+
+    //ToDo: Docs
+    //ToDo: Should be extended in the future to generic update_relation_name
+    pub async fn set_deleted(ids: &Vec<DieselUlid>, client: &Client) -> Result<()> {
+        // No need to execute query with empty id vector
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let query_one = "UPDATE internal_relations
+            SET relation_name = 'DELETED'
+            WHERE id IN ";
+
+        let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
+        for id in ids {
+            inserts.push(id);
+        }
+
+        let query_two = create_multi_query(&inserts);
+        let query = format!("{query_one}{query_two};");
+
+        let prepared = client.prepare(&query).await?;
+        client.execute(&prepared, &inserts).await?;
+
+        Ok(())
+    }
+
+    //ToDo: Docs
     pub async fn batch_delete(ids: &Vec<DieselUlid>, client: &Client) -> Result<()> {
         let query_one = "DELETE FROM internal_relations WHERE id IN ";
         let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
