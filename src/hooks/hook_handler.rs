@@ -24,7 +24,7 @@ use aruna_rust_api::api::storage::services::v2::{
 };
 use async_channel::Receiver;
 use diesel_ulid::DieselUlid;
-use http::header::CONTENT_TYPE;
+use reqwest::header::CONTENT_TYPE;
 use std::sync::Arc;
 
 #[derive(Clone)]

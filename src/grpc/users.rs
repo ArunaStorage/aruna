@@ -738,7 +738,7 @@ impl UserService for UserServiceImpl {
         return_with_log!(response);
     }
 
-    async fn add_oidc_provier(
+    async fn add_oidc_provider(
         &self,
         request: tonic::Request<AddOidcProviderRequest>,
     ) -> std::result::Result<tonic::Response<AddOidcProviderResponse>, tonic::Status> {

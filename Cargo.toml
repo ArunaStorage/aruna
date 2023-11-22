@@ -9,18 +9,17 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-aws-sdk-s3 = "0.34.0"
-aws-config = "0.56.1"
-aws-types = "0.56.1"
+aws-sdk-s3 = "0.39.1"
+aws-config = "1.0.0"
+aws-types = "1.0.0"
 anyhow = "1.0.75"
-aruna-rust-api = "2.0.0-beta.8"
+aruna-rust-api = "2.0.0-beta.9"
 async-nats = "0.33.0"
 async-channel = "2.0.0"
 bincode = "1.3.3"
 chrono = "0.4.31"
 dotenvy = "0.15.7"
-http = "0.2.9"
-itertools = "0.11.0"
+itertools = "0.12.0"
 jsonwebtoken = {version = "9.1.0", features = ["use_pem"]}
 log = "0.4.20"
 meilisearch-sdk = "0.24.2"
