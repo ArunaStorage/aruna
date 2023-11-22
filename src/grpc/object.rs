@@ -23,6 +23,7 @@ use aruna_rust_api::api::storage::services::v2::{
     GetUploadUrlResponse, UpdateObjectRequest, UpdateObjectResponse,
 };
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Request, Response, Result, Status};
@@ -362,14 +363,12 @@ impl ObjectService for ObjectServiceImpl {
             "Internal database error"
         );
 
-        let mut search_update: Vec<ObjectDocument> = vec![];
-        for o in updates {
-            self.cache.remove_object(&o.object.id);
-            search_update.push(ObjectDocument::from(o.object))
-        }
-
-        // Add or update object(s) in search index
-        search_utils::update_search_index(&self.search_client, search_update).await;
+        // Remove deleted resources from search index
+        search_utils::remove_from_search_index(
+            &self.search_client,
+            updates.iter().map(|o| o.object.id).collect_vec(),
+        )
+        .await;
 
         let response = DeleteObjectResponse {};
 

@@ -12,7 +12,7 @@ use aruna_rust_api::api::storage::services::v2::{
     get_endpoint_request, CreateEndpointRequest, CreateEndpointResponse, DeleteEndpointRequest,
     DeleteEndpointResponse, FullSyncEndpointRequest, FullSyncEndpointResponse,
     GetDefaultEndpointRequest, GetDefaultEndpointResponse, GetEndpointRequest, GetEndpointResponse,
-    GetEndpointsRequest, GetEndpointsResponse,
+    GetEndpointsRequest, GetEndpointsResponse, SetEndpointStatusRequest, SetEndpointStatusResponse,
 };
 use jsonwebtoken::DecodingKey;
 use std::sync::Arc;
@@ -229,5 +229,12 @@ impl EndpointService for EndpointServiceImpl {
             endpoint: Some(default.into()),
         };
         return_with_log!(response);
+    }
+
+    async fn set_endpoint_status(
+        &self,
+        _request: Request<SetEndpointStatusRequest>,
+    ) -> Result<Response<SetEndpointStatusResponse>> {
+        Err(Status::unimplemented("Not implemented"))
     }
 }

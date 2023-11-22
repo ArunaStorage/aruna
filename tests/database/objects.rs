@@ -530,7 +530,6 @@ async fn test_external_relations() {
         metadata_license: ALL_RIGHTS_RESERVED.to_string(),
     };
     let obj = Object::get(obj_id, client).await.unwrap().unwrap();
-    //dbg!(&obj);
     assert_eq!(compare_obj, obj);
     let rm_rels = vec![custom, id];
     let remain_rels = vec![url];

@@ -1,10 +1,27 @@
 use crate::database::connection::Database;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::object_dsl::Object;
-use crate::database::enums::DataClass;
+use crate::database::enums::{DataClass, ObjectStatus};
 use crate::search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument};
+use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use std::sync::Arc;
+
+/// Removes the specific resources from the search index
+pub async fn remove_from_search_index(
+    search_client: &Arc<MeilisearchClient>,
+    index_updates: Vec<DieselUlid>,
+) {
+    let client_clone = search_client.clone();
+    tokio::spawn(async move {
+        if let Err(err) = client_clone
+            .delete_stuff::<DieselUlid>(index_updates.as_slice(), MeilisearchIndexes::OBJECT)
+            .await
+        {
+            log::warn!("Search index update failed: {}", err)
+        }
+    });
+}
 
 /// Updates the resource search index in a background thread.
 pub async fn update_search_index(
@@ -45,10 +62,8 @@ pub async fn full_sync_search_index(
     let filtered_objects: Vec<ObjectDocument> = Object::all(&client)
         .await?
         .into_iter()
-        .filter_map(|o| match o.data_class {
-            DataClass::PUBLIC | DataClass::PRIVATE => Some(o),
-            _ => None,
-        })
+        .filter(|o| o.data_class == DataClass::PUBLIC || o.data_class == DataClass::PRIVATE)
+        .filter(|o| o.object_status != ObjectStatus::DELETED)
         .map(|o| o.into())
         .collect_vec();
 

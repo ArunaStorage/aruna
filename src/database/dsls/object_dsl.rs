@@ -684,6 +684,11 @@ impl Object {
 
     //ToDo: Docs
     pub async fn get_objects(ids: &Vec<DieselUlid>, client: &Client) -> Result<Vec<Object>> {
+        // Fast return if no ids are provided
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
         let query_one = "SELECT * FROM objects WHERE objects.id IN ";
         let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
         for id in ids {

@@ -447,7 +447,6 @@ async fn update_user_permission_test() {
     .await
     .unwrap();
 
-    dbg!(&user);
     assert_eq!(user.get_permissions(None).unwrap().0.len(), 1);
     assert!(user
         .get_permissions(None)
@@ -464,7 +463,6 @@ async fn update_user_permission_test() {
     .await
     .unwrap();
 
-    dbg!(&user);
     assert_eq!(user.get_permissions(None).unwrap().0.len(), 1);
     assert!(user
         .get_permissions(None)

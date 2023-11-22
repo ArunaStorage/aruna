@@ -256,6 +256,6 @@ CREATE TABLE IF NOT EXISTS workspaces (
     UNIQUE(name)
 );
 -- Insert predefined relation types
-INSERT INTO relation_types (relation_name) VALUES ('BELONGS_TO'), ('VERSION'), ('METADATA'), ('ORIGIN'), ('POLICY') ON CONFLICT (relation_name) DO NOTHING;
+INSERT INTO relation_types (relation_name) VALUES ('BELONGS_TO'), ('VERSION'), ('METADATA'), ('ORIGIN'), ('POLICY'), ('DELETED') ON CONFLICT (relation_name) DO NOTHING;
 -- Create partial unique index for BELONGS_TO relations only
 CREATE UNIQUE INDEX IF NOT EXISTS belongs_to_idx ON internal_relations (origin_pid, relation_name, target_name) WHERE relation_name = ('BELONGS_TO')
