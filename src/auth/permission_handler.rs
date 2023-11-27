@@ -43,10 +43,11 @@ impl PermissionHandler {
             match self.token_handler.process_token(token).await {
                 Ok(results) => results,
                 Err(err) => {
+                    dbg!(&err);
                     return match err.downcast_ref::<OIDCError>() {
                         Some(_) => Err(tonic::Status::unauthenticated("Not registered")),
                         None => Err(tonic::Status::unauthenticated("Unauthorized")),
-                    }
+                    };
                 }
             };
 
