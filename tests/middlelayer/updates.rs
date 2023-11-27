@@ -296,7 +296,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![valid.clone(), static_kv.clone()],
                     remove_key_values: vec![deleted.clone()],
                 });
-                db_handler.update_keyvals(request, user.id).await.unwrap();
+                db_handler.update_keyvals(request).await.unwrap();
                 assert!(Object::get(r.id, &client)
                     .await
                     .unwrap()
@@ -318,7 +318,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![],
                     remove_key_values: vec![static_kv.clone()],
                 });
-                assert!(db_handler.update_keyvals(err, user.id).await.is_err());
+                assert!(db_handler.update_keyvals(err).await.is_err());
             }
             ObjectType::COLLECTION => {
                 let request = KeyValueUpdate::Collection(UpdateCollectionKeyValuesRequest {
@@ -326,7 +326,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![valid.clone(), static_kv.clone()],
                     remove_key_values: vec![deleted.clone()],
                 });
-                db_handler.update_keyvals(request, user.id).await.unwrap();
+                db_handler.update_keyvals(request).await.unwrap();
                 assert!(Object::get(r.id, &client)
                     .await
                     .unwrap()
@@ -348,7 +348,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![],
                     remove_key_values: vec![static_kv.clone()],
                 });
-                assert!(db_handler.update_keyvals(err, user.id).await.is_err());
+                assert!(db_handler.update_keyvals(err).await.is_err());
             }
             ObjectType::DATASET => {
                 let request = KeyValueUpdate::Dataset(UpdateDatasetKeyValuesRequest {
@@ -356,7 +356,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![valid.clone(), static_kv.clone()],
                     remove_key_values: vec![deleted.clone()],
                 });
-                db_handler.update_keyvals(request, user.id).await.unwrap();
+                db_handler.update_keyvals(request).await.unwrap();
                 assert!(Object::get(r.id, &client)
                     .await
                     .unwrap()
@@ -378,7 +378,7 @@ async fn test_update_keyvals() {
                     add_key_values: vec![],
                     remove_key_values: vec![static_kv.clone()],
                 });
-                assert!(db_handler.update_keyvals(err, user.id).await.is_err());
+                assert!(db_handler.update_keyvals(err).await.is_err());
             }
             _ => panic!(),
         };
