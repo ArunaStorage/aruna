@@ -243,9 +243,7 @@ impl HookHandler {
                         remove_key_values: Vec::new(),
                     },
                 );
-                self.database_handler
-                    .update_keyvals(request, user_id)
-                    .await?;
+                self.database_handler.update_keyvals(request).await?;
             }
             ObjectType::COLLECTION => {
                 let request = crate::middlelayer::update_request_types::KeyValueUpdate::Collection(
@@ -259,9 +257,7 @@ impl HookHandler {
                         remove_key_values: Vec::new(),
                     },
                 );
-                self.database_handler
-                    .update_keyvals(request, user_id)
-                    .await?;
+                self.database_handler.update_keyvals(request).await?;
             }
             ObjectType::DATASET => {
                 let request = crate::middlelayer::update_request_types::KeyValueUpdate::Collection(
@@ -275,9 +271,7 @@ impl HookHandler {
                         remove_key_values: Vec::new(),
                     },
                 );
-                self.database_handler
-                    .update_keyvals(request, user_id)
-                    .await?;
+                self.database_handler.update_keyvals(request).await?;
             }
             ObjectType::OBJECT => {
                 let request = UpdateObjectRequest {
@@ -348,12 +342,10 @@ impl HookHandler {
         // TODO!
         // Because we cannot define which project triggered this hooks callback,
         // we also cannot define the hook_owner.
-        let user_id = object.object.created_by; // This is a temporary solution
         tokio::spawn(async move {
             let call = db_handler
                 .trigger_hooks(
                     object,
-                    user_id,
                     vec![TriggerVariant::HOOK_STATUS_CHANGED],
                     Some(vec![hook_status]),
                 )

@@ -191,7 +191,7 @@ impl ObjectService for ObjectServiceImpl {
 
         let request = request.into_inner();
 
-        let (user_id, _, is_dataproxy) = tonic_auth!(
+        let (_, _, is_dataproxy) = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(
                     &token,
@@ -223,7 +223,7 @@ impl ObjectService for ObjectServiceImpl {
         }
 
         let object = tonic_internal!(
-            self.database_handler.finish_object(request, user_id).await,
+            self.database_handler.finish_object(request).await,
             "Internal database error."
         );
 

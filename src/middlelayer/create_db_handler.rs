@@ -293,7 +293,7 @@ impl DatabaseHandler {
         let object_with_relation = owr.clone();
         tokio::spawn(async move {
             let hook_trigger = db_handler
-                .trigger_hooks(object_with_relation, user_id, trigger, None)
+                .trigger_hooks(object_with_relation, trigger, None)
                 .await;
             if hook_trigger.is_err() {
                 log::error!("{:?}", hook_trigger)

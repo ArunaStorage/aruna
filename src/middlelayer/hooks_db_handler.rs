@@ -79,8 +79,7 @@ impl DatabaseHandler {
         let mut object = Object::get(object_id, &client)
             .await?
             .ok_or_else(|| anyhow!("Object not found"))?;
-        //let owr = self.cache.get_object(&object_id).ok_or_else(||anyhow!("Object not found"))?;
-        //let mut object = owr.object.clone();
+
         dbg!(&object);
         let status = object
             .key_values
@@ -169,15 +168,10 @@ impl DatabaseHandler {
         // TODO!
         // Because we cannot define which project triggered this hooks callback,
         // we also cannot define the hook_owner.
-        let user_id = owr.object.created_by; // This is a temporary solution
+        //let user_id = hook.owner; // This is a temporary solution
         tokio::spawn(async move {
             let call = db_handler
-                .trigger_hooks(
-                    owr,
-                    user_id,
-                    vec![TriggerVariant::HOOK_STATUS_CHANGED],
-                    Some(kvs),
-                )
+                .trigger_hooks(owr, vec![TriggerVariant::HOOK_STATUS_CHANGED], Some(kvs))
                 .await;
             if call.is_err() {
                 log::error!("{:?}", call);
@@ -204,7 +198,7 @@ impl DatabaseHandler {
     pub async fn trigger_hooks(
         &self,
         object: ObjectWithRelations,
-        user_id: DieselUlid,
+        //user_id: DieselUlid,
         triggers: Vec<TriggerVariant>,
         updated_labels: Option<Vec<KeyValue>>,
     ) -> Result<()> {
@@ -270,6 +264,7 @@ impl DatabaseHandler {
             Ok(())
         } else {
             for hook in hooks {
+                let user_id = hook.owner;
                 let message = HookMessage {
                     hook,
                     object: object.clone(),

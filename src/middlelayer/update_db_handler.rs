@@ -140,11 +140,7 @@ impl DatabaseHandler {
         }
     }
 
-    pub async fn update_keyvals(
-        &self,
-        request: KeyValueUpdate,
-        user_id: DieselUlid,
-    ) -> Result<ObjectWithRelations> {
+    pub async fn update_keyvals(&self, request: KeyValueUpdate) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -207,9 +203,7 @@ impl DatabaseHandler {
         };
         let object_clone = object_plus.clone();
         tokio::spawn(async move {
-            let response = db_handler
-                .trigger_hooks(object_clone, user_id, trigger, None)
-                .await;
+            let response = db_handler.trigger_hooks(object_clone, trigger, None).await;
             if response.is_err() {
                 log::error!("{:?}", response)
             }
@@ -453,7 +447,7 @@ impl DatabaseHandler {
             // tokio::spawn cannot return errors, so manual error logs are returned
             tokio::spawn(async move {
                 let call = db_handler
-                    .trigger_hooks(object, user_id, trigger_variants, Some(kvs))
+                    .trigger_hooks(object, trigger_variants, Some(kvs))
                     .await;
                 if call.is_err() {
                     log::error!("{:?}", call);
@@ -487,7 +481,7 @@ impl DatabaseHandler {
             };
             tokio::spawn(async move {
                 let call_on_create = db_handler
-                    .trigger_hooks(object, user_id, trigger_variants, Some(kvs))
+                    .trigger_hooks(object, trigger_variants, Some(kvs))
                     .await;
                 if call_on_create.is_err() {
                     log::error!("{:?}", call_on_create);
@@ -502,12 +496,7 @@ impl DatabaseHandler {
             };
             tokio::spawn(async move {
                 let on_append = db_handler
-                    .trigger_hooks(
-                        object,
-                        user_id,
-                        vec![TriggerVariant::RESOURCE_CREATED],
-                        None,
-                    )
+                    .trigger_hooks(object, vec![TriggerVariant::RESOURCE_CREATED], None)
                     .await;
                 if on_append.is_err() {
                     log::error!("{:?}", on_append);
@@ -539,7 +528,6 @@ impl DatabaseHandler {
     pub async fn finish_object(
         &self,
         request: FinishObjectStagingRequest,
-        user_id: DieselUlid,
     ) -> Result<ObjectWithRelations> {
         let client = self.database.get_client().await?;
         let id = DieselUlid::from_str(&request.object_id)?;
@@ -562,7 +550,7 @@ impl DatabaseHandler {
         let owr = object.clone();
         tokio::spawn(async move {
             let call = db_handler
-                .trigger_hooks(owr, user_id, vec![TriggerVariant::OBJECT_FINISHED], None)
+                .trigger_hooks(owr, vec![TriggerVariant::OBJECT_FINISHED], None)
                 .await;
             if call.is_err() {
                 log::error!("{:?}", call);
