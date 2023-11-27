@@ -1,4 +1,6 @@
-use crate::database::dsls::hook_dsl::{BasicTemplate, Credentials, ExternalHook, TemplateVariant};
+use crate::database::dsls::hook_dsl::{
+    BasicTemplate, Credentials, ExternalHook, TemplateVariant, TriggerVariant,
+};
 use crate::database::dsls::user_dsl::APIToken;
 use crate::database::enums::{ObjectMapping, ObjectStatus, ObjectType};
 use crate::middlelayer::hooks_request_types::CustomTemplate;
@@ -331,10 +333,35 @@ impl HookHandler {
         };
         dbg!("HookStatus: {:?}", &hook_status);
         object.object.key_values.0 .0.push(hook_status.clone());
-        Object::add_key_value(&object.object.id, &client, hook_status).await?;
+        Object::add_key_value(&object.object.id, &client, hook_status.clone()).await?;
         self.database_handler
             .cache
             .upsert_object(&object.object.id, object.clone());
+
+        // Send HookStatusChanged trigger to self
+        let db_handler = DatabaseHandler {
+            database: self.database_handler.database.clone(),
+            natsio_handler: self.database_handler.natsio_handler.clone(),
+            cache: self.database_handler.cache.clone(),
+            hook_sender: self.database_handler.hook_sender.clone(),
+        };
+        // TODO!
+        // Because we cannot define which project triggered this hooks callback,
+        // we also cannot define the hook_owner.
+        let user_id = object.object.created_by; // This is a temporary solution
+        tokio::spawn(async move {
+            let call = db_handler
+                .trigger_hooks(
+                    object,
+                    user_id,
+                    vec![TriggerVariant::HOOK_STATUS_CHANGED],
+                    Some(vec![hook_status]),
+                )
+                .await;
+            if call.is_err() {
+                log::error!("{:?}", call);
+            }
+        });
         Ok(())
     }
 

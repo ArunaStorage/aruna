@@ -149,7 +149,7 @@ impl DatabaseHandler {
                 }
             })
             .collect::<Result<Vec<KeyValue>>>()?;
-        object.key_values = Json(crate::database::dsls::object_dsl::KeyValues(kvs));
+        object.key_values = Json(crate::database::dsls::object_dsl::KeyValues(kvs.clone()));
         object.update(transaction_client).await?;
 
         transaction.commit().await?;
@@ -157,7 +157,32 @@ impl DatabaseHandler {
         // Update object in cache
         let owr = Object::get_object_with_relations(&object_id, &client).await?;
         dbg!(&owr);
-        self.cache.upsert_object(&object_id, owr);
+        self.cache.upsert_object(&object_id, owr.clone());
+
+        // Send HookStatusChanged trigger to hook handler
+        let db_handler = DatabaseHandler {
+            database: self.database.clone(),
+            natsio_handler: self.natsio_handler.clone(),
+            cache: self.cache.clone(),
+            hook_sender: self.hook_sender.clone(),
+        };
+        // TODO!
+        // Because we cannot define which project triggered this hooks callback,
+        // we also cannot define the hook_owner.
+        let user_id = owr.object.created_by; // This is a temporary solution
+        tokio::spawn(async move {
+            let call = db_handler
+                .trigger_hooks(
+                    owr,
+                    user_id,
+                    vec![TriggerVariant::HOOK_STATUS_CHANGED],
+                    Some(kvs),
+                )
+                .await;
+            if call.is_err() {
+                log::error!("{:?}", call);
+            }
+        });
 
         Ok(())
     }
