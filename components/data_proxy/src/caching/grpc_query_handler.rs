@@ -768,8 +768,7 @@ impl GrpcQueryHandler {
                                 .await
                             )?;
 
-                            self.handle_replication(object.clone());
-
+                            self.handle_replication(object.clone()).await?;
                             self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         _ => (),
@@ -900,7 +899,7 @@ impl GrpcQueryHandler {
                 }
             }
         }
-        todo!()
+        Ok(())
     }
 }
 
