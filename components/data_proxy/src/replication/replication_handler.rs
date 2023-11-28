@@ -22,7 +22,7 @@ use std::sync::Arc;
 use tracing::{error, trace};
 
 pub struct ReplicationMessage {
-    pub object: DieselUlid,
+    pub object_id: DieselUlid,
     pub download_url: String,
     pub encryption_key: String,
     pub is_compressed: bool,
@@ -59,7 +59,7 @@ impl ReplicationHandler {
         let receiver = self.receiver.clone();
         let recieve = tokio::spawn(async move {
             while let Ok(ReplicationMessage {
-                object,
+                object_id,
                 download_url,
                 encryption_key,
                 is_compressed,
@@ -67,7 +67,7 @@ impl ReplicationHandler {
             }) = receiver.recv().await
             {
                 queue_clone.insert((
-                    object,
+                    object_id,
                     download_url,
                     encryption_key,
                     is_compressed,

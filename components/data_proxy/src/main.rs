@@ -112,7 +112,7 @@ async fn main() -> Result<()> {
     let replication_cache_clone = cache.clone();
 
     trace!("init replication handler");
-    let replication_handler = ReplicationHandler::new(receiver);
+    let replication_handler = ReplicationHandler::new(receiver, storage_backend.clone());
     tokio::spawn(async move {
         replication_handler.run(replication_cache_clone);
     });

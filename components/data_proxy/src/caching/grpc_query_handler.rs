@@ -83,7 +83,6 @@ pub struct GrpcQueryHandler {
     endpoint_service: EndpointServiceClient<Channel>,
     storage_status_service: StorageStatusServiceClient<Channel>,
     event_notification_service: EventNotificationServiceClient<Channel>,
-    dataproxy_service: DataproxyServiceClient<Channel>,
     cache: Arc<Cache>,
     endpoint_id: String,
     long_lived_token: String,
@@ -124,8 +123,6 @@ impl GrpcQueryHandler {
 
         let event_notification_service = EventNotificationServiceClient::new(channel.clone());
 
-        let dataproxy_service = DataproxyServiceClient::new(channel);
-
         let long_lived_token = trace_err!(cache
             .auth
             .read()
@@ -143,7 +140,6 @@ impl GrpcQueryHandler {
             endpoint_service,
             storage_status_service,
             event_notification_service,
-            dataproxy_service,
             cache,
             endpoint_id,
             long_lived_token,
@@ -640,9 +636,11 @@ impl GrpcQueryHandler {
     async fn pull_replication(
         &self,
         request: PullReplicationRequest,
+        endpoint_id: String,
     ) -> Result<PullReplicationResponse> {
+        let endpoint = Channel::from_shared("");
+        let dataproxy_service = todo!();
         let mut req = Request::new(request);
-
         req.metadata_mut().append(
             trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
             trace_err!(AsciiMetadataValue::try_from(format!(
@@ -650,8 +648,9 @@ impl GrpcQueryHandler {
                 self.long_lived_token.as_str()
             )))?,
         );
-
-        Ok(trace_err!(self.dataproxy_service.clone().pull_replication(req).await)?.into_inner())
+        let response =
+            trace_err!(dataproxy_service.clone().pull_replication(req).await)?.into_inner();
+        Ok(response)
     }
 }
 
@@ -813,7 +812,7 @@ impl GrpcQueryHandler {
                             }
                         });
                         match state_of_truth {
-                            Some(_ep_id) => {
+                            Some(ep_id) => {
                                 let request = PullReplicationRequest {
                                     info: Some(DataProxyInfo {
                                         dataproxy_id: self.endpoint_id.clone(),
@@ -825,7 +824,7 @@ impl GrpcQueryHandler {
                                     object_ids: vec![object.id.clone()],
                                 };
                                 let outer_info = trace_err!(self
-                                    .pull_replication(request)
+                                    .pull_replication(request, ep_id)
                                     .await?
                                     .data_infos
                                     .ok_or_else(|| anyhow!("No replication infos recieved")))?;
