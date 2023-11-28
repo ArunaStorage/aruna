@@ -15,7 +15,6 @@ use tracing::error;
 use tracing::info_span;
 use tracing::trace;
 use tracing::Instrument;
-use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::EnvFilter;
 mod bundler;
 mod caching;
@@ -43,7 +42,7 @@ async fn main() -> Result<()> {
         .add_directive("aos_data_proxy=trace".parse()?);
 
     let subscriber = tracing_subscriber::fmt()
-        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
+        //.with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
         // Use a more compact, abbreviated log format
         .compact()
         // Set LOG_LEVEL to

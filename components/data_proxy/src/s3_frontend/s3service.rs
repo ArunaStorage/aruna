@@ -49,6 +49,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::sync::Arc;
+use tokio::pin;
 use tracing::debug;
 use tracing::error;
 use tracing::info_span;
@@ -125,7 +126,7 @@ impl S3 for ArunaS3Service {
         Ok(S3Response::new(output))
     }
 
-    #[tracing::instrument(err)]
+    #[tracing::instrument(err, skip(self, req))]
     async fn put_object(
         &self,
         req: S3Request<PutObjectInput>,
@@ -1047,6 +1048,8 @@ impl S3 for ArunaS3Service {
             trace!("getting footer");
             // Without encryption block because this is already checked inside
             let (footer_sender, footer_receiver) = async_channel::unbounded();
+            pin!(footer_receiver);
+
             let parser = match encryption_key.clone() {
                 Some(key) => {
                     trace_err!(
@@ -1137,6 +1140,7 @@ impl S3 for ArunaS3Service {
         // Spawn final part
         tokio::spawn(
             async move {
+                pin!(receiver);
                 let mut asrw = ArunaStreamReadWriter::new_with_sink(
                     receiver,
                     AsyncSenderSink::new(final_send),

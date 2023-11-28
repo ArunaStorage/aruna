@@ -44,6 +44,7 @@ pub(crate) struct ArunaTokenClaims {
     iss: String, // Currently always 'aruna'
     sub: String, // User_ID / DataProxy_ID
     exp: usize,  // Expiration timestamp
+    aud: String, // Valid audiences
     // Token_ID; None if OIDC or ... ?
     #[serde(skip_serializing_if = "Option::is_none")]
     tid: Option<String>,
@@ -174,10 +175,13 @@ impl AuthHandler {
         token: &str,
         dec_key: &DecodingKey,
     ) -> Result<ArunaTokenClaims> {
+        let mut validation = Validation::new(Algorithm::EdDSA);
+        validation.set_audience(&["proxy"]);
+
         let token = trace_err!(decode::<ArunaTokenClaims>(
             token,
             dec_key,
-            &Validation::new(Algorithm::EdDSA)
+            &validation //&Validation::new(Algorithm::EdDSA)
         ))?;
         Ok(token.claims)
     }
@@ -376,16 +380,16 @@ impl AuthHandler {
             .get_user_by_key(access_key)
             .ok_or_else(|| anyhow!("Unknown user")))?;
 
-        for (res, perm) in user.permissions {
-            'id_vec: for vec_ids in vec_vec_ids {
+        'id_vec: for vec_ids in vec_vec_ids {
+            for (res, perm) in &user.permissions {
                 for id in vec_ids {
-                    if id.check_if_in(res) && perm >= target_perm_level {
+                    if id.check_if_in(*res) && *perm >= target_perm_level {
                         continue 'id_vec;
                     }
                 }
-                error!(?res, ?perm, ?vec_ids, "Invalid permissions");
-                return Err(anyhow!("Invalid permissions"));
             }
+            error!(?user.permissions, ?vec_vec_ids, "Invalid permissions");
+            return Err(anyhow!("Invalid permissions"));
         }
 
         if get_secret {
@@ -515,8 +519,9 @@ impl AuthHandler {
         tid: Option<impl Into<String>>,
     ) -> Result<String> {
         let claims = ArunaTokenClaims {
-            iss: "aruna_dataproxy".to_string(),
+            iss: self.self_id.to_string(),
             sub: user_id.into(),
+            aud: "aruna".to_string(),
             exp: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)?
                 .add(Duration::from_secs(15 * 60))
@@ -534,8 +539,9 @@ impl AuthHandler {
     #[tracing::instrument(level = "trace", skip(self))]
     pub(crate) fn sign_notification_token(&self) -> Result<String> {
         let claims = ArunaTokenClaims {
-            iss: "aruna_dataproxy".to_string(),
+            iss: self.self_id.to_string(),
             sub: self.self_id.to_string(),
+            aud: "aruna".to_string(),
             exp: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)?
                 .add(Duration::from_secs(60 * 60 * 24 * 365 * 10))

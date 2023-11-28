@@ -592,7 +592,7 @@ impl GrpcQueryHandler {
         let (keep_alive_tx, mut keep_alive_rx) = tokio::sync::mpsc::channel::<()>(1);
         tokio::spawn(
             async move {
-                while let Ok(_) = keep_alive_rx.try_recv() {
+                while keep_alive_rx.try_recv().is_ok() {
                     tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                 }
                 // ABORT!
