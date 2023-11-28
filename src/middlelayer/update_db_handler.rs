@@ -6,7 +6,7 @@ use crate::database::dsls::internal_relation_dsl::{
 };
 use crate::database::dsls::license_dsl::ALL_RIGHTS_RESERVED;
 use crate::database::dsls::object_dsl::{KeyValue, KeyValueVariant, Object, ObjectWithRelations};
-use crate::database::enums::ObjectStatus;
+use crate::database::enums::{EndpointStatus, ObjectStatus};
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
@@ -564,16 +564,47 @@ impl DatabaseHandler {
         request: FinishObjectStagingRequest,
         user_id: DieselUlid,
     ) -> Result<ObjectWithRelations> {
-        let client = self.database.get_client().await?;
+        let mut client = self.database.get_client().await?;
         let id = DieselUlid::from_str(&request.object_id)?;
+        let object = Object::get(id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("Object not found"))?;
+        let temp = object
+            .endpoints
+            .0
+            .iter()
+            .next()
+            .ok_or_else(|| anyhow!("No endpoints defined in object"))?;
+        let (endpoint_id, ep_info) = temp.pair();
+
+        let transaction = client.transaction().await?;
+        let transaction_client = transaction.client();
         let hashes = if request.hashes.is_empty() {
             None
         } else {
             Some(request.hashes.try_into()?)
         };
         let content_len = request.content_len;
-        Object::finish_object_staging(&id, &client, hashes, content_len, ObjectStatus::AVAILABLE)
-            .await?;
+        Object::finish_object_staging(
+            &id,
+            &transaction_client,
+            hashes,
+            content_len,
+            ObjectStatus::AVAILABLE,
+        )
+        .await?;
+        Object::update_endpoints(
+            *endpoint_id,
+            crate::database::dsls::object_dsl::EndpointInfo {
+                replication: ep_info.replication,
+                status: Some(crate::database::enums::ReplicationStatus::Finished),
+            },
+            vec![id],
+            transaction_client,
+        )
+        .await?;
+
+        transaction.commit().await?;
 
         let object = Object::get_object_with_relations(&id, &client).await?;
         let db_handler = DatabaseHandler {

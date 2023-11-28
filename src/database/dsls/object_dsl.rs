@@ -825,7 +825,8 @@ impl Object {
         object_ids: Vec<DieselUlid>,
         client: &Client,
     ) -> Result<()> {
-        let query = "UPDATE objects SET endpoints = endpoints || $1::jsonb WHERE id IN $2::uuid[];";
+        let query =
+            "UPDATE objects SET endpoints = endpoints || $1::jsonb WHERE id = ANY($2::uuid[]);";
         let endpoint: Json<DashMap<DieselUlid, EndpointInfo, RandomState>> =
             Json(DashMap::from_iter([(endpoint_id, ep_status)]));
         let prepared = client.prepare(query).await?;

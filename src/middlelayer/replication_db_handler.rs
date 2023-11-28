@@ -6,6 +6,7 @@ use crate::{
         enums::{ObjectType, ReplicationStatus, SyncObject},
     },
     middlelayer::db_handler::DatabaseHandler,
+    utils::database_utils::sort_objects,
 };
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::{
@@ -154,8 +155,10 @@ impl DatabaseHandler {
         // Try to emit object updated notification(s)
         let mut all_updated: Vec<DieselUlid> = sub_res.iter().map(|r| r.id).collect();
         all_updated.push(resource_id);
-        let all = Object::get_objects_with_relations(&all_updated, &client).await?;
+        let mut all = Object::get_objects_with_relations(&all_updated, &client).await?;
+        sort_objects(&mut all);
         for owr in all {
+            self.cache.upsert_object(&owr.object.id, owr.clone());
             if let Err(err) = self
                 .natsio_handler
                 .register_resource_event(

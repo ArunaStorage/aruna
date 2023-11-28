@@ -7,9 +7,11 @@ use aruna_rust_api::api::{
     storage::services::v2::{
         authorization_service_server::AuthorizationServiceServer,
         collection_service_server::CollectionServiceServer,
+        data_replication_service_server::{DataReplicationService, DataReplicationServiceServer},
         dataset_service_server::DatasetServiceServer,
         endpoint_service_server::EndpointServiceServer,
-        license_service_server::LicenseServiceServer, object_service_server::ObjectServiceServer,
+        license_service_server::LicenseServiceServer,
+        object_service_server::ObjectServiceServer,
         project_service_server::ProjectServiceServer,
         relations_service_server::RelationsServiceServer,
         search_service_server::SearchServiceServer,
@@ -23,11 +25,11 @@ use aruna_server::{
     database::{self, crud::CrudDb, dsls::endpoint_dsl::Endpoint},
     grpc::{
         authorization::AuthorizationServiceImpl, collections::CollectionServiceImpl,
-        datasets::DatasetServiceImpl, endpoints::EndpointServiceImpl, hooks::HookServiceImpl,
-        info::StorageStatusServiceImpl, licenses::LicensesServiceImpl,
-        notification::NotificationServiceImpl, object::ObjectServiceImpl,
-        projects::ProjectServiceImpl, relations::RelationsServiceImpl, search::SearchServiceImpl,
-        users::UserServiceImpl,
+        data_replication::DataReplicationServiceImpl, datasets::DatasetServiceImpl,
+        endpoints::EndpointServiceImpl, hooks::HookServiceImpl, info::StorageStatusServiceImpl,
+        licenses::LicensesServiceImpl, notification::NotificationServiceImpl,
+        object::ObjectServiceImpl, projects::ProjectServiceImpl, relations::RelationsServiceImpl,
+        search::SearchServiceImpl, users::UserServiceImpl,
     },
     hooks,
     middlelayer::db_handler::DatabaseHandler,
@@ -275,6 +277,14 @@ pub async fn main() -> Result<()> {
             ))
             .add_service(LicenseServiceServer::new(
                 LicensesServiceImpl::new(
+                    db_handler_arc.clone(),
+                    auth_arc.clone(),
+                    cache_arc.clone(),
+                )
+                .await,
+            ))
+            .add_service(DataReplicationServiceServer::new(
+                DataReplicationServiceImpl::new(
                     db_handler_arc.clone(),
                     auth_arc.clone(),
                     cache_arc.clone(),
