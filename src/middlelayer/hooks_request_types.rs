@@ -304,7 +304,7 @@ impl Callback {
             secret,
             object_id,
             hook_id,
-            pubkey_serial,
+            pubkey_serial.try_into()?,
         )?;
         Ok(())
     }

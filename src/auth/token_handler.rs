@@ -11,6 +11,7 @@ use jsonwebtoken::Algorithm;
 use jsonwebtoken::DecodingKey;
 use jsonwebtoken::EncodingKey;
 use jsonwebtoken::Header;
+use log::error;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -53,7 +54,8 @@ impl std::error::Error for OIDCError {}
 pub struct ArunaTokenClaims {
     pub iss: String, // Currently always 'aruna'
     pub sub: String, // User_ID / DataProxy_ID
-    aud: String,     // Audience;
+    #[serde(skip_serializing_if = "Option::is_none")]
+    aud: Option<Audience>, // Audience;
     exp: usize,      // Expiration timestamp
     // Token_ID; None if OIDC or ... ?
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -61,6 +63,13 @@ pub struct ArunaTokenClaims {
     // Intent: <endpoint-ulid>_<action>
     #[serde(skip_serializing_if = "Option::is_none")]
     it: Option<Intent>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Clone)]
+#[serde(untagged)]
+enum Audience {
+    String(String),
+    Vec(Vec<String>),
 }
 
 #[repr(u8)]
@@ -145,7 +154,7 @@ impl<'de> Deserialize<'de> for Action {
 
 pub struct TokenHandler {
     cache: Arc<Cache>,
-    signing_info: Arc<RwLock<(i64, EncodingKey, DecodingKey)>>, //<PublicKey Serial; PrivateKey; PublicKey>
+    signing_info: Arc<RwLock<(i16, EncodingKey, DecodingKey)>>, //<PublicKey Serial; PrivateKey; PublicKey>
 }
 
 impl TokenHandler {
@@ -169,21 +178,21 @@ impl TokenHandler {
         let decoding_key = DecodingKey::from_ed_pem(public_pem.as_bytes())?;
 
         // Check if public key already exists in database/cache
-        let pubkey_serial: i64 = if let Some(key_serial) = cache.get_pubkey_serial(&decode_secret) {
-            key_serial as i64
+        let pubkey_serial = if let Some(key_serial) = cache.get_pubkey_serial(&decode_secret) {
+            key_serial
         } else {
             // Add public key to database and cache
             let client = database.get_client().await?;
             let pub_key = DbPubKey::create_or_get_without_id(None, &decode_secret, &client).await?;
 
             cache.add_pubkey(
-                pub_key.id as i32,
+                pub_key.id,
                 PubKeyEnum::Server((decode_secret, decoding_key.clone())), //ToDo: Server ID?
             );
 
             // Notification --> Announcement::PubKey::New?
 
-            pub_key.id as i64
+            pub_key.id
         };
 
         // Return initialized TokenHandler
@@ -194,7 +203,7 @@ impl TokenHandler {
     }
 
     ///ToDo: Rust Doc
-    pub fn get_current_pubkey_serial(&self) -> i64 {
+    pub fn get_current_pubkey_serial(&self) -> i16 {
         // Gets the signing key info -> if this returns a poison error this should also panic
         // We dont want to allow poisoned / malformed encoding keys and must crash at this point
         let signing_key = self.signing_info.read().unwrap();
@@ -223,7 +232,7 @@ impl TokenHandler {
             },
             tid: Some(token_id.to_string()),
             it: None,
-            aud: "aruna".to_string(),
+            aud: Some(Audience::String("aruna".to_string())),
         };
 
         let header = Header {
@@ -254,7 +263,7 @@ impl TokenHandler {
             exp: (Utc::now().timestamp() as usize) + 86400, // One day for now.
             tid: token_id,
             it: intent,
-            aud: "proxy".to_string(),
+            aud: Some(Audience::String("proxy".to_string())),
         };
 
         let header = Header {
@@ -284,12 +293,21 @@ impl TokenHandler {
         let decoded = general_purpose::STANDARD_NO_PAD.decode(split)?;
         let claims: ArunaTokenClaims = serde_json::from_slice(&decoded)?;
 
-        let mut issuer = self
+        let issuer = self
             .cache
             .get_issuer(&claims.iss)
             .ok_or_else(|| anyhow!("Unknown issuer"))?;
 
-        let (kid, validated_claims) = issuer.check_token(token).await?;
+        let (kid, validated_claims) = match issuer.check_token(token).await {
+            Ok((kid, validated_claims)) => (kid, validated_claims),
+            Err(e) => {
+                error!("Possible invalid token: {}", e);
+                self.cache
+                    .issuer_sender
+                    .try_send(issuer.issuer_name.clone())?;
+                bail!("Invalid token")
+            }
+        };
 
         match issuer.issuer_type {
             IssuerType::OIDC => self.validate_oidc_token(&validated_claims).await,
@@ -344,8 +362,7 @@ impl TokenHandler {
         // Fetch pubkey from cache
         let key = self
             .cache
-            .pubkeys
-            .get(&kid.parse::<i32>()?)
+            .get_pubkey(kid.parse::<i16>()?)
             .ok_or_else(|| anyhow!("Unspecified kid"))?
             .clone();
 
@@ -435,8 +452,8 @@ impl TokenHandler {
         cache: Arc<Cache>,
         object_id: DieselUlid,
         hook_id: DieselUlid,
-    ) -> Result<(String, i32)> {
-        let serial = self.get_current_pubkey_serial() as i32;
+    ) -> Result<(String, i16)> {
+        let serial = self.get_current_pubkey_serial();
         let key = cache
             .get_pubkey(serial)
             .ok_or_else(|| anyhow!("Pubkey not found"))?
@@ -459,7 +476,7 @@ impl TokenHandler {
         secret: String,
         object_id: DieselUlid,
         hook_id: DieselUlid,
-        pubkey_serial: i32,
+        pubkey_serial: i16,
     ) -> Result<()> {
         dbg!("VERIFY START");
         let key = cache

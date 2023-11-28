@@ -66,7 +66,7 @@ impl EndpointService for EndpointServiceImpl {
         );
 
         self.cache
-            .add_pubkey(pk.id as i32, PubKeyEnum::DataProxy((pk.pubkey, key, ep.id)));
+            .add_pubkey(pk.id, PubKeyEnum::DataProxy((pk.pubkey, key, ep.id)));
 
         let result = CreateEndpointResponse {
             endpoint: Some(ep.into()),

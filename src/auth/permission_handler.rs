@@ -10,6 +10,7 @@ use anyhow::anyhow;
 use anyhow::Result;
 use base64::{engine::general_purpose, Engine};
 use diesel_ulid::DieselUlid;
+use log::error;
 use std::sync::Arc;
 
 pub struct PermissionHandler {
@@ -43,7 +44,7 @@ impl PermissionHandler {
             match self.token_handler.process_token(token).await {
                 Ok(results) => results,
                 Err(err) => {
-                    dbg!(&err);
+                    error!("Error in auth: {:?}", err);
                     return match err.downcast_ref::<OIDCError>() {
                         Some(_) => Err(tonic::Status::unauthenticated("Not registered")),
                         None => Err(tonic::Status::unauthenticated("Unauthorized")),
@@ -136,15 +137,21 @@ impl PermissionHandler {
         let decoded = general_purpose::STANDARD_NO_PAD.decode(split)?;
         let claims: ArunaTokenClaims = serde_json::from_slice(&decoded)?;
 
-        let mut issuer = self
+        let issuer = self
             .cache
             .get_issuer(&claims.iss)
             .ok_or_else(|| anyhow!("Unknown issuer"))?;
 
         let (_, validated_claims) = issuer.check_token(token).await?;
-        Ok(OIDCMapping {
+
+        let mapping = OIDCMapping {
             external_id: validated_claims.sub,
             oidc_name: issuer.issuer_name.to_string(),
-        })
+        };
+
+        if self.cache.oidc_mapping_exists(&mapping) {
+            return Err(anyhow!("User already registered"));
+        }
+        Ok(mapping)
     }
 }

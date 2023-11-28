@@ -1,9 +1,3 @@
--- Insert predefined relation types
-INSERT INTO relation_types (relation_name) VALUES ('BELONGS_TO'), ('VERSION'), ('METADATA'), ('ORIGIN'), ('POLICY');
--- Create partial unique index for BELONGS_TO relations only
-CREATE UNIQUE INDEX belongs_to ON internal_relations (origin_pid, relation_name, target_name) WHERE relation_name = ('BELONGS_TO');
-
-
 -- Insert global admin and normal user
 INSERT INTO users (id, display_name, attributes, active) 
 VALUES

@@ -39,7 +39,7 @@ impl CreateToken {
                 NaiveDateTime::from_timestamp_opt(expiration.seconds, 0)
                     .ok_or_else(|| anyhow::anyhow!("Timestamp conversion failed"))?
             } else {
-                // Add 10 years to token lifetime if  expiry unspecified
+                // Add 10 years to token lifetime if expiry unspecified
                 NaiveDateTime::from_timestamp_opt(chrono::Utc::now().timestamp() + 315360000, 0)
                     .ok_or_else(|| anyhow::anyhow!("Timestamp conversion failed"))?
             },

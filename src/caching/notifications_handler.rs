@@ -99,7 +99,7 @@ impl NotificationHandler {
                         Err(err) => log::error!("NotificationHandler cache update failed: {err}"),
                     }
 
-                    // Acknowlege received message in every case becaue the only way cache update can fail is through the database query.
+                    // Acknowlege received message in every case because the only way cache update can fail is through the database query.
                     //   We have to trust that messages will only be sent if all database operations have been
                     //   successful in advance and the database has a consistent status in relation to the message being sent.
                     //   This means that in case of an error, the message does not represent the current state of the database,
@@ -207,7 +207,7 @@ async fn process_resource_event(
                     .await;
 
                     // Add to cache
-                    cache.object_cache.insert(res_ulid, object_plus);
+                    cache.insert_object(object_plus);
                 }
             }
         } else {
@@ -277,24 +277,24 @@ async fn process_announcement_event(
                 log::info!("Received NewDataProxyId announcement for: {id}")
             }
             AnnEventVariant::RemoveDataProxyId(id) => {
-                let endpoint_id = DieselUlid::from_str(&id)?;
-                // Remove endpoint pubkeys from cache
-                cache.remove_endpoint_pubkeys(&endpoint_id);
-                // Remove endpoint from all users in cache
-                cache.remove_endpoint_from_users(&endpoint_id);
-                // Remove endpoint from all resources
-                cache.remove_endpoint_from_users(&endpoint_id);
-                //Note: No need to remove pubkeys from database here
-                //      as they are cascade deleted with the endpoint
+                log::info!("Received RemoveDataProxy announcement for: {id}");
+
+                // Removes endpoint from all users/resources in cache with full sync.
+                // As the endpoint was already removed from all users and resources on the database
+                //  level this should reset the cache to full consistency with the current database status.
+                cache.sync_cache(database).await?
             }
             AnnEventVariant::UpdateDataProxyId(id) => {
                 //Note: Endpoint cache currently not implemented
                 log::info!("Received UpdateDataProxyId announcement for: {id}");
+
+                //ToDo: Update id in all users/resources and pubkeys?
             }
             AnnEventVariant::NewPubkey(serial) => {
                 // Fetch pubkey from database
                 let client = database.get_client().await?;
-                let pubkey = PubKey::get(serial, &client)
+                let serial_i16: i16 = serial.try_into()?;
+                let pubkey = PubKey::get(serial_i16, &client)
                     .await?
                     .ok_or_else(|| anyhow!("Could not find pub key"))?;
                 let pub_pem = format!(
@@ -311,9 +311,9 @@ async fn process_announcement_event(
                     None => PubKeyEnum::Server((pubkey.pubkey, decoding_key)),
                 };
 
-                cache.add_pubkey(pubkey.id as i32, cache_pubkey);
+                cache.add_pubkey(pubkey.id, cache_pubkey);
             }
-            AnnEventVariant::RemovePubkey(serial) => cache.remove_pubkey(&serial),
+            AnnEventVariant::RemovePubkey(serial) => cache.remove_pubkey(serial.try_into()?),
             AnnEventVariant::Downtime(info) => {
                 //ToDo: Implement downtime/shutdown preparation
                 //  - Set instance status to something like `HealthStatus::Shutdown`

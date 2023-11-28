@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::common::init::init_database_handler_middlelayer;
 use crate::common::test_utils;
 use aruna_rust_api::api::storage::models::v2::relation::Relation as RelationEnum;
@@ -84,7 +82,7 @@ async fn test_modify() {
         remove_relations: vec![rel_del_one],
     });
 
-    let cache = Arc::new(Cache::new());
+    let cache = Cache::new();
     for obj in objects {
         cache.add_object(ObjectWithRelations {
             object: obj.clone(),

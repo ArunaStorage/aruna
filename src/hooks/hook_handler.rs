@@ -24,7 +24,7 @@ use aruna_rust_api::api::storage::services::v2::{
 };
 use async_channel::Receiver;
 use diesel_ulid::DieselUlid;
-use http::header::CONTENT_TYPE;
+use reqwest::header::CONTENT_TYPE;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -180,7 +180,7 @@ impl HookHandler {
                             object: object.clone().into(),
                             secret,
                             download,
-                            pubkey_serial,
+                            pubkey_serial: pubkey_serial.into(),
                             access_key,
                             secret_key,
                         })?;
@@ -200,7 +200,7 @@ impl HookHandler {
                             secret,
                             download,
                             upload_credentials,
-                            pubkey_serial,
+                            pubkey_serial.into(),
                         )?;
                         dbg!("[HookHandler] Template: {:?}", &template);
                         //let response = base_request
@@ -343,7 +343,7 @@ impl HookHandler {
         object: ObjectWithRelations,
         hook: HookWithAssociatedProject,
         user_id: DieselUlid,
-    ) -> Result<(String, Option<String>, i32, Option<GetCredentialsResponse>)> {
+    ) -> Result<(String, Option<String>, i16, Option<GetCredentialsResponse>)> {
         let object_id = object.object.id;
         // This creates only presigned download urls for available objects.
         // If ObjectType is not OBJECT, only s3 credentials are generated.
@@ -360,7 +360,7 @@ impl HookHandler {
                         .await?;
                     // Create append only s3-credentials
                     let append_only_token = APIToken {
-                        pub_key: pubkey_serial,
+                        pub_key: pubkey_serial.into(),
                         name: format!("{}-append_only", hook.id),
                         created_at: chrono::Utc::now().naive_utc(),
                         expires_at: hook.timeout,
@@ -399,7 +399,7 @@ impl HookHandler {
                         .await?;
                     // Create append only s3-credentials
                     let append_only_token = APIToken {
-                        pub_key: pubkey_serial,
+                        pub_key: pubkey_serial.into(),
                         name: format!("{}-append_only", hook.id),
                         created_at: chrono::Utc::now().naive_utc(),
                         expires_at: hook.timeout,

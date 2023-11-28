@@ -25,7 +25,7 @@ impl DatabaseHandler {
         &self,
         request: RegisterUser,
         external_id: OIDCMapping,
-    ) -> Result<(DieselUlid, User)> {
+    ) -> Result<DieselUlid> {
         let client = self.database.get_client().await?;
         let user_id = DieselUlid::generate();
         let new_attributes = UserAttributes {
@@ -44,7 +44,12 @@ impl DatabaseHandler {
             attributes: Json(new_attributes),
             active: false,
         };
+
+        // Create new user in database
         user.create(client.client()).await?;
+
+        // Add user to cache
+        self.cache.add_user(user.id, user.clone());
 
         // Try to emit user updated notification(s)
         if let Err(err) = self
@@ -58,65 +63,18 @@ impl DatabaseHandler {
             return Err(anyhow::anyhow!("Notification emission failed"));
         }
 
-        Ok((user_id, user))
+        Ok(user_id)
     }
 
-    pub async fn deactivate_user(&self, request: DeactivateUser) -> Result<(DieselUlid, User)> {
+    pub async fn deactivate_user(&self, request: DeactivateUser) -> Result<User> {
         let client = self.database.get_client().await?;
         let id = request.get_id()?;
-        User::deactivate_user(&client, &id).await?;
-        let user = User::get(id, &client)
-            .await?
-            .ok_or_else(|| anyhow!("User not found"))?;
 
-        // Try to emit user updated notification(s)
-        if let Err(err) = self
-            .natsio_handler
-            .register_user_event(&user, EventVariant::Updated)
-            .await
-        {
-            // Log error (rollback transaction and return)
-            log::error!("{}", err);
-            //transaction.rollback().await?;
-            return Err(anyhow::anyhow!("Notification emission failed"));
-        }
+        // Update user activation status in database
+        let user = User::deactivate_user(&client, &id).await?;
 
-        Ok((id, user))
-    }
-
-    pub async fn activate_user(&self, request: ActivateUser) -> Result<(DieselUlid, User)> {
-        let client = self.database.get_client().await?;
-        let id = request.get_id()?;
-        User::activate_user(&client, &id).await?;
-        let user = User::get(id, &client)
-            .await?
-            .ok_or_else(|| anyhow!("User not found"))?;
-
-        // Try to emit user updated notification(s)
-        if let Err(err) = self
-            .natsio_handler
-            .register_user_event(&user, EventVariant::Updated)
-            .await
-        {
-            // Log error (rollback transaction and return)
-            log::error!("{}", err);
-            //transaction.rollback().await?;
-            return Err(anyhow::anyhow!("Notification emission failed"));
-        }
-
-        Ok((id, user))
-    }
-    pub async fn update_display_name(
-        &self,
-        request: UpdateUserName,
-        user_id: DieselUlid,
-    ) -> Result<User> {
-        let client = self.database.get_client().await?;
-        let name = request.get_name();
-        User::update_display_name(&client, &user_id, name).await?;
-        let user = User::get(user_id, &client)
-            .await?
-            .ok_or_else(|| anyhow!("User not found"))?;
+        // Update user activaetion status in cache
+        self.cache.update_user(&user.id, user.clone());
 
         // Try to emit user updated notification(s)
         if let Err(err) = self
@@ -132,6 +90,61 @@ impl DatabaseHandler {
 
         Ok(user)
     }
+
+    pub async fn activate_user(&self, request: ActivateUser) -> Result<User> {
+        let client = self.database.get_client().await?;
+        let id = request.get_id()?;
+
+        // Update user activation status in database
+        let user = User::activate_user(&client, &id).await?;
+
+        // Update user activation status in cache
+        self.cache.update_user(&user.id, user.clone());
+
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
+
+        Ok(user)
+    }
+
+    pub async fn update_display_name(
+        &self,
+        request: UpdateUserName,
+        user_id: DieselUlid,
+    ) -> Result<User> {
+        let client = self.database.get_client().await?;
+        let name = request.get_name();
+
+        // Update user display name in database
+        let user = User::update_display_name(&client, &user_id, name).await?;
+
+        // Update user display name in cache
+        self.cache.update_user(&user.id, user.clone());
+
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
+
+        Ok(user)
+    }
+
     pub async fn update_email(
         &self,
         request: UpdateUserEmail,
@@ -139,10 +152,12 @@ impl DatabaseHandler {
     ) -> Result<User> {
         let client = self.database.get_client().await?;
         let email = request.get_email();
-        User::update_email(&client, &user_id, email).await?;
-        let user = User::get(user_id, &client)
-            .await?
-            .ok_or_else(|| anyhow!("User not found"))?;
+
+        // Update user email in database
+        let user = User::update_email(&client, &user_id, email).await?;
+
+        // Update user email in cache
+        self.cache.update_user(&user_id, user.clone());
 
         // Try to emit user updated notification(s)
         if let Err(err) = self
@@ -165,7 +180,12 @@ impl DatabaseHandler {
         endpoint_id: DieselUlid,
     ) -> Result<User> {
         let client = self.database.get_client().await?;
+
+        // Update user endpoints in database
         let user = User::add_trusted_endpoint(&client, &user_id, &endpoint_id).await?;
+
+        // Update user endpoints in cache
+        self.cache.update_user(&user_id, user.clone());
 
         // Try to emit user updated notification(s)
         if let Err(err) = self
@@ -192,13 +212,16 @@ impl DatabaseHandler {
     ) -> Result<User> {
         let client = self.database.get_client().await?;
 
-        // Update user permissions
+        // Update user permissions in database
         let user = User::add_user_permission(
             &client,
             &user_id,
             HashMap::from_iter([(resource_id, perm_level)]),
         )
         .await?;
+
+        // Update user permissions in cache
+        self.cache.update_user(&user.id, user.clone());
 
         // Create personal/persistent notification (if needed)
         if persistent_notification {
@@ -248,6 +271,9 @@ impl DatabaseHandler {
         // Remove permission for specific resource from user
         let user = User::remove_user_permission(&client, &user_id, &resource_id).await?;
 
+        // Update user in cache
+        self.cache.update_user(&user.id, user.clone());
+
         // Create personal/persistent notification (no transaction needed)
         let mut p_notification = PersistentNotification {
             id: DieselUlid::generate(),
@@ -292,6 +318,9 @@ impl DatabaseHandler {
         let user =
             User::update_user_permission(&client, &user_id, &resource_id, permission).await?;
 
+        // Update user display name in cache
+        self.cache.update_user(&user.id, user.clone());
+
         // Try to emit user updated notification(s)
         if let Err(err) = self
             .natsio_handler
@@ -314,13 +343,12 @@ impl DatabaseHandler {
     ) -> Result<Vec<PersonalNotification>> {
         let client = self.database.get_client().await?;
 
-        // Fetch notifications from database
-        let db_notifications =
-            PersistentNotification::get_user_notifications(&user_id, &client).await?;
-
-        // Convert to proto and return
-        let proto_notifications: Vec<PersonalNotification> =
-            db_notifications.into_iter().map(|m| m.into()).collect();
+        // Fetch notifications from database and convert to protobuf representation
+        let proto_notifications = PersistentNotification::get_user_notifications(&user_id, &client)
+            .await?
+            .into_iter()
+            .map(|m| m.into())
+            .collect();
 
         Ok(proto_notifications)
     }
@@ -353,6 +381,9 @@ impl DatabaseHandler {
         mapping: &OIDCMapping,
     ) -> Result<User> {
         let client = self.database.get_client().await?;
+        if self.cache.oidc_mapping_exists(mapping) {
+            bail!("Oidc ID already registered");
+        }
         let user = self
             .cache
             .get_user(&user_id)

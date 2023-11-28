@@ -1,6 +1,9 @@
 use std::{collections::HashMap, str::FromStr};
 
-use crate::common::{init, test_utils::USER1_ULID};
+use crate::common::{
+    init,
+    test_utils::{ADMIN_USER_ULID, USER1_ULID, USER2_ULID},
+};
 use aruna_server::database::{
     crud::CrudDb,
     dsls::{
@@ -444,7 +447,6 @@ async fn update_user_permission_test() {
     .await
     .unwrap();
 
-    dbg!(&user);
     assert_eq!(user.get_permissions(None).unwrap().0.len(), 1);
     assert!(user
         .get_permissions(None)
@@ -461,7 +463,6 @@ async fn update_user_permission_test() {
     .await
     .unwrap();
 
-    dbg!(&user);
     assert_eq!(user.get_permissions(None).unwrap().0.len(), 1);
     assert!(user
         .get_permissions(None)
@@ -688,4 +689,122 @@ async fn add_token_test() {
     .unwrap();
 
     //ToDo extend test
+}
+
+#[tokio::test]
+async fn add_remove_trusted_endpoint_test() {
+    let db = init::init_database().await;
+    let client = db.get_client().await.unwrap();
+    let client = client.client();
+
+    let user1_ulid = DieselUlid::from_str(USER1_ULID).unwrap();
+    let user2_ulid = DieselUlid::from_str(USER2_ULID).unwrap();
+    let sentinel_user_ulid = DieselUlid::from_str(ADMIN_USER_ULID).unwrap();
+
+    let endpoint1 = DieselUlid::generate();
+    let endpoint2 = DieselUlid::generate();
+    let endpoint3 = DieselUlid::generate();
+
+    // Add first endpoint to user1
+    let user1 = User::add_trusted_endpoint(client, &user1_ulid, &endpoint1)
+        .await
+        .unwrap();
+    assert_eq!(user1.attributes.0.trusted_endpoints.len(), 1);
+    assert!(user1
+        .attributes
+        .0
+        .trusted_endpoints
+        .contains_key(&endpoint1));
+
+    // Add second endpoint to user1
+    let user1 = User::add_trusted_endpoint(client, &user1_ulid, &endpoint2)
+        .await
+        .unwrap();
+    assert_eq!(user1.attributes.0.trusted_endpoints.len(), 2);
+    assert!(user1
+        .attributes
+        .0
+        .trusted_endpoints
+        .contains_key(&endpoint1));
+    assert!(user1
+        .attributes
+        .0
+        .trusted_endpoints
+        .contains_key(&endpoint2));
+
+    // Add first endpoint to user2
+    let user2 = User::add_trusted_endpoint(client, &user2_ulid, &endpoint2)
+        .await
+        .unwrap();
+    assert_eq!(user2.attributes.0.trusted_endpoints.len(), 1);
+    assert!(user2
+        .attributes
+        .0
+        .trusted_endpoints
+        .contains_key(&endpoint2));
+
+    // Add totem endpoint to admin user
+    let sentinel_user = User::add_trusted_endpoint(client, &sentinel_user_ulid, &endpoint3)
+        .await
+        .unwrap();
+    assert_eq!(sentinel_user.attributes.0.trusted_endpoints.len(), 1);
+    assert!(sentinel_user
+        .attributes
+        .0
+        .trusted_endpoints
+        .contains_key(&endpoint3));
+
+    // Remove non-existing endpoint
+    let users = User::remove_endpoint_from_users(client, &DieselUlid::generate())
+        .await
+        .unwrap();
+
+    for user in users {
+        if user.id == user1_ulid {
+            assert_eq!(user.attributes.0.trusted_endpoints.len(), 2);
+            assert!(user.attributes.0.trusted_endpoints.contains_key(&endpoint1));
+            assert!(user.attributes.0.trusted_endpoints.contains_key(&endpoint2))
+        } else if user.id == user2_ulid {
+            assert_eq!(user.attributes.0.trusted_endpoints.len(), 1);
+            assert!(user.attributes.0.trusted_endpoints.contains_key(&endpoint2))
+        } else if user.id == sentinel_user_ulid {
+            assert_eq!(user.attributes.0.trusted_endpoints.len(), 1);
+            assert!(user.attributes.0.trusted_endpoints.contains_key(&endpoint3))
+        }
+    }
+
+    // Remove first endpoint
+    let users = User::remove_endpoint_from_users(client, &endpoint1)
+        .await
+        .unwrap();
+
+    for user in users {
+        if user.id == user1_ulid || user.id == user2_ulid {
+            assert_eq!(user.attributes.0.trusted_endpoints.len(), 1);
+            assert!(user.attributes.0.trusted_endpoints.contains_key(&endpoint2))
+        } else if user.id == sentinel_user_ulid {
+            assert_eq!(user.attributes.0.trusted_endpoints.len(), 1);
+            assert!(user.attributes.0.trusted_endpoints.contains_key(&endpoint3))
+        }
+    }
+
+    // Remove second endpoint
+    let users = User::remove_endpoint_from_users(client, &endpoint2)
+        .await
+        .unwrap();
+
+    for user in users {
+        if user.id == user1_ulid || user.id == user2_ulid {
+            assert_eq!(user.attributes.0.trusted_endpoints.len(), 0)
+        } else if user.id == sentinel_user_ulid {
+            assert_eq!(user.attributes.0.trusted_endpoints.len(), 1);
+            assert!(user.attributes.0.trusted_endpoints.contains_key(&endpoint3))
+        }
+    }
+
+    // Remove single endpoint from test_user
+    let totem_user = User::remove_trusted_endpoint(client, &sentinel_user_ulid, &endpoint3)
+        .await
+        .unwrap();
+    assert_eq!(totem_user.attributes.0.trusted_endpoints.len(), 0)
 }

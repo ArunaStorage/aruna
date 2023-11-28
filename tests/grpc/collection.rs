@@ -776,7 +776,7 @@ async fn grpc_delete_collection() {
 
     let response = collection_service.delete_collection(grpc_request).await;
 
-    assert!(response.is_ok()); // Just nothing got "deleted"
+    assert!(response.is_err()); // Collection does not exist.
 
     // Delete Collection without token
     inner_request.collection_id = collection_ulid.to_string();

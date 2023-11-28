@@ -67,16 +67,13 @@ impl AuthorizationService for AuthorizationServiceImpl {
             "Internal error"
         );
 
-        // Create response before user gets moved into cache
+        // Create response
         let resp = CreateAuthorizationResponse {
             resource_id: resource_id.to_string(),
             user_id: user_id.to_string(),
             user_name: user.display_name.to_string(),
             permission_level: request.into_inner().permission_level,
         };
-
-        // Update local cache
-        self.cache.update_user(&user.id.clone(), user);
 
         // Return gRPC response
         return_with_log!(resp);
@@ -171,15 +168,12 @@ impl AuthorizationService for AuthorizationServiceImpl {
         );
 
         // Remove resource permission from user
-        let user = tonic_internal!(
+        tonic_internal!(
             self.database_handler
                 .remove_permission_from_user(user_id, resource_id)
                 .await,
             "Permission removal failed"
         );
-
-        // Update local cache
-        self.cache.update_user(&user.id.clone(), user);
 
         // Return found authorizations
         let response = DeleteAuthorizationResponse {};
@@ -242,9 +236,6 @@ impl AuthorizationService for AuthorizationServiceImpl {
                 .await,
             "Permission update failed"
         );
-
-        // Update local cache
-        self.cache.update_user(&user.id.clone(), user.clone());
 
         // Return found authorizations
         let response = UpdateAuthorizationResponse {

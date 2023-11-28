@@ -117,17 +117,18 @@ impl User {
         client: &Client,
         user_id: &DieselUlid,
         display_name: impl Into<String>,
-    ) -> Result<()> {
+    ) -> Result<User> {
         let query = "UPDATE users
-        SET display_name = $1
-        WHERE id = $2;";
+            SET display_name = $1
+            WHERE id = $2
+            RETURNING *;";
 
         let prepared = client.prepare(query).await?;
-        client
-            .execute(&prepared, &[&display_name.into(), user_id])
+        let row = client
+            .query_one(&prepared, &[&display_name.into(), user_id])
             .await?;
 
-        Ok(())
+        Ok(User::from_row(&row))
     }
 
     //ToDo: Rust Doc
@@ -135,15 +136,18 @@ impl User {
         client: &Client,
         user_id: &DieselUlid,
         email: impl Into<String>,
-    ) -> Result<()> {
+    ) -> Result<User> {
         let query = "UPDATE users
-        SET email = $1
-        WHERE id = $2;";
+            SET email = $1
+            WHERE id = $2
+            RETURNING *;";
 
         let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[&email.into(), user_id]).await?;
+        let row = client
+            .query_one(&prepared, &[&email.into(), user_id])
+            .await?;
 
-        Ok(())
+        Ok(User::from_row(&row))
     }
 
     //ToDo: Rust Doc
@@ -153,15 +157,16 @@ impl User {
         user_attributes: Json<UserAttributes>,
     ) -> Result<User> {
         let query = "UPDATE users
-        SET attributes = $1
-        WHERE id = $2 RETURNING *;";
+            SET attributes = $1
+            WHERE id = $2
+            RETURNING *;";
 
         let prepared = client.prepare(query).await?;
-        let user = client
+        let row = client
             .query_one(&prepared, &[&user_attributes, user_id])
             .await?;
 
-        Ok(User::from_row(&user))
+        Ok(User::from_row(&row))
     }
 
     //ToDo: Rust Doc
@@ -169,15 +174,16 @@ impl User {
         client: &Client,
         user_id: &DieselUlid,
         is_admin: bool,
-    ) -> Result<()> {
+    ) -> Result<User> {
         let query = "UPDATE users
-        SET attributes = JSONB_SET(attributes, '{global_admin}', to_jsonb($1::bool))
-        WHERE id = $2;";
+            SET attributes = JSONB_SET(attributes, '{global_admin}', to_jsonb($1::bool))
+            WHERE id = $2
+            RETURNING *;";
 
         let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[&is_admin, user_id]).await?;
+        let row = client.query_one(&prepared, &[&is_admin, user_id]).await?;
 
-        Ok(())
+        Ok(User::from_row(&row))
     }
 
     //ToDo: Rust Doc
@@ -185,17 +191,18 @@ impl User {
         client: &Client,
         user_id: &DieselUlid,
         is_service_account: bool,
-    ) -> Result<()> {
+    ) -> Result<User> {
         let query = "UPDATE users
-        SET attributes = JSONB_SET(attributes, '{service_account}', to_jsonb($1::bool))
-        WHERE id = $2;";
+            SET attributes = JSONB_SET(attributes, '{service_account}', to_jsonb($1::bool))
+            WHERE id = $2
+            RETURNING *;";
 
         let prepared = client.prepare(query).await?;
-        client
-            .execute(&prepared, &[&is_service_account, user_id])
+        let row = client
+            .query_one(&prepared, &[&is_service_account, user_id])
             .await?;
 
-        Ok(())
+        Ok(User::from_row(&row))
     }
 
     //ToDo: Rust Doc
@@ -205,14 +212,15 @@ impl User {
         user_perm: HashMap<DieselUlid, ObjectMapping<DbPermissionLevel>, RandomState>,
     ) -> Result<User> {
         let query = "UPDATE users
-        SET attributes = jsonb_set(attributes, '{permissions}', attributes->'permissions' || $1::jsonb, true) 
-        WHERE id = $2 
-        RETURNING *;";
+            SET attributes = jsonb_set(attributes, '{permissions}', attributes->'permissions' || $1::jsonb, true) 
+            WHERE id = $2 
+            RETURNING *;";
 
         let prepared = client.prepare(query).await?;
         let row = client
             .query_one(&prepared, &[&Json(user_perm), user_id])
             .await?;
+
         Ok(User::from_row(&row))
     }
 
@@ -222,14 +230,15 @@ impl User {
         resource_id: &DieselUlid,
     ) -> Result<User> {
         let query = "UPDATE users 
-        SET attributes = jsonb_set(attributes, '{permissions}', (attributes->'permissions') - $1::TEXT) 
-        WHERE id = $2
-        RETURNING *;";
+            SET attributes = jsonb_set(attributes, '{permissions}', (attributes->'permissions') - $1::TEXT) 
+            WHERE id = $2
+            RETURNING *;";
 
         let prepared = client.prepare(query).await?;
         let row = client
             .query_one(&prepared, &[&resource_id.to_string(), user_id])
             .await?;
+
         Ok(User::from_row(&row))
     }
 
@@ -240,9 +249,9 @@ impl User {
         user_perm: ObjectMapping<DbPermissionLevel>,
     ) -> Result<User> {
         let query = "UPDATE users 
-        SET attributes = jsonb_set(attributes, ARRAY['permissions', $1::TEXT], $2::jsonb, true) 
-        WHERE id = $3
-        RETURNING *;";
+            SET attributes = jsonb_set(attributes, ARRAY['permissions', $1::TEXT], $2::jsonb, true) 
+            WHERE id = $3
+            RETURNING *;";
 
         let prepared = client.prepare(query).await?;
         let row = client
@@ -251,6 +260,7 @@ impl User {
                 &[&resource_id.to_string(), &Json(user_perm), &user_id],
             )
             .await?;
+
         Ok(User::from_row(&row))
     }
 
@@ -270,46 +280,60 @@ impl User {
             .query_one(&prepared, &[&Json(token), user_id])
             .await?;
 
-        let updated_user = User::from_row(&row);
-        log::debug!("{:#?}", &updated_user);
-
-        Ok(updated_user)
+        Ok(User::from_row(&row))
     }
 
     pub async fn remove_user_token(
         client: &Client,
         user_id: &DieselUlid,
         token_id: &DieselUlid,
-    ) -> Result<()> {
+    ) -> Result<User> {
         let query = "UPDATE users 
-        SET attributes = jsonb_set(attributes, '{tokens}', (attributes->'tokens') - $1::TEXT) 
-        WHERE id = $2;";
+            SET attributes = jsonb_set(attributes, '{tokens}', (attributes->'tokens') - $1::TEXT) 
+            WHERE id = $2
+            RETURNING *;";
 
         let prepared = client.prepare(query).await?;
-        client
-            .execute(&prepared, &[&token_id.to_string(), user_id])
+        let row = client
+            .query_one(&prepared, &[&token_id.to_string(), user_id])
             .await?;
-        Ok(())
-    }
-    pub async fn remove_all_tokens(client: &Client, user_id: &DieselUlid) -> Result<()> {
-        let query =
-            "UPDATE users SET attributes = jsonb_set(attributes, '{tokens}', '{}') WHERE id = $1;";
-        let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[user_id]).await?;
-        Ok(())
-    }
-    pub async fn deactivate_user(client: &Client, user_id: &DieselUlid) -> Result<()> {
-        let query = "UPDATE users SET active = false WHERE id = $1";
-        let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[user_id]).await?;
-        Ok(())
+
+        Ok(User::from_row(&row))
     }
 
-    pub async fn activate_user(client: &Client, user_id: &DieselUlid) -> Result<()> {
-        let query = "UPDATE users SET active = true WHERE id = $1";
+    pub async fn remove_all_tokens(client: &Client, user_id: &DieselUlid) -> Result<User> {
+        let query = "UPDATE users 
+            SET attributes = jsonb_set(attributes, '{tokens}', '{}') 
+            WHERE id = $1
+            RETURNING *;";
+
         let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[user_id]).await?;
-        Ok(())
+        let row = client.query_one(&prepared, &[user_id]).await?;
+
+        Ok(User::from_row(&row))
+    }
+
+    pub async fn deactivate_user(client: &Client, user_id: &DieselUlid) -> Result<User> {
+        let query = "UPDATE users
+            SET active = false 
+            WHERE id = $1
+            RETURNING *;";
+
+        let prepared = client.prepare(query).await?;
+        let row = client.query_one(&prepared, &[user_id]).await?;
+        Ok(User::from_row(&row))
+    }
+
+    pub async fn activate_user(client: &Client, user_id: &DieselUlid) -> Result<User> {
+        let query = "UPDATE users
+            SET active = true 
+            WHERE id = $1
+            RETURNING *;";
+
+        let prepared = client.prepare(query).await?;
+        let row = client.query_one(&prepared, &[user_id]).await?;
+
+        Ok(User::from_row(&row))
     }
 
     //ToDo: Rust Doc
@@ -319,17 +343,51 @@ impl User {
         endpoint_id: &DieselUlid,
     ) -> Result<User> {
         let query = "UPDATE users
-                SET attributes = jsonb_set(attributes, '{trusted_endpoints}', attributes->'trusted_endpoints' || $1::jsonb, true) 
-                WHERE id = $2 RETURNING *;";
+            SET attributes = jsonb_set(attributes, '{trusted_endpoints}', attributes->'trusted_endpoints' || $1::jsonb, true) 
+            WHERE id = $2 
+            RETURNING *;";
 
         let prepared = client.prepare(query).await?;
         let map: DashMap<DieselUlid, Empty, RandomState> =
             DashMap::from_iter([(endpoint_id.to_owned(), Empty {})]);
         let row = client.query_one(&prepared, &[&Json(map), user_id]).await?;
+
         Ok(User::from_row(&row))
     }
 
-    //TODO: Remove dataproxy
+    //ToDo: Docs
+    pub async fn remove_trusted_endpoint(
+        client: &Client,
+        user_id: &DieselUlid,
+        endpoint_id: &DieselUlid,
+    ) -> Result<User> {
+        let query = "UPDATE users 
+            SET attributes = jsonb_set(attributes, '{trusted_endpoints}', (attributes->'trusted_endpoints') - $1::TEXT) 
+            WHERE id = $2 
+            RETURNING *;";
+
+        let prepared = client.prepare(query).await?;
+        let row = client
+            .query_one(&prepared, &[&endpoint_id.to_string(), &user_id])
+            .await?;
+
+        Ok(User::from_row(&row))
+    }
+
+    //ToDo: Docs
+    pub async fn remove_endpoint_from_users(
+        client: &Client,
+        endpoint_id: &DieselUlid,
+    ) -> Result<Vec<User>> {
+        let query = "UPDATE users 
+            SET attributes = jsonb_set(attributes, '{trusted_endpoints}', (attributes->'trusted_endpoints') - $1::TEXT) 
+            RETURNING *;";
+
+        let prepared = client.prepare(query).await?;
+        let rows = client.query(&prepared, &[&endpoint_id.to_string()]).await?;
+
+        Ok(rows.iter().map(User::from_row).collect::<Vec<_>>())
+    }
 }
 
 impl Display for UserAttributes {

@@ -12,12 +12,14 @@ use aruna_rust_api::api::storage::services::v2::get_endpoint_request::Endpoint a
 use aruna_rust_api::api::storage::services::v2::{
     GetDownloadUrlRequest, GetEndpointRequest, GetUploadUrlRequest,
 };
+use aws_config::BehaviorVersion;
 use aws_sdk_s3::config::Credentials;
 use aws_sdk_s3::Client;
 use aws_types::region::Region;
 use diesel_ulid::DieselUlid;
-use http::Method;
+use log::debug;
 use reqsign::{AwsCredential, AwsV4Signer};
+use reqwest::Method;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::metadata::{AsciiMetadataKey, AsciiMetadataValue};
@@ -317,8 +319,8 @@ impl DatabaseHandler {
                 action: Action::CreateSecrets,
             }),
         )?;
-
         dbg!("SLT: {:?}", &slt);
+
         // 2. Request S3 credentials from Dataproxy
         let mut ssl: bool = true;
         let mut endpoint_host_url: String = String::new();
@@ -361,6 +363,7 @@ impl DatabaseHandler {
                 .map_err(|_| tonic::Status::internal("Could not connect to Dataproxy"))?
         };
         let mut dp_conn = DataproxyUserServiceClient::connect(dp_endpoint).await?;
+        debug!("Opened connection to DataProxy");
 
         // 3. Create GetCredentialsRequest with one-shot token in header ...
         let mut credentials_request = Request::new(GetCredentialsRequest {});
@@ -369,10 +372,12 @@ impl DatabaseHandler {
             AsciiMetadataValue::try_from(format!("Bearer {}", slt))?,
         );
 
+        debug!("Send Request to DataProxy");
         let response = dp_conn
             .get_credentials(credentials_request)
             .await?
             .into_inner();
+        debug!("{:#?}", response);
 
         Ok((endpoint_host_url, endpoint_s3_url, ssl, response))
     }
@@ -392,7 +397,7 @@ impl DatabaseHandler {
             None,
             "ARUNA_SERVER", // Endpoint name?
         );
-        let config = aws_config::from_env()
+        let config = aws_config::defaults(BehaviorVersion::v2023_11_09())
             .credentials_provider(creds)
             .load()
             .await;

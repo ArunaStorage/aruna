@@ -28,10 +28,12 @@ use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::PermissionLevel;
+use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::models::v2::User as APIUser;
 use aruna_rust_api::api::storage::services::v2::get_hierarchy_response::Graph;
 use aruna_rust_api::api::storage::services::v2::UserPermission;
-use dashmap::mapref::one::RefMut;
+use async_channel::Sender;
+use dashmap::mapref::one::Ref;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
@@ -40,28 +42,36 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 pub struct Cache {
-    pub object_cache: DashMap<DieselUlid, ObjectWithRelations, RandomState>,
-    pub user_cache: DashMap<DieselUlid, User, RandomState>,
-    pub pubkeys: DashMap<i32, PubKeyEnum, RandomState>,
-    pub issuer_info: DashMap<String, Issuer>,
+    object_cache: DashMap<DieselUlid, ObjectWithRelations, RandomState>,
+    user_cache: DashMap<DieselUlid, User, RandomState>,
+    pubkeys: DashMap<i16, PubKeyEnum, RandomState>,
+    issuer_info: DashMap<String, Issuer>,
+    pub issuer_sender: Sender<String>,
     lock: AtomicBool,
 }
 
-impl Default for Cache {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Cache {
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Arc<Self> {
+        let (issuer_sender, issuer_recv) = async_channel::bounded(50);
+
+        let cache = Arc::new(Self {
             object_cache: DashMap::default(),
             user_cache: DashMap::default(),
             pubkeys: DashMap::default(),
             issuer_info: DashMap::default(),
+            issuer_sender,
             lock: AtomicBool::new(false),
-        }
+        });
+
+        let cache_clone = cache.clone();
+
+        tokio::spawn(async move {
+            while let Ok(issuer_name) = issuer_recv.recv().await {
+                cache_clone.update_issuer(&issuer_name).await.ok();
+            }
+        });
+
+        cache
     }
 
     pub async fn sync_cache(&self, db: Arc<Database>) -> Result<()> {
@@ -81,11 +91,11 @@ impl Cache {
             self.user_cache.insert(user.id, user);
         }
 
-        let pubkeys: Vec<(i32, PubKeyEnum)> = DbPubkey::all(&client)
+        let pubkeys: Vec<(i16, PubKeyEnum)> = DbPubkey::all(&client)
             .await?
             .into_iter()
             .map(|x| {
-                let id = x.id as i32;
+                let id = x.id;
                 match PubKeyEnum::try_from(x) {
                     Ok(e) => Ok((id, e)),
                     Err(e) => Err(e),
@@ -107,6 +117,12 @@ impl Cache {
             audiences,
         } in issuers
         {
+            let audiences = if audiences.is_empty() {
+                None
+            } else {
+                Some(audiences)
+            };
+
             self.issuer_info.insert(
                 issuer_name.to_string(),
                 Issuer::new_with_endpoint(issuer_name.clone(), jwks_endpoint, audiences).await?,
@@ -128,17 +144,47 @@ impl Cache {
         self.object_cache.get(id).map(|x| x.value().clone())
     }
 
+    pub fn insert_object(&self, object: ObjectWithRelations) {
+        self.check_lock();
+        self.object_cache.insert(object.object.id, object);
+    }
+
     pub fn get_user(&self, id: &DieselUlid) -> Option<User> {
         self.check_lock();
         self.user_cache.get(id).map(|x| x.value().clone())
     }
 
-    pub fn get_pubkey(&self, serial: i32) -> Option<PubKeyEnum> {
+    pub fn get_pubkey(&self, serial: i16) -> Option<PubKeyEnum> {
         self.check_lock();
         self.pubkeys.get(&serial).map(|x| x.value().clone())
     }
 
-    pub fn get_pubkey_serial(&self, raw_pubkey: &str) -> Option<i32> {
+    pub async fn update_issuer(&self, issuer_name: &str) -> Result<()> {
+        self.check_lock();
+        self.issuer_info
+            .get_mut(issuer_name)
+            .ok_or_else(|| {
+                anyhow!(
+                    "Issuer {} not found in cache, cannot update",
+                    issuer_name.to_string()
+                )
+            })?
+            .refresh_jwks()
+            .await
+    }
+
+    pub fn get_pubkeys(&self) -> Vec<Pubkey> {
+        self.pubkeys
+            .iter()
+            .map(|pk| Pubkey {
+                id: *pk.key() as i32,
+                key: pk.value().get_key_string(),
+                location: pk.value().get_name(),
+            })
+            .collect()
+    }
+
+    pub fn get_pubkey_serial(&self, raw_pubkey: &str) -> Option<i16> {
         self.check_lock();
         for entry in &self.pubkeys {
             match entry.value() {
@@ -217,19 +263,19 @@ impl Cache {
         self.user_cache.insert(id, user);
     }
 
-    pub fn add_pubkey(&self, id: i32, key: PubKeyEnum) {
+    pub fn add_pubkey(&self, id: i16, key: PubKeyEnum) {
         self.check_lock();
         self.pubkeys.insert(id, key);
     }
 
-    pub fn remove_pubkey(&self, id: &i32) {
+    pub fn remove_pubkey(&self, id: i16) {
         self.check_lock();
-        self.pubkeys.remove(id);
+        self.pubkeys.remove(&id);
     }
 
-    pub fn get_issuer(&self, kid: &str) -> Option<RefMut<'_, String, Issuer>> {
+    pub fn get_issuer(&self, kid: &str) -> Option<Ref<'_, String, Issuer>> {
         self.check_lock();
-        self.issuer_info.get_mut(kid)
+        self.issuer_info.get(kid)
     }
 
     pub fn remove_user(&self, id: &DieselUlid) {
@@ -264,32 +310,6 @@ impl Cache {
                 None
             }
         }))
-    }
-
-    pub fn remove_endpoint_pubkeys(&self, endpoint_id: &DieselUlid) {
-        self.check_lock();
-        for entry in &self.pubkeys {
-            if let PubKeyEnum::DataProxy((_, _, pubkey_endpoint)) = entry.value() {
-                if endpoint_id == pubkey_endpoint {
-                    self.pubkeys.remove(entry.key());
-                }
-            }
-        }
-    }
-
-    pub fn remove_endpoint_from_resources(&self, endpoint_id: &DieselUlid) {
-        self.check_lock();
-        for entry in &self.object_cache {
-            entry.object.endpoints.0.remove(endpoint_id);
-        }
-    }
-
-    pub fn remove_endpoint_from_users(&self, endpoint_id: &DieselUlid) {
-        self.check_lock();
-        self.user_cache.iter().for_each(|entry| {
-            let val = entry.value();
-            val.attributes.0.trusted_endpoints.remove(endpoint_id);
-        });
     }
 
     pub fn get_hierarchy(&self, id: &DieselUlid) -> Result<Graph> {
@@ -601,18 +621,22 @@ impl Cache {
             *endpoint_id,
         )
     }
+
+    pub fn oidc_mapping_exists(&self, mapping: &OIDCMapping) -> bool {
+        self.check_lock();
+        self.user_cache
+            .iter()
+            .any(|x| x.value().attributes.0.external_ids.contains(mapping))
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::database::dsls::{user_dsl::UserAttributes, Empty};
-
     use super::*;
     use diesel_ulid::DieselUlid;
-    use postgres_types::Json;
 
-    #[test]
-    fn test_remove_object() {
+    #[tokio::test]
+    async fn test_remove_object() {
         let cache = Cache::new();
         let object_ulid = DieselUlid::generate();
         let object_plus = ObjectWithRelations::random_object_v2(
@@ -634,78 +658,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_remove_endpoint_from_users() {
-        let cache = Cache::new();
-
-        // Generate random endpoint id
-        let endpoint_id = DieselUlid::generate();
-        let random_endpoint = DieselUlid::generate();
-
-        // Insert users with trusted_endpoint
-        let user_1 = DieselUlid::generate();
-        cache.add_user(
-            user_1,
-            User {
-                id: user_1,
-                display_name: "user-1".to_string(),
-                email: "test-1@example.com".to_string(),
-                attributes: Json(UserAttributes {
-                    global_admin: false,
-                    service_account: false,
-                    tokens: DashMap::default(),
-                    trusted_endpoints: DashMap::from_iter([
-                        (endpoint_id, Empty {}),
-                        (random_endpoint, Empty {}),
-                    ]),
-                    custom_attributes: vec![],
-                    permissions: DashMap::default(),
-                    external_ids: vec![],
-                }),
-                active: true,
-            },
-        );
-
-        // Insert users with trusted_endpoint
-        let user_2 = DieselUlid::generate();
-        cache.add_user(
-            user_2,
-            User {
-                id: user_2,
-                display_name: "user-2".to_string(),
-                email: "test-2@example.com".to_string(),
-                attributes: Json(UserAttributes {
-                    global_admin: false,
-                    service_account: false,
-                    tokens: DashMap::default(),
-                    trusted_endpoints: DashMap::from_iter([(endpoint_id, Empty {})]),
-                    custom_attributes: vec![],
-                    permissions: DashMap::default(),
-                    external_ids: vec![],
-                }),
-                active: true,
-            },
-        );
-
-        // Remove endpoint from users
-        cache.remove_endpoint_from_users(&endpoint_id);
-
-        // Fetch user and validate endpoint removal
-        let user_1_upd = cache.get_user(&user_1).unwrap();
-
-        assert_eq!(user_1_upd.attributes.0.trusted_endpoints.len(), 1);
-        assert!(user_1_upd
-            .attributes
-            .0
-            .trusted_endpoints
-            .contains_key(&random_endpoint));
-
-        let user_2_upd = cache.get_user(&user_2).unwrap();
-        assert!(user_2_upd.attributes.0.trusted_endpoints.is_empty())
-    }
-
-    #[test]
-    fn test_traverse_down_with_relations() {
+    #[tokio::test]
+    async fn test_traverse_down_with_relations() {
         let cache = Cache::new();
         let id1 = DieselUlid::generate();
         let id2 = DieselUlid::generate();
@@ -740,8 +694,8 @@ mod tests {
         assert_eq!(result.unwrap_err().to_string(), "Invalid permissions");
     }
 
-    #[test]
-    fn test_upstream_dfs_001() {
+    #[tokio::test]
+    async fn test_upstream_dfs_001() {
         // Init new cache
         let cache = Cache::new();
 
