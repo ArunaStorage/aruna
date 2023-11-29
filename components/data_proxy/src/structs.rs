@@ -882,18 +882,9 @@ impl From<Vec<ResourceString>> for Missing {
         for x in value {
             match x {
                 ResourceString::Project(_) => {}
-                ResourceString::Collection(_, c) => {
-                    missing.c = Some(c);
-                }
-                ResourceString::Dataset(_, c, d) => {
-                    missing.c = c;
-                    missing.d = Some(d);
-                }
-                ResourceString::Object(_, c, d, o) => {
-                    missing.c = c;
-                    missing.d = d;
-                    missing.o = Some(o);
-                }
+                ResourceString::Collection(_, c) => missing.c = Some(c),
+                ResourceString::Dataset(_, _, d) => missing.d = Some(d),
+                ResourceString::Object(_, _, _, o) => missing.o = Some(o),
             }
         }
         missing
