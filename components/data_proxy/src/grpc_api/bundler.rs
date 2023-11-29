@@ -110,6 +110,7 @@ impl BundlerService for BundlerServiceImpl {
             children: Some(HashSet::from_iter(trels)),
             parents: None,
             synced: true,
+            created_at: Some(chrono::Utc::now().naive_utc()), // Now for default
         };
 
         trace_err!(self.cache.upsert_object(bundler_object, None).await)

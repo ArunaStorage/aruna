@@ -199,6 +199,7 @@ impl S3 for ArunaS3Service {
                         children: None,
                         parents: new_revision.parents,
                         synced: false,
+                        created_at: new_revision.created_at,
                     }
                 }
             } else {
@@ -223,6 +224,7 @@ impl S3 for ArunaS3Service {
                     children: None,
                     parents: None,
                     synced: false,
+                    created_at: Some(chrono::Utc::now().naive_utc()),
                 }
             }
         } else {
@@ -246,6 +248,7 @@ impl S3 for ArunaS3Service {
                 children: None,
                 parents: None,
                 synced: false,
+                created_at: Some(chrono::Utc::now().naive_utc()),
             }
         };
 
@@ -340,6 +343,7 @@ impl S3 for ArunaS3Service {
                         res_ids.get_project(),
                     )])),
                     synced: false,
+                    created_at: Some(chrono::Utc::now().naive_utc()),
                 };
 
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
@@ -378,6 +382,7 @@ impl S3 for ArunaS3Service {
                     children: None,
                     parents: Some(HashSet::from([parent])),
                     synced: false,
+                    created_at: Some(chrono::Utc::now().naive_utc()),
                 };
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                     if let Some(token) = &impersonating_token {
@@ -581,6 +586,7 @@ impl S3 for ArunaS3Service {
                         children: None,
                         parents: new_revision.parents,
                         synced: false,
+                        created_at: new_revision.created_at,
                     }
                 }
             } else {
@@ -606,6 +612,7 @@ impl S3 for ArunaS3Service {
                     children: None,
                     parents: None,
                     synced: false,
+                    created_at: Some(chrono::Utc::now().naive_utc()),
                 }
             }
         } else {
@@ -629,6 +636,7 @@ impl S3 for ArunaS3Service {
                 children: None,
                 parents: None,
                 synced: false,
+                created_at: Some(chrono::Utc::now().naive_utc()),
             }
         };
 
@@ -668,6 +676,7 @@ impl S3 for ArunaS3Service {
                         res_ids.get_project(),
                     )])),
                     synced: false,
+                    created_at: Some(chrono::Utc::now().naive_utc()),
                 };
 
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
@@ -706,6 +715,7 @@ impl S3 for ArunaS3Service {
                     children: None,
                     parents: Some(HashSet::from([parent])),
                     synced: false,
+                    created_at: Some(chrono::Utc::now().naive_utc()),
                 };
 
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
@@ -1242,16 +1252,25 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<ListObjectsV2Input>,
     ) -> S3Result<S3Response<ListObjectsV2Output>> {
-        let project_name = ResourceString::Project(req.input.bucket.clone());
-        match self.cache.paths.get(&project_name) {
+        // Fetch the project name, delimiter and prefix from the request
+        let project_name = &req.input.bucket;
+        let delimiter = req.input.delimiter;
+        let prefix = req.input.prefix;
+
+        // Check if bucket exists as root in cache of paths
+        match self
+            .cache
+            .paths
+            .get(&ResourceString::Project(project_name.to_string()))
+        {
             Some(_) => {}
             None => {
                 error!("No bucket found");
                 return Err(s3_error!(NoSuchBucket, "No bucket found"));
             }
         };
-        let root = &req.input.bucket;
 
+        // Process continuation token from request
         let continuation_token = match req.input.continuation_token {
             Some(t) => {
                 let decoded_token = general_purpose::STANDARD_NO_PAD
@@ -1265,10 +1284,8 @@ impl S3 for ArunaS3Service {
             None => None,
         };
 
-        let delimiter = req.input.delimiter;
-        let prefix = req.input.prefix;
-
-        let sorted = filter_list_objects(&self.cache.paths, root);
+        // Filter all objects from cache which have the project as root
+        let sorted = filter_list_objects(&self.cache.paths, project_name);
         let start_after = match (req.input.start_after, continuation_token.clone()) {
             (Some(_), Some(ct)) => ct,
             (None, Some(ct)) => ct,
@@ -1280,6 +1297,7 @@ impl S3 for ArunaS3Service {
                 path.clone()
             }
         };
+
         let max_keys = match req.input.max_keys {
             Some(k) if k < 1000 => k as usize,
             _ => 1000usize,
@@ -1308,7 +1326,11 @@ impl S3 for ArunaS3Service {
                     checksum_algorithm: None,
                     e_tag: Some(e.etag.to_string()),
                     key: Some(e.key),
-                    last_modified: None,
+                    last_modified: e.created_at.map(|t| {
+                        s3s::dto::Timestamp::from(
+                            time::OffsetDateTime::from_unix_timestamp(t.timestamp()).unwrap(),
+                        )
+                    }),
                     owner: None,
                     size: e.size,
                     ..Default::default()
@@ -1325,7 +1347,7 @@ impl S3 for ArunaS3Service {
             is_truncated: new_continuation_token.is_some(),
             key_count,
             max_keys: 0,
-            name: Some(root.clone()),
+            name: Some(project_name.clone()),
             next_continuation_token: new_continuation_token,
             prefix,
             start_after: Some(start_after),

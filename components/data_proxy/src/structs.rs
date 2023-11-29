@@ -20,6 +20,7 @@ use aruna_rust_api::api::storage::services::v2::CreateDatasetRequest;
 use aruna_rust_api::api::storage::services::v2::CreateObjectRequest;
 use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
 use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
+use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use http::Method;
 use s3s::dto::CreateBucketInput;
@@ -115,6 +116,7 @@ pub struct Object {
     pub children: Option<HashSet<TypedRelation>>,
     pub parents: Option<HashSet<TypedRelation>>,
     pub synced: bool,
+    pub created_at: Option<NaiveDateTime>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -441,6 +443,10 @@ impl TryFrom<Project> for Object {
             parents: Some(inbounds),
             children: Some(outbounds),
             synced: false,
+            created_at: NaiveDateTime::from_timestamp_opt(
+                value.created_at.unwrap_or_default().seconds,
+                0,
+            ),
         })
     }
 }
@@ -501,6 +507,10 @@ impl TryFrom<Collection> for Object {
             parents: Some(inbounds),
             children: Some(outbounds),
             synced: false,
+            created_at: NaiveDateTime::from_timestamp_opt(
+                value.created_at.unwrap_or_default().seconds,
+                0,
+            ),
         })
     }
 }
@@ -561,6 +571,10 @@ impl TryFrom<Dataset> for Object {
             parents: Some(inbounds),
             children: Some(outbounds),
             synced: false,
+            created_at: NaiveDateTime::from_timestamp_opt(
+                value.created_at.unwrap_or_default().seconds,
+                0,
+            ),
         })
     }
 }
@@ -621,6 +635,10 @@ impl TryFrom<GrpcObject> for Object {
             parents: Some(inbounds),
             children: Some(outbounds),
             synced: false,
+            created_at: NaiveDateTime::from_timestamp_opt(
+                value.created_at.unwrap_or_default().seconds,
+                0,
+            ),
         })
     }
 }
@@ -708,6 +726,7 @@ impl From<CreateBucketInput> for Object {
             parents: None,
             children: None,
             synced: false,
+            created_at: Some(chrono::Utc::now().naive_utc()), // Now for default
         }
     }
 }

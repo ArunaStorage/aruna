@@ -7,6 +7,7 @@ use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::DataClass;
 use base64::engine::general_purpose;
 use base64::Engine;
+use chrono::NaiveDateTime;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use s3s::s3_error;
@@ -19,6 +20,7 @@ pub struct Contents {
     pub etag: DieselUlid,
     pub size: i64,
     pub storage_class: DataClass,
+    pub created_at: Option<NaiveDateTime>,
 }
 impl From<(&String, &(Object, Option<ObjectLocation>))> for Contents {
     #[tracing::instrument(level = "trace", skip(value))]
@@ -31,6 +33,7 @@ impl From<(&String, &(Object, Option<ObjectLocation>))> for Contents {
                 None => 0,
             },
             storage_class: value.1 .0.data_class,
+            created_at: value.1 .0.created_at,
         }
     }
 }
