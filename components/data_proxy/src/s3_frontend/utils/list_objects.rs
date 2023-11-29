@@ -43,32 +43,38 @@ pub fn filter_list_objects(
 ) -> BTreeMap<String, DieselUlid> {
     map.iter()
         .filter_map(|e| match e.key().clone() {
+            ResourceString::Project(temp_root) if temp_root == root => {
+                Some((temp_root, e.value().into()))
+            }
             ResourceString::Collection(temp_root, collection) if temp_root == root => {
                 Some(([temp_root, collection].join("/"), e.value().into()))
             }
-            ResourceString::Dataset(temp_root, collection, dataset) if temp_root == root => Some((
-                [temp_root, collection.unwrap_or("".to_string()), dataset].join("/"),
-                e.value().into(),
-            )),
-            ResourceString::Object(temp_root, collection, dataset, object) if temp_root == root => {
-                Some((
-                    [
-                        temp_root,
-                        collection.unwrap_or("".to_string()),
-                        dataset.unwrap_or("".to_string()),
-                        object,
-                    ]
-                    .join("/"),
-                    e.value().into(),
-                ))
+            ResourceString::Dataset(temp_root, collection, dataset) if temp_root == root => {
+                let path_components = if let Some(coll_name) = collection {
+                    vec![temp_root, coll_name, dataset]
+                } else {
+                    vec![temp_root, dataset]
+                };
+
+                Some((path_components.join("/"), e.value().into()))
             }
-            ResourceString::Project(temp_root) if temp_root == root => {
-                Some((temp_root, e.value().into()))
+            ResourceString::Object(temp_root, collection, dataset, object) if temp_root == root => {
+                let mut path_components = vec![temp_root];
+                if let Some(coll_name) = collection {
+                    path_components.push(coll_name)
+                }
+                if let Some(dataset_name) = dataset {
+                    path_components.push(dataset_name)
+                }
+                path_components.push(object);
+
+                Some((path_components.join("/"), e.value().into()))
             }
             _ => None,
         })
         .collect()
 }
+
 #[tracing::instrument(
     level = "trace",
     skip(sorted, cache, delimiter, prefix, start_after, max_keys)
