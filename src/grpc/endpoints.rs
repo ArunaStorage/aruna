@@ -127,21 +127,41 @@ impl EndpointService for EndpointServiceImpl {
         request: Request<GetEndpointRequest>,
     ) -> Result<Response<GetEndpointResponse>> {
         log_received!(&request);
-        let token = tonic_auth!(
-            get_token_from_md(request.metadata()),
-            "Token authentication error"
-        );
-        let request = GetEP(request.into_inner());
 
-        let ctx = Context::admin();
-        tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]).await,
-            "Unauthorized"
-        );
+        // Consumer gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        // Check if provided token authorizes with global admin permissions
+        let is_admin = if request_metadata.get("Authorization").is_some() {
+            // Extract token and check permissions with empty context
+            let token = tonic_auth!(
+                get_token_from_md(&request_metadata),
+                "Token extraction failed"
+            );
+
+            // Check if provided token athorizes for global admin permissions
+            let ctx = Context::admin();
+            self.authorizer
+                .check_permissions(&token, vec![ctx])
+                .await
+                .is_ok()
+        } else {
+            false
+        };
+
+        // Fetch endpoint from database
+        let request = GetEP(inner_request);
         let ep = tonic_invalid!(
             self.database_handler.get_endpoint(request).await,
             "No endpoint found"
         );
+
+        if !ep.is_public && !is_admin {
+            return Err(tonic::Status::unauthenticated(
+                "Privat endpoint info can only be fetched by administrators",
+            ));
+        }
+
         let result = GetEndpointResponse {
             endpoint: Some(ep.into()),
         };
@@ -154,19 +174,43 @@ impl EndpointService for EndpointServiceImpl {
         request: Request<GetEndpointsRequest>,
     ) -> Result<Response<GetEndpointsResponse>> {
         log_received!(&request);
-        let token = tonic_auth!(
-            get_token_from_md(request.metadata()),
-            "Token authentication error"
-        );
-        let ctx = Context::admin();
-        tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]).await,
-            "Unauthorized"
-        );
+
+        // Consumer gRPC request into its parts
+        let (request_metadata, _, _) = request.into_parts();
+
+        let is_admin = if request_metadata.get("Authorization").is_some() {
+            // Extract token and check permissions with empty context
+            let token = tonic_auth!(
+                get_token_from_md(&request_metadata),
+                "Token extraction failed"
+            );
+
+            // Check if provided token athorizes for global admin permissions
+            let ctx = Context::admin();
+            self.authorizer
+                .check_permissions(&token, vec![ctx])
+                .await
+                .is_ok()
+        } else {
+            false
+        };
+
+        // Fetch endpoints and filter if necessary
         let eps = tonic_internal!(
             self.database_handler.get_endpoints().await,
             "Internal Database error while retrieving endpoints"
         );
+
+        let eps = if is_admin {
+            eps
+        } else {
+            eps.into_iter()
+                .filter_map(|e| match e.is_public {
+                    true => Some(e),
+                    false => None,
+                })
+                .collect::<Vec<_>>()
+        };
 
         let response = GetEndpointsResponse {
             endpoints: eps

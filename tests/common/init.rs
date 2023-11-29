@@ -5,6 +5,7 @@ use aruna_server::database::connection::Database;
 use aruna_server::grpc::authorization::AuthorizationServiceImpl;
 use aruna_server::grpc::collections::CollectionServiceImpl;
 use aruna_server::grpc::datasets::DatasetServiceImpl;
+use aruna_server::grpc::endpoints::EndpointServiceImpl;
 use aruna_server::grpc::licenses::LicensesServiceImpl;
 use aruna_server::grpc::object::ObjectServiceImpl;
 use aruna_server::grpc::projects::ProjectServiceImpl;
@@ -179,6 +180,64 @@ pub async fn init_permission_handler(
 }
 
 #[allow(dead_code)]
+pub async fn init_endpoint_service() -> EndpointServiceImpl {
+    // Load env
+    dotenvy::from_filename(".env").unwrap();
+
+    // Init database connection
+    let db_conn = init_database().await;
+
+    // Init Cache
+    let cache = init_cache(db_conn.clone(), true).await;
+
+    // Init TokenHandler
+    let token_handler = Arc::new(
+        TokenHandler::new(
+            cache.clone(),
+            db_conn.clone(),
+            dotenvy::var("ENCODING_KEY").unwrap(),
+            dotenvy::var("DECODING_KEY").unwrap(),
+        )
+        .await
+        .unwrap(),
+    );
+
+    // Init PermissionHandler
+    let perm_handler = Arc::new(PermissionHandler::new(cache.clone(), token_handler.clone()));
+
+    // Init NatsIoHandler
+    let nats_client = init_nats_client().await;
+
+    let (hook_sender, hook_reciever) = async_channel::unbounded();
+    // Init DatabaseHandler
+    let database_handler = init_database_handler(
+        db_conn.clone(),
+        nats_client.clone(),
+        cache.clone(),
+        hook_sender,
+    )
+    .await;
+    // Init HookExecutor
+    let auth_clone = perm_handler.clone();
+    let db_clone = database_handler.clone();
+    tokio::spawn(async move {
+        let hook_executor =
+            hooks::hook_handler::HookHandler::new(hook_reciever, auth_clone, db_clone).await;
+        if let Err(err) = hook_executor.run().await {
+            log::warn!("Hook execution error: {}", err)
+        }
+    });
+    // Init project service
+    EndpointServiceImpl::new(
+        database_handler,
+        perm_handler,
+        cache,
+        DEFAULT_ENDPOINT_ULID.to_string(),
+    )
+    .await
+}
+
+#[allow(dead_code)]
 pub async fn init_project_service() -> ProjectServiceImpl {
     // Load env
     dotenvy::from_filename(".env").unwrap();
@@ -238,6 +297,16 @@ pub async fn init_project_service() -> ProjectServiceImpl {
         DEFAULT_ENDPOINT_ULID.to_string(),
     )
     .await
+}
+
+#[allow(dead_code)]
+pub async fn init_endpoint_service_manual(
+    db: Arc<DatabaseHandler>,
+    auth: Arc<PermissionHandler>,
+    cache: Arc<Cache>,
+) -> EndpointServiceImpl {
+    // Init authorization service
+    EndpointServiceImpl::new(db, auth, cache, DEFAULT_ENDPOINT_ULID.to_string()).await
 }
 
 #[allow(dead_code)]

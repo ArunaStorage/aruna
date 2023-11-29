@@ -27,7 +27,9 @@ VALUES
 );
 
 
-INSERT INTO endpoints(id, name, host_config, endpoint_variant, is_public, status) VALUES (
+INSERT INTO endpoints(id, name, host_config, endpoint_variant, is_public, status) 
+VALUES 
+(
     '018a03c0-7e8b-293c-eb14-e10dc4b990db', --01H81W0ZMB54YEP5711Q2BK46V
     'default_endpoint',
     '[
