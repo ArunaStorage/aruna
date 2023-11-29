@@ -54,10 +54,9 @@ impl ProjectService for ProjectServiceImpl {
 
         // Collect all ids from relations and parse them into ctx
         let mut ctxs = request.get_relation_contexts()?;
-        ctxs.push(Context {
-            allow_service_account: false,
-            ..Default::default()
-        });
+        let mut ctx = Context::registered();
+        ctx.allow_service_account = false;
+        ctxs.push(ctx);
 
         let (user_id, _, is_dataproxy) = tonic_auth!(
             self.authorizer
