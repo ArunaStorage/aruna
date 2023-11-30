@@ -108,7 +108,12 @@ impl DatabaseHandler {
                 }
             };
         // Get all sub resources for project
-        let sub_res: Vec<Object> = Object::fetch_recursive_objects(&resource_id, &client).await?;
+        let res = Object::get(resource_id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("ReplicationResource not found"))?;
+        let mut sub_res: Vec<Object> =
+            Object::fetch_recursive_objects(&resource_id, &client).await?;
+        sub_res.push(res);
         // Create transaction for status & endpoint updates
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -128,6 +133,8 @@ impl DatabaseHandler {
                 _ => Some(r.id),
             })
             .collect();
+        dbg!(&objects);
+        dbg!(&hierarchy_resources);
         // Update objects with Status and EndpointInfo
         if !objects.is_empty() {
             Object::update_endpoints(
@@ -157,6 +164,7 @@ impl DatabaseHandler {
         all_updated.push(resource_id);
         let mut all = Object::get_objects_with_relations(&all_updated, &client).await?;
         sort_objects(&mut all);
+        dbg!(&all);
         for owr in all {
             self.cache.upsert_object(&owr.object.id, owr.clone());
             if let Err(err) = self
