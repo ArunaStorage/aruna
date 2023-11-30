@@ -12,13 +12,14 @@ use aruna_file::{
         size_probe::SizeProbe, zstd_comp::ZstdEnc,
     },
 };
+use aruna_rust_api::api::storage::models::v2::{Hash, Hashalgorithm};
 use async_channel::Receiver;
-use dashmap::DashSet;
+use dashmap::{DashMap, DashSet};
 use diesel_ulid::DieselUlid;
 use futures_util::TryStreamExt;
 use md5::{Digest, Md5};
 use sha2::Sha256;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tracing::{error, trace};
 
 pub struct ReplicationMessage {
@@ -51,8 +52,8 @@ impl ReplicationHandler {
 
     #[tracing::instrument(level = "trace", skip(self, cache))]
     pub async fn run(self, cache: Arc<Cache>) -> Result<()> {
-        let queue: Arc<DashSet<(DieselUlid, String, String, bool, Direction), RandomState>> =
-            Arc::new(DashSet::default());
+        let queue: Arc<DashMap<DieselUlid, (String, String, bool, Direction), RandomState>> =
+            Arc::new(DashMap::default());
 
         // Push messages into DashMap for deduplication
         let queue_clone = queue.clone();
@@ -66,13 +67,10 @@ impl ReplicationHandler {
                 direction,
             }) = receiver.recv().await
             {
-                queue_clone.insert((
+                queue_clone.insert(
                     object_id,
-                    download_url,
-                    encryption_key,
-                    is_compressed,
-                    direction,
-                ));
+                    (download_url, encryption_key, is_compressed, direction),
+                );
             }
         });
 
@@ -81,25 +79,25 @@ impl ReplicationHandler {
         let process = tokio::spawn(async move {
             let client = reqwest::Client::new();
             loop {
-                let next = match queue.iter().next() {
-                    Some(entry) => entry,
-                    None => continue,
-                };
-                let (id, url, key, compressed, direction) = next.key();
-                if let Err(err) = ReplicationHandler::process(
-                    *id,
-                    url,
-                    key,
-                    compressed,
-                    direction,
-                    cache.clone(),
-                    backend.clone(),
-                    client.clone(),
-                )
-                .await
-                {
-                    tracing::error!(error = ?err, msg = err.to_string());
-                };
+                let mut iter = queue.iter_mut();
+                while let Some(next) = iter.next() {
+                    let (id, (url, key, compressed, direction)) = next.pair();
+                    if let Err(err) = ReplicationHandler::process(
+                        *id,
+                        url,
+                        key,
+                        compressed,
+                        direction,
+                        cache.clone(),
+                        backend.clone(),
+                        client.clone(),
+                    )
+                    .await
+                    {
+                        tracing::error!(error = ?err, msg = err.to_string());
+                    };
+                    queue.remove(id);
+                }
             }
         });
         // Run both tasks simultaneously
@@ -107,7 +105,7 @@ impl ReplicationHandler {
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", skip(cache))]
+    #[tracing::instrument(level = "trace", skip(cache, backend, client))]
     // TODO
     // - Pull/Push logic
     // - write objects into storage backend
@@ -135,7 +133,7 @@ impl ReplicationHandler {
                  * ------------- DOWNLOAD ------------------
                  * -----------------------------------------*/
                 let response = client.get(url).send().await?;
-                let (object, location) = trace_err!(cache
+                let (mut object, location) = trace_err!(cache
                     .resources
                     .get(&object_id)
                     .ok_or_else(|| anyhow!("No object found in path")))?
@@ -146,7 +144,7 @@ impl ReplicationHandler {
                  * ------------- PUT INTO BUCKET -----------
                  * -----------------------------------------*/
                 // Initialize data location in the storage backend
-                let location = if let Some(location) = location {
+                let mut location = if let Some(location) = location {
                     location
                 } else {
                     let loc = trace_err!(
@@ -159,7 +157,6 @@ impl ReplicationHandler {
                             )
                             .await
                     )?;
-                    trace!("Initialized data location");
                     loc
                 };
 
@@ -214,7 +211,42 @@ impl ReplicationHandler {
 
                 trace_err!(awr.process().await)?;
 
-                cache.upsert_object(object, Some(location));
+                // Fetch calculated hashes
+                trace!("fetching hashes");
+                let md5_initial = Some(trace_err!(initial_md5_recv.try_recv())?);
+                let sha_initial = Some(trace_err!(initial_sha_recv.try_recv())?);
+                let sha_final: String = trace_err!(final_sha_recv.try_recv())?;
+                let initial_size: u64 = trace_err!(initial_size_recv.try_recv())?;
+                let final_size: u64 = trace_err!(final_size_recv.try_recv())?;
+
+                object.hashes = vec![
+                    (
+                        "MD5".to_string(),
+                        trace_err!(md5_initial
+                            .clone()
+                            .ok_or_else(|| { anyhow!("Unable to get md5 hash initial data") }))?,
+                    ),
+                    (
+                        "SHA256".to_string(),
+                        trace_err!(sha_initial
+                            .clone()
+                            .ok_or_else(|| { anyhow!("Unable to get sha hash initial data") }))?,
+                    ),
+                ]
+                .into_iter()
+                .collect::<HashMap<String, String>>();
+
+                // Put infos into location
+                location.id = object.id;
+                location.raw_content_len = initial_size as i64;
+                location.disk_content_len = final_size as i64;
+                location.disk_hash = Some(sha_final.clone());
+                trace_err!(cache.upsert_object(object, Some(location)).await)?;
+
+                /* -----------------------------------------
+                 * --------- REPORT BACK TO SERVER ---------
+                 * -----------------------------------------*/
+                // TODO!
             }
         }
         Ok(())

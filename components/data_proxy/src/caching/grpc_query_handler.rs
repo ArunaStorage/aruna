@@ -24,6 +24,7 @@ use aruna_rust_api::api::storage::models::v2::data_endpoint::Variant;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
 use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
+use aruna_rust_api::api::storage::models::v2::EndpointHostVariant;
 use aruna_rust_api::api::storage::models::v2::FullSync;
 use aruna_rust_api::api::storage::models::v2::GenericResource;
 use aruna_rust_api::api::storage::models::v2::Hash;
@@ -31,8 +32,10 @@ use aruna_rust_api::api::storage::models::v2::Object;
 use aruna_rust_api::api::storage::models::v2::Project;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::models::v2::ReplicationStatus;
+use aruna_rust_api::api::storage::models::v2::Status;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use aruna_rust_api::api::storage::services::v2::full_sync_endpoint_response::Target;
+use aruna_rust_api::api::storage::services::v2::get_endpoint_request::Endpoint;
 use aruna_rust_api::api::storage::services::v2::CreateCollectionRequest;
 use aruna_rust_api::api::storage::services::v2::CreateDatasetRequest;
 use aruna_rust_api::api::storage::services::v2::CreateObjectRequest;
@@ -41,6 +44,7 @@ use aruna_rust_api::api::storage::services::v2::FinishObjectStagingRequest;
 use aruna_rust_api::api::storage::services::v2::FullSyncEndpointRequest;
 use aruna_rust_api::api::storage::services::v2::GetCollectionRequest;
 use aruna_rust_api::api::storage::services::v2::GetDatasetRequest;
+use aruna_rust_api::api::storage::services::v2::GetEndpointRequest;
 use aruna_rust_api::api::storage::services::v2::GetObjectRequest;
 use aruna_rust_api::api::storage::services::v2::GetProjectRequest;
 use aruna_rust_api::api::storage::services::v2::GetPubkeysRequest;
@@ -61,6 +65,7 @@ use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 use tonic::metadata::AsciiMetadataKey;
 use tonic::metadata::AsciiMetadataValue;
 use tonic::transport::Channel;
@@ -638,16 +643,52 @@ impl GrpcQueryHandler {
         request: PullReplicationRequest,
         endpoint_id: String,
     ) -> Result<PullReplicationResponse> {
-        let endpoint = Channel::from_shared("");
-        let dataproxy_service = todo!();
+        let endpoint_ulid = DieselUlid::from_str(&endpoint_id)?;
+        let get_ep_request = tonic::Request::new(GetEndpointRequest {
+            endpoint: Some(Endpoint::EndpointId(endpoint_id)),
+        });
+        let get_ep_response = trace_err!(
+            self.endpoint_service
+                .clone()
+                .get_endpoint(get_ep_request)
+                .await
+        )?
+        .into_inner();
+        let endpoint = trace_err!(get_ep_response
+            .endpoint
+            .ok_or_else(|| anyhow!("No endpoint found in GetEndpointResponse")))?;
+        let config = trace_err!(endpoint
+            .host_configs
+            .iter()
+            .find(|config| config.host_variant() == EndpointHostVariant::Grpc)
+            .ok_or_else(|| anyhow!("No grpc config found for endpoint")))?;
+        let channel = if config.ssl {
+            let proxy_channel = trace_err!(Channel::from_shared(config.url.clone()))?;
+            let tls_config = ClientTlsConfig::new();
+            trace_err!(
+                trace_err!(proxy_channel.tls_config(tls_config))?
+                    .connect()
+                    .await
+            )?
+        } else {
+            trace_err!(Channel::from_shared(config.url.clone())?.connect().await)?
+        };
+        let token = if let Some(auth) = self.cache.auth.read().await.as_ref() {
+            trace_err!(auth.sign_dataproxy_token(endpoint_ulid))?
+        } else {
+            trace_err!(Err(anyhow!("Cannot read auth handler")))?
+        };
+
+        let dataproxy_service = DataproxyServiceClient::new(channel.clone());
         let mut req = Request::new(request);
         req.metadata_mut().append(
             trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
             trace_err!(AsciiMetadataValue::try_from(format!(
                 "Bearer {}",
-                self.long_lived_token.as_str()
+                token.as_str()
             )))?,
         );
+        trace!("{}", self.long_lived_token.as_str());
         let response =
             trace_err!(dataproxy_service.clone().pull_replication(req).await)?.into_inner();
         Ok(response)
@@ -766,9 +807,12 @@ impl GrpcQueryHandler {
                                 )
                                 .await
                             )?;
-
-                            self.handle_replication(object.clone()).await?;
-                            self.cache.upsert_object(object.try_into()?, None).await?;
+                            // Update anyway
+                            self.cache
+                                .upsert_object(object.clone().try_into()?, None)
+                                .await?;
+                            // Try pull replication
+                            self.handle_replication(object).await?;
                         }
                         _ => (),
                     }
@@ -823,9 +867,26 @@ impl GrpcQueryHandler {
                                     user_initialized: false,
                                     object_ids: vec![object.id.clone()],
                                 };
-                                let outer_info = trace_err!(self
-                                    .pull_replication(request, ep_id)
-                                    .await?
+
+                                let mut response = Default::default();
+                                for retry in 1..5 {
+                                    let response_builder =
+                                        self.pull_replication(request.clone(), ep_id.clone()).await;
+                                    if response_builder.is_err() {
+                                        tokio::time::sleep(Duration::from_secs(10)).await;
+                                        if retry == 5 {
+                                            return trace_err!(Err(anyhow!(
+                                                "ReplicationPullRetries exceed"
+                                            )));
+                                        } else {
+                                            continue;
+                                        }
+                                    } else {
+                                        response = response_builder?;
+                                        break;
+                                    }
+                                }
+                                let outer_info = trace_err!(response
                                     .data_infos
                                     .ok_or_else(|| anyhow!("No replication infos recieved")))?;
                                 let info =

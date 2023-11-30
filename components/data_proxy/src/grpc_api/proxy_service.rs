@@ -72,6 +72,7 @@ impl DataproxyService for DataproxyServiceImpl {
                 object_endpoint_map.insert(object.id, object.endpoints.clone());
             }
         }
+        trace!("EndpointMap: {:?}", object_endpoint_map);
 
         // 2. check if proxy has permissions to pull everything
         let (self_id, secret_key) = if let Some(auth) = self.cache.auth.read().await.as_ref() {
@@ -140,7 +141,7 @@ impl DataproxyService for DataproxyServiceImpl {
         let download_url = trace_err!(sign_download_url(
             &access_key,
             &secret_key,
-            true,
+            false, // TODO: This should be dynamic
             "bundles",
             &format!("{}/{}", &bundle_id.to_string(), &name),
             &self.endpoint_url,

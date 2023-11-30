@@ -114,7 +114,10 @@ async fn main() -> Result<()> {
     trace!("init replication handler");
     let replication_handler = ReplicationHandler::new(receiver, storage_backend.clone());
     tokio::spawn(async move {
-        replication_handler.run(replication_cache_clone);
+        let replication = replication_handler.run(replication_cache_clone).await;
+        if let Err(err) = replication {
+            trace!("{err}");
+        };
     });
 
     trace!("init s3 server");

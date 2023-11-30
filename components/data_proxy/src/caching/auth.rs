@@ -45,7 +45,7 @@ pub(crate) struct ArunaTokenClaims {
     sub: String, // User_ID / DataProxy_ID
     exp: usize,  // Expiration timestamp
     aud: String, // Valid audiences
-    // Token_ID; None if OIDC or ... ?
+    // Token_ID; None if OIDC or DataProxy-DataProxy interaction ?
     #[serde(skip_serializing_if = "Option::is_none")]
     tid: Option<String>,
     // Intent: <endpoint-ulid>_<action>
@@ -61,7 +61,7 @@ pub enum Action {
     CreateSecrets = 1,
     Impersonate = 2,
     FetchInfo = 3,
-    //DpExchange = 4,
+    DpExchange = 4,
 }
 
 impl From<u8> for Action {
@@ -72,6 +72,7 @@ impl From<u8> for Action {
             1 => Action::CreateSecrets,
             2 => Action::Impersonate,
             3 => Action::FetchInfo,
+            4 => Action::DpExchange,
             _ => panic!("Invalid action"),
         }
     }
@@ -153,6 +154,14 @@ impl AuthHandler {
                 Action::CreateSecrets => {
                     if it.target == self.self_id {
                         Ok((DieselUlid::from_str(&claims.sub)?, claims.tid))
+                    } else {
+                        error!("Token is not valid for this Dataproxy");
+                        bail!("Token is not valid for this Dataproxy")
+                    }
+                }
+                Action::DpExchange => {
+                    if it.target == self.self_id {
+                        Ok((DieselUlid::from_str(&claims.sub)?, None))
                     } else {
                         error!("Token is not valid for this Dataproxy");
                         bail!("Token is not valid for this Dataproxy")
@@ -302,24 +311,35 @@ impl AuthHandler {
                         &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
                     )
                     .ok_or_else(|| anyhow!("Unknown user")))?;
-
-                for (res, perm) in user.permissions {
-                    if ids.check_if_in(res) && ((perm >= db_perm_from_method) || user.admin) {
-                        let token_id = if user.user_id.to_string() == user.access_key {
-                            None
-                        } else {
-                            Some(user.access_key.clone())
-                        };
-                        trace!(resource_id = ?res, permission = ?perm, "permission match found");
-                        return Ok(CheckAccessResult::new(
-                            Some(user.user_id.to_string()),
-                            token_id,
-                            Some(ids),
-                            missing,
-                            Some((obj, loc)),
-                            Some(bundle),
-                        ));
+                if !user.admin {
+                    for (res, perm) in user.permissions {
+                        if ids.check_if_in(res) && (perm >= db_perm_from_method) {
+                            let token_id = if user.user_id.to_string() == user.access_key {
+                                None
+                            } else {
+                                Some(user.access_key.clone())
+                            };
+                            trace!(resource_id = ?res, permission = ?perm, "permission match found");
+                            return Ok(CheckAccessResult::new(
+                                Some(user.user_id.to_string()),
+                                token_id,
+                                Some(ids),
+                                missing,
+                                Some((obj, loc)),
+                                Some(bundle),
+                            ));
+                        }
                     }
+                } else {
+                    trace!("AdminUser signed bundle");
+                    return Ok(CheckAccessResult::new(
+                        Some(user.user_id.to_string()),
+                        None,
+                        Some(ids),
+                        missing,
+                        Some((obj, loc)),
+                        Some(bundle),
+                    ));
                 }
             }
         }
@@ -556,6 +576,25 @@ impl AuthHandler {
         trace_err!(self.sign_token(claims))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, target_endpoint))]
+    pub(crate) fn sign_dataproxy_token(&self, target_endpoint: DieselUlid) -> Result<String> {
+        let claims = ArunaTokenClaims {
+            iss: self.self_id.to_string(),
+            sub: self.self_id.to_string(),
+            aud: "proxy".to_string(),
+            exp: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .add(Duration::from_secs(15 * 60))
+                .as_secs() as usize,
+            tid: None,
+            it: Some(Intent {
+                target: target_endpoint,
+                action: Action::DpExchange,
+            }),
+        };
+
+        trace_err!(self.sign_token(claims))
+    }
     #[tracing::instrument(level = "trace", skip(self, claims))]
     pub(crate) fn sign_token(&self, claims: ArunaTokenClaims) -> Result<String> {
         let header = Header {
