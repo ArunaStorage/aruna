@@ -13,7 +13,9 @@ use aruna_rust_api::api::{
     notification::services::v2::EventVariant,
     storage::{
         models::v2::ReplicationStatus as APIReplicationStatus,
-        services::v2::partial_replicate_data_request::DataVariant,
+        services::v2::{
+            partial_replicate_data_request::DataVariant, UpdateReplicationStatusRequest,
+        },
     },
 };
 use diesel_ulid::DieselUlid;
@@ -182,5 +184,34 @@ impl DatabaseHandler {
             };
         }
         Ok(APIReplicationStatus::Waiting)
+    }
+    pub async fn update_replication_status(
+        &self,
+        request: UpdateReplicationStatusRequest,
+    ) -> Result<()> {
+        let client = self.database.get_client().await?;
+        let object_id = DieselUlid::from_str(&request.object_id)?;
+        let object = Object::get(object_id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("Object not found"))?;
+        let endpoint_id = DieselUlid::from_str(&request.endpoint_id)?;
+        let mut endpoint_info = object
+            .endpoints
+            .0
+            .get_mut(&endpoint_id)
+            .ok_or_else(|| anyhow!("Endpoint not found in object"))?;
+        let status = match request.status() {
+            APIReplicationStatus::Unspecified => {
+                return Err(anyhow!("Unspecified replication status"))
+            }
+            APIReplicationStatus::Waiting => ReplicationStatus::Waiting,
+            APIReplicationStatus::Running => ReplicationStatus::Running,
+            APIReplicationStatus::Finished => ReplicationStatus::Finished,
+            APIReplicationStatus::Error => ReplicationStatus::Finished,
+        };
+        endpoint_info.status = Some(status);
+        Object::update_endpoints(endpoint_id, endpoint_info.clone(), vec![object_id], &client)
+            .await?;
+        Ok(())
     }
 }

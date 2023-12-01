@@ -114,11 +114,47 @@ impl DataReplicationService for DataReplicationServiceImpl {
     }
     async fn update_replication_status(
         &self,
-        _request: Request<UpdateReplicationStatusRequest>,
+        request: Request<UpdateReplicationStatusRequest>,
     ) -> Result<Response<UpdateReplicationStatusResponse>> {
-        Err(tonic::Status::unimplemented(
-            "UpdateReplicationStatus not yet implemented",
-        ))
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (metadata, _, request) = request.into_parts();
+        let object_id = tonic_invalid!(
+            diesel_ulid::DieselUlid::from_str(&request.object_id),
+            "Invalid project id"
+        );
+        // Extract token from request and check permissions
+        let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+
+        // Check if allowed
+        let ctx = Context::res_ctx(
+            object_id,
+            // TODO: This is technically wrong,
+            // but currently there is no way to
+            // authorize a dataproxy to update the
+            // status field without a user
+            // impersonation
+            crate::database::enums::DbPermissionLevel::READ,
+            false,
+        );
+        let (_, _, is_dataproxy) = tonic_auth!(
+            self.authorizer
+                .check_permissions_verbose(&token, vec![ctx])
+                .await,
+            "Unauthorized"
+        );
+
+        // TODO: Should user be able to update replication status?
+        if is_dataproxy {
+            tonic_internal!(
+                self.database_handler
+                    .update_replication_status(request)
+                    .await,
+                "Internal replication error"
+            );
+        }
+        return_with_log!(UpdateReplicationStatusResponse {});
     }
     async fn delete_replication(
         &self,
