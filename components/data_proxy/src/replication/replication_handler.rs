@@ -8,11 +8,15 @@ use aruna_file::{
     streamreadwrite::ArunaStreamReadWriter,
     transformer::ReadWriter,
     transformers::{
-        encrypt::ChaCha20Enc, footer::FooterGenerator, hashing_transformer::HashingTransformer,
-        size_probe::SizeProbe, zstd_comp::ZstdEnc,
+        encrypt::ChaCha20Enc, footer::FooterGenerator, gzip_comp::GzipEnc,
+        hashing_transformer::HashingTransformer, size_probe::SizeProbe, zstd_comp::ZstdEnc,
     },
 };
-use aruna_rust_api::api::storage::models::v2::{Hash, Hashalgorithm};
+use aruna_rust_api::api::storage::services::v2::UpdateReplicationStatusRequest;
+use aruna_rust_api::api::{
+    dataproxy::services::v2::ReplicationStatus,
+    storage::models::v2::{Hash, Hashalgorithm},
+};
 use async_channel::Receiver;
 use dashmap::{DashMap, DashSet};
 use diesel_ulid::DieselUlid;
@@ -170,8 +174,6 @@ impl ReplicationHandler {
                 let stream = response
                     .bytes_stream()
                     .map_err(|_| anyhow!("Error recieving replication object stream").into());
-                //match stream {
-                //    Ok(data) => {
                 let mut awr = ArunaStreamReadWriter::new_with_sink(
                     stream,
                     BufferedS3Sink::new(
@@ -241,12 +243,28 @@ impl ReplicationHandler {
                 location.raw_content_len = initial_size as i64;
                 location.disk_content_len = final_size as i64;
                 location.disk_hash = Some(sha_final.clone());
+                let object_id = object.id.to_string();
                 trace_err!(cache.upsert_object(object, Some(location)).await)?;
 
                 /* -----------------------------------------
                  * --------- REPORT BACK TO SERVER ---------
                  * -----------------------------------------*/
-                // TODO!
+                let endpoint_id = if let Some(auth_handler) = cache.auth.read().await.as_ref() {
+                    auth_handler.self_id.to_string()
+                } else {
+                    return Err(anyhow!("Could not get self_id"));
+                };
+                if let Some(grpc_handler) = cache.aruna_client.read().await.as_ref() {
+                    trace_err!(
+                        grpc_handler
+                            .update_replication_status(UpdateReplicationStatusRequest {
+                                object_id,
+                                endpoint_id,
+                                status: ReplicationStatus::Finished as i32,
+                            })
+                            .await
+                    )?;
+                };
             }
         }
         Ok(())

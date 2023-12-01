@@ -438,6 +438,10 @@ impl AuthHandler {
             if bucket == "objects" {
                 debug!("special bucket detected");
                 path = path.trim_matches('/');
+                debug!("{path:?}");
+                // Why
+                // objects/<resource-id>/<resource-name>
+                // ?
                 if let Some((prefix, name)) = path.split_once('/') {
                     let id = trace_err!(DieselUlid::from_str(prefix))?;
                     trace!(?id, "extracted id from path");

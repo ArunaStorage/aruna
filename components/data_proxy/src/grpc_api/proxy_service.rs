@@ -141,7 +141,7 @@ impl DataproxyService for DataproxyServiceImpl {
         let download_url = trace_err!(sign_download_url(
             &access_key,
             &secret_key,
-            false, // TODO: This should be dynamic
+            false, // TODO: SSL - This should be dynamic
             "bundles",
             &format!("{}/{}", &bundle_id.to_string(), &name),
             &self.endpoint_url,

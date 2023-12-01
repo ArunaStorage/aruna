@@ -34,6 +34,7 @@ use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::models::v2::ReplicationStatus;
 use aruna_rust_api::api::storage::models::v2::Status;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
+use aruna_rust_api::api::storage::services::v2::data_replication_service_client::DataReplicationServiceClient;
 use aruna_rust_api::api::storage::services::v2::full_sync_endpoint_response::Target;
 use aruna_rust_api::api::storage::services::v2::get_endpoint_request::Endpoint;
 use aruna_rust_api::api::storage::services::v2::CreateCollectionRequest;
@@ -50,6 +51,7 @@ use aruna_rust_api::api::storage::services::v2::GetProjectRequest;
 use aruna_rust_api::api::storage::services::v2::GetPubkeysRequest;
 use aruna_rust_api::api::storage::services::v2::GetUserRedactedRequest;
 use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
+use aruna_rust_api::api::storage::services::v2::UpdateReplicationStatusRequest;
 use aruna_rust_api::api::{
     notification::services::v2::event_notification_service_client::EventNotificationServiceClient,
     storage::services::v2::{
@@ -88,6 +90,7 @@ pub struct GrpcQueryHandler {
     endpoint_service: EndpointServiceClient<Channel>,
     storage_status_service: StorageStatusServiceClient<Channel>,
     event_notification_service: EventNotificationServiceClient<Channel>,
+    data_replication_service: DataReplicationServiceClient<Channel>,
     cache: Arc<Cache>,
     endpoint_id: String,
     long_lived_token: String,
@@ -128,6 +131,8 @@ impl GrpcQueryHandler {
 
         let event_notification_service = EventNotificationServiceClient::new(channel.clone());
 
+        let data_replication_service = DataReplicationServiceClient::new(channel.clone());
+
         let long_lived_token = trace_err!(cache
             .auth
             .read()
@@ -145,6 +150,7 @@ impl GrpcQueryHandler {
             endpoint_service,
             storage_status_service,
             event_notification_service,
+            data_replication_service,
             cache,
             endpoint_id,
             long_lived_token,
@@ -692,6 +698,28 @@ impl GrpcQueryHandler {
         let response =
             trace_err!(dataproxy_service.clone().pull_replication(req).await)?.into_inner();
         Ok(response)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, request))]
+    pub async fn update_replication_status(
+        &self,
+        request: UpdateReplicationStatusRequest,
+    ) -> Result<()> {
+        let mut request = tonic::Request::new(request);
+        request.metadata_mut().append(
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!(
+                "Bearer {}",
+                self.long_lived_token.as_str()
+            )))?,
+        );
+        trace_err!(
+            self.data_replication_service
+                .clone()
+                .update_replication_status(request)
+                .await
+        )?;
+        Ok(())
     }
 }
 
