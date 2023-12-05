@@ -1,12 +1,14 @@
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::dataproxy::services::v2::bundler_service_server::BundlerServiceServer;
-use aruna_rust_api::api::dataproxy::services::v2::dataproxy_service_server::DataproxyServiceServer;
+use aruna_rust_api::api::dataproxy::services::v2::dataproxy_replication_service_server::DataproxyReplicationServiceServer;
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_server::DataproxyUserServiceServer;
 use caching::cache::Cache;
 use data_backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
 use grpc_api::bundler::BundlerServiceImpl;
-use grpc_api::{proxy_service::DataproxyServiceImpl, user_service::DataproxyUserServiceImpl};
+use grpc_api::{
+    proxy_service::DataproxyReplicationServiceImpl, user_service::DataproxyUserServiceImpl,
+};
 use std::{net::SocketAddr, str::FromStr, sync::Arc};
 use tokio::try_join;
 use tonic::transport::Server;
@@ -134,11 +136,13 @@ async fn main() -> Result<()> {
     let grpc_server_handle = trace_err!(tokio::spawn(
         async move {
             Server::builder()
-                .add_service(DataproxyServiceServer::new(DataproxyServiceImpl::new(
-                    cache_clone.clone(),
-                    sender,
-                    hostname.clone(),
-                )))
+                .add_service(DataproxyReplicationServiceServer::new(
+                    DataproxyReplicationServiceImpl::new(
+                        cache_clone.clone(),
+                        sender,
+                        hostname.clone(),
+                    ),
+                ))
                 .add_service(DataproxyUserServiceServer::new(
                     DataproxyUserServiceImpl::new(cache_clone.clone()),
                 ))

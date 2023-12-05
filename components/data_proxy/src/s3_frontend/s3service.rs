@@ -1044,7 +1044,7 @@ impl S3 for ArunaS3Service {
         let (sender, receiver) = async_channel::bounded(10);
 
         // Gets 128 kb chunks (last 2)
-        let footer_parser: Option<FooterParser> = if content_length > 5242880 * 28 {
+        let footer_parser: Option<FooterParser> = if content_length > 5242880 {
             trace!("getting footer");
             // Without encryption block because this is already checked inside
             let (footer_sender, footer_receiver) = async_channel::unbounded();
