@@ -437,7 +437,7 @@ impl MeilisearchClient {
 
             index
                 .set_pagination(PaginationSetting {
-                    max_total_hits: 100,
+                    max_total_hits: std::u32::MAX as usize,
                 })
                 .await?
                 .wait_for_completion(&self.client, None, None)
