@@ -32,7 +32,6 @@ use aruna_rust_api::api::storage::models::v2::Object;
 use aruna_rust_api::api::storage::models::v2::Project;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::models::v2::ReplicationStatus;
-use aruna_rust_api::api::storage::models::v2::Status;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use aruna_rust_api::api::storage::services::v2::data_replication_service_client::DataReplicationServiceClient;
 use aruna_rust_api::api::storage::services::v2::full_sync_endpoint_response::Target;
@@ -865,9 +864,9 @@ impl GrpcQueryHandler {
         if object.status == 3 {
             // ... object should be synced in at least one ep
             for ep in &object.endpoints {
-                // find out if I have to do anything ...
+                // ... then find out if I have to do anything ...
                 match (ep.status(), &ep.id, &ep.variant) {
-                    // ... I should request a FullSync
+                    // ... if my id, waiting and FullSync -> I should request a FullSync
                     (
                         ReplicationStatus::Waiting,
                         id,
@@ -940,7 +939,7 @@ impl GrpcQueryHandler {
                             }
                         }
                     }
-                    // ... I should request a PartialSync
+                    // ... if my id, waiting and partial sync -> I should request a PartialSync
                     (ReplicationStatus::Waiting, id, Some(Variant::PartialSync(origin)))
                         if id == &self.endpoint_id =>
                     {
@@ -973,7 +972,7 @@ impl GrpcQueryHandler {
                             }
                         }
                     }
-                    // ... I should sync to other dataproxies
+                    // ... if others waiting, and I finished -> I should sync to other dataproxies
                     (ReplicationStatus::Waiting, id, _) if id != &self.endpoint_id => {
                         // TODO
                         // - How to find out if pushing is appropriate for a given dataproxy that is
