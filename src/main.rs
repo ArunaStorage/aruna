@@ -123,15 +123,20 @@ pub async fn main() -> Result<()> {
     let db_clone = db_arc.clone();
     let search_clone = meilisearch_arc.clone();
     tokio::spawn(async move {
-        // Create index if not exists on startup
-        search_clone
-            .get_or_create_index(&MeilisearchIndexes::OBJECT.to_string(), Some("id"))
-            .await?;
-
-        if let Err(err) = search_clone.clear_index(MeilisearchIndexes::OBJECT).await {
-            warn!("Search index clearing failed: {}", err)
+        // Delete existing index
+        if let Err(err) = search_clone.delete_index(MeilisearchIndexes::OBJECT).await {
+            warn!("Search index deletion failed: {}", err)
         }
 
+        // Re-create index with current config
+        if let Err(err) = search_clone
+            .get_or_create_index(&MeilisearchIndexes::OBJECT.to_string(), Some("id"))
+            .await
+        {
+            warn!("Search index creation failed: {}", err)
+        };
+
+        // Full sync search index with database content
         if let Err(err) = search_utils::full_sync_search_index(db_clone, search_clone).await {
             warn!("Search index full sync failed: {}", err)
         };
