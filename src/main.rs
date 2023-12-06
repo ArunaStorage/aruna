@@ -137,7 +137,8 @@ pub async fn main() -> Result<()> {
         };
 
         // Full sync search index with database content
-        if let Err(err) = search_utils::full_sync_search_index(db_clone, search_clone).await {
+        if let Err(err) = search_utils::full_sync_search_index(db_clone, search_clone.clone()).await
+        {
             warn!("Search index full sync failed: {}", err)
         };
 

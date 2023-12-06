@@ -8,7 +8,10 @@ use aruna_rust_api::api::storage::models::v2::{
     KeyValueVariant as ApiKeyValueVariant, Object, Project, Status as ApiStatus,
 };
 use diesel_ulid::DieselUlid;
-use meilisearch_sdk::{indexes::Index, settings::PaginationSetting, task_info::TaskInfo, Client};
+use log::debug;
+use meilisearch_sdk::{
+    indexes::Index, settings::PaginationSetting, task_info::TaskInfo, Client, Task,
+};
 use prost_wkt_types::Timestamp;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{fmt::Display, str::FromStr};
@@ -378,8 +381,10 @@ impl MeilisearchClient {
         primary_key: Option<&str>, // Has to be unique index document attribute, so most likely 'id'
     ) -> anyhow::Result<Index> {
         Ok(if let Ok(index) = self.client.get_index(index_name).await {
+            debug!("Re-use already existing search index: {}", index_name);
             index
         } else {
+            debug!("Create new search index: {}", index_name);
             // Create index in Meilisearch server
             let index = match self
                 .client
@@ -404,7 +409,7 @@ impl MeilisearchClient {
             };
 
             // Set the filterable attributes of the index
-            index
+            match index
                 .set_filterable_attributes([
                     "name",
                     "description",    // e.g. description = ""
@@ -422,38 +427,62 @@ impl MeilisearchClient {
                 ])
                 .await?
                 .wait_for_completion(&self.client, None, None)
-                .await?;
+                .await?
+            {
+                Task::Succeeded { .. } => {}
+                _ => bail!("Search index creation failed: Could not set filterable attributes"),
+            };
 
             // Set the sortable attributes of the index
             //TODO: Implement in API
-            index
+            match index
                 .set_sortable_attributes(["size", "object_type_id", "created_at"])
                 .await?
                 .wait_for_completion(&self.client, None, None)
-                .await?;
+                .await?
+            {
+                Task::Succeeded { .. } => {}
+                _ => bail!("Search index creation failed: Could not set sortable attributes"),
+            };
 
-            //ToDo: Exclude fields from search?
+            //TODO: Exclude fields from search?
             //index.set_searchable_attributes(&[]).await?;
 
-            index
+            // Set pagination configuration
+            match index
                 .set_pagination(PaginationSetting {
                     max_total_hits: std::u32::MAX as usize,
                 })
                 .await?
                 .wait_for_completion(&self.client, None, None)
-                .await?;
+                .await?
+            {
+                Task::Succeeded { .. } => {}
+                _ => bail!("Search index creation failed: Could not set pagination configuration"),
+            };
 
             index
         })
     }
 
     ///ToDo: Rust Doc
-    pub async fn delete_index(&self, index: MeilisearchIndexes) -> anyhow::Result<TaskInfo> {
+    pub async fn delete_index(&self, index: MeilisearchIndexes) -> anyhow::Result<()> {
         // Extract index name of enum variant
         let index_name = index.to_string();
 
-        // Delete documents to search
-        Ok(self.client.delete_index(index_name).await?)
+        // Start deletion task in Meilisearch
+        let deletion_result = self
+            .client
+            .delete_index(index_name)
+            .await?
+            .wait_for_completion(&self.client, None, None)
+            .await?;
+
+        // Evaluate deletion task result
+        match deletion_result {
+            Task::Succeeded { .. } => Ok(()),
+            _ => bail!("Search index deletion failed."),
+        }
     }
 
     ///ToDo: Rust Doc
