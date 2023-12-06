@@ -7,6 +7,8 @@ use bytes::{BufMut, BytesMut};
 use md5::{Digest, Md5};
 use tokio::sync::mpsc::Sender as TokioSender;
 
+use crate::trace_err;
+
 pub struct ReplicationSink {
     object_id: String,
     blocklist: Vec<u8>,
@@ -59,7 +61,7 @@ impl ReplicationSink {
                 checksum: hex::encode(result),
             })),
         };
-        self.sender.send(Ok(message)).await;
+        trace_err!(self.sender.send(Ok(message)).await)?;
 
         Ok(())
     }
@@ -74,7 +76,7 @@ impl Transformer for ReplicationSink {
         self.block_counter += 1;
 
         if finished && !self.buffer.is_empty() {
-            self.create_and_send_message().await?;
+            trace_err!(self.create_and_send_message().await)?;
             self.is_finished = true;
             return Ok(self.is_finished);
         }
@@ -86,7 +88,7 @@ impl Transformer for ReplicationSink {
             self.block_counter = 0;
 
             if self.chunk_counter != self.blocklist.len() {
-                self.create_and_send_message().await?;
+                trace_err!(self.create_and_send_message().await)?;
             }
         }
         Ok(self.is_finished)

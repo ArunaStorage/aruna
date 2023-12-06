@@ -683,19 +683,20 @@ impl GrpcQueryHandler {
             trace_err!(Err(anyhow!("Cannot read auth handler")))?
         };
 
-        let dataproxy_service = DataproxyServiceClient::new(channel.clone());
-        let mut req = Request::new(request);
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!(
-                "Bearer {}",
-                token.as_str()
-            )))?,
-        );
-        trace!("{}", self.long_lived_token.as_str());
-        let response =
-            trace_err!(dataproxy_service.clone().pull_replication(req).await)?.into_inner();
-        Ok(response)
+        let dataproxy_service = DataproxyReplicationServiceClient::new(channel.clone());
+        todo!()
+        // let mut req = Request::new(request);
+        // req.metadata_mut().append(
+        //     trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+        //     trace_err!(AsciiMetadataValue::try_from(format!(
+        //         "Bearer {}",
+        //         token.as_str()
+        //     )))?,
+        // );
+        // trace!("{}", self.long_lived_token.as_str());
+        // let response =
+        //     trace_err!(dataproxy_service.clone().pull_replication(req).await)?.into_inner();
+        // Ok(response)
     }
 
     #[tracing::instrument(level = "trace", skip(self, request))]
@@ -883,50 +884,51 @@ impl GrpcQueryHandler {
                         });
                         match state_of_truth {
                             Some(ep_id) => {
-                                let request = PullReplicationRequest {
-                                    info: Some(DataProxyInfo {
-                                        dataproxy_id: self.endpoint_id.clone(),
-                                        available_space: 8000000000000, // TODO: Replace
-                                                                        // placeholder with
-                                                                        // something meaningful
-                                    }),
-                                    user_initialized: false,
-                                    object_ids: vec![object.id.clone()],
-                                };
+                                todo!()
+                                // let request = PullReplicationRequest {
+                                //     info: Some(DataProxyInfo {
+                                //         dataproxy_id: self.endpoint_id.clone(),
+                                //         available_space: 8000000000000, // TODO: Replace
+                                //                                         // placeholder with
+                                //                                         // something meaningful
+                                //     }),
+                                //     user_initialized: false,
+                                //     object_ids: vec![object.id.clone()],
+                                // };
 
-                                let mut response = Default::default();
-                                for retry in 1..5 {
-                                    let response_builder =
-                                        self.pull_replication(request.clone(), ep_id.clone()).await;
-                                    if response_builder.is_err() {
-                                        tokio::time::sleep(Duration::from_secs(10)).await;
-                                        if retry == 5 {
-                                            return trace_err!(Err(anyhow!(
-                                                "ReplicationPullRetries exceed"
-                                            )));
-                                        } else {
-                                            continue;
-                                        }
-                                    } else {
-                                        response = response_builder?;
-                                        break;
-                                    }
-                                }
-                                let outer_info = trace_err!(response
-                                    .data_infos
-                                    .ok_or_else(|| anyhow!("No replication infos recieved")))?;
-                                let info =
-                                    trace_err!(outer_info.data_info.iter().next().ok_or_else(
-                                        || anyhow!("Emtpy replication info response")
-                                    ))?;
-                                self.cache.sender.send(ReplicationMessage {
-                                    object_id: DieselUlid::from_str(&object.id)?,
-                                    download_url: info.download_url.clone(),
-                                    encryption_key: info.encryption_key.clone(),
-                                    is_compressed: info.is_compressed,
-                                    direction:
-                                        crate::replication::replication_handler::Direction::Pull,
-                                }).await?;
+                                // let mut response = Default::default();
+                                // for retry in 1..5 {
+                                //     let response_builder =
+                                //         self.pull_replication(request.clone(), ep_id.clone()).await;
+                                //     if response_builder.is_err() {
+                                //         tokio::time::sleep(Duration::from_secs(10)).await;
+                                //         if retry == 5 {
+                                //             return trace_err!(Err(anyhow!(
+                                //                 "ReplicationPullRetries exceed"
+                                //             )));
+                                //         } else {
+                                //             continue;
+                                //         }
+                                //     } else {
+                                //         response = response_builder?;
+                                //         break;
+                                //     }
+                                // }
+                                // let outer_info = trace_err!(response
+                                //     .data_infos
+                                //     .ok_or_else(|| anyhow!("No replication infos recieved")))?;
+                                // let info =
+                                //     trace_err!(outer_info.data_info.iter().next().ok_or_else(
+                                //         || anyhow!("Emtpy replication info response")
+                                //     ))?;
+                                // self.cache.sender.send(ReplicationMessage {
+                                //     object_id: DieselUlid::from_str(&object.id)?,
+                                //     download_url: info.download_url.clone(),
+                                //     encryption_key: info.encryption_key.clone(),
+                                //     is_compressed: info.is_compressed,
+                                //     direction:
+                                //         crate::replication::replication_handler::Direction::Pull,
+                                // }).await?;
                             }
                             None => {
                                 todo!(

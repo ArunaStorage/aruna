@@ -127,7 +127,7 @@ async fn main() -> Result<()> {
     let s3_server = s3_frontend::s3server::S3Server::new(
         &address,
         hostname.to_string(),
-        storage_backend,
+        storage_backend.clone(),
         cache,
     )
     .await?;
@@ -141,6 +141,7 @@ async fn main() -> Result<()> {
                         cache_clone.clone(),
                         sender,
                         hostname.clone(),
+                        storage_backend,
                     ),
                 ))
                 .add_service(DataproxyUserServiceServer::new(

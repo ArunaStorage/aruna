@@ -3,6 +3,7 @@ use crate::{
     data_backends::storage_backend::StorageBackend,
     helpers::sign_download_url,
     replication::replication_handler::ReplicationMessage,
+    s3_frontend::utils::replication_sink::ReplicationSink,
     structs::{
         Endpoint, Object, ObjectLocation, ObjectType, Origin, TypedRelation, ALL_RIGHTS_RESERVED,
     },
@@ -11,14 +12,14 @@ use crate::{
 use anyhow::{anyhow, Result};
 use aruna_file::{
     helpers::footer_parser::FooterParser, streamreadwrite::ArunaStreamReadWriter,
-    transformer::ReadWriter,
+    transformer::ReadWriter, transformers::decrypt::ChaCha20Dec,
 };
 use aruna_rust_api::api::{
     dataproxy::services::v2::{
         dataproxy_replication_service_server::DataproxyReplicationService,
-        pull_replication_request::Message, pull_replication_response, DataInfo, DataInfos,
-        InitMessage, PullReplicationRequest, PullReplicationResponse, PushReplicationRequest,
-        PushReplicationResponse,
+        pull_replication_request::Message, pull_replication_response, ChunkAckMessage, DataInfo,
+        DataInfos, InfoAckMessage, InitMessage, PullReplicationRequest, PullReplicationResponse,
+        PushReplicationRequest, PushReplicationResponse,
     },
     storage::models::v2::{DataClass, Status},
 };
@@ -30,8 +31,9 @@ use std::{str::FromStr, sync::Arc};
 use tokio::pin;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::Streaming;
-use tracing::{error, trace};
+use tracing::{error, info_span, trace, Instrument};
 
+#[derive(Clone)]
 pub struct DataproxyReplicationServiceImpl {
     pub cache: Arc<Cache>,
     pub sender: Sender<ReplicationMessage>,
@@ -56,10 +58,10 @@ impl DataproxyReplicationServiceImpl {
     }
 }
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash, Clone)]
 enum AckSync {
     ObjectInit(DieselUlid),
-    ObjectChunk(DieselUlid, i64, i64), // Object id, completed_chunks, chunks_idx
+    ObjectChunk(DieselUlid, i64), // Object id, completed_chunks, chunks_idx
     Finish,
 }
 
@@ -76,15 +78,22 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
         &self,
         request: tonic::Request<Streaming<PullReplicationRequest>>,
     ) -> Result<tonic::Response<Self::PullReplicationStream>, tonic::Status> {
-        let (metadata, _, request) = request.into_parts();
+        let (metadata, _, mut request) = request.into_parts();
         let token = trace_err!(get_token_from_md(&metadata))
             .map_err(|_| tonic::Status::unauthenticated("Token not found"))?;
 
+        // Sends initial Vec<(object, location)> to sync/ack/stream handlers
         let (object_input_send, object_input_rcv) = async_channel::bounded(1);
+        // Sends ack messages to the ack handler
         let (object_ack_send, object_ack_rcv) = async_channel::bounded(100);
+        // Sends the finished ack hash map to the output handler to compare send/ack
+        let (object_sync_send, object_sync_rcv) = async_channel::bounded(1);
+        // Handles output stream
         let (object_output_send, object_output_rcv) = tokio::sync::mpsc::channel(100);
 
         // Recieving loop
+        let proxy_replication_service = self.clone();
+        let output_sender = object_output_send.clone();
         tokio::spawn(async move {
             while let Ok(message) = request.message().await {
                 match message {
@@ -92,124 +101,137 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                         PullReplicationRequest { message } => match message {
                             Some(message) => match message {
                                 Message::InitMessage(init) => {
-                                    object_input_send
-                                        .send(self.check_permissions(init, token).await);
+                                    trace_err!(
+                                        object_input_send
+                                            .send(
+                                                proxy_replication_service
+                                                    .check_permissions(init, token.clone())
+                                                    .await,
+                                            )
+                                            .await
+                                    )?;
                                 }
-                                Message::InfoAckMessage(_) => todo!(),
-                                Message::ChunkAckMessage(_) => todo!(),
-                                Message::ErrorMessage(_) => todo!(),
-                                Message::FinishMessage(_) => todo!(),
+                                Message::InfoAckMessage(InfoAckMessage { object_id }) => {
+                                    let object_id = DieselUlid::from_str(&object_id)?;
+                                    // Send object init into acknowledgement sync handler
+                                    trace_err!(
+                                        object_ack_send.send(AckSync::ObjectInit(object_id)).await
+                                    )?;
+                                }
+                                Message::ChunkAckMessage(ChunkAckMessage {
+                                    object_id,
+                                    chunk_idx,
+                                }) => {
+                                    let object_id = DieselUlid::from_str(&object_id)?;
+                                    // Send object init into acknowledgement sync handler
+                                    trace_err!(
+                                        object_ack_send
+                                            .send(AckSync::ObjectChunk(object_id, chunk_idx))
+                                            .await
+                                    )?;
+                                }
+                                Message::ErrorMessage(_) => {
+                                    // TODO!
+                                    // - Error handling
+                                    // - Retry logic
+                                    trace_err!(
+                                        output_sender
+                                            .send(Err(tonic::Status::unimplemented(
+                                                "Retry and Error logic is not implemented yet",
+                                            )))
+                                            .await
+                                    )?;
+                                }
+                                Message::FinishMessage(_) => {
+                                    trace_err!(object_ack_send.send(AckSync::Finish).await)?;
+                                }
                             },
                             _ => todo!(),
                         },
-                        _ => todo!(),
                     },
                     None => todo!(),
                 };
             }
+            Ok::<(), anyhow::Error>(())
         });
 
         // Ack sync loop
         tokio::spawn(async move {
             let mut sync_map: HashSet<AckSync> = HashSet::new();
-            while let Ok(ack_msg) = object_ack_rcv.recv().await {
+            while let Ok(ref ack_msg) = object_ack_rcv.recv().await {
                 match ack_msg {
                     init @ AckSync::ObjectInit(_) => {
-                        sync_map.insert(init);
+                        sync_map.insert(init.clone());
                     }
-                    chunk @ AckSync::ObjectChunk(id, chunk_id, max_chunk) => {
-                        // If completed chunk before found
-                        if sync_map
-                            .take(&AckSync::ObjectChunk(id, chunk_id - 1, max_chunk))
-                            .is_some()
-                        {
-                            // ... insert ack with ObjectInit
-                            sync_map.insert(chunk);
-                        }
-                        // If None chunk and None ObjectInit found
-                        else if let None = sync_map.take(&AckSync::ObjectInit(id)) {
-                            // ... send Err
-                            object_output_send
-                                .send(Err(tonic::Status::not_found(
-                                    "Object not found in InitMessage",
-                                )))
-                                .await;
-                        }
-                        // If None found, but ObjectInit found
-                        else {
-                            // ... insert ack with ObjectChunk
-                            sync_map.insert(chunk);
-                        };
+                    chunk @ AckSync::ObjectChunk(..) => {
+                        sync_map.insert(chunk.clone());
                     }
                     AckSync::Finish => {
-                        // Look if any object is not finished
-                        if sync_map.iter().all(|ack| match ack {
-                            AckSync::ObjectInit(_) => false,
-                            AckSync::ObjectChunk(id, completed, max) => completed == max,
-                            AckSync::Finish => false,
-                        }) {
-                            object_output_send
-                                .send(Ok(PullReplicationResponse {
-                                    message: Some(
-                                        pull_replication_response::Message::FinishMessage(
-                                            aruna_rust_api::api::dataproxy::services::v2::Empty {},
-                                        ),
-                                    ),
-                                }))
-                                .await;
-                        } else {
-                            object_output_send
-                                .send(Err(tonic::Status::data_loss(
-                                    "Not all chunks were acknowledged",
-                                )))
-                                .await;
-                        }
+                        trace_err!(object_sync_send.send(sync_map.clone()).await)?;
                     }
                 }
             }
+            Ok::<(), anyhow::Error>(())
         });
 
         // Responding loop
+        let proxy_replication_service = self.clone();
         tokio::spawn(async move {
-            'outer: while let replication_message = object_input_rcv.recv().await {
-                match replication_message {
+            'outer: loop {
+                match object_input_rcv.recv().await {
                     // Errors
                     Err(err) => {
                         error!("{err}");
-                        object_output_send
-                            .send(Err(tonic::Status::unauthenticated(
-                                "Unauthorized to pull objects",
-                            )))
-                            .await;
+                        trace_err!(
+                            object_output_send
+                                .clone()
+                                .send(Err(tonic::Status::internal("ObjectInputChannel closed")))
+                                .await
+                        )?;
                     }
                     Ok(Err(err)) => {
                         error!("{err}");
-                        object_output_send
-                            .send(Err(tonic::Status::unauthenticated(
-                                "Unauthorized to pull objects",
-                            )))
-                            .await;
+                        // Here probably propper error matching is needed to
+                        // separate unauthorized from other errors
+                        trace_err!(
+                            object_output_send
+                                .send(Err(tonic::Status::unauthenticated(
+                                    "Unauthorized to pull objects",
+                                )))
+                                .await
+                        )?;
                     }
 
                     // Objects
                     Ok(Ok(objects)) => {
+                        // Store access-checked objects
+                        let mut stored_objects: HashMap<DieselUlid, usize> = HashMap::default();
                         for (object, location) in objects {
                             // Get footer
-                            let footer = match self.get_footer(location).await {
+                            let footer = match proxy_replication_service
+                                .get_footer(location.clone())
+                                .await
+                            {
                                 Ok(footer) => footer,
                                 Err(err) => {
                                     error!("{err}");
-                                    object_output_send
-                                        .send(Err(tonic::Status::internal(
-                                            "Could not parse footer",
-                                        )))
-                                        .await;
+                                    trace_err!(
+                                        object_output_send
+                                            .send(Err(tonic::Status::internal(
+                                                "Could not parse footer",
+                                            )))
+                                            .await
+                                    )?;
                                     break 'outer;
                                 }
                             };
+                            // Get blocklist
                             let blocklist = footer.map(|f| f.get_blocklist());
-                            let max_blocks = blocklist.map(|l| l.len()).unwrap_or(1);
-                            object_output_send
+                            // Get chunk size from blocklist
+                            let max_blocks = blocklist.as_ref().map(|l| l.len()).unwrap_or(1);
+                            stored_objects.insert(object.id, max_blocks);
+                            // Send ObjectInfo into stream
+                            trace_err!(object_output_send
                                 .send(Ok(PullReplicationResponse {
                                     message: Some(pull_replication_response::Message::ObjectInfo(
                                         aruna_rust_api::api::dataproxy::services::v2::ObjectInfo {
@@ -219,16 +241,53 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                         },
                                     )),
                                 }))
-                                .await;
-                            // Send chunks
+                                .await)?;
 
-                            // Send all objects into acknowledgement sync handler
-                            object_ack_send.send(AckSync::ObjectInit(object.id)).await;
-                            todo!()
+                            // Send data into stream
+                            trace_err!(
+                                proxy_replication_service
+                                    .send_object(
+                                        object.id.to_string(),
+                                        location,
+                                        blocklist.unwrap_or(Vec::default()),
+                                        object_output_send.clone(),
+                                    )
+                                    .await
+                            )?;
+                        }
+                        // Check if any message was unacknowledged
+                        if let Ok(ack_msgs) = object_sync_rcv.recv().await {
+                            for (id, max_blocks) in stored_objects.iter() {
+                                // TODO!
+                                // - Error handling
+                                // - Retry logic
+                                if ack_msgs.get(&AckSync::ObjectInit(*id)).is_none() {
+                                    trace_err!(
+                                        object_output_send
+                                            .send(Err(tonic::Status::not_found(
+                                                "Unacknowledged ObjectInit found",
+                                            )))
+                                            .await
+                                    )?;
+                                }
+                                let max_blocks = *max_blocks as i64;
+                                for chunk in 0..max_blocks {
+                                    if ack_msgs.get(&AckSync::ObjectChunk(*id, chunk)).is_none() {
+                                        trace_err!(
+                                            object_output_send
+                                                .send(Err(tonic::Status::not_found(
+                                                    "Unacknowledged ObjectChunk found",
+                                                )))
+                                                .await
+                                        )?;
+                                    }
+                                }
+                            }
                         }
                     }
                 };
             }
+            Ok::<(), anyhow::Error>(())
         });
 
         let grpc_response: tonic::Response<
@@ -339,7 +398,7 @@ impl DataproxyReplicationServiceImpl {
                             )
                             .await
                     )
-                    .map_err(|_| tonic::Status::internal("Unable to get encryption_footer"));
+                    .map_err(|_| tonic::Status::internal("Unable to get encryption_footer"))?;
                     let mut output = Vec::with_capacity(130_000);
                     // Stream takes receiver chunks und them into vec
                     let mut arsw =
@@ -401,10 +460,56 @@ impl DataproxyReplicationServiceImpl {
 
     async fn send_object(
         &self,
+        object_id: String,
         location: ObjectLocation,
         blocklist: Vec<u8>,
-        sender: tokio::sync::mpsc::Sender<Result<PushReplicationResponse, tonic::Status>>,
+        sender: tokio::sync::mpsc::Sender<Result<PullReplicationResponse, tonic::Status>>,
     ) -> anyhow::Result<()> {
-        todo!()
+        // Get encryption_key
+        let key = location
+            .clone()
+            .encryption_key
+            .map(|k| k.as_bytes().to_vec());
+        // Create channel for get_object
+        let (object_sender, object_receiver) = async_channel::bounded(10);
+
+        // Spawn get_object
+        let backend = self.backend.clone();
+        tokio::spawn(
+            async move {
+                backend
+                    .get_object(location.clone(), None, object_sender)
+                    .await
+            }
+            .instrument(info_span!("get_object")),
+        );
+        //let (final_send, final_rcv) = async_channel::bounded(10);
+
+        // Spawn final part
+        tokio::spawn(
+            async move {
+                pin!(object_receiver);
+                let asrw = ArunaStreamReadWriter::new_with_sink(
+                    // Receive get_object
+                    object_receiver,
+                    // ReplicationSink sends into stream via sender
+                    ReplicationSink::new(object_id, blocklist, sender),
+                );
+
+                // Add decryption transformer
+                trace_err!(
+                    asrw.add_transformer(trace_err!(ChaCha20Dec::new(key))?)
+                        .process()
+                        .await
+                )?;
+
+                match 1 {
+                    1 => Ok(()),
+                    _ => Err(anyhow!("Internal notifier error")),
+                }
+            }
+            .instrument(tracing::info_span!("query_data")),
+        );
+        Ok(())
     }
 }
