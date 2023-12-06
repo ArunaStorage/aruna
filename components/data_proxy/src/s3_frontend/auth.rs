@@ -37,7 +37,13 @@ impl S3Auth for AuthProvider {
                     auth.check_access(cx.credentials(), cx.method(), cx.s3_path())
                         .await
                 )
-                .map_err(|_| s3_error!(AccessDenied, "Access denied"))?;
+                .map_err(|err| {
+                    if err.to_string().contains("not found") {
+                        s3_error!(NoSuchKey, "{}", err)
+                    } else {
+                        s3_error!(AccessDenied, "Access denied")
+                    }
+                })?;
 
                 cx.extensions_mut().insert(result);
                 Ok(())
