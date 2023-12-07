@@ -66,11 +66,14 @@ use jsonwebtoken::DecodingKey;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc::Sender;
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::metadata::AsciiMetadataKey;
 use tonic::metadata::AsciiMetadataValue;
 use tonic::transport::Channel;
 use tonic::transport::ClientTlsConfig;
 use tonic::Request;
+use tonic::Streaming;
 use tracing::debug;
 use tracing::error;
 use tracing::info;
@@ -642,11 +645,14 @@ impl GrpcQueryHandler {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    async fn pull_replication(
+    pub async fn pull_replication(
         &self,
-        request: PullReplicationRequest,
+        init_request: PullReplicationRequest,
         endpoint_id: String,
-    ) -> Result<PullReplicationResponse> {
+    ) -> Result<(
+        Sender<PullReplicationRequest>,
+        Streaming<PullReplicationResponse>,
+    )> {
         let endpoint_ulid = DieselUlid::from_str(&endpoint_id)?;
         let get_ep_request = tonic::Request::new(GetEndpointRequest {
             endpoint: Some(Endpoint::EndpointId(endpoint_id)),
@@ -684,19 +690,19 @@ impl GrpcQueryHandler {
         };
 
         let dataproxy_service = DataproxyReplicationServiceClient::new(channel.clone());
-        todo!()
-        // let mut req = Request::new(request);
-        // req.metadata_mut().append(
-        //     trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-        //     trace_err!(AsciiMetadataValue::try_from(format!(
-        //         "Bearer {}",
-        //         token.as_str()
-        //     )))?,
-        // );
-        // trace!("{}", self.long_lived_token.as_str());
-        // let response =
-        //     trace_err!(dataproxy_service.clone().pull_replication(req).await)?.into_inner();
-        // Ok(response)
+        let (request_stream_sender, request_stream_receiver) = tokio::sync::mpsc::channel(100);
+        let mut req = Request::new(ReceiverStream::new(request_stream_receiver));
+        req.metadata_mut().append(
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!(
+                "Bearer {}",
+                token.as_str()
+            )))?,
+        );
+        trace!("{}", self.long_lived_token.as_str());
+        let response_stream =
+            trace_err!(dataproxy_service.clone().pull_replication(req).await)?.into_inner();
+        Ok((request_stream_sender, response_stream))
     }
 
     #[tracing::instrument(level = "trace", skip(self, request))]

@@ -146,10 +146,16 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                     trace_err!(object_ack_send.send(AckSync::Finish).await)?;
                                 }
                             },
-                            _ => todo!(),
+                            _ => {
+                                return Err(anyhow!(
+                                    "No message provided in PullReplicationRequest"
+                                ));
+                            }
                         },
                     },
-                    None => todo!(),
+                    None => {
+                        return Err(anyhow!("No message provided in PullReplicationRequest"));
+                    }
                 };
             }
             Ok::<(), anyhow::Error>(())
