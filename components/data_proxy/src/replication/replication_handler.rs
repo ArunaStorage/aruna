@@ -354,15 +354,21 @@ impl ReplicationHandler {
                             )
                             .await
                         )?;
+                        // TODO: This should probably happen after checking if all chunks were
+                        // processed
+
                         // Sync with cache and db
                         trace_err!(cache.upsert_object(object.clone(), Some(location)).await)?;
                     }
+                    // Check if all chunks found in object infos are also processed
                     trace_err!(sync_sender.send(RcvSync::RcvFinish).await)?;
                     while let Ok(finished) = finish_receiver.recv().await {
+                        // Collection ObjectInfo
                         let inits = finished.iter().filter_map(|msg| match msg {
                             RcvSync::RcvInfo(object_id, chunks) => Some((object_id, chunks)),
                             _ => None,
                         });
+                        // For each object, check if all chunks were processed
                         for (object_id, chunks) in inits {
                             let collected = finished
                                 .iter()
@@ -373,6 +379,7 @@ impl ReplicationHandler {
                                 .collect::<Vec<_>>()
                                 .len();
                             if *chunks as usize != collected {
+                                // Send abort message if not all chunks were processed
                                 trace_err!(request_sender
                                         .send(
                                             PullReplicationRequest {
@@ -391,6 +398,7 @@ impl ReplicationHandler {
                                 return Err(anyhow!("Not all chunks recieved, aborting sync"));
                             }
                         }
+                        // Send finish message if everything was processed
                         trace_err!(
                             request_sender
                                 .send(PullReplicationRequest {
@@ -403,6 +411,12 @@ impl ReplicationHandler {
                     }
                     Ok::<(), anyhow::Error>(())
                 });
+
+                //TODO:
+                // - Update endpoint status in server for each object
+                // - If error, maybe set endpoint_status for each failed object to Error?
+                // -> Then we do not have to do this additional check while loading into backend
+                // -> User initiated replications then need to be implemented
             };
             // Write endpoint into results
             result.push(endpoint.key().clone());
