@@ -87,7 +87,7 @@ impl ReplicationHandler {
         let queue: Arc<DashMap<DieselUlid, Vec<Direction>, RandomState>> =
             Arc::new(DashMap::default());
 
-        // Push messages into DashMap for deduplication
+        // Push messages into DashMap for further processing
         let queue_clone = queue.clone();
         let receiver = self.receiver.clone();
         let recieve = tokio::spawn(async move {
@@ -103,7 +103,7 @@ impl ReplicationHandler {
             }
         });
 
-        // Proccess DashMap entries in separate task
+        // Proccess DashMap entries in batches
         let backend = self.backend.clone();
         let self_id = self.self_id.clone();
         let process: tokio::task::JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
@@ -119,6 +119,7 @@ impl ReplicationHandler {
                     backend.clone(),
                 )
                 .await?;
+                // Remove processed entries from shared map
                 for id in result {
                     let entry = queue.remove(&id);
                     if entry.is_none() {
@@ -143,6 +144,7 @@ impl ReplicationHandler {
         cache: Arc<Cache>,
         backend: Arc<Box<dyn StorageBackend>>,
     ) -> Result<Vec<DieselUlid>> {
+        // Vec for collection all processed and finished objects
         let mut result = Vec::new();
 
         // Iterates over each endpoint
@@ -155,6 +157,7 @@ impl ReplicationHandler {
                     Direction::Push(_) => None,
                 })
                 .collect();
+            // TODO: Push is currently not implemented
             let _push: Vec<DieselUlid> = endpoint
                 .iter()
                 .filter_map(|object| match object {
@@ -162,6 +165,7 @@ impl ReplicationHandler {
                     Direction::Pull(_) => None,
                 })
                 .collect();
+            // This is the initial message for the data transmission stream
             let init_request = PullReplicationRequest {
                 message: Some(Message::InitMessage(InitMessage {
                     dataproxy_id: self_id.clone(),
@@ -170,16 +174,25 @@ impl ReplicationHandler {
             };
 
             if let Some(query_handler) = cache.aruna_client.read().await.as_ref() {
+                // This query handler returns a channel for sending messages into the input stream
+                // and the response stream
                 let (request_sender, mut response_stream) = query_handler
                     .pull_replication(init_request, self_id.clone())
                     .await?;
+                // This channel is used to collect all proccessed objects and chunks
                 let (sync_sender, sync_receiver) = async_channel::bounded(100);
+                // This channel is only used to transmit the sync result to compare
+                // recieved vs requested objects
                 let (finish_sender, finish_receiver) = async_channel::bounded(1);
+                // This map collects for each object_id a channel for datatransmission
+                // TODO: This could be used to make parallel requests later
                 let object_handler_map: Arc<
                     DashMap<String, (Sender<DataChunk>, Receiver<DataChunk>), ahash::RandomState>,
                 > = Arc::new(DashMap::default());
 
-                // Response handler
+                // Response handler:
+                // This is used to handle all requests and responses
+                // to the other dataproxy
                 let data_map = object_handler_map.clone();
                 let sync_sender_clone = sync_sender.clone();
                 tokio::spawn(async move {
@@ -190,10 +203,14 @@ impl ReplicationHandler {
                                 chunks,
                                 ..
                             })) => {
+                                // If ObjectInfo is send, a init msg is collected in sync ...
                                 let id = DieselUlid::from_str(&object_id)?;
                                 sync_sender_clone.send(RcvSync::RcvInfo(id, chunks)).await?;
+                                // .. and a datachannel is created
+                                // and stored in object_handler_map ...
                                 let object_channel = async_channel::bounded(100);
                                 data_map.insert(object_id.clone(), object_channel.clone());
+                                // ... and then ObjectInfo gets acknowledged
                                 request_sender
                                     .send(PullReplicationRequest {
                                         message: Some(Message::InfoAckMessage(InfoAckMessage {
@@ -208,7 +225,9 @@ impl ReplicationHandler {
                                 data,
                                 checksum,
                             })) => {
+                                // If an entry is created inside the object_handler_map ...
                                 if let Some(entry) = data_map.get(&object_id) {
+                                    // Chunks get processed
                                     let chunk = DataChunk {
                                         object_id: object_id.clone(),
                                         chunk_idx,
@@ -217,9 +236,11 @@ impl ReplicationHandler {
                                     };
                                     entry.0.send(chunk).await?;
                                     let id = DieselUlid::from_str(&object_id)?;
+                                    // Message is send to sync
                                     sync_sender_clone
                                         .send(RcvSync::RcvChunk(id, chunk_idx))
                                         .await?;
+                                    // Message is acknowledged
                                     request_sender
                                         .send(PullReplicationRequest {
                                             message: Some(Message::ChunkAckMessage(
@@ -231,6 +252,7 @@ impl ReplicationHandler {
                                         })
                                         .await?;
                                 } else {
+                                    // If no entry is found, ObjectInfo was not send
                                     request_sender
                                         .send(
                                             PullReplicationRequest {
@@ -238,13 +260,8 @@ impl ReplicationHandler {
                                                     Message::ErrorMessage(
                                                         aruna_rust_api::api::dataproxy::services::v2::ErrorMessage {
                                                             error: Some(
-                                                                error_message::Error::RetryChunk(
-                                                                    {
-                                                                        RetryChunkMessage {
-                                                                            object_id,
-                                                                            chunk_idx,
-                                                                        }
-                                                                    }
+                                                                error_message::Error::RetryObjectId(
+                                                                    object_id,
                                                                 )
                                                             )
                                                         }
@@ -269,6 +286,7 @@ impl ReplicationHandler {
                 // Sync handler
                 tokio::spawn(async move {
                     let mut sync = HashSet::default();
+                    // Every InfoMsg and ChunkMsg is stored
                     while let Ok(msg) = sync_receiver.recv().await {
                         match msg {
                             info @ RcvSync::RcvInfo(..) => {
@@ -277,6 +295,7 @@ impl ReplicationHandler {
                             chunk @ RcvSync::RcvChunk(..) => {
                                 sync.insert(chunk);
                             }
+                            // If finish is called, all stored messages will be returned
                             RcvSync::RcvFinish => {
                                 finish_sender.send(sync.clone()).await?;
                             }
@@ -289,14 +308,18 @@ impl ReplicationHandler {
                 let cache = cache.clone();
                 let backend = backend.clone();
                 tokio::spawn(async move {
+                    // For now, every entry of the object_handler_map is proccessed
+                    // consecutively
                     for entry in object_handler_map.iter() {
                         let (id, channel) = entry.pair();
                         let object_id = DieselUlid::from_str(id)?;
+                        // The object gets queried
                         let entry = cache
                             .resources
                             .get(&object_id)
                             .ok_or_else(|| anyhow!("Object not found"))?;
                         let (object, location) = entry.value();
+                        // If no location is found, a new one is created
                         let location = if let Some(location) = location {
                             location.clone()
                         } else {
@@ -304,16 +327,20 @@ impl ReplicationHandler {
                                 .initialize_location(&object, None, None, false)
                                 .await?
                         };
+                        // Send Chunks get processed
                         ReplicationHandler::load_into_backend(
                             channel.1.clone(),
                             location,
                             backend.clone(),
-                        );
+                        )
+                        .await?;
                         // TODO:
                         // - Sync with cache and db
                     }
                     sync_sender.send(RcvSync::RcvFinish).await?;
                     while let Ok(finished) = finish_receiver.recv().await {
+                        // TODO:
+                        // - Check if all chunks are in sync with stored messages
                         todo!()
                     }
                     Ok::<(), anyhow::Error>(())
@@ -369,13 +396,9 @@ impl ReplicationHandler {
 
             awr = awr.add_transformer(initial_size_trans);
 
-            if location_clone.compressed {
-                trace!("adding zstd decompressor");
-                awr = awr.add_transformer(ZstdEnc::new(true));
-                if location_clone.raw_content_len > 5242880 + 80 * 28 {
-                    trace!("adding footer generator");
-                    awr = awr.add_transformer(FooterGenerator::new(None))
-                }
+            if location_clone.raw_content_len > 5242880 + 80 * 28 {
+                trace!("adding footer generator");
+                awr = awr.add_transformer(FooterGenerator::new(None))
             }
 
             if let Some(enc_key) = &location_clone.encryption_key {
