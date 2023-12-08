@@ -1255,7 +1255,7 @@ impl S3 for ArunaS3Service {
         // Fetch the project name, delimiter and prefix from the request
         let project_name = &req.input.bucket;
         let delimiter = req.input.delimiter;
-        let prefix = req.input.prefix;
+        let prefix = req.input.prefix.filter(|prefix| !prefix.is_empty());
 
         // Check if bucket exists as root in cache of paths
         match self
@@ -1313,7 +1313,7 @@ impl S3 for ArunaS3Service {
         ))
         .map_err(|_| s3_error!(NoSuchKey, "Keys not found in ListObjectsV2"))?;
 
-        let key_count = keys.len() as i32;
+        let key_count = (keys.len() + common_prefixes.len()) as i32;
         let common_prefixes = Some(
             common_prefixes
                 .into_iter()
@@ -1346,7 +1346,9 @@ impl S3 for ArunaS3Service {
             encoding_type: None,
             is_truncated: new_continuation_token.is_some(),
             key_count,
-            max_keys: 0,
+            max_keys: max_keys
+                .try_into()
+                .map_err(|err| s3_error!(InternalError, "[BACKEND] Conversion failure: {}", err))?,
             name: Some(project_name.clone()),
             next_continuation_token: new_continuation_token,
             prefix,
@@ -1354,6 +1356,7 @@ impl S3 for ArunaS3Service {
             ..Default::default()
         };
         debug!(?result);
+
         Ok(S3Response::new(result))
     }
 }
