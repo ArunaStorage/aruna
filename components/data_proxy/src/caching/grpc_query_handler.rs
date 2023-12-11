@@ -1,3 +1,4 @@
+use crate::replication::replication_handler::Direction;
 use crate::replication::replication_handler::ReplicationMessage;
 use crate::structs::Object as DPObject;
 use crate::structs::ObjectLocation;
@@ -890,51 +891,15 @@ impl GrpcQueryHandler {
                         });
                         match state_of_truth {
                             Some(ep_id) => {
-                                todo!()
-                                // let request = PullReplicationRequest {
-                                //     info: Some(DataProxyInfo {
-                                //         dataproxy_id: self.endpoint_id.clone(),
-                                //         available_space: 8000000000000, // TODO: Replace
-                                //                                         // placeholder with
-                                //                                         // something meaningful
-                                //     }),
-                                //     user_initialized: false,
-                                //     object_ids: vec![object.id.clone()],
-                                // };
-
-                                // let mut response = Default::default();
-                                // for retry in 1..5 {
-                                //     let response_builder =
-                                //         self.pull_replication(request.clone(), ep_id.clone()).await;
-                                //     if response_builder.is_err() {
-                                //         tokio::time::sleep(Duration::from_secs(10)).await;
-                                //         if retry == 5 {
-                                //             return trace_err!(Err(anyhow!(
-                                //                 "ReplicationPullRetries exceed"
-                                //             )));
-                                //         } else {
-                                //             continue;
-                                //         }
-                                //     } else {
-                                //         response = response_builder?;
-                                //         break;
-                                //     }
-                                // }
-                                // let outer_info = trace_err!(response
-                                //     .data_infos
-                                //     .ok_or_else(|| anyhow!("No replication infos recieved")))?;
-                                // let info =
-                                //     trace_err!(outer_info.data_info.iter().next().ok_or_else(
-                                //         || anyhow!("Emtpy replication info response")
-                                //     ))?;
-                                // self.cache.sender.send(ReplicationMessage {
-                                //     object_id: DieselUlid::from_str(&object.id)?,
-                                //     download_url: info.download_url.clone(),
-                                //     encryption_key: info.encryption_key.clone(),
-                                //     is_compressed: info.is_compressed,
-                                //     direction:
-                                //         crate::replication::replication_handler::Direction::Pull,
-                                // }).await?;
+                                let direction = Direction::Pull(DieselUlid::from_str(id)?);
+                                let endpoint_id = DieselUlid::from_str(ep_id)?;
+                                self.cache
+                                    .sender
+                                    .send(ReplicationMessage {
+                                        direction,
+                                        endpoint_id,
+                                    })
+                                    .await?;
                             }
                             None => {
                                 todo!(

@@ -334,8 +334,9 @@ impl ReplicationHandler {
                             .ok_or_else(|| anyhow!("Object not found")))?;
                         let (object, location) = entry.value();
                         // If no location is found, a new one is created
-                        let mut location = if let Some(location) = location {
-                            location.clone()
+                        let mut location = if let Some(_) = location {
+                            // Object should already be synced
+                            continue;
                         } else {
                             trace_err!(
                                 backend
@@ -359,6 +360,15 @@ impl ReplicationHandler {
 
                         // Sync with cache and db
                         trace_err!(cache.upsert_object(object.clone(), Some(location)).await)?;
+
+                        // Send UpdateStatus to server
+                        trace_err!(query_handler.update_replication_status(
+                            UpdateReplicationStatusRequest {
+                                object_id: object.id.to_string(),
+                                endpoint_id: todo!(),
+                                status: todo!()
+                            }
+                        ))?;
                     }
                     // Check if all chunks found in object infos are also processed
                     trace_err!(sync_sender.send(RcvSync::RcvFinish).await)?;
