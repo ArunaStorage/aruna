@@ -1022,6 +1022,7 @@ impl S3 for ArunaS3Service {
             .resources
             .get(&id)
             .ok_or_else(|| s3_error!(NoSuchKey, "Object not found")))?;
+
         let (_, location) = cache_result.value();
         let location = trace_err!(location
             .as_ref()
@@ -1036,7 +1037,8 @@ impl S3 for ArunaS3Service {
         let (sender, receiver) = async_channel::bounded(10);
 
         // Gets 128 kb chunks (last 2)
-        let footer_parser: Option<FooterParser> = if content_length > 5242880 * 28 {
+        let footer_limit = 5242880 + 80 * 28;
+        let footer_parser: Option<FooterParser> = if content_length > footer_limit {
             trace!("getting footer");
             // Without encryption block because this is already checked inside
             let (footer_sender, footer_receiver) = async_channel::unbounded();
@@ -1057,8 +1059,9 @@ impl S3 for ArunaS3Service {
                             .await
                     )
                     .map_err(|_| s3_error!(InternalError, "Unable to get encryption_footer"))?;
-                    let mut output = Vec::with_capacity(130_000);
+
                     // Stream takes receiver chunks und them into vec
+                    let mut output = Vec::with_capacity(131_128);
                     let mut arsw =
                         ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
 
