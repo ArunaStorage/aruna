@@ -893,13 +893,13 @@ impl GrpcQueryHandler {
                             Some(ep_id) => {
                                 let direction = Direction::Pull(DieselUlid::from_str(id)?);
                                 let endpoint_id = DieselUlid::from_str(ep_id)?;
-                                self.cache
+                                trace_err!(self.cache
                                     .sender
                                     .send(ReplicationMessage {
                                         direction,
                                         endpoint_id,
                                     })
-                                    .await?;
+                                    .await)?;
                             }
                             None => {
                                 todo!(

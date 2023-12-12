@@ -36,6 +36,7 @@ use sha2::Sha256;
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 use tokio::pin;
 use tracing::{error, trace};
+use crate::caching::grpc_query_handler::GrpcQueryHandler;
 
 pub struct ReplicationMessage {
     pub direction: Direction,
@@ -64,25 +65,28 @@ pub struct DataChunk {
 pub struct ReplicationHandler {
     pub receiver: Receiver<ReplicationMessage>,
     pub backend: Arc<Box<dyn StorageBackend>>,
+    pub cache: Arc<Cache>,
     pub self_id: String,
 }
 
 impl ReplicationHandler {
-    #[tracing::instrument(level = "trace")]
+    #[tracing::instrument(level = "trace", skip(cache, backend, receiver))]
     pub fn new(
         receiver: Receiver<ReplicationMessage>,
         backend: Arc<Box<dyn StorageBackend>>,
         self_id: String,
+        cache: Arc<Cache>,
     ) -> Self {
         Self {
             receiver,
             backend,
             self_id,
+            cache,
         }
     }
 
-    #[tracing::instrument(level = "trace", skip(self, cache))]
-    pub async fn run(self, cache: Arc<Cache>) -> Result<()> {
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn run(self) -> Result<()> {
         // Has EndpointID: [Pull(object_id), Pull(object_id) ,...]
         let queue: Arc<DashMap<DieselUlid, Vec<Direction>, RandomState>> =
             Arc::new(DashMap::default());
@@ -104,20 +108,18 @@ impl ReplicationHandler {
         });
 
         // Proccess DashMap entries in batches
-        let backend = self.backend.clone();
-        let self_id = self.self_id.clone();
         let process: tokio::task::JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
+            let grpc_client_lock = self.cache.aruna_client.read().await;
+            let aruna_client = grpc_client_lock.as_ref();
             loop {
                 // Process batches every 30 seconds
                 tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                 let batch = queue.clone();
 
                 let result = trace_err!(
-                    ReplicationHandler::process(
-                        self_id.clone(),
+                    self.process(
                         batch,
-                        cache.clone(),
-                        backend.clone(),
+                        aruna_client,
                     )
                     .await
                 )?;
@@ -136,22 +138,22 @@ impl ReplicationHandler {
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", skip(cache, backend))]
+    #[tracing::instrument(level = "trace", skip(self, aruna_client))]
     // TODO
     // - Pull/Push logic
     // - write objects into storage backend
     // - write objects into cache/db
     async fn process(
-        self_id: String,
+        &self,
         batch: Arc<DashMap<DieselUlid, Vec<Direction>, ahash::RandomState>>,
-        cache: Arc<Cache>,
-        backend: Arc<Box<dyn StorageBackend>>,
+        aruna_client: Option<&Arc<GrpcQueryHandler>>
     ) -> Result<Vec<DieselUlid>> {
         // Vec for collecting all processed and finished endpoint batches
         let mut result = Vec::new();
 
         // Iterates over each endpoint
         for endpoint in batch.iter() {
+            let self_id = self.self_id.clone();
             // Collects all objects for each direction
             let pull: Vec<DieselUlid> = endpoint
                 .iter()
@@ -175,8 +177,7 @@ impl ReplicationHandler {
                     object_ids: pull.iter().map(|o| o.to_string()).collect(),
                 })),
             };
-
-            if let Some(query_handler) = cache.aruna_client.read().await.as_ref() {
+            if let Some(query_handler) = aruna_client {
                 // This query handler returns a channel for sending messages into the input stream
                 // and the response stream
                 let (request_sender, mut response_stream) = trace_err!(
@@ -319,8 +320,9 @@ impl ReplicationHandler {
                 });
 
                 // Process each object
-                let cache = cache.clone();
-                let backend = backend.clone();
+                let cache = self.cache.clone();
+                let backend = self.backend.clone();
+                let query_handler = query_handler.clone();
                 tokio::spawn(async move {
                     // For now, every entry of the object_handler_map is proccessed
                     // consecutively
@@ -362,13 +364,15 @@ impl ReplicationHandler {
                         trace_err!(cache.upsert_object(object.clone(), Some(location)).await)?;
 
                         // Send UpdateStatus to server
-                        trace_err!(query_handler.update_replication_status(
-                            UpdateReplicationStatusRequest {
-                                object_id: object.id.to_string(),
-                                endpoint_id: todo!(),
-                                status: todo!()
-                            }
-                        ))?;
+                        trace_err!(
+                            query_handler
+                                .update_replication_status(UpdateReplicationStatusRequest {
+                                    object_id: object.id.to_string(),
+                                    endpoint_id: self_id.clone(),
+                                    status: ReplicationStatus::Finished as i32,
+                                })
+                                .await
+                        )?;
                     }
                     // Check if all chunks found in object infos are also processed
                     trace_err!(sync_sender.send(RcvSync::RcvFinish).await)?;
@@ -429,7 +433,7 @@ impl ReplicationHandler {
                 // -> User initiated replications then need to be implemented
             };
             // Write endpoint into results
-            result.push(endpoint.key().clone());
+            result.push(*endpoint.key());
         }
 
         Ok(result)

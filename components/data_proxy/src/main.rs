@@ -115,9 +115,9 @@ async fn main() -> Result<()> {
 
     trace!("init replication handler");
     let replication_handler =
-        ReplicationHandler::new(receiver, storage_backend.clone(), endpoint_id.clone());
+        ReplicationHandler::new(receiver, storage_backend.clone(), endpoint_id.clone(), cache.clone());
     tokio::spawn(async move {
-        let replication = replication_handler.run(replication_cache_clone).await;
+        let replication = replication_handler.run().await;
         if let Err(err) = replication {
             trace!("{err}");
         };
