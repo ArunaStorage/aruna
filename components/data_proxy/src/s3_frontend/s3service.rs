@@ -1111,16 +1111,32 @@ impl S3 for ArunaS3Service {
 
         // Needed for final part
         trace!("calculating ranges");
-        let (query_ranges, filter_ranges) =
+        let (query_ranges, filter_ranges, actual_from) =
             calculate_ranges(req.input.range, content_length as u64, footer_parser)
                 .map_err(|_| s3_error!(InternalError, "Error while parsing ranges"))?;
-        let calc_content_len = match filter_ranges {
-            Some(r) => calculate_content_length_from_range(r),
-            None => content_length,
-        };
-        let cloned_key = encryption_key.clone();
 
-        // Spawn get_object
+        let (content_length, accept_ranges, content_range) = match filter_ranges {
+            Some(filter_range) => (
+                calculate_content_length_from_range(filter_range),
+                Some("bytes".to_string()),
+                Some(format!(
+                    "bytes {}-{}/{}",
+                    actual_from + filter_range.from,
+                    actual_from + filter_range.to - 1,
+                    content_length
+                )),
+            ),
+            None => (content_length, None, None),
+        };
+        debug!(
+            ?content_length,
+            ?query_ranges,
+            ?filter_ranges,
+            ?accept_ranges,
+            ?content_range
+        );
+
+        // Spawn get_object to fetch bytes from storage storage
         let backend = self.backend.clone();
         tokio::spawn(
             async move {
@@ -1130,9 +1146,10 @@ impl S3 for ArunaS3Service {
             }
             .instrument(info_span!("get_object")),
         );
-        let (final_send, final_rcv) = async_channel::bounded(10);
+        let (final_send, final_rcv) = async_channel::unbounded();
 
         // Spawn final part
+        let cloned_key = encryption_key.clone();
         tokio::spawn(
             async move {
                 pin!(receiver);
@@ -1141,23 +1158,19 @@ impl S3 for ArunaS3Service {
                     AsyncSenderSink::new(final_send),
                 );
 
-                if let Some(r) = filter_ranges {
-                    asrw = asrw.add_transformer(Filter::new(r));
+                asrw = asrw
+                    .add_transformer(trace_err!(ChaCha20Dec::new(cloned_key)
+                        .map_err(|_| { s3_error!(InternalError, "Internal notifier error") }))?)
+                    .add_transformer(ZstdDec::new());
+
+                if let Some(filter_range) = filter_ranges {
+                    asrw = asrw.add_transformer(Filter::new(filter_range));
                 };
 
-                trace_err!(
-                    asrw.add_transformer(trace_err!(ChaCha20Dec::new(cloned_key)
-                        .map_err(|_| { s3_error!(InternalError, "Internal notifier error") }))?)
-                        .add_transformer(ZstdDec::new())
-                        .process()
-                        .await
-                )
-                .map_err(|_| s3_error!(InternalError, "Internal notifier error"))?;
+                trace_err!(asrw.process().await)
+                    .map_err(|_| s3_error!(InternalError, "Internal notifier error"))?;
 
-                match 1 {
-                    1 => Ok(()),
-                    _ => Err(s3_error!(InternalError, "Internal notifier error")),
-                }
+                Ok::<_, anyhow::Error>(())
             }
             .instrument(tracing::info_span!("query_data")),
         );
@@ -1169,13 +1182,16 @@ impl S3 for ArunaS3Service {
 
         let output = GetObjectOutput {
             body,
-            content_length: calc_content_len,
+            accept_ranges,
+            content_range,
+            content_length,
             last_modified: None,
             e_tag: Some(format!("-{}", id)),
             version_id: None,
             ..Default::default()
         };
         debug!(?output);
+
         Ok(S3Response::new(output))
     }
 

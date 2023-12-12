@@ -10,27 +10,36 @@ pub fn calculate_ranges(
     input_range: Option<S3Range>,
     content_length: u64,
     footer: Option<FooterParser>,
-) -> Result<(Option<String>, Option<ArunaRange>)> {
+) -> Result<(Option<String>, Option<ArunaRange>, u64)> {
     match input_range {
         Some(r) => match footer {
             Some(mut foot) => {
                 trace_err!(foot.parse())?;
-                let (o1, mut o2) = trace_err!(
-                    foot.get_offsets_by_range(aruna_range_from_s3range(r, content_length))
-                )?;
-                o2.to += 1;
-                Ok((Some(format!("bytes={}-{}", o1.from, o1.to - 1)), Some(o2)))
+                // Convert input range to internal range
+                let aruna_range = aruna_range_from_s3range(r, content_length);
+                // Calculate block offsets
+                let (query_range, mut filter_range) =
+                    trace_err!(foot.get_offsets_by_range(aruna_range))?;
+                filter_range.to += 1;
+
+                Ok((
+                    Some(format!("bytes={}-{}", query_range.from, query_range.to - 1)),
+                    Some(filter_range),
+                    aruna_range.from,
+                ))
             }
             None => {
-                let mut ar_range = aruna_range_from_s3range(r, content_length);
-                ar_range.to += 1;
+                // Convert input range to internal range
+                let mut aruna_range = aruna_range_from_s3range(r, content_length);
+                aruna_range.to += 1;
                 Ok((
-                    Some(format!("bytes={}-{}", ar_range.from, ar_range.to)),
+                    Some(format!("bytes={}-{}", aruna_range.from, aruna_range.to)),
                     None,
+                    aruna_range.from,
                 ))
             }
         },
-        None => Ok((None, None)),
+        None => Ok((None, None, 0)),
     }
 }
 
@@ -45,7 +54,11 @@ pub fn aruna_range_from_s3range(range_string: S3Range, content_length: u64) -> A
         Int { first, last } => match last {
             Some(val) => ArunaRange {
                 from: first,
-                to: val,
+                to: if val > content_length {
+                    content_length - 1
+                } else {
+                    val
+                },
             },
             None => ArunaRange {
                 from: first,
