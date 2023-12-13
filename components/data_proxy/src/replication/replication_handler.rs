@@ -198,7 +198,11 @@ impl ReplicationHandler {
                 // This map collects for each object_id a channel for datatransmission
                 // TODO: This could be used to make parallel requests later
                 let object_handler_map: Arc<
-                    DashMap<String, (Sender<DataChunk>, Receiver<DataChunk>, i64), ahash::RandomState>,
+                    DashMap<
+                        String,
+                        (Sender<DataChunk>, Receiver<DataChunk>, i64, Vec<u8>, i64),
+                        ahash::RandomState,
+                    >,
                 > = Arc::new(DashMap::default());
 
                 trace!(?object_handler_map);
@@ -215,6 +219,8 @@ impl ReplicationHandler {
                             Some(ResponseMessage::ObjectInfo(ObjectInfo {
                                 object_id,
                                 chunks,
+                                block_list,
+                                raw_size,
                                 ..
                             })) => {
                                 counter += 1;
@@ -227,7 +233,21 @@ impl ReplicationHandler {
                                 // .. and a datachannel is created
                                 // and stored in object_handler_map ...
                                 let (object_sdx, object_rcv) = async_channel::bounded(100);
-                                data_map.insert(object_id.clone(), (object_sdx.clone(), object_rcv.clone(), chunks));
+                                data_map.insert(
+                                    object_id.clone(),
+                                    (
+                                        object_sdx.clone(),
+                                        object_rcv.clone(),
+                                        chunks,
+                                        trace_err!(block_list
+                                            .iter()
+                                            .map(|block| u8::try_from(*block).map_err(|_| anyhow!(
+                                                "Could not convert blocklist to u8"
+                                            )))
+                                            .collect::<Result<Vec<u8>>>())?,
+                                        raw_size,
+                                    ),
+                                );
                                 // ... and then ObjectInfo gets acknowledged
                                 trace_err!(
                                     request_sender_clone
@@ -251,7 +271,6 @@ impl ReplicationHandler {
                             })) => {
                                 // If an entry is created inside the object_handler_map ...
                                 if let Some(entry) = data_map.get(&object_id) {
-
                                     // Chunks get processed
                                     let chunk = DataChunk {
                                         object_id: object_id.clone(),
@@ -340,7 +359,7 @@ impl ReplicationHandler {
                     // consecutively
                     while (start_receiver.recv().await).is_ok() {
                         for entry in object_handler_map.iter() {
-                            let (id, (_, rcv, chunks)) = entry.pair();
+                            let (id, (_, rcv, chunks, blocklist, raw_size)) = entry.pair();
                             let object_id = DieselUlid::from_str(id)?;
                             // The object gets queried
 
@@ -358,7 +377,7 @@ impl ReplicationHandler {
                             } else {
                                 trace_err!(
                                     backend
-                                        .initialize_location(&object, None, None, false)
+                                        .initialize_location(&object, Some(*raw_size), None, false)
                                         .await
                                 )?
                             };
@@ -371,6 +390,7 @@ impl ReplicationHandler {
                                     &mut location,
                                     backend.clone(),
                                     *chunks,
+                                    blocklist.clone(),
                                 )
                                 .await
                             )?;
@@ -379,7 +399,9 @@ impl ReplicationHandler {
 
                             // Sync with cache and db
                             let location: Option<ObjectLocation> = Some(location.clone());
-                            trace_err!(cache.upsert_object(object.clone(), location.clone()).await)?;
+                            trace_err!(
+                                cache.upsert_object(object.clone(), location.clone()).await
+                            )?;
 
                             // Send UpdateStatus to server
                             trace_err!(
@@ -464,6 +486,7 @@ impl ReplicationHandler {
         location: &mut ObjectLocation,
         backend: Arc<Box<dyn StorageBackend>>,
         max_chunks: i64,
+        blocklist: Vec<u8>,
     ) -> Result<()> {
         let mut chunk_list: Vec<i64> = vec![0];
         let mut retry_counter = 0;
@@ -567,58 +590,63 @@ impl ReplicationHandler {
         });
 
         // Initialize hashing transformers
-        let (initial_size_trans, initial_size_recv) = SizeProbe::new();
+        //let (initial_size_trans, initial_size_recv) = SizeProbe::new();
         let (final_sha_trans, final_sha_recv) = HashingTransformer::new(Sha256::new());
         let (final_size_trans, final_size_recv) = SizeProbe::new();
 
         let location_clone = location.clone();
-        let _ = trace_err!(tokio::spawn(async move {
-            pin!(data_stream);
+        let _ = trace_err!(
+            tokio::spawn(async move {
+                pin!(data_stream);
 
-            trace!(?max_chunks);
-            let mut awr = ArunaStreamReadWriter::new_with_sink(
-                data_stream,
-                BufferedS3Sink::new(
-                    backend.clone(),
-                    location_clone.clone(),
-                    None,
-                    None,
-                    false,
-                    None,
-                    false,
-                )
-                .0,
-            );
+                trace!(?max_chunks);
+                let mut awr = ArunaStreamReadWriter::new_with_sink(
+                    data_stream,
+                    BufferedS3Sink::new(
+                        backend.clone(),
+                        location_clone.clone(),
+                        None,
+                        None,
+                        false,
+                        None,
+                        false,
+                    )
+                    .0,
+                );
 
-            awr = awr.add_transformer(initial_size_trans);
+                // TODO: Initial size must be delivered from sender
+                // awr = awr.add_transformer(initial_size_trans);
 
-            if location_clone.raw_content_len > 5242880 + 80 * 28 {
-                trace!("adding footer generator");
-                awr = awr.add_transformer(FooterGenerator::new(Some(todo!()))) // TODO: Insert blocklist
-            }
+                if location_clone.raw_content_len > 5242880 + 80 * 28 {
+                    trace!("adding footer generator");
+                    awr = awr.add_transformer(FooterGenerator::new(Some(blocklist)))
+                    // TODO: Insert blocklist
+                }
 
-            if let Some(enc_key) = &location_clone.encryption_key {
-                awr = awr.add_transformer(trace_err!(ChaCha20Enc::new(
-                    true,
-                    enc_key.to_string().into_bytes()
-                ))?);
-            }
+                if let Some(enc_key) = &location_clone.encryption_key {
+                    awr = awr.add_transformer(trace_err!(ChaCha20Enc::new(
+                        true,
+                        enc_key.to_string().into_bytes()
+                    ))?);
+                }
 
-            awr = awr.add_transformer(final_sha_trans);
-            awr = awr.add_transformer(final_size_trans);
+                awr = awr.add_transformer(final_sha_trans);
+                awr = awr.add_transformer(final_size_trans);
 
-            trace_err!(awr.process().await)?;
-            Ok::<(), anyhow::Error>(())
-        }).await)?;
+                trace_err!(awr.process().await)?;
+                Ok::<(), anyhow::Error>(())
+            })
+            .await
+        )?;
 
         // Fetch calculated hashes
         trace!("fetching hashes");
         let sha_final: String = trace_err!(final_sha_recv.try_recv())?;
-        let initial_size: u64 = trace_err!(initial_size_recv.try_recv())?;
+        //let initial_size: u64 = trace_err!(initial_size_recv.try_recv())?;
         let final_size: u64 = trace_err!(final_size_recv.try_recv())?;
         //
         // Put infos into location
-        location.raw_content_len = initial_size as i64;
+        //location.raw_content_len = initial_size as i64;
         location.disk_content_len = final_size as i64;
         location.disk_hash = Some(sha_final.clone());
 

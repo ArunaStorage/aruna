@@ -99,8 +99,9 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
             while let Ok(message) = request.message().await {
                 trace!(?message);
                 match message {
-                    Some(message) => match message {
-                        PullReplicationRequest { message } => match message {
+                    Some(message) => {
+                        let PullReplicationRequest { message } = message;
+                        match message {
                             Some(message) => match message {
                                 Message::InitMessage(init) => {
                                     trace!(?init);
@@ -154,8 +155,8 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                     "No message provided in PullReplicationRequest"
                                 ));
                             }
-                        },
-                    },
+                        }
+                    }
                     None => {
                         return Err(anyhow!("No message provided in PullReplicationRequest"));
                     }
@@ -200,7 +201,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                     }
                     Ok(Err(err)) => {
                         error!("{err}");
-                        // Here probably propper error matching is needed to
+                        // Here probably proper error matching is needed to
                         // separate unauthorized from other errors
                         trace_err!(
                             object_output_send
@@ -246,6 +247,8 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                         aruna_rust_api::api::dataproxy::services::v2::ObjectInfo {
                                             object_id: object.id.to_string(),
                                             chunks: max_blocks as i64,
+                                            block_list: blocklist.clone().map(|block_list| block_list.iter().map(|block| *block as u32).collect()).unwrap_or(Vec::new()),
+                                            raw_size: location.raw_content_len,
                                             extra: None,
                                         },
                                     )),
