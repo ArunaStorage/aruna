@@ -765,15 +765,19 @@ impl Cache {
         location: Option<ObjectLocation>,
     ) -> Result<()> {
         trace!(object_id = ?object.id, with_location = location.is_some());
+        trace!(?location);
         if let Some(persistence) = self.persistence.read().await.as_ref() {
+            trace!("Upsert into database");
             object.upsert(&persistence.get_client().await?).await?;
 
             if let Some(l) = &location {
                 l.upsert(&persistence.get_client().await?).await?;
+                trace!("Upsert location");
             }
         }
         let object_id = object.id;
         let obj_type = object.object_type.clone();
+        trace!(?object);
 
         let location = if let Some(o) = self.resources.get(&object.id) {
             if location.is_none() {
@@ -784,9 +788,12 @@ impl Cache {
         } else {
             location
         };
+        trace!(?location);
 
         self.resources.insert(object.id, (object.clone(), location));
+        trace!("inserted into cache");
         self.paths.retain(|_, v| v != &object_id);
+        trace!("inserted paths");
 
         if object.object_type != ObjectType::Bundle {
             let tree = self.get_name_trees(&object_id.to_string(), obj_type)?;

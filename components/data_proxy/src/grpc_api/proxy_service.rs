@@ -78,6 +78,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
         &self,
         request: tonic::Request<Streaming<PullReplicationRequest>>,
     ) -> Result<tonic::Response<Self::PullReplicationStream>, tonic::Status> {
+        trace!("Received request: {request:?}");
         let (metadata, _, mut request) = request.into_parts();
         let token = trace_err!(get_token_from_md(&metadata))
             .map_err(|_| tonic::Status::unauthenticated("Token not found"))?;
@@ -96,11 +97,13 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
         let output_sender = object_output_send.clone();
         tokio::spawn(async move {
             while let Ok(message) = request.message().await {
+                trace!(?message);
                 match message {
                     Some(message) => match message {
                         PullReplicationRequest { message } => match message {
                             Some(message) => match message {
                                 Message::InitMessage(init) => {
+                                    trace!(?init);
                                     trace_err!(
                                         object_input_send
                                             .send(

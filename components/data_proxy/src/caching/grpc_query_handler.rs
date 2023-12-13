@@ -649,14 +649,13 @@ impl GrpcQueryHandler {
     pub async fn pull_replication(
         &self,
         init_request: PullReplicationRequest,
-        endpoint_id: String,
+        endpoint_ulid: DieselUlid,
     ) -> Result<(
         Sender<PullReplicationRequest>,
         Streaming<PullReplicationResponse>,
     )> {
-        let endpoint_ulid = DieselUlid::from_str(&endpoint_id)?;
         let get_ep_request = tonic::Request::new(GetEndpointRequest {
-            endpoint: Some(Endpoint::EndpointId(endpoint_id)),
+            endpoint: Some(Endpoint::EndpointId(endpoint_ulid.to_string())),
         });
         let get_ep_response = trace_err!(
             self.endpoint_service
@@ -700,9 +699,10 @@ impl GrpcQueryHandler {
                 token.as_str()
             )))?,
         );
-        trace!("{}", self.long_lived_token.as_str());
+        trace!(?req);
         let response_stream =
             trace_err!(dataproxy_service.clone().pull_replication(req).await)?.into_inner();
+        trace_err!(request_stream_sender.send(init_request).await)?;
         Ok((request_stream_sender, response_stream))
     }
 
@@ -842,11 +842,13 @@ impl GrpcQueryHandler {
                                 .await
                             )?;
                             // Update anyway
-                            self.cache
-                                .upsert_object(object.clone().try_into()?, None)
-                                .await?;
+                            trace_err!(
+                                self.cache
+                                    .upsert_object(object.clone().try_into()?, None)
+                                    .await
+                            )?;
                             // Try pull replication
-                            self.handle_replication(object).await?;
+                            trace_err!(self.handle_replication(object).await)?;
                         }
                         _ => (),
                     }
@@ -865,7 +867,7 @@ impl GrpcQueryHandler {
         Ok(event.reply)
     }
 
-    #[tracing::instrument(level = "trace", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self, object))]
     async fn handle_replication(&self, object: Object) -> Result<()> {
         // if ObjectStatus::AVAILABLE ...
         if object.status == 3 {
@@ -891,15 +893,18 @@ impl GrpcQueryHandler {
                         });
                         match state_of_truth {
                             Some(ep_id) => {
-                                let direction = Direction::Pull(DieselUlid::from_str(id)?);
-                                let endpoint_id = DieselUlid::from_str(ep_id)?;
-                                trace_err!(self.cache
-                                    .sender
-                                    .send(ReplicationMessage {
-                                        direction,
-                                        endpoint_id,
-                                    })
-                                    .await)?;
+                                let direction =
+                                    Direction::Pull(trace_err!(DieselUlid::from_str(&object.id))?);
+                                let endpoint_id = trace_err!(DieselUlid::from_str(ep_id))?;
+                                trace_err!(
+                                    self.cache
+                                        .sender
+                                        .send(ReplicationMessage {
+                                            direction,
+                                            endpoint_id,
+                                        })
+                                        .await
+                                )?;
                             }
                             None => {
                                 todo!(

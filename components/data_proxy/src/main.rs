@@ -111,8 +111,6 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    let replication_cache_clone = cache.clone();
-
     trace!("init replication handler");
     let replication_handler =
         ReplicationHandler::new(receiver, storage_backend.clone(), endpoint_id.clone(), cache.clone());

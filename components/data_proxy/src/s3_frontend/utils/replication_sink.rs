@@ -33,7 +33,7 @@ impl ReplicationSink {
             blocklist,
             sender,
             block_counter: 0,
-            chunk_counter: 0,
+            chunk_counter: 1,
             buffer: BytesMut::with_capacity((1024 * 1024 * 5) + 128),
             is_finished: false,
         }
