@@ -13,7 +13,6 @@ use aws_sdk_s3::{
     types::{CompletedMultipartUpload, CompletedPart},
     Client,
 };
-use diesel_ulid::DieselUlid;
 use rand::distributions::Alphanumeric;
 use rand::distributions::DistString;
 use rand::thread_rng;
@@ -247,7 +246,6 @@ impl StorageBackend for S3Backend {
         ex_bucket: Option<String>,
         temp: bool,
     ) -> Result<ObjectLocation> {
-        let id = obj.id;
         let key: String = thread_rng()
             .sample_iter(&Alphanumeric)
             .take(30)
@@ -259,7 +257,7 @@ impl StorageBackend for S3Backend {
         let encryption_key: String = Alphanumeric.sample_string(&mut rand::thread_rng(), 32);
 
         Ok(ObjectLocation {
-            id,
+            id: obj.id,
             bucket: match ex_bucket {
                 Some(bucket) => bucket,
                 None => self.get_random_bucket().to_ascii_lowercase(),

@@ -122,6 +122,7 @@ impl BundlerService for BundlerServiceImpl {
             parents: None,
             synced: true,
             endpoints: vec![ep],
+            created_at: Some(chrono::Utc::now().naive_utc()), // Now for default
         };
 
         trace_err!(self.cache.upsert_object(bundler_object, None).await)

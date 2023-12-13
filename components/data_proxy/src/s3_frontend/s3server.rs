@@ -6,6 +6,7 @@ use crate::trace_err;
 use anyhow::Result;
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
+use http::StatusCode;
 use hyper::service::Service;
 use hyper::Server;
 use s3s::service::S3Service;
@@ -88,6 +89,16 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
                 if r.headers().contains_key("Transfer-Encoding") {
                     r.headers_mut().remove("Content-Length");
                 }
+
+                // Workaround to return 206 (Partial Content) for range responses
+                if r.headers().contains_key("Content-Range")
+                    && r.headers().contains_key("Accept-Ranges")
+                    && r.status().as_u16() == 200
+                {
+                    let status = r.status_mut();
+                    *status = StatusCode::from_u16(206).unwrap();
+                }
+
                 r.map(Body::from)
             })
         });

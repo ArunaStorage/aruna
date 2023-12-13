@@ -20,6 +20,7 @@ use aruna_rust_api::api::storage::services::v2::CreateDatasetRequest;
 use aruna_rust_api::api::storage::services::v2::CreateObjectRequest;
 use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
 use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
+use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use http::Method;
 use s3s::dto::CreateBucketInput;
@@ -117,6 +118,7 @@ pub struct Object {
     pub parents: Option<HashSet<TypedRelation>>,
     pub synced: bool,
     pub endpoints: Vec<Endpoint>, // TODO
+    pub created_at: Option<NaiveDateTime>,
 }
 
 // TODO! ENDPOINTS
@@ -523,6 +525,10 @@ impl TryFrom<Project> for Object {
                 .iter()
                 .map(Endpoint::try_from)
                 .collect::<Result<Vec<Endpoint>>>()?,
+            created_at: NaiveDateTime::from_timestamp_opt(
+                value.created_at.unwrap_or_default().seconds,
+                0,
+            ),
         })
     }
 }
@@ -588,6 +594,10 @@ impl TryFrom<Collection> for Object {
                 .iter()
                 .map(Endpoint::try_from)
                 .collect::<Result<Vec<Endpoint>>>()?,
+            created_at: NaiveDateTime::from_timestamp_opt(
+                value.created_at.unwrap_or_default().seconds,
+                0,
+            ),
         })
     }
 }
@@ -653,6 +663,10 @@ impl TryFrom<Dataset> for Object {
                 .iter()
                 .map(Endpoint::try_from)
                 .collect::<Result<Vec<Endpoint>>>()?,
+            created_at: NaiveDateTime::from_timestamp_opt(
+                value.created_at.unwrap_or_default().seconds,
+                0,
+            ),
         })
     }
 }
@@ -718,6 +732,10 @@ impl TryFrom<GrpcObject> for Object {
                 .iter()
                 .map(Endpoint::try_from)
                 .collect::<Result<Vec<Endpoint>>>()?,
+            created_at: NaiveDateTime::from_timestamp_opt(
+                value.created_at.unwrap_or_default().seconds,
+                0,
+            ),
         })
     }
 }
@@ -806,6 +824,7 @@ impl From<CreateBucketInput> for Object {
             children: None,
             synced: false,
             endpoints: vec![],
+            created_at: Some(chrono::Utc::now().naive_utc()), // Now for default
         }
     }
 }
@@ -980,18 +999,9 @@ impl From<Vec<ResourceString>> for Missing {
         for x in value {
             match x {
                 ResourceString::Project(_) => {}
-                ResourceString::Collection(_, c) => {
-                    missing.c = Some(c);
-                }
-                ResourceString::Dataset(_, c, d) => {
-                    missing.c = c;
-                    missing.d = Some(d);
-                }
-                ResourceString::Object(_, c, d, o) => {
-                    missing.c = c;
-                    missing.d = d;
-                    missing.o = Some(o);
-                }
+                ResourceString::Collection(_, c) => missing.c = Some(c),
+                ResourceString::Dataset(_, _, d) => missing.d = Some(d),
+                ResourceString::Object(_, _, _, o) => missing.o = Some(o),
             }
         }
         missing

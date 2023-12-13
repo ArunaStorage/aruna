@@ -8,6 +8,7 @@ use aruna_file::streamreadwrite::ArunaStreamReadWriter;
 use aruna_file::transformer::ReadWriter;
 use aruna_file::transformers::decrypt::ChaCha20Dec;
 use aruna_file::transformers::encrypt::ChaCha20Enc;
+use aruna_file::transformers::footer::FooterGenerator;
 use aruna_file::transformers::hashing_transformer::HashingTransformer;
 use aruna_file::transformers::size_probe::SizeProbe;
 use aruna_file::transformers::zstd_comp::ZstdEnc;
@@ -86,7 +87,8 @@ impl DataHandler {
 
                 asr = asr.add_transformer(sha_transformer);
                 asr = asr.add_transformer(md5_transformer);
-                asr = asr.add_transformer(ZstdEnc::new(true));
+                asr = asr.add_transformer(ZstdEnc::new(false));
+                asr = asr.add_transformer(FooterGenerator::new(None));
                 asr = asr.add_transformer(ChaCha20Enc::new(
                     false,
                     after_key.ok_or_else(|| anyhow!("Missing encryption_key"))?,

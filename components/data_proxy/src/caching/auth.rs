@@ -344,6 +344,15 @@ impl AuthHandler {
             }
         }
 
+        match method {
+            &Method::GET | &Method::HEAD | &Method::OPTIONS | &Method::DELETE => {
+                if missing.is_some() {
+                    bail!("Resource not found")
+                }
+            }
+            _ => {}
+        };
+
         if db_perm_from_method == DbPermissionLevel::Read && obj.data_class == DataClass::Public {
             debug!("public_object");
             return Ok(CheckAccessResult::new(

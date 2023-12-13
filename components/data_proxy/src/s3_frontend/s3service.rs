@@ -7,6 +7,7 @@ use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::s3_frontend::utils::list_objects::filter_list_objects;
 use crate::s3_frontend::utils::list_objects::list_response;
+use crate::s3_frontend::utils::ranges::aruna_range_from_s3range;
 use crate::structs::CheckAccessResult;
 use crate::structs::Object as ProxyObject;
 use crate::structs::PartETag;
@@ -54,6 +55,7 @@ use tracing::debug;
 use tracing::error;
 use tracing::info_span;
 use tracing::trace;
+use tracing::warn;
 use tracing::Instrument;
 
 pub struct ArunaS3Service {
@@ -203,6 +205,7 @@ impl S3 for ArunaS3Service {
                         parents: new_revision.parents,
                         synced: false,
                         endpoints: new_revision.endpoints,
+                        created_at: new_revision.created_at,
                     }
                 }
             } else {
@@ -228,6 +231,7 @@ impl S3 for ArunaS3Service {
                     parents: None,
                     synced: false,
                     endpoints: vec![], // Can be empty IF this gets updated by the gRPC response
+                    created_at: Some(chrono::Utc::now().naive_utc()),
                 }
             }
         } else {
@@ -252,6 +256,7 @@ impl S3 for ArunaS3Service {
                 parents: None,
                 synced: false,
                 endpoints: vec![], // Can be empty IF this gets updated by the gRPC response
+                created_at: Some(chrono::Utc::now().naive_utc()),
             }
         };
 
@@ -347,6 +352,7 @@ impl S3 for ArunaS3Service {
                     )])),
                     synced: false,
                     endpoints: vec![], // Can be empty IF this gets updated by the gRPC response
+                    created_at: Some(chrono::Utc::now().naive_utc()),
                 };
 
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
@@ -386,6 +392,7 @@ impl S3 for ArunaS3Service {
                     parents: Some(HashSet::from([parent])),
                     synced: false,
                     endpoints: vec![], // Can be empty IF this gets updated by the gRPC response
+                    created_at: Some(chrono::Utc::now().naive_utc()),
                 };
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                     if let Some(token) = &impersonating_token {
@@ -590,6 +597,7 @@ impl S3 for ArunaS3Service {
                         parents: new_revision.parents,
                         synced: false,
                         endpoints: new_revision.endpoints,
+                        created_at: new_revision.created_at,
                     }
                 }
             } else {
@@ -616,7 +624,8 @@ impl S3 for ArunaS3Service {
                     parents: None,
                     synced: false,
                     endpoints: vec![], // Can be empty, as long as create_object overwrites this
-                                       // object with gRPC response
+                    // object with gRPC response
+                    created_at: Some(chrono::Utc::now().naive_utc()),
                 }
             }
         } else {
@@ -641,7 +650,8 @@ impl S3 for ArunaS3Service {
                 parents: None,
                 synced: false,
                 endpoints: vec![], // Can be empty, as long as create_object overwrites this
-                                   // object with gRPC response
+                // object with gRPC response
+                created_at: Some(chrono::Utc::now().naive_utc()),
             }
         };
 
@@ -682,7 +692,8 @@ impl S3 for ArunaS3Service {
                     )])),
                     synced: false,
                     endpoints: vec![], // Can be empty, as long as create_object overwrites this
-                                       // object with gRPC response
+                    // object with gRPC response
+                    created_at: Some(chrono::Utc::now().naive_utc()),
                 };
 
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
@@ -722,7 +733,8 @@ impl S3 for ArunaS3Service {
                     parents: Some(HashSet::from([parent])),
                     synced: false,
                     endpoints: vec![], // Can be empty, as long as create_object overwrites this
-                                       // object with gRPC response
+                    // object with gRPC response
+                    created_at: Some(chrono::Utc::now().naive_utc()),
                 };
 
                 if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
@@ -1030,6 +1042,7 @@ impl S3 for ArunaS3Service {
             .resources
             .get(&id)
             .ok_or_else(|| s3_error!(NoSuchKey, "Object not found")))?;
+
         let (_, location) = cache_result.value();
         let location = trace_err!(location
             .as_ref()
@@ -1044,7 +1057,9 @@ impl S3 for ArunaS3Service {
         let (sender, receiver) = async_channel::bounded(10);
 
         // Gets 128 kb chunks (last 2)
-        let footer_parser: Option<FooterParser> = if content_length > 5242880 {
+
+        let footer_limit = 5242880 + 80 * 28;
+        let footer_parser: Option<FooterParser> = if content_length > footer_limit {
             trace!("getting footer");
             // Without encryption block because this is already checked inside
             let (footer_sender, footer_receiver) = async_channel::unbounded();
@@ -1065,8 +1080,9 @@ impl S3 for ArunaS3Service {
                             .await
                     )
                     .map_err(|_| s3_error!(InternalError, "Unable to get encryption_footer"))?;
-                    let mut output = Vec::with_capacity(130_000);
+
                     // Stream takes receiver chunks und them into vec
+                    let mut output = Vec::with_capacity(131_128);
                     let mut arsw =
                         ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
 
@@ -1095,7 +1111,7 @@ impl S3 for ArunaS3Service {
                             .await
                     )
                     .map_err(|_| s3_error!(InternalError, "Unable to get compression footer"))?;
-                    let mut output = Vec::with_capacity(130_000);
+                    let mut output = Vec::with_capacity(131_128);
                     let mut arsw =
                         ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
 
@@ -1116,16 +1132,46 @@ impl S3 for ArunaS3Service {
 
         // Needed for final part
         trace!("calculating ranges");
-        let (query_ranges, filter_ranges) =
-            calculate_ranges(req.input.range, content_length as u64, footer_parser)
-                .map_err(|_| s3_error!(InternalError, "Error while parsing ranges"))?;
-        let calc_content_len = match filter_ranges {
-            Some(r) => calculate_content_length_from_range(r),
-            None => content_length,
-        };
-        let cloned_key = encryption_key.clone();
+        let (query_ranges, filter_ranges, actual_from) =
+            match calculate_ranges(req.input.range, content_length as u64, footer_parser) {
+                Ok((query_ranges, filter_ranges, actual_from)) => {
+                    (query_ranges, filter_ranges, actual_from)
+                }
+                Err(err) => {
+                    warn!("Error while parsing ranges: {}", err);
+                    if let Some(range) = req.input.range {
+                        let mut aruna_range =
+                            aruna_range_from_s3range(range, content_length as u64);
+                        aruna_range.to += 1;
+                        (None, Some(aruna_range), aruna_range.from)
+                    } else {
+                        (None, None, 0)
+                    }
+                }
+            };
 
-        // Spawn get_object
+        let (content_length, accept_ranges, content_range) = match filter_ranges {
+            Some(filter_range) => (
+                calculate_content_length_from_range(filter_range),
+                Some("bytes".to_string()),
+                Some(format!(
+                    "bytes {}-{}/{}",
+                    actual_from + filter_range.from,
+                    actual_from + filter_range.to - 1,
+                    content_length
+                )),
+            ),
+            None => (content_length, None, None),
+        };
+        debug!(
+            ?content_length,
+            ?query_ranges,
+            ?filter_ranges,
+            ?accept_ranges,
+            ?content_range
+        );
+
+        // Spawn get_object to fetch bytes from storage storage
         let backend = self.backend.clone();
         tokio::spawn(
             async move {
@@ -1135,9 +1181,10 @@ impl S3 for ArunaS3Service {
             }
             .instrument(info_span!("get_object")),
         );
-        let (final_send, final_rcv) = async_channel::bounded(10);
+        let (final_send, final_rcv) = async_channel::unbounded();
 
         // Spawn final part
+        let cloned_key = encryption_key.clone();
         tokio::spawn(
             async move {
                 pin!(receiver);
@@ -1146,23 +1193,19 @@ impl S3 for ArunaS3Service {
                     AsyncSenderSink::new(final_send),
                 );
 
-                if let Some(r) = filter_ranges {
-                    asrw = asrw.add_transformer(Filter::new(r));
+                asrw = asrw
+                    .add_transformer(trace_err!(ChaCha20Dec::new(cloned_key)
+                        .map_err(|_| { s3_error!(InternalError, "Internal notifier error") }))?)
+                    .add_transformer(ZstdDec::new());
+
+                if let Some(filter_range) = filter_ranges {
+                    asrw = asrw.add_transformer(Filter::new(filter_range));
                 };
 
-                trace_err!(
-                    asrw.add_transformer(trace_err!(ChaCha20Dec::new(cloned_key)
-                        .map_err(|_| { s3_error!(InternalError, "Internal notifier error") }))?)
-                        .add_transformer(ZstdDec::new())
-                        .process()
-                        .await
-                )
-                .map_err(|_| s3_error!(InternalError, "Internal notifier error"))?;
+                trace_err!(asrw.process().await)
+                    .map_err(|_| s3_error!(InternalError, "Internal notifier error"))?;
 
-                match 1 {
-                    1 => Ok(()),
-                    _ => Err(s3_error!(InternalError, "Internal notifier error")),
-                }
+                Ok::<_, anyhow::Error>(())
             }
             .instrument(tracing::info_span!("query_data")),
         );
@@ -1174,13 +1217,16 @@ impl S3 for ArunaS3Service {
 
         let output = GetObjectOutput {
             body,
-            content_length: calc_content_len,
+            accept_ranges,
+            content_range,
+            content_length,
             last_modified: None,
             e_tag: Some(format!("-{}", id)),
             version_id: None,
             ..Default::default()
         };
         debug!(?output);
+
         Ok(S3Response::new(output))
     }
 
@@ -1260,16 +1306,25 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<ListObjectsV2Input>,
     ) -> S3Result<S3Response<ListObjectsV2Output>> {
-        let project_name = ResourceString::Project(req.input.bucket.clone());
-        match self.cache.paths.get(&project_name) {
+        // Fetch the project name, delimiter and prefix from the request
+        let project_name = &req.input.bucket;
+        let delimiter = req.input.delimiter;
+        let prefix = req.input.prefix.filter(|prefix| !prefix.is_empty());
+
+        // Check if bucket exists as root in cache of paths
+        match self
+            .cache
+            .paths
+            .get(&ResourceString::Project(project_name.to_string()))
+        {
             Some(_) => {}
             None => {
                 error!("No bucket found");
                 return Err(s3_error!(NoSuchBucket, "No bucket found"));
             }
         };
-        let root = &req.input.bucket;
 
+        // Process continuation token from request
         let continuation_token = match req.input.continuation_token {
             Some(t) => {
                 let decoded_token = general_purpose::STANDARD_NO_PAD
@@ -1283,10 +1338,8 @@ impl S3 for ArunaS3Service {
             None => None,
         };
 
-        let delimiter = req.input.delimiter;
-        let prefix = req.input.prefix;
-
-        let sorted = filter_list_objects(&self.cache.paths, root);
+        // Filter all objects from cache which have the project as root
+        let sorted = filter_list_objects(&self.cache.paths, project_name);
         let start_after = match (req.input.start_after, continuation_token.clone()) {
             (Some(_), Some(ct)) => ct,
             (None, Some(ct)) => ct,
@@ -1298,6 +1351,7 @@ impl S3 for ArunaS3Service {
                 path.clone()
             }
         };
+
         let max_keys = match req.input.max_keys {
             Some(k) if k < 1000 => k as usize,
             _ => 1000usize,
@@ -1313,7 +1367,7 @@ impl S3 for ArunaS3Service {
         ))
         .map_err(|_| s3_error!(NoSuchKey, "Keys not found in ListObjectsV2"))?;
 
-        let key_count = keys.len() as i32;
+        let key_count = (keys.len() + common_prefixes.len()) as i32;
         let common_prefixes = Some(
             common_prefixes
                 .into_iter()
@@ -1326,7 +1380,11 @@ impl S3 for ArunaS3Service {
                     checksum_algorithm: None,
                     e_tag: Some(e.etag.to_string()),
                     key: Some(e.key),
-                    last_modified: None,
+                    last_modified: e.created_at.map(|t| {
+                        s3s::dto::Timestamp::from(
+                            time::OffsetDateTime::from_unix_timestamp(t.timestamp()).unwrap(),
+                        )
+                    }),
                     owner: None,
                     size: e.size,
                     ..Default::default()
@@ -1342,14 +1400,17 @@ impl S3 for ArunaS3Service {
             encoding_type: None,
             is_truncated: new_continuation_token.is_some(),
             key_count,
-            max_keys: 0,
-            name: Some(root.clone()),
+            max_keys: max_keys
+                .try_into()
+                .map_err(|err| s3_error!(InternalError, "[BACKEND] Conversion failure: {}", err))?,
+            name: Some(project_name.clone()),
             next_continuation_token: new_continuation_token,
             prefix,
             start_after: Some(start_after),
             ..Default::default()
         };
         debug!(?result);
+
         Ok(S3Response::new(result))
     }
 }
