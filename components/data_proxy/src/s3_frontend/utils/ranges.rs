@@ -32,9 +32,10 @@ pub fn calculate_ranges(
                 // Convert input range to internal range
                 let mut aruna_range = aruna_range_from_s3range(r, content_length);
                 aruna_range.to += 1;
+
                 Ok((
-                    Some(format!("bytes={}-{}", aruna_range.from, aruna_range.to)),
-                    None,
+                    None, // Query full object from backend
+                    Some(aruna_range), // Only return provided range to user
                     aruna_range.from,
                 ))
             }

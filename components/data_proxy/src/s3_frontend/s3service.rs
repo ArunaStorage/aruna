@@ -1090,7 +1090,7 @@ impl S3 for ArunaS3Service {
                             .await
                     )
                     .map_err(|_| s3_error!(InternalError, "Unable to get compression footer"))?;
-                    let mut output = Vec::with_capacity(130_000);
+                    let mut output = Vec::with_capacity(131_128);
                     let mut arsw =
                         ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
 
