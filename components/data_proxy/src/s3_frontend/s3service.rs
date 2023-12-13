@@ -7,6 +7,7 @@ use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::s3_frontend::utils::list_objects::filter_list_objects;
 use crate::s3_frontend::utils::list_objects::list_response;
+use crate::s3_frontend::utils::ranges::aruna_range_from_s3range;
 use crate::structs::CheckAccessResult;
 use crate::structs::Object as ProxyObject;
 use crate::structs::PartETag;
@@ -54,6 +55,7 @@ use tracing::debug;
 use tracing::error;
 use tracing::info_span;
 use tracing::trace;
+use tracing::warn;
 use tracing::Instrument;
 
 pub struct ArunaS3Service {
@@ -1112,8 +1114,22 @@ impl S3 for ArunaS3Service {
         // Needed for final part
         trace!("calculating ranges");
         let (query_ranges, filter_ranges, actual_from) =
-            calculate_ranges(req.input.range, content_length as u64, footer_parser)
-                .map_err(|_| s3_error!(InternalError, "Error while parsing ranges"))?;
+            match calculate_ranges(req.input.range, content_length as u64, footer_parser) {
+                Ok((query_ranges, filter_ranges, actual_from)) => {
+                    (query_ranges, filter_ranges, actual_from)
+                }
+                Err(err) => {
+                    warn!("Error while parsing ranges: {}", err);
+                    if let Some(range) = req.input.range {
+                        let mut aruna_range =
+                            aruna_range_from_s3range(range, content_length as u64);
+                        aruna_range.to += 1;
+                        (None, Some(aruna_range), aruna_range.from)
+                    } else {
+                        (None, None, 0)
+                    }
+                }
+            };
 
         let (content_length, accept_ranges, content_range) = match filter_ranges {
             Some(filter_range) => (

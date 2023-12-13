@@ -34,7 +34,7 @@ pub fn calculate_ranges(
                 aruna_range.to += 1;
 
                 Ok((
-                    None, // Query full object from backend
+                    None,              // Query full object from backend
                     Some(aruna_range), // Only return provided range to user
                     aruna_range.from,
                 ))
