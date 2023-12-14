@@ -128,16 +128,17 @@ impl DataReplicationService for DataReplicationServiceImpl {
         let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
 
         // Check if allowed
-        let ctx = Context::res_ctx(
-            object_id,
-            // TODO: This is technically wrong,
-            // but currently there is no way to
-            // authorize a dataproxy to update the
-            // status field without a user
-            // impersonation
-            crate::database::enums::DbPermissionLevel::READ,
-            false,
-        );
+        // let ctx = Context::res_ctx(
+        //     object_id,
+        //     // TODO: This is technically wrong,
+        //     // but currently there is no way to
+        //     // authorize a dataproxy to update the
+        //     // status field without a user
+        //     // impersonation
+        //     crate::database::enums::DbPermissionLevel::READ,
+        //     false,
+        // );
+        let ctx = Context::proxy();
         let (_, _, is_dataproxy) = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(&token, vec![ctx])
