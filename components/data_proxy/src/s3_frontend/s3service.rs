@@ -83,6 +83,116 @@ impl ArunaS3Service {
 #[async_trait::async_trait]
 impl S3 for ArunaS3Service {
     #[tracing::instrument(err)]
+    async fn complete_multipart_upload(
+        &self,
+        req: S3Request<CompleteMultipartUploadInput>,
+    ) -> S3Result<S3Response<CompleteMultipartUploadOutput>> {
+        let CheckAccessResult {
+            user_id,
+            token_id,
+            object,
+            ..
+        } = trace_err!(req
+            .extensions
+            .get::<CheckAccessResult>()
+            .cloned()
+            .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context")))?;
+
+        let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
+        {
+            user_id.and_then(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
+        } else {
+            None
+        };
+
+        // If the object exists and the signatures match -> Skip the download
+        let (object, old_location) = if let Some((object, Some(loc))) = object {
+            (object, loc)
+        } else {
+            error!("object not initialized");
+            return Err(s3_error!(InvalidArgument, "Object not initialized"));
+        };
+
+        let parts = match req.input.multipart_upload {
+            Some(parts) => trace_err!(parts
+                .parts
+                .ok_or_else(|| s3_error!(InvalidPart, "Parts must be specified"))),
+            None => {
+                error!("parts is none");
+                return Err(s3_error!(InvalidPart, "Parts must be specified"));
+            }
+        }?;
+
+        let etag_parts = parts
+            .into_iter()
+            .map(|a| {
+                Ok(PartETag {
+                    part_number: a.part_number,
+                    etag: trace_err!(a
+                        .e_tag
+                        .ok_or_else(|| s3_error!(InvalidPart, "etag must be specified")))?,
+                })
+            })
+            .collect::<Result<Vec<PartETag>, S3Error>>()?;
+
+        // Does this object exists (including object id etc)
+        //req.input.multipart_upload.unwrap().
+        trace_err!(
+            self.backend
+                .clone()
+                .finish_multipart_upload(
+                    old_location.clone(),
+                    etag_parts,
+                    old_location
+                        .upload_id
+                        .as_ref()
+                        .ok_or_else(|| s3_error!(InvalidPart, "Upload id must be specified"))?
+                        .to_string(),
+                )
+                .await
+        )
+        .map_err(|_| s3_error!(InternalError, "Unable to finish upload"))?;
+
+        let response = CompleteMultipartUploadOutput {
+            e_tag: Some(object.id.to_string()),
+            ..Default::default()
+        };
+
+        let mut new_location = trace_err!(
+            self.backend
+                .initialize_location(&object, None, None, false)
+                .await
+        )
+        .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
+
+        let hashes = trace_err!(
+            DataHandler::finalize_location(self.backend.clone(), &old_location, &mut new_location)
+                .await
+        )
+        .map_err(|_| s3_error!(InternalError, "Unable to finalize location"))?;
+
+        if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
+            if let Some(token) = &impersonating_token {
+                // Set id of new location to object id to satisfy FK constraint
+                let object = trace_err!(
+                    handler
+                        .finish_object(object.id, new_location.raw_content_len, hashes, None, token)
+                        .await
+                )
+                .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
+
+                trace_err!(self.cache.upsert_object(object, Some(new_location)).await)
+                    .map_err(|_| s3_error!(InternalError, "Unable to cache object after finish"))?;
+
+                trace_err!(self.backend.delete_object(old_location).await)
+                    .map_err(|_| s3_error!(InternalError, "Unable to delete old object"))?;
+            }
+        }
+        debug!(?response);
+        Ok(S3Response::new(response))
+    }
+
+    #[tracing::instrument(err)]
     async fn create_bucket(
         &self,
         req: S3Request<CreateBucketInput>,
@@ -126,6 +236,706 @@ impl S3 for ArunaS3Service {
 
         debug!(?output);
         Ok(S3Response::new(output))
+    }
+
+    #[tracing::instrument(err)]
+    async fn create_multipart_upload(
+        &self,
+        req: S3Request<CreateMultipartUploadInput>,
+    ) -> S3Result<S3Response<CreateMultipartUploadOutput>> {
+        let CheckAccessResult {
+            user_id,
+            token_id,
+            resource_ids,
+            missing_resources,
+            object,
+            ..
+        } = trace_err!(req
+            .extensions
+            .get::<CheckAccessResult>()
+            .cloned()
+            .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context")))?;
+
+        let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
+        {
+            user_id.and_then(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
+        } else {
+            None
+        };
+
+        let res_ids = trace_err!(
+            resource_ids.ok_or_else(|| s3_error!(InvalidArgument, "Unknown object path"))
+        )?;
+
+        let mut new_object = if let Some((o, _)) = object {
+            if o.object_type == crate::structs::ObjectType::Object {
+                if o.object_status == Status::Initializing {
+                    trace!("Object is initializing");
+                    o
+                } else {
+                    trace!("object is not initializing, force update");
+                    // Force Object update with new revision in ArunaServer
+                    let new_revision = if let Some(handler) =
+                        self.cache.aruna_client.read().await.as_ref()
+                    {
+                        if let Some(token) = &impersonating_token {
+                            trace_err!(handler.init_object_update(o, token, true).await)
+                                .map_err(|_| s3_error!(InternalError, "Object update failed"))?
+                        } else {
+                            error!("missing impersonating token");
+                            return Err(s3_error!(InternalError, "Token creation failed"));
+                        }
+                    } else {
+                        //TODO: Enable offline mode
+                        error!("ArunaServer client not available");
+                        return Err(s3_error!(InternalError, "ArunaServer client not available"));
+                    };
+
+                    ProxyObject {
+                        id: new_revision.id,
+                        name: new_revision.name,
+                        key_values: new_revision.key_values,
+                        object_status: Status::Initializing,
+                        data_class: new_revision.data_class,
+                        object_type: crate::structs::ObjectType::Object,
+                        hashes: HashMap::default(),
+                        metadata_license: new_revision.metadata_license,
+                        data_license: new_revision.data_license,
+                        dynamic: false,
+                        children: None,
+                        parents: new_revision.parents,
+                        synced: false,
+                        endpoints: new_revision.endpoints,
+                        created_at: new_revision.created_at,
+                    }
+                }
+            } else {
+                let missing_object_name = trace_err!(trace_err!(missing_resources
+                    .clone()
+                    .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path")))?
+                .o
+                .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path")))?;
+
+                trace!(?missing_object_name, "missing_object_name");
+
+                ProxyObject {
+                    id: DieselUlid::generate(),
+                    name: missing_object_name.to_string(),
+                    key_values: vec![],
+                    object_status: Status::Initializing,
+                    data_class: DataClass::Private,
+                    object_type: crate::structs::ObjectType::Object,
+                    hashes: HashMap::default(),
+                    metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+                    data_license: ALL_RIGHTS_RESERVED.to_string(),
+                    dynamic: false,
+                    children: None,
+                    parents: None,
+                    synced: false,
+                    endpoints: vec![], // Can be empty, as long as create_object overwrites this
+                    // object with gRPC response
+                    created_at: Some(chrono::Utc::now().naive_utc()),
+                }
+            }
+        } else {
+            let missing_object_name = trace_err!(trace_err!(missing_resources
+                .clone()
+                .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path")))?
+            .o
+            .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path")))?;
+
+            ProxyObject {
+                id: DieselUlid::generate(),
+                name: missing_object_name.to_string(),
+                key_values: vec![],
+                object_status: Status::Initializing,
+                data_class: DataClass::Private,
+                object_type: crate::structs::ObjectType::Object,
+                hashes: HashMap::default(),
+                metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+                data_license: ALL_RIGHTS_RESERVED.to_string(),
+                dynamic: false,
+                children: None,
+                parents: None,
+                synced: false,
+                endpoints: vec![], // Can be empty, as long as create_object overwrites this
+                // object with gRPC response
+                created_at: Some(chrono::Utc::now().naive_utc()),
+            }
+        };
+        trace!(?new_object);
+
+        let mut location = trace_err!(
+            self.backend
+                .initialize_location(&new_object, None, None, true)
+                .await
+        )
+        .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
+        trace!(?location);
+
+        let init_response = trace_err!(
+            self.backend
+                .clone()
+                .init_multipart_upload(location.clone())
+                .await
+        )
+        .map_err(|_| s3_error!(InvalidArgument, "Unable to initialize multi-part"))?;
+
+        location.upload_id = Some(init_response.to_string());
+
+        if let Some(missing) = missing_resources {
+            trace!(?missing, "missing parent resources");
+            let collection_id = if let Some(collection) = missing.c {
+                let col = ProxyObject {
+                    id: DieselUlid::generate(),
+                    name: collection,
+                    key_values: vec![],
+                    object_status: Status::Available,
+                    data_class: DataClass::Private,
+                    object_type: crate::structs::ObjectType::Collection,
+                    hashes: HashMap::default(),
+                    metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+                    data_license: ALL_RIGHTS_RESERVED.to_string(),
+                    dynamic: true,
+                    children: None,
+                    parents: Some(HashSet::from([TypedRelation::Project(
+                        res_ids.get_project(),
+                    )])),
+                    synced: false,
+                    endpoints: vec![], // Can be empty, as long as create_object overwrites this
+                    // object with gRPC response
+                    created_at: Some(chrono::Utc::now().naive_utc()),
+                };
+
+                if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
+                    if let Some(token) = &impersonating_token {
+                        let col = trace_err!(handler.create_collection(col, token).await)
+                            .map_err(|_| s3_error!(InternalError, "Unable to create collection"))?;
+                        Some(col.id)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                res_ids.get_collection()
+            };
+
+            let dataset_id = if let Some(dataset) = missing.d {
+                let parent = if let Some(collection_id) = collection_id {
+                    TypedRelation::Collection(collection_id)
+                } else {
+                    TypedRelation::Project(res_ids.get_project())
+                };
+
+                let dataset = ProxyObject {
+                    id: DieselUlid::generate(),
+                    name: dataset,
+                    key_values: vec![],
+                    object_status: Status::Available,
+                    data_class: DataClass::Private,
+                    object_type: crate::structs::ObjectType::Dataset,
+                    hashes: HashMap::default(),
+                    metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+                    data_license: ALL_RIGHTS_RESERVED.to_string(),
+                    dynamic: true,
+                    children: None,
+                    parents: Some(HashSet::from([parent])),
+                    synced: false,
+                    endpoints: vec![], // Can be empty, as long as create_object overwrites this
+                    // object with gRPC response
+                    created_at: Some(chrono::Utc::now().naive_utc()),
+                };
+
+                if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
+                    if let Some(token) = &impersonating_token {
+                        let dataset = trace_err!(handler.create_dataset(dataset, token).await)
+                            .map_err(|_| s3_error!(InternalError, "Unable to create dataset"))?;
+
+                        Some(dataset.id)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                res_ids.get_dataset()
+            };
+
+            trace!("updating parents");
+            if let Some(ds_id) = dataset_id {
+                new_object.parents = Some(HashSet::from([TypedRelation::Dataset(ds_id)]));
+            } else if let Some(col_id) = collection_id {
+                new_object.parents = Some(HashSet::from([TypedRelation::Collection(col_id)]));
+            } else {
+                new_object.parents = Some(HashSet::from([TypedRelation::Project(
+                    res_ids.get_project(),
+                )]));
+            }
+
+            // This creates the object and a location
+            // but only when missing parents are found
+            // --> object location never gets updated when objects exist
+            trace!("finishing object");
+            if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
+                if let Some(token) = &impersonating_token {
+                    trace_err!(
+                        handler
+                            // Overwrites endpoints with gRPC response
+                            .create_object(new_object.clone(), Some(location), token)
+                            .await
+                    )
+                    .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
+                }
+            }
+        } else {
+            trace_err!(self
+                .cache
+                .upsert_object(new_object, Some(location.clone()))
+                .await
+                .map_err(|_| s3_error!(InternalError, "Unable to update object location")))?;
+        }
+        let output = CreateMultipartUploadOutput {
+            key: Some(req.input.key),
+            bucket: Some(req.input.bucket),
+            upload_id: Some(init_response),
+            ..Default::default()
+        };
+        debug!(?output);
+        Ok(S3Response::new(output))
+    }
+
+    #[tracing::instrument(err)]
+    async fn get_object(
+        &self,
+        req: S3Request<GetObjectInput>,
+    ) -> S3Result<S3Response<GetObjectOutput>> {
+        let CheckAccessResult { object, bundle, .. } = trace_err!(req
+            .extensions
+            .get::<CheckAccessResult>()
+            .cloned()
+            .ok_or_else(|| s3_error!(InternalError, "No context found")))?;
+
+        if let Some(_bundle) = bundle {
+            let id = match object {
+                Some((obj, _)) => obj.id,
+                None => return Err(s3_error!(NoSuchKey, "Object not found")),
+            };
+            let levels = trace_err!(self.cache.get_path_levels(id))
+                .map_err(|_| s3_error!(InternalError, "Unable to get path levels"))?;
+
+            let body = get_bundle(levels, self.backend.clone()).await;
+
+            let mut resp = S3Response::new(GetObjectOutput {
+                body,
+                last_modified: None,
+                e_tag: Some(format!("-{}", id)),
+                ..Default::default()
+            });
+
+            resp.headers.insert(
+                hyper::header::TRANSFER_ENCODING,
+                HeaderValue::from_static("chunked"),
+            );
+
+            resp.headers.insert(
+                hyper::header::CONTENT_TYPE,
+                HeaderValue::from_static("application/octet-stream"),
+            );
+
+            return Ok(resp);
+        }
+
+        let id = match object {
+            Some((obj, _)) => obj.id,
+            None => {
+                error!("Object not found");
+                return Err(s3_error!(NoSuchKey, "Object not found"));
+            }
+        };
+
+        let cache_result = trace_err!(self
+            .cache
+            .resources
+            .get(&id)
+            .ok_or_else(|| s3_error!(NoSuchKey, "Object not found")))?;
+
+        let (_, location) = cache_result.value();
+        let location = trace_err!(location
+            .as_ref()
+            .ok_or_else(|| s3_error!(InternalError, "Object location not found")))?
+        .clone();
+        let content_length = location.raw_content_len;
+        let encryption_key = location
+            .clone()
+            .encryption_key
+            .map(|k| k.as_bytes().to_vec());
+
+        let (sender, receiver) = async_channel::bounded(10);
+
+        // Gets 128 kb chunks (last 2)
+
+        let footer_limit = 5242880 + 80 * 28;
+        let mut footer_parser: Option<FooterParser> = if content_length > footer_limit {
+            trace!("getting footer");
+            // Without encryption block because this is already checked inside
+            let (footer_sender, footer_receiver) = async_channel::unbounded();
+            pin!(footer_receiver);
+
+            let parser = match encryption_key.clone() {
+                Some(key) => {
+                    trace_err!(
+                        self.backend
+                            .get_object(
+                                location.clone(),
+                                Some(format!("bytes=-{}", (65536 + 28) * 2)),
+                                // "-" means last (2) chunks
+                                // when encrypted + 28 for encryption information (16 bytes nonce, 12 bytes checksum)
+                                // Encrypted chunk = | 16 b nonce | 65536 b data | 12 b checksum |
+                                footer_sender,
+                            )
+                            .await
+                    )
+                    .map_err(|_| s3_error!(InternalError, "Unable to get encryption_footer"))?;
+
+                    // Stream takes receiver chunks und them into vec
+                    let mut output = Vec::with_capacity(131_128);
+                    let mut arsw =
+                        ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
+
+                    // processes chunks and puts them into output
+                    trace_err!(arsw.process().await)
+                        .map_err(|_| s3_error!(InternalError, "Unable to get footer"))?;
+                    drop(arsw);
+
+                    match output.try_into() {
+                        Ok(i) => match FooterParser::from_encrypted(&i, &key) {
+                            Ok(p) => Some(p),
+                            Err(_) => None,
+                        },
+                        Err(_) => None,
+                    }
+                }
+                None => {
+                    trace_err!(
+                        self.backend
+                            .get_object(
+                                location.clone(),
+                                Some(format!("bytes=-{}", 65536 * 2)),
+                                // when not encrypted without 28
+                                footer_sender,
+                            )
+                            .await
+                    )
+                    .map_err(|_| s3_error!(InternalError, "Unable to get compression footer"))?;
+                    let mut output = Vec::with_capacity(131_128);
+                    let mut arsw =
+                        ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
+
+                    trace_err!(arsw.process().await)
+                        .map_err(|_| s3_error!(InternalError, "Unable to get footer"))?;
+                    drop(arsw);
+
+                    match output.try_into() {
+                        Ok(i) => Some(FooterParser::new(&i)),
+                        Err(_) => None,
+                    }
+                }
+            };
+            parser
+        } else {
+            None
+        };
+        let dbg = footer_parser.as_mut().map(|p| {
+            p.parse().unwrap();
+            p.get_blocklist()
+        });
+        trace!(?dbg);
+
+        // Needed for final part
+        trace!("calculating ranges");
+        let (query_ranges, filter_ranges, actual_from) =
+            match calculate_ranges(req.input.range, content_length as u64, footer_parser) {
+                Ok((query_ranges, filter_ranges, actual_from)) => {
+                    (query_ranges, filter_ranges, actual_from)
+                }
+                Err(err) => {
+                    warn!("Error while parsing ranges: {}", err);
+                    if let Some(range) = req.input.range {
+                        let mut aruna_range =
+                            aruna_range_from_s3range(range, content_length as u64);
+                        aruna_range.to += 1;
+                        (None, Some(aruna_range), aruna_range.from)
+                    } else {
+                        (None, None, 0)
+                    }
+                }
+            };
+
+        let (content_length, accept_ranges, content_range) = match filter_ranges {
+            Some(filter_range) => (
+                calculate_content_length_from_range(filter_range),
+                Some("bytes".to_string()),
+                Some(format!(
+                    "bytes {}-{}/{}",
+                    actual_from + filter_range.from,
+                    actual_from + filter_range.to - 1,
+                    content_length
+                )),
+            ),
+            None => (content_length, None, None),
+        };
+        debug!(
+            ?content_length,
+            ?query_ranges,
+            ?filter_ranges,
+            ?accept_ranges,
+            ?content_range
+        );
+
+        // Spawn get_object to fetch bytes from storage storage
+        let backend = self.backend.clone();
+        tokio::spawn(
+            async move {
+                backend
+                    .get_object(location.clone(), query_ranges, sender)
+                    .await
+            }
+            .instrument(info_span!("get_object")),
+        );
+        let (final_send, final_rcv) = async_channel::unbounded();
+
+        // Spawn final part
+        let cloned_key = encryption_key.clone();
+        tokio::spawn(
+            async move {
+                pin!(receiver);
+                let mut asrw = ArunaStreamReadWriter::new_with_sink(
+                    receiver,
+                    AsyncSenderSink::new(final_send),
+                );
+
+                asrw = asrw
+                    .add_transformer(trace_err!(ChaCha20Dec::new(cloned_key)
+                        .map_err(|_| { s3_error!(InternalError, "Internal notifier error") }))?)
+                    .add_transformer(ZstdDec::new());
+
+                if let Some(filter_range) = filter_ranges {
+                    asrw = asrw.add_transformer(Filter::new(filter_range));
+                };
+
+                trace_err!(asrw.process().await)
+                    .map_err(|_| s3_error!(InternalError, "Internal notifier error"))?;
+
+                Ok::<_, anyhow::Error>(())
+            }
+            .instrument(info_span!("query_data")),
+        );
+
+        let body =
+            Some(StreamingBlob::wrap(trace_err!(final_rcv).map_err(|_| {
+                s3_error!(InternalError, "Internal processing error")
+            })));
+
+        let output = GetObjectOutput {
+            body,
+            accept_ranges,
+            content_range,
+            content_length,
+            last_modified: None,
+            e_tag: Some(format!("-{}", id)),
+            version_id: None,
+            ..Default::default()
+        };
+        debug!(?output);
+
+        Ok(S3Response::new(output))
+    }
+
+    #[tracing::instrument(err)]
+    async fn head_object(
+        &self,
+        req: S3Request<HeadObjectInput>,
+    ) -> S3Result<S3Response<HeadObjectOutput>> {
+        let CheckAccessResult { object, bundle, .. } = trace_err!(req
+            .extensions
+            .get::<CheckAccessResult>()
+            .cloned()
+            .ok_or_else(|| s3_error!(InternalError, "No context found")))?;
+
+        trace!(?object, ?bundle);
+
+        if let Some(_bundle) = bundle {
+            let id = match object {
+                Some((obj, _)) => obj.id,
+                None => {
+                    trace!("Object not found");
+                    return Err(s3_error!(NoSuchKey, "Object not found"));
+                }
+            };
+            let _levels = trace_err!(self.cache.get_path_levels(id))
+                .map_err(|_| s3_error!(InternalError, "Unable to get path levels"))?;
+
+            return Ok(S3Response::new(HeadObjectOutput {
+                content_length: -1,
+                last_modified: Some(
+                    // FIXME: Real time ...
+                    time::OffsetDateTime::from_unix_timestamp(Utc::now().timestamp())
+                        .unwrap()
+                        .into(),
+                ),
+                e_tag: Some(format!("-{}", id)),
+                ..Default::default()
+            }));
+        }
+
+        let (object, location) =
+            trace_err!(object.ok_or_else(|| s3_error!(NoSuchKey, "No object found")))?;
+
+        let content_len = location.map(|l| l.raw_content_len).unwrap_or_default();
+
+        let output = HeadObjectOutput {
+            content_length: content_len,
+            last_modified: Some(
+                // FIXME: Real time ...
+                time::OffsetDateTime::from_unix_timestamp(Utc::now().timestamp())
+                    .unwrap()
+                    .into(),
+            ),
+            e_tag: Some(object.id.to_string()),
+            ..Default::default()
+        };
+
+        debug!(?output);
+
+        Ok(S3Response::new(output))
+    }
+
+    #[tracing::instrument(err)]
+    async fn list_objects(
+        &self,
+        _req: S3Request<ListObjectsInput>,
+    ) -> S3Result<S3Response<ListObjectsOutput>> {
+        error!("ListObjects is not implemented yet");
+        Err(s3_error!(
+            NotImplemented,
+            "ListObjects is not implemented yet"
+        ))
+    }
+
+    #[tracing::instrument(err)]
+    async fn list_objects_v2(
+        &self,
+        req: S3Request<ListObjectsV2Input>,
+    ) -> S3Result<S3Response<ListObjectsV2Output>> {
+        // Fetch the project name, delimiter and prefix from the request
+        let project_name = &req.input.bucket;
+        let delimiter = req.input.delimiter;
+        let prefix = req.input.prefix.filter(|prefix| !prefix.is_empty());
+
+        // Check if bucket exists as root in cache of paths
+        match self
+            .cache
+            .paths
+            .get(&ResourceString::Project(project_name.to_string()))
+        {
+            Some(_) => {}
+            None => {
+                error!("No bucket found");
+                return Err(s3_error!(NoSuchBucket, "No bucket found"));
+            }
+        };
+
+        // Process continuation token from request
+        let continuation_token = match req.input.continuation_token {
+            Some(t) => {
+                let decoded_token = general_purpose::STANDARD_NO_PAD
+                    .decode(t)
+                    .map_err(|_| s3_error!(InvalidToken, "Invalid continuation token"))?;
+                let decoded_token = std::str::from_utf8(&decoded_token)
+                    .map_err(|_| s3_error!(InvalidToken, "Invalid continuation token"))?
+                    .to_string();
+                Some(decoded_token)
+            }
+            None => None,
+        };
+
+        // Filter all objects from cache which have the project as root
+        let sorted = filter_list_objects(&self.cache.paths, project_name);
+        let start_after = match (req.input.start_after, continuation_token.clone()) {
+            (Some(_), Some(ct)) => ct,
+            (None, Some(ct)) => ct,
+            (Some(s), None) => s,
+            _ => {
+                let (path, _) = sorted
+                    .first_key_value()
+                    .ok_or_else(|| s3_error!(NoSuchKey, "No project in tree"))?;
+                path.clone()
+            }
+        };
+
+        let max_keys = match req.input.max_keys {
+            Some(k) if k < 1000 => k as usize,
+            _ => 1000usize,
+        };
+
+        let (keys, common_prefixes, new_continuation_token) = trace_err!(list_response(
+            sorted,
+            &self.cache,
+            &delimiter,
+            &prefix,
+            &start_after,
+            max_keys,
+        ))
+        .map_err(|_| s3_error!(NoSuchKey, "Keys not found in ListObjectsV2"))?;
+
+        let key_count = (keys.len() + common_prefixes.len()) as i32;
+        let common_prefixes = Some(
+            common_prefixes
+                .into_iter()
+                .map(|e| CommonPrefix { prefix: Some(e) })
+                .collect(),
+        );
+        let contents = Some(
+            keys.into_iter()
+                .map(|e| Object {
+                    checksum_algorithm: None,
+                    e_tag: Some(e.etag.to_string()),
+                    key: Some(e.key),
+                    last_modified: e.created_at.map(|t| {
+                        s3s::dto::Timestamp::from(
+                            time::OffsetDateTime::from_unix_timestamp(t.timestamp()).unwrap(),
+                        )
+                    }),
+                    owner: None,
+                    size: e.size,
+                    ..Default::default()
+                })
+                .collect(),
+        );
+
+        let result = ListObjectsV2Output {
+            common_prefixes,
+            contents,
+            continuation_token,
+            delimiter,
+            encoding_type: None,
+            is_truncated: new_continuation_token.is_some(),
+            key_count,
+            max_keys: max_keys
+                .try_into()
+                .map_err(|err| s3_error!(InternalError, "[BACKEND] Conversion failure: {}", err))?,
+            name: Some(project_name.clone()),
+            next_continuation_token: new_continuation_token,
+            prefix,
+            start_after: Some(start_after),
+            ..Default::default()
+        };
+        debug!(?result);
+
+        Ok(S3Response::new(result))
     }
 
     #[tracing::instrument(err, skip(self, req))]
@@ -530,264 +1340,6 @@ impl S3 for ArunaS3Service {
     }
 
     #[tracing::instrument(err)]
-    async fn create_multipart_upload(
-        &self,
-        req: S3Request<CreateMultipartUploadInput>,
-    ) -> S3Result<S3Response<CreateMultipartUploadOutput>> {
-        let CheckAccessResult {
-            user_id,
-            token_id,
-            resource_ids,
-            missing_resources,
-            object,
-            ..
-        } = trace_err!(req
-            .extensions
-            .get::<CheckAccessResult>()
-            .cloned()
-            .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context")))?;
-
-        let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
-        {
-            user_id.and_then(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
-        } else {
-            None
-        };
-
-        let res_ids = trace_err!(
-            resource_ids.ok_or_else(|| s3_error!(InvalidArgument, "Unknown object path"))
-        )?;
-
-        let mut new_object = if let Some((o, _)) = object {
-            if o.object_type == crate::structs::ObjectType::Object {
-                if o.object_status == Status::Initializing {
-                    trace!("Object is initializing");
-                    o
-                } else {
-                    trace!("object is not initializing, force update");
-                    // Force Object update with new revision in ArunaServer
-                    let new_revision = if let Some(handler) =
-                        self.cache.aruna_client.read().await.as_ref()
-                    {
-                        if let Some(token) = &impersonating_token {
-                            trace_err!(handler.init_object_update(o, token, true).await)
-                                .map_err(|_| s3_error!(InternalError, "Object update failed"))?
-                        } else {
-                            error!("missing impersonating token");
-                            return Err(s3_error!(InternalError, "Token creation failed"));
-                        }
-                    } else {
-                        //TODO: Enable offline mode
-                        error!("ArunaServer client not available");
-                        return Err(s3_error!(InternalError, "ArunaServer client not available"));
-                    };
-
-                    ProxyObject {
-                        id: new_revision.id,
-                        name: new_revision.name,
-                        key_values: new_revision.key_values,
-                        object_status: Status::Initializing,
-                        data_class: new_revision.data_class,
-                        object_type: crate::structs::ObjectType::Object,
-                        hashes: HashMap::default(),
-                        metadata_license: new_revision.metadata_license,
-                        data_license: new_revision.data_license,
-                        dynamic: false,
-                        children: None,
-                        parents: new_revision.parents,
-                        synced: false,
-                        endpoints: new_revision.endpoints,
-                        created_at: new_revision.created_at,
-                    }
-                }
-            } else {
-                let missing_object_name = trace_err!(trace_err!(missing_resources
-                    .clone()
-                    .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path")))?
-                .o
-                .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path")))?;
-
-                trace!(?missing_object_name, "missing_object_name");
-
-                ProxyObject {
-                    id: DieselUlid::generate(),
-                    name: missing_object_name.to_string(),
-                    key_values: vec![],
-                    object_status: Status::Initializing,
-                    data_class: DataClass::Private,
-                    object_type: crate::structs::ObjectType::Object,
-                    hashes: HashMap::default(),
-                    metadata_license: ALL_RIGHTS_RESERVED.to_string(),
-                    data_license: ALL_RIGHTS_RESERVED.to_string(),
-                    dynamic: false,
-                    children: None,
-                    parents: None,
-                    synced: false,
-                    endpoints: vec![], // Can be empty, as long as create_object overwrites this
-                    // object with gRPC response
-                    created_at: Some(chrono::Utc::now().naive_utc()),
-                }
-            }
-        } else {
-            let missing_object_name = trace_err!(trace_err!(missing_resources
-                .clone()
-                .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path")))?
-            .o
-            .ok_or_else(|| s3_error!(InvalidArgument, "Invalid object path")))?;
-
-            ProxyObject {
-                id: DieselUlid::generate(),
-                name: missing_object_name.to_string(),
-                key_values: vec![],
-                object_status: Status::Initializing,
-                data_class: DataClass::Private,
-                object_type: crate::structs::ObjectType::Object,
-                hashes: HashMap::default(),
-                metadata_license: ALL_RIGHTS_RESERVED.to_string(),
-                data_license: ALL_RIGHTS_RESERVED.to_string(),
-                dynamic: false,
-                children: None,
-                parents: None,
-                synced: false,
-                endpoints: vec![], // Can be empty, as long as create_object overwrites this
-                // object with gRPC response
-                created_at: Some(chrono::Utc::now().naive_utc()),
-            }
-        };
-
-        let mut location = trace_err!(
-            self.backend
-                .initialize_location(&new_object, None, None, true)
-                .await
-        )
-        .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
-
-        let init_response = trace_err!(
-            self.backend
-                .clone()
-                .init_multipart_upload(location.clone())
-                .await
-        )
-        .map_err(|_| s3_error!(InvalidArgument, "Unable to initialize multi-part"))?;
-
-        location.upload_id = Some(init_response.to_string());
-
-        if let Some(missing) = missing_resources {
-            trace!(?missing, "missing parent resources");
-            let collection_id = if let Some(collection) = missing.c {
-                let col = ProxyObject {
-                    id: DieselUlid::generate(),
-                    name: collection,
-                    key_values: vec![],
-                    object_status: Status::Available,
-                    data_class: DataClass::Private,
-                    object_type: crate::structs::ObjectType::Collection,
-                    hashes: HashMap::default(),
-                    metadata_license: ALL_RIGHTS_RESERVED.to_string(),
-                    data_license: ALL_RIGHTS_RESERVED.to_string(),
-                    dynamic: true,
-                    children: None,
-                    parents: Some(HashSet::from([TypedRelation::Project(
-                        res_ids.get_project(),
-                    )])),
-                    synced: false,
-                    endpoints: vec![], // Can be empty, as long as create_object overwrites this
-                    // object with gRPC response
-                    created_at: Some(chrono::Utc::now().naive_utc()),
-                };
-
-                if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
-                    if let Some(token) = &impersonating_token {
-                        let col = trace_err!(handler.create_collection(col, token).await)
-                            .map_err(|_| s3_error!(InternalError, "Unable to create collection"))?;
-                        Some(col.id)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                res_ids.get_collection()
-            };
-
-            let dataset_id = if let Some(dataset) = missing.d {
-                let parent = if let Some(collection_id) = collection_id {
-                    TypedRelation::Collection(collection_id)
-                } else {
-                    TypedRelation::Project(res_ids.get_project())
-                };
-
-                let dataset = ProxyObject {
-                    id: DieselUlid::generate(),
-                    name: dataset,
-                    key_values: vec![],
-                    object_status: Status::Available,
-                    data_class: DataClass::Private,
-                    object_type: crate::structs::ObjectType::Dataset,
-                    hashes: HashMap::default(),
-                    metadata_license: ALL_RIGHTS_RESERVED.to_string(),
-                    data_license: ALL_RIGHTS_RESERVED.to_string(),
-                    dynamic: true,
-                    children: None,
-                    parents: Some(HashSet::from([parent])),
-                    synced: false,
-                    endpoints: vec![], // Can be empty, as long as create_object overwrites this
-                    // object with gRPC response
-                    created_at: Some(chrono::Utc::now().naive_utc()),
-                };
-
-                if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
-                    if let Some(token) = &impersonating_token {
-                        let dataset = trace_err!(handler.create_dataset(dataset, token).await)
-                            .map_err(|_| s3_error!(InternalError, "Unable to create dataset"))?;
-
-                        Some(dataset.id)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                res_ids.get_dataset()
-            };
-
-            trace!("updating parents");
-            if let Some(ds_id) = dataset_id {
-                new_object.parents = Some(HashSet::from([TypedRelation::Dataset(ds_id)]));
-            } else if let Some(col_id) = collection_id {
-                new_object.parents = Some(HashSet::from([TypedRelation::Collection(col_id)]));
-            } else {
-                new_object.parents = Some(HashSet::from([TypedRelation::Project(
-                    res_ids.get_project(),
-                )]));
-            }
-
-            trace!("finishing object");
-            if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
-                if let Some(token) = &impersonating_token {
-                    trace_err!(
-                        handler
-                            // Overwrites endpoints with gRPC response
-                            .create_object(new_object.clone(), Some(location), token)
-                            .await
-                    )
-                    .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
-                }
-            }
-        }
-        let output = CreateMultipartUploadOutput {
-            key: Some(req.input.key),
-            bucket: Some(req.input.bucket),
-            upload_id: Some(init_response),
-            ..Default::default()
-        };
-        debug!(?output);
-        Ok(S3Response::new(output))
-    }
-
-    #[tracing::instrument(err)]
     async fn upload_part(
         &self,
         req: S3Request<UploadPartInput>,
@@ -876,541 +1428,5 @@ impl S3 for ArunaS3Service {
         };
         debug!(?output);
         Ok(S3Response::new(output))
-    }
-
-    #[tracing::instrument(err)]
-    async fn complete_multipart_upload(
-        &self,
-        req: S3Request<CompleteMultipartUploadInput>,
-    ) -> S3Result<S3Response<CompleteMultipartUploadOutput>> {
-        let CheckAccessResult {
-            user_id,
-            token_id,
-            object,
-            ..
-        } = trace_err!(req
-            .extensions
-            .get::<CheckAccessResult>()
-            .cloned()
-            .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context")))?;
-
-        let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
-        {
-            user_id.and_then(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
-        } else {
-            None
-        };
-
-        // If the object exists and the signatures match -> Skip the download
-        let (object, old_location) = if let Some((object, Some(loc))) = object {
-            (object, loc)
-        } else {
-            error!("object not initialized");
-            return Err(s3_error!(InvalidArgument, "Object not initialized"));
-        };
-
-        let parts = match req.input.multipart_upload {
-            Some(parts) => trace_err!(parts
-                .parts
-                .ok_or_else(|| s3_error!(InvalidPart, "Parts must be specified"))),
-            None => {
-                error!("parts is none");
-                return Err(s3_error!(InvalidPart, "Parts must be specified"));
-            }
-        }?;
-
-        let etag_parts = parts
-            .into_iter()
-            .map(|a| {
-                Ok(PartETag {
-                    part_number: a.part_number,
-                    etag: trace_err!(a
-                        .e_tag
-                        .ok_or_else(|| s3_error!(InvalidPart, "etag must be specified")))?,
-                })
-            })
-            .collect::<Result<Vec<PartETag>, S3Error>>()?;
-
-        // Does this object exists (including object id etc)
-        //req.input.multipart_upload.unwrap().
-        trace_err!(
-            self.backend
-                .clone()
-                .finish_multipart_upload(
-                    old_location.clone(),
-                    etag_parts,
-                    old_location
-                        .upload_id
-                        .as_ref()
-                        .ok_or_else(|| s3_error!(InvalidPart, "Upload id must be specified"))?
-                        .to_string(),
-                )
-                .await
-        )
-        .map_err(|_| s3_error!(InternalError, "Unable to finish upload"))?;
-
-        let response = CompleteMultipartUploadOutput {
-            e_tag: Some(object.id.to_string()),
-            ..Default::default()
-        };
-
-        let mut new_location = trace_err!(
-            self.backend
-                .initialize_location(&object, None, None, false)
-                .await
-        )
-        .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
-
-        let hashes = trace_err!(
-            DataHandler::finalize_location(self.backend.clone(), &old_location, &mut new_location)
-                .await
-        )
-        .map_err(|_| s3_error!(InternalError, "Unable to finalize location"))?;
-
-        if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
-            if let Some(token) = &impersonating_token {
-                // Set id of new location to object id to satisfy FK constraint
-                let object = trace_err!(
-                    handler
-                        .finish_object(object.id, new_location.raw_content_len, hashes, None, token)
-                        .await
-                )
-                .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
-
-                trace_err!(self.cache.upsert_object(object, Some(new_location)).await)
-                    .map_err(|_| s3_error!(InternalError, "Unable to cache object after finish"))?;
-
-                trace_err!(self.backend.delete_object(old_location).await)
-                    .map_err(|_| s3_error!(InternalError, "Unable to delete old object"))?;
-            }
-        }
-        debug!(?response);
-        Ok(S3Response::new(response))
-    }
-
-    #[tracing::instrument(err)]
-    async fn get_object(
-        &self,
-        req: S3Request<GetObjectInput>,
-    ) -> S3Result<S3Response<GetObjectOutput>> {
-        let CheckAccessResult { object, bundle, .. } = trace_err!(req
-            .extensions
-            .get::<CheckAccessResult>()
-            .cloned()
-            .ok_or_else(|| s3_error!(InternalError, "No context found")))?;
-
-        if let Some(_bundle) = bundle {
-            let id = match object {
-                Some((obj, _)) => obj.id,
-                None => return Err(s3_error!(NoSuchKey, "Object not found")),
-            };
-            let levels = trace_err!(self.cache.get_path_levels(id))
-                .map_err(|_| s3_error!(InternalError, "Unable to get path levels"))?;
-
-            let body = get_bundle(levels, self.backend.clone()).await;
-
-            let mut resp = S3Response::new(GetObjectOutput {
-                body,
-                last_modified: None,
-                e_tag: Some(format!("-{}", id)),
-                ..Default::default()
-            });
-
-            resp.headers.insert(
-                hyper::header::TRANSFER_ENCODING,
-                HeaderValue::from_static("chunked"),
-            );
-
-            resp.headers.insert(
-                hyper::header::CONTENT_TYPE,
-                HeaderValue::from_static("application/octet-stream"),
-            );
-
-            return Ok(resp);
-        }
-
-        let id = match object {
-            Some((obj, _)) => obj.id,
-            None => {
-                error!("Object not found");
-                return Err(s3_error!(NoSuchKey, "Object not found"));
-            }
-        };
-
-        let cache_result = trace_err!(self
-            .cache
-            .resources
-            .get(&id)
-            .ok_or_else(|| s3_error!(NoSuchKey, "Object not found")))?;
-
-        let (_, location) = cache_result.value();
-        let location = trace_err!(location
-            .as_ref()
-            .ok_or_else(|| s3_error!(InternalError, "Object location not found")))?
-        .clone();
-        let content_length = location.raw_content_len;
-        let encryption_key = location
-            .clone()
-            .encryption_key
-            .map(|k| k.as_bytes().to_vec());
-
-        let (sender, receiver) = async_channel::bounded(10);
-
-        // Gets 128 kb chunks (last 2)
-
-        let footer_limit = 5242880 + 80 * 28;
-        let footer_parser: Option<FooterParser> = if content_length > footer_limit {
-            trace!("getting footer");
-            // Without encryption block because this is already checked inside
-            let (footer_sender, footer_receiver) = async_channel::unbounded();
-            pin!(footer_receiver);
-
-            let parser = match encryption_key.clone() {
-                Some(key) => {
-                    trace_err!(
-                        self.backend
-                            .get_object(
-                                location.clone(),
-                                Some(format!("bytes=-{}", (65536 + 28) * 2)),
-                                // "-" means last (2) chunks
-                                // when encrypted + 28 for encryption information (16 bytes nonce, 12 bytes checksum)
-                                // Encrypted chunk = | 16 b nonce | 65536 b data | 12 b checksum |
-                                footer_sender,
-                            )
-                            .await
-                    )
-                    .map_err(|_| s3_error!(InternalError, "Unable to get encryption_footer"))?;
-
-                    // Stream takes receiver chunks und them into vec
-                    let mut output = Vec::with_capacity(131_128);
-                    let mut arsw =
-                        ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
-
-                    // processes chunks and puts them into output
-                    trace_err!(arsw.process().await)
-                        .map_err(|_| s3_error!(InternalError, "Unable to get footer"))?;
-                    drop(arsw);
-
-                    match output.try_into() {
-                        Ok(i) => match FooterParser::from_encrypted(&i, &key) {
-                            Ok(p) => Some(p),
-                            Err(_) => None,
-                        },
-                        Err(_) => None,
-                    }
-                }
-                None => {
-                    trace_err!(
-                        self.backend
-                            .get_object(
-                                location.clone(),
-                                Some(format!("bytes=-{}", 65536 * 2)),
-                                // when not encrypted without 28
-                                footer_sender,
-                            )
-                            .await
-                    )
-                    .map_err(|_| s3_error!(InternalError, "Unable to get compression footer"))?;
-                    let mut output = Vec::with_capacity(131_128);
-                    let mut arsw =
-                        ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
-
-                    trace_err!(arsw.process().await)
-                        .map_err(|_| s3_error!(InternalError, "Unable to get footer"))?;
-                    drop(arsw);
-
-                    match output.try_into() {
-                        Ok(i) => Some(FooterParser::new(&i)),
-                        Err(_) => None,
-                    }
-                }
-            };
-            parser
-        } else {
-            None
-        };
-
-        // Needed for final part
-        trace!("calculating ranges");
-        let (query_ranges, filter_ranges, actual_from) =
-            match calculate_ranges(req.input.range, content_length as u64, footer_parser) {
-                Ok((query_ranges, filter_ranges, actual_from)) => {
-                    (query_ranges, filter_ranges, actual_from)
-                }
-                Err(err) => {
-                    warn!("Error while parsing ranges: {}", err);
-                    if let Some(range) = req.input.range {
-                        let mut aruna_range =
-                            aruna_range_from_s3range(range, content_length as u64);
-                        aruna_range.to += 1;
-                        (None, Some(aruna_range), aruna_range.from)
-                    } else {
-                        (None, None, 0)
-                    }
-                }
-            };
-
-        let (content_length, accept_ranges, content_range) = match filter_ranges {
-            Some(filter_range) => (
-                calculate_content_length_from_range(filter_range),
-                Some("bytes".to_string()),
-                Some(format!(
-                    "bytes {}-{}/{}",
-                    actual_from + filter_range.from,
-                    actual_from + filter_range.to - 1,
-                    content_length
-                )),
-            ),
-            None => (content_length, None, None),
-        };
-        debug!(
-            ?content_length,
-            ?query_ranges,
-            ?filter_ranges,
-            ?accept_ranges,
-            ?content_range
-        );
-
-        // Spawn get_object to fetch bytes from storage storage
-        let backend = self.backend.clone();
-        tokio::spawn(
-            async move {
-                backend
-                    .get_object(location.clone(), query_ranges, sender)
-                    .await
-            }
-            .instrument(info_span!("get_object")),
-        );
-        let (final_send, final_rcv) = async_channel::unbounded();
-
-        // Spawn final part
-        let cloned_key = encryption_key.clone();
-        tokio::spawn(
-            async move {
-                pin!(receiver);
-                let mut asrw = ArunaStreamReadWriter::new_with_sink(
-                    receiver,
-                    AsyncSenderSink::new(final_send),
-                );
-
-                asrw = asrw
-                    .add_transformer(trace_err!(ChaCha20Dec::new(cloned_key)
-                        .map_err(|_| { s3_error!(InternalError, "Internal notifier error") }))?)
-                    .add_transformer(ZstdDec::new());
-
-                if let Some(filter_range) = filter_ranges {
-                    asrw = asrw.add_transformer(Filter::new(filter_range));
-                };
-
-                trace_err!(asrw.process().await)
-                    .map_err(|_| s3_error!(InternalError, "Internal notifier error"))?;
-
-                Ok::<_, anyhow::Error>(())
-            }
-            .instrument(tracing::info_span!("query_data")),
-        );
-
-        let body =
-            Some(StreamingBlob::wrap(trace_err!(final_rcv).map_err(|_| {
-                s3_error!(InternalError, "Internal processing error")
-            })));
-
-        let output = GetObjectOutput {
-            body,
-            accept_ranges,
-            content_range,
-            content_length,
-            last_modified: None,
-            e_tag: Some(format!("-{}", id)),
-            version_id: None,
-            ..Default::default()
-        };
-        debug!(?output);
-
-        Ok(S3Response::new(output))
-    }
-
-    #[tracing::instrument(err)]
-    async fn head_object(
-        &self,
-        req: S3Request<HeadObjectInput>,
-    ) -> S3Result<S3Response<HeadObjectOutput>> {
-        let CheckAccessResult { object, bundle, .. } = trace_err!(req
-            .extensions
-            .get::<CheckAccessResult>()
-            .cloned()
-            .ok_or_else(|| s3_error!(InternalError, "No context found")))?;
-
-        trace!(?object, ?bundle);
-
-        if let Some(_bundle) = bundle {
-            let id = match object {
-                Some((obj, _)) => obj.id,
-                None => {
-                    trace!("Object not found");
-                    return Err(s3_error!(NoSuchKey, "Object not found"));
-                }
-            };
-            let _levels = trace_err!(self.cache.get_path_levels(id))
-                .map_err(|_| s3_error!(InternalError, "Unable to get path levels"))?;
-
-            return Ok(S3Response::new(HeadObjectOutput {
-                content_length: -1,
-                last_modified: Some(
-                    // FIXME: Real time ...
-                    time::OffsetDateTime::from_unix_timestamp(Utc::now().timestamp())
-                        .unwrap()
-                        .into(),
-                ),
-                e_tag: Some(format!("-{}", id)),
-                ..Default::default()
-            }));
-        }
-
-        let (object, location) =
-            trace_err!(object.ok_or_else(|| s3_error!(NoSuchKey, "No object found")))?;
-
-        let content_len = location.map(|l| l.raw_content_len).unwrap_or_default();
-
-        let output = HeadObjectOutput {
-            content_length: content_len,
-            last_modified: Some(
-                // FIXME: Real time ...
-                time::OffsetDateTime::from_unix_timestamp(Utc::now().timestamp())
-                    .unwrap()
-                    .into(),
-            ),
-            e_tag: Some(object.id.to_string()),
-            ..Default::default()
-        };
-
-        debug!(?output);
-
-        Ok(S3Response::new(output))
-    }
-
-    #[tracing::instrument(err)]
-    async fn list_objects(
-        &self,
-        _req: S3Request<ListObjectsInput>,
-    ) -> S3Result<S3Response<ListObjectsOutput>> {
-        error!("ListObjects is not implemented yet");
-        Err(s3_error!(
-            NotImplemented,
-            "ListObjects is not implemented yet"
-        ))
-    }
-
-    #[tracing::instrument(err)]
-    async fn list_objects_v2(
-        &self,
-        req: S3Request<ListObjectsV2Input>,
-    ) -> S3Result<S3Response<ListObjectsV2Output>> {
-        // Fetch the project name, delimiter and prefix from the request
-        let project_name = &req.input.bucket;
-        let delimiter = req.input.delimiter;
-        let prefix = req.input.prefix.filter(|prefix| !prefix.is_empty());
-
-        // Check if bucket exists as root in cache of paths
-        match self
-            .cache
-            .paths
-            .get(&ResourceString::Project(project_name.to_string()))
-        {
-            Some(_) => {}
-            None => {
-                error!("No bucket found");
-                return Err(s3_error!(NoSuchBucket, "No bucket found"));
-            }
-        };
-
-        // Process continuation token from request
-        let continuation_token = match req.input.continuation_token {
-            Some(t) => {
-                let decoded_token = general_purpose::STANDARD_NO_PAD
-                    .decode(t)
-                    .map_err(|_| s3_error!(InvalidToken, "Invalid continuation token"))?;
-                let decoded_token = std::str::from_utf8(&decoded_token)
-                    .map_err(|_| s3_error!(InvalidToken, "Invalid continuation token"))?
-                    .to_string();
-                Some(decoded_token)
-            }
-            None => None,
-        };
-
-        // Filter all objects from cache which have the project as root
-        let sorted = filter_list_objects(&self.cache.paths, project_name);
-        let start_after = match (req.input.start_after, continuation_token.clone()) {
-            (Some(_), Some(ct)) => ct,
-            (None, Some(ct)) => ct,
-            (Some(s), None) => s,
-            _ => {
-                let (path, _) = sorted
-                    .first_key_value()
-                    .ok_or_else(|| s3_error!(NoSuchKey, "No project in tree"))?;
-                path.clone()
-            }
-        };
-
-        let max_keys = match req.input.max_keys {
-            Some(k) if k < 1000 => k as usize,
-            _ => 1000usize,
-        };
-
-        let (keys, common_prefixes, new_continuation_token) = trace_err!(list_response(
-            sorted,
-            &self.cache,
-            &delimiter,
-            &prefix,
-            &start_after,
-            max_keys,
-        ))
-        .map_err(|_| s3_error!(NoSuchKey, "Keys not found in ListObjectsV2"))?;
-
-        let key_count = (keys.len() + common_prefixes.len()) as i32;
-        let common_prefixes = Some(
-            common_prefixes
-                .into_iter()
-                .map(|e| CommonPrefix { prefix: Some(e) })
-                .collect(),
-        );
-        let contents = Some(
-            keys.into_iter()
-                .map(|e| Object {
-                    checksum_algorithm: None,
-                    e_tag: Some(e.etag.to_string()),
-                    key: Some(e.key),
-                    last_modified: e.created_at.map(|t| {
-                        s3s::dto::Timestamp::from(
-                            time::OffsetDateTime::from_unix_timestamp(t.timestamp()).unwrap(),
-                        )
-                    }),
-                    owner: None,
-                    size: e.size,
-                    ..Default::default()
-                })
-                .collect(),
-        );
-
-        let result = ListObjectsV2Output {
-            common_prefixes,
-            contents,
-            continuation_token,
-            delimiter,
-            encoding_type: None,
-            is_truncated: new_continuation_token.is_some(),
-            key_count,
-            max_keys: max_keys
-                .try_into()
-                .map_err(|err| s3_error!(InternalError, "[BACKEND] Conversion failure: {}", err))?,
-            name: Some(project_name.clone()),
-            next_continuation_token: new_continuation_token,
-            prefix,
-            start_after: Some(start_after),
-            ..Default::default()
-        };
-        debug!(?result);
-
-        Ok(S3Response::new(result))
     }
 }

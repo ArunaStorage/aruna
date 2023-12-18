@@ -254,14 +254,11 @@ impl StorageBackend for S3Backend {
             .to_ascii_lowercase();
 
         // TODO: READ setting and set this based on settings
-        let encryption_key: String = Alphanumeric.sample_string(&mut rand::thread_rng(), 32);
+        let encryption_key: String = Alphanumeric.sample_string(&mut thread_rng(), 32);
 
         Ok(ObjectLocation {
             id: obj.id,
-            bucket: match ex_bucket {
-                Some(bucket) => bucket,
-                None => self.get_random_bucket().to_ascii_lowercase(),
-            },
+            bucket: ex_bucket.unwrap_or_else(|| self.get_random_bucket().to_ascii_lowercase()),
             upload_id: None,
             key,
             encryption_key: Some(encryption_key),

@@ -66,7 +66,6 @@ use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::mpsc::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::metadata::AsciiMetadataKey;
@@ -77,7 +76,6 @@ use tonic::Request;
 use tonic::Streaming;
 use tracing::debug;
 use tracing::error;
-use tracing::info;
 use tracing::trace;
 use tracing::Instrument;
 
@@ -654,7 +652,7 @@ impl GrpcQueryHandler {
         Sender<PullReplicationRequest>,
         Streaming<PullReplicationResponse>,
     )> {
-        let get_ep_request = tonic::Request::new(GetEndpointRequest {
+        let get_ep_request = Request::new(GetEndpointRequest {
             endpoint: Some(Endpoint::EndpointId(endpoint_ulid.to_string())),
         });
         let get_ep_response = trace_err!(
@@ -690,7 +688,7 @@ impl GrpcQueryHandler {
         };
 
         let dataproxy_service = DataproxyReplicationServiceClient::new(channel.clone());
-        let (request_stream_sender, request_stream_receiver) = tokio::sync::mpsc::channel(100);
+        let (request_stream_sender, request_stream_receiver) = tokio::sync::mpsc::channel(1000);
         let mut req = Request::new(ReceiverStream::new(request_stream_receiver));
         req.metadata_mut().append(
             trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
@@ -711,7 +709,7 @@ impl GrpcQueryHandler {
         &self,
         request: UpdateReplicationStatusRequest,
     ) -> Result<()> {
-        let mut request = tonic::Request::new(request);
+        let mut request = Request::new(request);
         request.metadata_mut().append(
             trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
             trace_err!(AsciiMetadataValue::try_from(format!(
@@ -917,7 +915,7 @@ impl GrpcQueryHandler {
                         }
                     }
                     // ... if my id, waiting and partial sync -> I should request a PartialSync
-                    (ReplicationStatus::Waiting, id, Some(Variant::PartialSync(origin)))
+                    (ReplicationStatus::Waiting, id, Some(Variant::PartialSync(_origin)))
                         if id == &self.endpoint_id =>
                     {
                         // Find the full sync proxy and partial sync from there
@@ -931,7 +929,7 @@ impl GrpcQueryHandler {
                             }
                         });
                         match state_of_truth {
-                            Some((endpoint_id, project_id)) => {
+                            Some((_endpoint_id, _project_id)) => {
                                 tokio::spawn(async move {
                                     // TODO
                                     // - get s3-bucket with available object
@@ -957,7 +955,6 @@ impl GrpcQueryHandler {
                         // - Check if object location exists here
                         // - Create presigned url for object
                         // - send message to replication handler
-                        ()
                     }
                     _ => (),
                 }

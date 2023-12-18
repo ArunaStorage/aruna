@@ -1,9 +1,8 @@
-use crate::caching::grpc_query_handler::GrpcQueryHandler;
 use crate::{
     caching::cache::Cache,
     data_backends::storage_backend::StorageBackend,
-    s3_frontend::utils::buffered_s3_sink::BufferedS3Sink,
-    structs::{Object, ObjectLocation},
+    s3_frontend::utils::{buffered_s3_sink::BufferedS3Sink, debug_transformer::DebugTransformer},
+    structs::ObjectLocation,
     trace_err,
 };
 use ahash::{HashSet, RandomState};
@@ -12,10 +11,11 @@ use aruna_file::{
     streamreadwrite::ArunaStreamReadWriter,
     transformer::ReadWriter,
     transformers::{
-        encrypt::ChaCha20Enc, footer::FooterGenerator, gzip_comp::GzipEnc,
-        hashing_transformer::HashingTransformer, size_probe::SizeProbe, zstd_comp::ZstdEnc,
+        encrypt::ChaCha20Enc, footer::FooterGenerator, hashing_transformer::HashingTransformer,
+        size_probe::SizeProbe,
     },
 };
+use aruna_rust_api::api::dataproxy::services::v2::{ObjectInfo, ReplicationStatus};
 use aruna_rust_api::api::{
     dataproxy::services::v2::{
         error_message, pull_replication_request::Message,
@@ -24,19 +24,15 @@ use aruna_rust_api::api::{
     },
     storage::services::v2::UpdateReplicationStatusRequest,
 };
-use aruna_rust_api::api::{
-    dataproxy::services::v2::{ObjectInfo, ReplicationStatus},
-    storage::models::v2::{Hash, Hashalgorithm},
-};
 use async_channel::{Receiver, Sender};
-use dashmap::{DashMap, DashSet};
+use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
-use futures_util::TryStreamExt;
+use futures_util::Sink;
 use md5::{Digest, Md5};
 use sha2::Sha256;
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc};
 use tokio::pin;
-use tracing::{error, trace};
+use tracing::trace;
 
 pub struct ReplicationMessage {
     pub direction: Direction,
@@ -113,11 +109,10 @@ impl ReplicationHandler {
         });
 
         // Proccess DashMap entries in batches
-        let process: tokio::task::JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
+        let process: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
             // let grpc_client_lock = self.cache.aruna_client.read().await;
             // let aruna_client = grpc_client_lock.as_ref();
             loop {
-                // TODO:
                 // Process batches every 30 seconds
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 let batch = queue.clone();
@@ -146,7 +141,7 @@ impl ReplicationHandler {
     // - write objects into cache/db
     async fn process(
         &self,
-        batch: Arc<DashMap<DieselUlid, Vec<Direction>, ahash::RandomState>>,
+        batch: Arc<DashMap<DieselUlid, Vec<Direction>, RandomState>>,
         // aruna_client: Option<&Arc<GrpcQueryHandler>>,
     ) -> Result<Vec<DieselUlid>> {
         // Vec for collecting all processed and finished endpoint batches
@@ -187,11 +182,10 @@ impl ReplicationHandler {
                         .pull_replication(init_request, endpoint_id)
                         .await
                 )?;
-                trace!(?response_stream);
                 // This is the init message for object proccessing
                 let (start_sender, start_receiver) = async_channel::bounded(1);
                 // This channel is used to collect all proccessed objects and chunks
-                let (sync_sender, sync_receiver) = async_channel::bounded(100);
+                let (sync_sender, sync_receiver) = async_channel::bounded(1000);
                 // This channel is only used to transmit the sync result to compare
                 // recieved vs requested objects
                 let (finish_sender, finish_receiver) = async_channel::bounded(1);
@@ -201,7 +195,7 @@ impl ReplicationHandler {
                     DashMap<
                         String,
                         (Sender<DataChunk>, Receiver<DataChunk>, i64, Vec<u8>, i64),
-                        ahash::RandomState,
+                        RandomState,
                     >,
                 > = Arc::new(DashMap::default());
 
@@ -214,7 +208,10 @@ impl ReplicationHandler {
                 let request_sender_clone = request_sender.clone();
                 tokio::spawn(async move {
                     let mut counter = 0;
+                    let mut sec_count = 0;
                     while let Some(response) = response_stream.message().await? {
+                        sec_count += 1;
+                        trace!(?sec_count);
                         match response.message {
                             Some(ResponseMessage::ObjectInfo(ObjectInfo {
                                 object_id,
@@ -232,7 +229,7 @@ impl ReplicationHandler {
                                 )?;
                                 // .. and a datachannel is created
                                 // and stored in object_handler_map ...
-                                let (object_sdx, object_rcv) = async_channel::bounded(100);
+                                let (object_sdx, object_rcv) = async_channel::bounded(1000);
                                 data_map.insert(
                                     object_id.clone(),
                                     (
@@ -244,7 +241,8 @@ impl ReplicationHandler {
                                             .map(|block| u8::try_from(*block).map_err(|_| anyhow!(
                                                 "Could not convert blocklist to u8"
                                             )))
-                                            .collect::<Result<Vec<u8>>>())?,
+                                            .collect::<Result<Vec<u8>>>())?
+                                        .clone(),
                                         raw_size,
                                     ),
                                 );
@@ -269,6 +267,7 @@ impl ReplicationHandler {
                                 data,
                                 checksum,
                             })) => {
+                                trace!("Received chunk");
                                 // If an entry is created inside the object_handler_map ...
                                 if let Some(entry) = data_map.get(&object_id) {
                                     // Chunks get processed
@@ -279,6 +278,7 @@ impl ReplicationHandler {
                                         checksum,
                                     };
                                     entry.0.send(chunk).await?;
+                                    trace!("Send converted chunk to backend handler");
                                     let id = DieselUlid::from_str(&object_id)?;
                                     // Message is send to sync
                                     trace_err!(
@@ -297,6 +297,7 @@ impl ReplicationHandler {
                                             })
                                             .await
                                     )?;
+                                    trace!("Acknowledged chunk");
                                 } else {
                                     // If no entry is found, ObjectInfo was not send
                                     trace_err!(request_sender_clone
@@ -357,7 +358,7 @@ impl ReplicationHandler {
                 tokio::spawn(async move {
                     // For now, every entry of the object_handler_map is proccessed
                     // consecutively
-                    while (start_receiver.recv().await).is_ok() {
+                    while start_receiver.recv().await.is_ok() {
                         for entry in object_handler_map.iter() {
                             let (id, (_, rcv, chunks, blocklist, raw_size)) = entry.pair();
                             let object_id = DieselUlid::from_str(id)?;
@@ -488,22 +489,27 @@ impl ReplicationHandler {
         max_chunks: i64,
         blocklist: Vec<u8>,
     ) -> Result<()> {
-        let mut chunk_list: Vec<i64> = vec![0];
+        let mut expected = 0;
         let mut retry_counter = 0;
 
-        let (data_sender, data_stream) = async_channel::bounded(100);
+        let (data_sender, data_stream) = async_channel::bounded(1000);
         tokio::spawn(async move {
             while let Ok(data) = data_receiver.recv().await {
                 let trace_message = format!(
-                    "Recieved chunk with idx {:?} for object with id {:?}",
-                    data.chunk_idx, data.object_id
+                    "Recieved chunk with idx {:?} for object with id {:?} and size {}",
+                    data.chunk_idx,
+                    data.object_id,
+                    data.data.len(),
                 );
                 trace!(trace_message);
                 let chunk = bytes::Bytes::from_iter(data.data.into_iter());
                 // Check if chunk is missing
                 let idx = data.chunk_idx;
 
-                if chunk_list.get((idx as usize) - 1).is_none() {
+                //if idx == 0 {
+                //    ()
+                //} else if idx != previous + 1 {
+                if idx != expected {
                     if retry_counter > 5 {
                         return Err(anyhow!(
                             "Exceeded retries for chunk because of skipped chunk"
@@ -518,7 +524,7 @@ impl ReplicationHandler {
                                         error: Some(error_message::Error::RetryChunk(
                                             RetryChunkMessage {
                                                 object_id: data.object_id,
-                                                chunk_idx: data.chunk_idx,
+                                                chunk_idx: expected, // TODO: previous
                                             },
                                         )),
                                     },
@@ -530,7 +536,7 @@ impl ReplicationHandler {
                         continue;
                     }
                 } else {
-                    chunk_list.push(idx);
+                    expected += 1;
                 };
 
                 // Check checksum of chunk:
@@ -582,7 +588,7 @@ impl ReplicationHandler {
                         ))
                         .await
                 )?;
-                if idx == max_chunks {
+                if (idx + 1) == max_chunks {
                     return Ok(());
                 }
             }
@@ -590,7 +596,6 @@ impl ReplicationHandler {
         });
 
         // Initialize hashing transformers
-        //let (initial_size_trans, initial_size_recv) = SizeProbe::new();
         let (final_sha_trans, final_sha_recv) = HashingTransformer::new(Sha256::new());
         let (final_size_trans, final_size_recv) = SizeProbe::new();
 
@@ -614,26 +619,25 @@ impl ReplicationHandler {
                     .0,
                 );
 
-                // TODO: Initial size must be delivered from sender
-                // awr = awr.add_transformer(initial_size_trans);
-
                 if location_clone.raw_content_len > 5242880 + 80 * 28 {
                     trace!("adding footer generator");
-                    awr = awr.add_transformer(FooterGenerator::new(Some(blocklist)))
-                    // TODO: Insert blocklist
+                    awr = awr.add_transformer(FooterGenerator::new(Some(blocklist.clone())));
                 }
 
                 if let Some(enc_key) = &location_clone.encryption_key {
+                    trace!("adding encryption transformer");
                     awr = awr.add_transformer(trace_err!(ChaCha20Enc::new(
                         true,
                         enc_key.to_string().into_bytes()
                     ))?);
                 }
 
+                trace!("Adding size and hash transformer");
                 awr = awr.add_transformer(final_sha_trans);
                 awr = awr.add_transformer(final_size_trans);
-
+                awr = awr.add_transformer(DebugTransformer::new("ABC".to_string()));
                 trace_err!(awr.process().await)?;
+
                 Ok::<(), anyhow::Error>(())
             })
             .await
@@ -644,9 +648,8 @@ impl ReplicationHandler {
         let sha_final: String = trace_err!(final_sha_recv.try_recv())?;
         //let initial_size: u64 = trace_err!(initial_size_recv.try_recv())?;
         let final_size: u64 = trace_err!(final_size_recv.try_recv())?;
-        //
+
         // Put infos into location
-        //location.raw_content_len = initial_size as i64;
         location.disk_content_len = final_size as i64;
         location.disk_hash = Some(sha_final.clone());
 

@@ -1,9 +1,9 @@
 use crate::{caching::cache::Cache, trace_err};
 use s3s::{
-    auth::{Credentials, S3Auth, S3AuthContext, SecretKey},
+    auth::{S3Auth, S3AuthContext, SecretKey},
     s3_error, S3Result,
 };
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 use tracing::debug;
 
 /// Aruna authprovider

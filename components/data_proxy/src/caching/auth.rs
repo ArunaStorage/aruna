@@ -206,7 +206,7 @@ impl AuthHandler {
         trace!(extracted_perm = ?db_perm_from_method);
         if let Some(b) = path.as_bucket() {
             trace!("detected as_bucket");
-            if method == Method::POST || method == Method::PUT {
+            return if method == Method::POST || method == Method::PUT {
                 trace!("detected POST/PUT");
                 let user = trace_err!(self
                     .cache
@@ -221,7 +221,7 @@ impl AuthHandler {
                     Some(user.access_key.clone())
                 };
 
-                return Ok(CheckAccessResult {
+                Ok(CheckAccessResult {
                     user_id: Some(user.user_id.to_string()),
                     token_id,
                     resource_ids: None,
@@ -233,7 +233,7 @@ impl AuthHandler {
                     }),
                     object: None,
                     bundle: None,
-                });
+                })
             } else {
                 trace!("detected not POST/PUT");
                 let user = trace_err!(self
@@ -243,7 +243,7 @@ impl AuthHandler {
                     )
                     .ok_or_else(|| anyhow!("Unknown user")))?;
 
-                return Ok(CheckAccessResult::new(
+                Ok(CheckAccessResult::new(
                     Some(user.user_id.to_string()),
                     Some(user.access_key),
                     None,
@@ -255,11 +255,12 @@ impl AuthHandler {
                     }),
                     None,
                     None,
-                ));
+                ))
             }
         }
 
         let ((obj, loc), ids, missing, bundle) = self.extract_object_from_path(path, method)?;
+
         if let Some(bundle) = bundle {
             debug!(bundle, "bundle_detected");
             if obj.object_type == ObjectType::Bundle {

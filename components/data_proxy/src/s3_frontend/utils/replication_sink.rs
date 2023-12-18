@@ -6,6 +6,7 @@ use aruna_rust_api::api::dataproxy::services::v2::{
 use bytes::{BufMut, BytesMut};
 use md5::{Digest, Md5};
 use tokio::sync::mpsc::Sender as TokioSender;
+use tracing::trace;
 
 use crate::trace_err;
 
@@ -13,10 +14,11 @@ pub struct ReplicationSink {
     object_id: String,
     blocklist: Vec<u8>,
     chunk_counter: usize, // One chunk contains multiple blocks
-    block_counter: u8,
     sender: TokioSender<Result<PullReplicationResponse, tonic::Status>>,
     buffer: BytesMut,
     is_finished: bool,
+    bytes_counter: u64,
+    bytes_start: u64,
 }
 
 impl Sink for ReplicationSink {}
@@ -32,10 +34,11 @@ impl ReplicationSink {
             object_id,
             blocklist,
             sender,
-            block_counter: 0,
-            chunk_counter: 1,
+            chunk_counter: 0,
             buffer: BytesMut::with_capacity((1024 * 1024 * 5) + 128),
             is_finished: false,
+            bytes_counter: 0,
+            bytes_start: 0,
         }
     }
     async fn create_and_send_message(&mut self) -> Result<()> {
@@ -43,9 +46,10 @@ impl ReplicationSink {
             return Ok(());
         }
 
+        let len = 65536 * (self.blocklist[self.chunk_counter as usize] as u64);
+
         // create a Md5 hasher instance
         let mut hasher = Md5::new();
-
         // process input message
         hasher.update(&self.buffer);
 
@@ -53,15 +57,25 @@ impl ReplicationSink {
         // which in this case is equivalent to [u8; 16]
         let result = hasher.finalize();
 
+        let data = self.buffer.split_to(len as usize).to_vec();
+        trace!(data_len = ?data.len());
         let message = PullReplicationResponse {
             message: Some(Message::Chunk(Chunk {
                 object_id: self.object_id.clone(),
-                chunk_idx: self.chunk_counter as i64,
-                data: self.buffer.split().to_vec(), // Clear self.buffer
+                chunk_idx: (self.chunk_counter as i64),
+                data, // Clear self.buffer
                 checksum: hex::encode(result),
             })),
         };
+        let dbg = match message.message.clone().unwrap() {
+            Message::Chunk(chunk) => chunk.chunk_idx.to_string(),
+            _ => "This should not happen".to_string(),
+        };
+        trace!(dbg);
+        trace!(chunk_counter = ?self.chunk_counter, bytes_start = ?self.bytes_start, bytes_counter = ?self.bytes_counter);
         trace_err!(self.sender.send(Ok(message)).await)?;
+        self.chunk_counter += 1;
+        self.bytes_start += len;
 
         Ok(())
     }
@@ -71,26 +85,34 @@ impl ReplicationSink {
 impl Transformer for ReplicationSink {
     #[tracing::instrument(level = "trace", skip(self, buf, finished))]
     async fn process_bytes(&mut self, buf: &mut BytesMut, finished: bool, _: bool) -> Result<bool> {
+        // 65536
+        self.bytes_counter += buf.len() as u64;
         self.buffer.put(buf.split());
 
-        self.block_counter += 1;
-
         if finished && !self.buffer.is_empty() {
+            trace!(chunk = ?self.chunk_counter, bytes_counter = ?self.bytes_counter, finished = finished, "created and send finish message");
             trace_err!(self.create_and_send_message().await)?;
             self.is_finished = true;
             return Ok(self.is_finished);
         }
 
-        if self.chunk_counter > self.blocklist.len() {
-            return Ok(self.is_finished);
-        } else if self.block_counter == self.blocklist[self.chunk_counter] {
-            self.chunk_counter += 1;
-            self.block_counter = 0;
-
-            if self.chunk_counter != self.blocklist.len() {
-                trace_err!(self.create_and_send_message().await)?;
-            }
+        //if self.chunk_counter >= self.blocklist.len() {
+        //    trace!("Finishing object");
+        //    return Ok(self.is_finished);
+        //} else
+        while (self.bytes_counter - self.bytes_start)
+            > 65536 * (self.blocklist[self.chunk_counter as usize] as u64)
+        {
+            trace_err!(self.create_and_send_message().await)?;
         }
+
+        //     //} else if self.block_counter == self.blocklist[self.chunk_counter] {
+        //     if self.chunk_counter < self.blocklist.len() {
+        //         trace!(chunk = ?self.chunk_counter, bytes_counter = ?self.bytes_counter, finished = finished, "created and send message");
+        //         trace_err!(self.create_and_send_message().await)?;
+        //     }
+        //     self.chunk_counter += 1;
+        // }
         Ok(self.is_finished)
     }
 }

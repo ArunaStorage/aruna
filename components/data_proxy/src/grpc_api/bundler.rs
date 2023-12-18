@@ -42,7 +42,7 @@ impl BundlerService for BundlerServiceImpl {
     async fn create_bundle(
         &self,
         request: tonic::Request<CreateBundleRequest>,
-    ) -> std::result::Result<tonic::Response<CreateBundleResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<CreateBundleResponse>, tonic::Status> {
         let (trels, access_key, secret_key) = if let Some(a) = self.cache.auth.read().await.as_ref()
         {
             let token = trace_err!(get_token_from_md(request.metadata()))
@@ -70,7 +70,7 @@ impl BundlerService for BundlerServiceImpl {
             let secret_key = trace_err!(trace_err!(a.check_ids(
                 &check_vec,
                 &access_key,
-                crate::structs::DbPermissionLevel::Write,
+                DbPermissionLevel::Write,
                 true,
             ))
             .map_err(|_| { tonic::Status::unauthenticated("Unable to authenticate user") })?
@@ -155,7 +155,7 @@ impl BundlerService for BundlerServiceImpl {
     async fn delete_bundle(
         &self,
         request: tonic::Request<DeleteBundleRequest>,
-    ) -> std::result::Result<tonic::Response<DeleteBundleResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<DeleteBundleResponse>, tonic::Status> {
         if let Some(a) = self.cache.auth.read().await.as_ref() {
             let token = trace_err!(get_token_from_md(request.metadata()))
                 .map_err(|e| tonic::Status::unauthenticated(e.to_string()))?;

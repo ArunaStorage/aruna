@@ -82,7 +82,7 @@ pub async fn get_bundle(
 
             Ok::<(), anyhow::Error>(())
         }
-        .instrument(tracing::info_span!("get_bundle_reader")),
+        .instrument(info_span!("get_bundle_reader")),
     );
 
     let data_clone = data_sx.clone();

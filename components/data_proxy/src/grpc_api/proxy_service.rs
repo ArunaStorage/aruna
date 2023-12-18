@@ -1,12 +1,9 @@
 use crate::{
     caching::{auth::get_token_from_md, cache::Cache},
     data_backends::storage_backend::StorageBackend,
-    helpers::sign_download_url,
     replication::replication_handler::ReplicationMessage,
     s3_frontend::utils::replication_sink::ReplicationSink,
-    structs::{
-        Endpoint, Object, ObjectLocation, ObjectType, Origin, TypedRelation, ALL_RIGHTS_RESERVED,
-    },
+    structs::{Object, ObjectLocation},
     trace_err,
 };
 use anyhow::{anyhow, Result};
@@ -14,14 +11,12 @@ use aruna_file::{
     helpers::footer_parser::FooterParser, streamreadwrite::ArunaStreamReadWriter,
     transformer::ReadWriter, transformers::decrypt::ChaCha20Dec,
 };
-use aruna_rust_api::api::{
-    dataproxy::services::v2::{
-        dataproxy_replication_service_server::DataproxyReplicationService,
-        pull_replication_request::Message, pull_replication_response, ChunkAckMessage, DataInfo,
-        DataInfos, InfoAckMessage, InitMessage, PullReplicationRequest, PullReplicationResponse,
-        PushReplicationRequest, PushReplicationResponse,
-    },
-    storage::models::v2::{DataClass, Status},
+
+use aruna_rust_api::api::dataproxy::services::v2::dataproxy_replication_service_server::DataproxyReplicationService;
+use aruna_rust_api::api::dataproxy::services::v2::{
+    pull_replication_request::Message, pull_replication_response, ChunkAckMessage, InfoAckMessage,
+    InitMessage, PullReplicationRequest, PullReplicationResponse, PushReplicationRequest,
+    PushReplicationResponse,
 };
 use async_channel::Sender;
 use dashmap::DashMap;
@@ -86,11 +81,11 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
         // Sends initial Vec<(object, location)> to sync/ack/stream handlers
         let (object_input_send, object_input_rcv) = async_channel::bounded(1);
         // Sends ack messages to the ack handler
-        let (object_ack_send, object_ack_rcv) = async_channel::bounded(100);
+        let (object_ack_send, object_ack_rcv) = async_channel::bounded(1000);
         // Sends the finished ack hash map to the output handler to compare send/ack
         let (object_sync_send, object_sync_rcv) = async_channel::bounded(1);
         // Handles output stream
-        let (object_output_send, object_output_rcv) = tokio::sync::mpsc::channel(100);
+        let (object_output_send, object_output_rcv) = tokio::sync::mpsc::channel(1000);
 
         // Recieving loop
         let proxy_replication_service = self.clone();
@@ -222,7 +217,12 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                 .get_footer(location.clone())
                                 .await
                             {
-                                Ok(footer) => footer,
+                                Ok(mut footer) => {
+                                    if let Some(ref mut footer) = footer {
+                                        trace_err!(footer.parse())?;
+                                    };
+                                    footer
+                                }
                                 Err(err) => {
                                     error!("{err}");
                                     trace_err!(
@@ -237,8 +237,11 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                             };
                             // Get blocklist
                             let blocklist = footer.map(|f| f.get_blocklist());
+                            trace!(?blocklist);
+                            // Need to keep track when to create an object, and when to only update the location
                             // Get chunk size from blocklist
                             let max_blocks = blocklist.as_ref().map(|l| l.len()).unwrap_or(1);
+                            trace!(?max_blocks);
                             stored_objects.insert(object.id, max_blocks);
                             // Send ObjectInfo into stream
                             trace_err!(object_output_send
@@ -254,6 +257,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                     )),
                                 }))
                                 .await)?;
+                            trace!("Send object info into stream");
 
                             // Send data into stream
                             trace_err!(
@@ -266,6 +270,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                     )
                                     .await
                             )?;
+                            trace!("Send data into stream");
                         }
                         // Check if any message was unacknowledged
                         if let Ok(ack_msgs) = object_sync_rcv.recv().await {
@@ -382,7 +387,7 @@ impl DataproxyReplicationServiceImpl {
         Ok(objects)
     }
 
-    async fn get_footer(&self, location: ObjectLocation) -> anyhow::Result<Option<FooterParser>> {
+    async fn get_footer(&self, location: ObjectLocation) -> Result<Option<FooterParser>> {
         let content_length = location.raw_content_len;
         let encryption_key = location
             .clone()
@@ -390,10 +395,10 @@ impl DataproxyReplicationServiceImpl {
             .map(|k| k.as_bytes().to_vec());
 
         // Gets 128 kb chunks (last 2)
-        let footer_parser: Option<FooterParser> = if content_length > 5242880 {
+        let footer_parser: Option<FooterParser> = if content_length > 5245120 {
             trace!("getting footer");
             // Without encryption block because this is already checked inside
-            let (footer_sender, footer_receiver) = async_channel::unbounded();
+            let (footer_sender, footer_receiver) = async_channel::bounded(1000);
             pin!(footer_receiver);
 
             let parser = match encryption_key.clone() {
@@ -411,7 +416,7 @@ impl DataproxyReplicationServiceImpl {
                             .await
                     )
                     .map_err(|_| tonic::Status::internal("Unable to get encryption_footer"))?;
-                    let mut output = Vec::with_capacity(130_000);
+                    let mut output = Vec::with_capacity(131_128);
                     // Stream takes receiver chunks und them into vec
                     let mut arsw =
                         ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
@@ -447,7 +452,7 @@ impl DataproxyReplicationServiceImpl {
                             .await
                     )
                     .map_err(|_| anyhow!("Unable to get compression footer"))?;
-                    let mut output = Vec::with_capacity(130_000);
+                    let mut output = Vec::with_capacity(131_128);
                     let mut arsw =
                         ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
 
@@ -476,14 +481,14 @@ impl DataproxyReplicationServiceImpl {
         location: ObjectLocation,
         blocklist: Vec<u8>,
         sender: tokio::sync::mpsc::Sender<Result<PullReplicationResponse, tonic::Status>>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         // Get encryption_key
         let key = location
             .clone()
             .encryption_key
             .map(|k| k.as_bytes().to_vec());
         // Create channel for get_object
-        let (object_sender, object_receiver) = async_channel::bounded(10);
+        let (object_sender, object_receiver) = async_channel::bounded(255);
 
         // Spawn get_object
         let backend = self.backend.clone();
@@ -495,7 +500,6 @@ impl DataproxyReplicationServiceImpl {
             }
             .instrument(info_span!("get_object")),
         );
-        //let (final_send, final_rcv) = async_channel::bounded(10);
 
         // Spawn final part
         tokio::spawn(
@@ -515,12 +519,9 @@ impl DataproxyReplicationServiceImpl {
                         .await
                 )?;
 
-                match 1 {
-                    1 => Ok(()),
-                    _ => Err(anyhow!("Internal notifier error")),
-                }
+                Ok::<(), anyhow::Error>(())
             }
-            .instrument(tracing::info_span!("query_data")),
+            .instrument(info_span!("query_data")),
         );
         Ok(())
     }

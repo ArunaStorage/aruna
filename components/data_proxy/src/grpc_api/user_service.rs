@@ -34,7 +34,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
         &self,
         request: tonic::Request<GetCredentialsRequest>,
     ) -> Result<tonic::Response<GetCredentialsResponse>, tonic::Status> {
-        if let Some(a) = self.cache.auth.read().await.as_ref() {
+        return if let Some(a) = self.cache.auth.read().await.as_ref() {
             let token = trace_err!(get_token_from_md(request.metadata()))
                 .map_err(|e| tonic::Status::unauthenticated(e.to_string()))?;
 
@@ -48,23 +48,23 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
                 let (access_key, secret_key) = trace_err!(
                     self.cache.clone().create_or_get_secret(user, tid).await
                 )
-                .map_err(|_| tonic::Status::unauthenticated("Unable to authenticate user"))?;
+                    .map_err(|_| tonic::Status::unauthenticated("Unable to authenticate user"))?;
 
-                return Ok(tonic::Response::new(GetCredentialsResponse {
+                Ok(tonic::Response::new(GetCredentialsResponse {
                     access_key,
                     secret_key,
-                }));
+                }))
             } else {
                 error!("query handler not available");
-                return Err(tonic::Status::unauthenticated(
+                Err(tonic::Status::unauthenticated(
                     "Unable to authenticate user",
-                ));
+                ))
             }
         } else {
             error!("authentication handler not available");
-            return Err(tonic::Status::unauthenticated(
+            Err(tonic::Status::unauthenticated(
                 "Unable to authenticate user",
-            ));
+            ))
         }
     }
 
