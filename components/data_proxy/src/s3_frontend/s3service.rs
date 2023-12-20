@@ -45,6 +45,7 @@ use s3s::S3Request;
 use s3s::S3Response;
 use s3s::S3Result;
 use s3s::S3;
+use s3s::stream::ByteStream;
 use sha2::Sha256;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -130,15 +131,23 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<PutObjectInput>,
     ) -> S3Result<S3Response<PutObjectOutput>> {
-        match req.input.content_length {
+        let expected_len = match req.input.content_length {
             Some(0) | None => {
-                error!("Missing or invalid (0) content-length");
-                return Err(s3_error!(
-                    MissingContentLength,
-                    "Missing or invalid (0) content-length"
-                ));
+
+                match req.input.body.as_ref().map(|b| {
+                    b.remaining_length().exact()
+                }).flatten() {
+                    Some(0) | None => {
+                        error!("Missing or invalid (0) content-length");
+                        return Err(s3_error!(
+                            MissingContentLength,
+                            "Missing or invalid (0) content-length"
+                        ));
+                    }
+                    Some(a) => {a as i64}
+                }
             }
-            _ => {}
+            Some(a) => {a}
         };
 
         let CheckAccessResult {
@@ -257,7 +266,7 @@ impl S3 for ArunaS3Service {
         // Initialize data location in the storage backend
         let mut location = trace_err!(
             self.backend
-                .initialize_location(&object, req.input.content_length, None, false)
+                .initialize_location(&object, Some(expected_len), None, false)
                 .await
         )
         .map_err(|_| s3_error!(InternalError, "Unable to create object_location"))?;
@@ -776,11 +785,18 @@ impl S3 for ArunaS3Service {
     ) -> S3Result<S3Response<UploadPartOutput>> {
         match req.input.content_length {
             Some(0) | None => {
-                error!("Missing or invalid (0) content-length");
-                return Err(s3_error!(
-                    MissingContentLength,
-                    "Missing or invalid (0) content-length"
-                ));
+                match req.input.body.as_ref().map(|b| {
+                    b.remaining_length().exact()
+                }).flatten() {
+                    Some(0) | None => {
+                        error!("Missing or invalid (0) content-length");
+                        return Err(s3_error!(
+                            MissingContentLength,
+                            "Missing or invalid (0) content-length"
+                        ));
+                    }
+                    _ => {}
+                }
             }
             _ => {}
         };
