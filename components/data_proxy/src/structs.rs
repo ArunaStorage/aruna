@@ -23,6 +23,7 @@ use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use http::Method;
+use s3s::dto::CORSRule as S3SCORSRule;
 use s3s::dto::CreateBucketInput;
 use s3s::path::S3Path;
 use serde::{Deserialize, Serialize};
@@ -1438,6 +1439,30 @@ impl CheckAccessResult {
         }
     }
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CORSRule {
+    pub allowed_headers: Vec<String>,
+    pub allowed_methods: Vec<String>,
+    pub allowed_origins: Vec<String>,
+    pub expose_headers: Vec<String>,
+    pub max_age_seconds: i32,
+}
+
+impl From<S3SCORSRule> for CORSRule {
+    fn from(value: S3SCORSRule) -> Self {
+        Self {
+            allowed_headers: value.allowed_headers.unwrap_or_default(),
+            allowed_methods: value.allowed_methods,
+            allowed_origins: value.allowed_origins,
+            expose_headers: value.expose_headers.unwrap_or_default(),
+            max_age_seconds: value.max_age_seconds,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CORSConfiguration(pub Vec<CORSRule>);
 
 #[cfg(test)]
 mod tests {

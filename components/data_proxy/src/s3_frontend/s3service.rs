@@ -40,12 +40,12 @@ use http::HeaderValue;
 use md5::{Digest, Md5};
 use s3s::dto::*;
 use s3s::s3_error;
+use s3s::stream::ByteStream;
 use s3s::S3Error;
 use s3s::S3Request;
 use s3s::S3Response;
 use s3s::S3Result;
 use s3s::S3;
-use s3s::stream::ByteStream;
 use sha2::Sha256;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -133,10 +133,13 @@ impl S3 for ArunaS3Service {
     ) -> S3Result<S3Response<PutObjectOutput>> {
         let expected_len = match req.input.content_length {
             Some(0) | None => {
-
-                match req.input.body.as_ref().map(|b| {
-                    b.remaining_length().exact()
-                }).flatten() {
+                match req
+                    .input
+                    .body
+                    .as_ref()
+                    .map(|b| b.remaining_length().exact())
+                    .flatten()
+                {
                     Some(0) | None => {
                         error!("Missing or invalid (0) content-length");
                         return Err(s3_error!(
@@ -144,10 +147,10 @@ impl S3 for ArunaS3Service {
                             "Missing or invalid (0) content-length"
                         ));
                     }
-                    Some(a) => {a as i64}
+                    Some(a) => a as i64,
                 }
             }
-            Some(a) => {a}
+            Some(a) => a,
         };
 
         let CheckAccessResult {
@@ -785,9 +788,13 @@ impl S3 for ArunaS3Service {
     ) -> S3Result<S3Response<UploadPartOutput>> {
         match req.input.content_length {
             Some(0) | None => {
-                match req.input.body.as_ref().map(|b| {
-                    b.remaining_length().exact()
-                }).flatten() {
+                match req
+                    .input
+                    .body
+                    .as_ref()
+                    .map(|b| b.remaining_length().exact())
+                    .flatten()
+                {
                     Some(0) | None => {
                         error!("Missing or invalid (0) content-length");
                         return Err(s3_error!(
@@ -1409,5 +1416,25 @@ impl S3 for ArunaS3Service {
         debug!(?result);
 
         Ok(S3Response::new(result))
+    }
+
+    #[tracing::instrument(err)]
+    async fn put_bucket_cors(
+        &self,
+        req: S3Request<PutBucketCorsInput>,
+    ) -> S3Result<S3Response<PutBucketCorsOutput>> {
+        let config = crate::structs::CORSConfiguration(
+            req.input
+                .cors_configuration
+                .cors_rules
+                .into_iter()
+                .map(CORSRule::into)
+                .collect(),
+        );
+        error!("PutBucketCors is not implemented yet");
+        Err(s3_error!(
+            NotImplemented,
+            "PutBucketCors is not implemented yet"
+        ))
     }
 }
