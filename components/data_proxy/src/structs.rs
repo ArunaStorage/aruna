@@ -815,7 +815,7 @@ impl Object {
             .map(|x| {
                 x.to_str()
                     .unwrap_or("")
-                    .split(",")
+                    .split(',')
                     .map(|e| e.trim().to_string())
                     .collect::<Vec<String>>()
             });
@@ -833,7 +833,7 @@ impl Object {
                         )),
                         _ => {
                             error!("Invalid cors config");
-                            return None;
+                            None
                         }
                     }
                 } else {
@@ -1527,52 +1527,50 @@ impl CORSConfiguration {
         header: Option<Vec<String>>,
     ) -> Option<HashMap<String, String>> {
         for cors_rule in self.0 {
-            if cors_rule.allowed_origins.contains(&origin) {
-                if cors_rule.allowed_methods.contains(&method) {
-                    let mut headers = HashMap::new();
-                    if !cors_rule.allowed_origins.is_empty() {
-                        headers.insert(
-                            "Access-Control-Allow-Origin".to_string(),
-                            cors_rule.allowed_origins.join(","),
-                        );
-                    }
-                    if !cors_rule.allowed_methods.is_empty() {
-                        headers.insert(
-                            "Access-Control-Allow-Methods".to_string(),
-                            cors_rule.allowed_methods.join(","),
-                        );
-                    }
-                    if !cors_rule.allowed_headers.is_empty() {
-                        headers.insert(
-                            "Access-Control-Allow-Headers".to_string(),
-                            cors_rule.allowed_headers.join(","),
-                        );
-                    }
-                    if !cors_rule.expose_headers.is_empty() {
-                        headers.insert(
-                            "Access-Control-Expose-Headers".to_string(),
-                            cors_rule.expose_headers.join(","),
-                        );
-                    }
-                    if cors_rule.max_age_seconds == 0 {
-                        headers.insert(
-                            "Access-Control-Max-Age".to_string(),
-                            cors_rule.max_age_seconds.to_string(),
-                        );
-                    }
-
-                    if let Some(expected_headers) = header {
-                        for header in expected_headers {
-                            if !headers.contains_key(&header) {
-                                return None;
-                            }
-                        }
-                    } else {
-                        return None;
-                    }
-
-                    return Some(headers);
+            if cors_rule.allowed_origins.contains(&origin) && cors_rule.allowed_methods.contains(&method) {
+                let mut headers = HashMap::new();
+                if !cors_rule.allowed_origins.is_empty() {
+                    headers.insert(
+                        "Access-Control-Allow-Origin".to_string(),
+                        cors_rule.allowed_origins.join(","),
+                    );
                 }
+                if !cors_rule.allowed_methods.is_empty() {
+                    headers.insert(
+                        "Access-Control-Allow-Methods".to_string(),
+                        cors_rule.allowed_methods.join(","),
+                    );
+                }
+                if !cors_rule.allowed_headers.is_empty() {
+                    headers.insert(
+                        "Access-Control-Allow-Headers".to_string(),
+                        cors_rule.allowed_headers.join(","),
+                    );
+                }
+                if !cors_rule.expose_headers.is_empty() {
+                    headers.insert(
+                        "Access-Control-Expose-Headers".to_string(),
+                        cors_rule.expose_headers.join(","),
+                    );
+                }
+                if cors_rule.max_age_seconds == 0 {
+                    headers.insert(
+                        "Access-Control-Max-Age".to_string(),
+                        cors_rule.max_age_seconds.to_string(),
+                    );
+                }
+
+                if let Some(expected_headers) = header {
+                    for header in expected_headers {
+                        if !headers.contains_key(&header) {
+                            return None;
+                        }
+                    }
+                } else {
+                    return None;
+                }
+
+                return Some(headers);
             }
         }
         None

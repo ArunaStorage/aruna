@@ -284,11 +284,10 @@ impl Cache {
     ) -> Option<(Object, Option<ObjectLocation>)> {
         self.paths
             .get(&res)
-            .map(|e| {
+            .and_then(|e| {
                 let id = e.value().clone();
                 self.resources.get(&id.get_id()).map(|e| e.value().clone())
             })
-            .flatten()
             .clone()
     }
 

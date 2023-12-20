@@ -137,8 +137,7 @@ impl S3 for ArunaS3Service {
                     .input
                     .body
                     .as_ref()
-                    .map(|b| b.remaining_length().exact())
-                    .flatten()
+                    .and_then(|b| b.remaining_length().exact())
                 {
                     Some(0) | None => {
                         error!("Missing or invalid (0) content-length");
@@ -792,8 +791,7 @@ impl S3 for ArunaS3Service {
                     .input
                     .body
                     .as_ref()
-                    .map(|b| b.remaining_length().exact())
-                    .flatten()
+                    .and_then(|b| b.remaining_length().exact())
                 {
                     Some(0) | None => {
                         error!("Missing or invalid (0) content-length");
