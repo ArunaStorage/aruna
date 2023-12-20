@@ -1431,10 +1431,50 @@ impl S3 for ArunaS3Service {
                 .map(CORSRule::into)
                 .collect(),
         );
-        error!("PutBucketCors is not implemented yet");
-        Err(s3_error!(
-            NotImplemented,
-            "PutBucketCors is not implemented yet"
-        ))
+
+        let data = req.extensions.get::<CheckAccessResult>().cloned();
+
+        if let Some(client) = self.cache.aruna_client.read().await.as_ref() {
+            let CheckAccessResult {
+                user_id,
+                token_id,
+                object,
+                ..
+            } = trace_err!(data.ok_or_else(|| s3_error!(InternalError, "Internal Error")))?;
+
+            let (bucket_obj, _) =
+                object.ok_or_else(|| s3_error!(NoSuchBucket, "Bucket not found"))?;
+
+            let token = trace_err!(self
+                .cache
+                .auth
+                .read()
+                .await
+                .as_ref()
+                .ok_or_else(|| s3_error!(InternalError, "Missing auth handler")))?
+            .sign_impersonating_token(
+                trace_err!(user_id.ok_or_else(|| {
+                    s3_error!(NotSignedUp, "Unauthorized: Impersonating user error")
+                }))?,
+                token_id,
+            )
+            .map_err(|_| s3_error!(NotSignedUp, "Unauthorized: Impersonating error"))?;
+
+            trace_err!(
+                client
+                    .add_or_replace_key_value_project(
+                        &token,
+                        bucket_obj,
+                        "app.aruna-storage.org/cors",
+                        &serde_json::to_string(&config).map_err(|_| s3_error!(
+                            InternalError,
+                            "Unable to serialize cors configuration"
+                        ))?
+                    )
+                    .await
+            )
+            .map_err(|_| s3_error!(InternalError, "Unable to update KeyValues"))?;
+        }
+        Ok(S3Response::new(PutBucketCorsOutput::default()))
     }
 }

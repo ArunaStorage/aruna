@@ -15,13 +15,13 @@ use aruna_rust_api::api::notification::services::v2::GetEventMessageStreamReques
 use aruna_rust_api::api::notification::services::v2::Reply;
 use aruna_rust_api::api::notification::services::v2::ResourceEvent;
 use aruna_rust_api::api::notification::services::v2::UserEvent;
-use aruna_rust_api::api::storage::models::v2::KeyValue;
-use aruna_rust_api::api::storage::models::v2::KeyValueVariant;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
 use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
 use aruna_rust_api::api::storage::models::v2::GenericResource;
 use aruna_rust_api::api::storage::models::v2::Hash;
+use aruna_rust_api::api::storage::models::v2::KeyValue;
+use aruna_rust_api::api::storage::models::v2::KeyValueVariant;
 use aruna_rust_api::api::storage::models::v2::Object;
 use aruna_rust_api::api::storage::models::v2::Project;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
@@ -412,7 +412,12 @@ impl GrpcQueryHandler {
             trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
         );
 
-        trace_err!(self.project_service.clone().update_project_key_values(req).await)?;
+        trace_err!(
+            self.project_service
+                .clone()
+                .update_project_key_values(req)
+                .await
+        )?;
         Ok(())
     }
 
