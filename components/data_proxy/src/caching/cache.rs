@@ -277,6 +277,20 @@ impl Cache {
         trace!("updated pks in cache");
         Ok(())
     }
+    #[tracing::instrument(level = "trace", skip(self, res))]
+    pub fn get_full_resource_by_name(
+        &self,
+        res: ResourceString,
+    ) -> Option<(Object, Option<ObjectLocation>)> {
+        self.paths
+            .get(&res)
+            .map(|e| {
+                let id = e.value().clone();
+                self.resources.get(&id.get_id()).map(|e| e.value().clone())
+            })
+            .flatten()
+            .clone()
+    }
 
     #[tracing::instrument(level = "trace", skip(self, res))]
     pub fn get_res_by_res_string(&self, res: ResourceString) -> Option<ResourceIds> {

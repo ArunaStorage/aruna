@@ -13,6 +13,8 @@ use anyhow::bail;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::DataClass;
 use diesel_ulid::DieselUlid;
+use http::HeaderMap;
+use http::HeaderValue;
 use http::Method;
 use jsonwebtoken::Algorithm;
 use jsonwebtoken::EncodingKey;
@@ -189,11 +191,23 @@ impl AuthHandler {
         creds: Option<&Credentials>,
         method: &Method,
         path: &S3Path,
+        headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult> {
         let db_perm_from_method = DbPermissionLevel::from(method);
         trace!(extracted_perm = ?db_perm_from_method);
+
         if let Some(b) = path.as_bucket() {
             trace!("detected as_bucket");
+
+            let headers = if let Some((project, _)) = self
+                .cache
+                .get_full_resource_by_name(crate::structs::ResourceString::Project(b.to_string()))
+            {
+                project.project_get_headers(method, headers)?
+            } else {
+                None
+            };
+
             if method == Method::POST || method == Method::PUT {
                 trace!("detected POST/PUT");
                 let user = trace_err!(self
@@ -221,6 +235,7 @@ impl AuthHandler {
                     }),
                     object: None,
                     bundle: None,
+                    headers,
                 });
             } else {
                 trace!("detected not POST/PUT");
@@ -243,61 +258,125 @@ impl AuthHandler {
                     }),
                     None,
                     None,
+                    headers,
                 ));
             }
-        }
+        } else if let Some((bucket, _)) = path.as_object() {
+            let ((obj, loc), ids, missing, bundle) = self.extract_object_from_path(path, method)?;
+            if let Some(bundle) = bundle {
+                debug!(bundle, "bundle_detected");
 
-        let ((obj, loc), ids, missing, bundle) = self.extract_object_from_path(path, method)?;
-        if let Some(bundle) = bundle {
-            debug!(bundle, "bundle_detected");
-            if obj.object_type == ObjectType::Bundle {
-                // Check if user has access to Bundle Object
-                let user = trace_err!(self
-                    .cache
-                    .get_user_by_key(
-                        &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
-                    )
-                    .ok_or_else(|| anyhow!("Unknown user")))?;
+                if obj.object_type == ObjectType::Bundle {
+                    // Check if user has access to Bundle Object
+                    let user = trace_err!(self
+                        .cache
+                        .get_user_by_key(
+                            &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
+                        )
+                        .ok_or_else(|| anyhow!("Unknown user")))?;
 
-                for (res, perm) in user.permissions {
-                    // ResourceIds only contain Bundle Id as Project
-                    if ids.check_if_in(res) && perm >= db_perm_from_method {
-                        let token_id = if user.user_id.to_string() == user.access_key {
-                            None
-                        } else {
-                            Some(user.access_key.clone())
-                        };
+                    for (res, perm) in user.permissions {
+                        // ResourceIds only contain Bundle Id as Project
+                        if ids.check_if_in(res) && perm >= db_perm_from_method {
+                            let token_id = if user.user_id.to_string() == user.access_key {
+                                None
+                            } else {
+                                Some(user.access_key.clone())
+                            };
 
-                        return Ok(CheckAccessResult {
-                            user_id: Some(user.user_id.to_string()),
-                            token_id,
-                            resource_ids: None,
-                            missing_resources: None, // Bundles are standalone
-                            object: Some((obj, None)), // Bundles can't have a location
-                            bundle: Some(bundle),
-                        });
+                            return Ok(CheckAccessResult {
+                                user_id: Some(user.user_id.to_string()),
+                                token_id,
+                                resource_ids: None,
+                                missing_resources: None, // Bundles are standalone
+                                object: Some((obj, None)), // Bundles can't have a location
+                                bundle: Some(bundle),
+                                headers: None,
+                            });
+                        }
+                    }
+                }
+
+                if db_perm_from_method == DbPermissionLevel::Read
+                    && obj.data_class == DataClass::Public
+                {
+                    debug!("public_bundle");
+                    return Ok(CheckAccessResult {
+                        user_id: None,
+                        token_id: None,
+                        resource_ids: None,
+                        missing_resources: None,
+                        object: Some((obj, loc)),
+                        bundle: Some(bundle),
+                        headers: None,
+                    });
+                } else {
+                    debug!("bundle_not_public");
+                    let user = trace_err!(self
+                        .cache
+                        .get_user_by_key(
+                            &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
+                        )
+                        .ok_or_else(|| anyhow!("Unknown user")))?;
+
+                    for (res, perm) in user.permissions {
+                        if ids.check_if_in(res) && perm >= db_perm_from_method {
+                            let token_id = if user.user_id.to_string() == user.access_key {
+                                None
+                            } else {
+                                Some(user.access_key.clone())
+                            };
+                            trace!(resource_id = ?res, permission = ?perm, "permission match found");
+                            return Ok(CheckAccessResult::new(
+                                Some(user.user_id.to_string()),
+                                token_id,
+                                Some(ids),
+                                missing,
+                                Some((obj, loc)),
+                                Some(bundle),
+                                None,
+                            ));
+                        }
                     }
                 }
             }
 
+            let headers = if let Some((project, _)) =
+                self.cache
+                    .get_full_resource_by_name(crate::structs::ResourceString::Project(
+                        bucket.to_string(),
+                    )) {
+                project.project_get_headers(method, headers)?
+            } else {
+                None
+            };
+
+            match method {
+                &Method::GET | &Method::HEAD | &Method::OPTIONS | &Method::DELETE => {
+                    if missing.is_some() {
+                        bail!("Resource not found")
+                    }
+                }
+                _ => {}
+            };
+
             if db_perm_from_method == DbPermissionLevel::Read && obj.data_class == DataClass::Public
             {
-                debug!("public_bundle");
-                return Ok(CheckAccessResult {
-                    user_id: None,
-                    token_id: None,
-                    resource_ids: None,
-                    missing_resources: None,
-                    object: Some((obj, loc)),
-                    bundle: Some(bundle),
-                });
-            } else {
-                debug!("bundle_not_public");
+                debug!("public_object");
+                return Ok(CheckAccessResult::new(
+                    None,
+                    None,
+                    Some(ids),
+                    missing,
+                    Some((obj, loc)),
+                    None,
+                    headers,
+                ));
+            } else if let Some(creds) = creds {
+                debug!("private object");
                 let user = trace_err!(self
                     .cache
-                    .get_user_by_key(
-                        &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
-                    )
+                    .get_user_by_key(&creds.access_key)
                     .ok_or_else(|| anyhow!("Unknown user")))?;
 
                 for (res, perm) in user.permissions {
@@ -314,55 +393,10 @@ impl AuthHandler {
                             Some(ids),
                             missing,
                             Some((obj, loc)),
-                            Some(bundle),
+                            None,
+                            headers,
                         ));
                     }
-                }
-            }
-        }
-
-        match method {
-            &Method::GET | &Method::HEAD | &Method::OPTIONS | &Method::DELETE => {
-                if missing.is_some() {
-                    bail!("Resource not found")
-                }
-            }
-            _ => {}
-        };
-
-        if db_perm_from_method == DbPermissionLevel::Read && obj.data_class == DataClass::Public {
-            debug!("public_object");
-            return Ok(CheckAccessResult::new(
-                None,
-                None,
-                Some(ids),
-                missing,
-                Some((obj, loc)),
-                None,
-            ));
-        } else if let Some(creds) = creds {
-            debug!("private object");
-            let user = trace_err!(self
-                .cache
-                .get_user_by_key(&creds.access_key)
-                .ok_or_else(|| anyhow!("Unknown user")))?;
-
-            for (res, perm) in user.permissions {
-                if ids.check_if_in(res) && perm >= db_perm_from_method {
-                    let token_id = if user.user_id.to_string() == user.access_key {
-                        None
-                    } else {
-                        Some(user.access_key.clone())
-                    };
-                    trace!(resource_id = ?res, permission = ?perm, "permission match found");
-                    return Ok(CheckAccessResult::new(
-                        Some(user.user_id.to_string()),
-                        token_id,
-                        Some(ids),
-                        missing,
-                        Some((obj, loc)),
-                        None,
-                    ));
                 }
             }
         }
