@@ -138,8 +138,7 @@ impl S3 for ArunaS3Service {
                     .input
                     .body
                     .as_ref()
-                    .map(|b| b.remaining_length().exact())
-                    .flatten()
+                    .and_then(|b| b.remaining_length().exact())
                 {
                     Some(0) | None => {
                         error!("Missing or invalid (0) content-length");
@@ -799,8 +798,7 @@ impl S3 for ArunaS3Service {
                     .input
                     .body
                     .as_ref()
-                    .map(|b| b.remaining_length().exact())
-                    .flatten()
+                    .and_then(|b| b.remaining_length().exact())
                 {
                     Some(0) | None => {
                         error!("Missing or invalid (0) content-length");
@@ -1249,7 +1247,7 @@ impl S3 for ArunaS3Service {
                 resp.headers.insert(
                     HeaderName::from_bytes(k.as_bytes())
                         .map_err(|_| s3_error!(InternalError, "Unable to parse header name"))?,
-                    HeaderValue::from_str(&*v)
+                    HeaderValue::from_str(&v)
                         .map_err(|_| s3_error!(InternalError, "Unable to parse header value"))?,
                 );
             }
@@ -1326,7 +1324,7 @@ impl S3 for ArunaS3Service {
                 resp.headers.insert(
                     HeaderName::from_bytes(k.as_bytes())
                         .map_err(|_| s3_error!(InternalError, "Unable to parse header name"))?,
-                    HeaderValue::from_str(&*v)
+                    HeaderValue::from_str(&v)
                         .map_err(|_| s3_error!(InternalError, "Unable to parse header value"))?,
                 );
             }
@@ -1469,7 +1467,7 @@ impl S3 for ArunaS3Service {
                 resp.headers.insert(
                     HeaderName::from_bytes(k.as_bytes())
                         .map_err(|_| s3_error!(InternalError, "Unable to parse header name"))?,
-                    HeaderValue::from_str(&*v)
+                    HeaderValue::from_str(&v)
                         .map_err(|_| s3_error!(InternalError, "Unable to parse header value"))?,
                 );
             }
@@ -1606,8 +1604,7 @@ impl S3 for ArunaS3Service {
         let CheckAccessResult { object, .. } =
             trace_err!(data.ok_or_else(|| s3_error!(InternalError, "Internal Error")))?;
 
-        let (bucket_obj, _) =
-            object.ok_or_else(|| s3_error!(NoSuchBucket, "Bucket not found"))?;
+        let (bucket_obj, _) = object.ok_or_else(|| s3_error!(NoSuchBucket, "Bucket not found"))?;
 
         let cors = bucket_obj
             .key_values

@@ -23,8 +23,8 @@ use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use http::{HeaderValue, Method};
-use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
 use s3s::dto::CreateBucketInput;
+use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
 use s3s::path::S3Path;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -32,7 +32,7 @@ use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
 };
-use tracing::{error, trace, debug};
+use tracing::{debug, error};
 
 /* ----- Constants ----- */
 pub const ALL_RIGHTS_RESERVED: &str = "AllRightsReserved";
@@ -1518,15 +1518,15 @@ impl From<S3SCORSRule> for CORSRule {
     }
 }
 
-impl Into<S3SCORSRule> for CORSRule {
-    fn into(self) -> S3SCORSRule {
+impl From<CORSRule> for S3SCORSRule {
+    fn from(val: CORSRule) -> Self {
         S3SCORSRule {
-            id: self.id,
-            allowed_headers: self.allowed_headers,
-            allowed_methods: self.allowed_methods,
-            allowed_origins: self.allowed_origins,
-            expose_headers: self.expose_headers,
-            max_age_seconds: self.max_age_seconds,
+            id: val.id,
+            allowed_headers: val.allowed_headers,
+            allowed_methods: val.allowed_methods,
+            allowed_origins: val.allowed_origins,
+            expose_headers: val.expose_headers,
+            max_age_seconds: val.max_age_seconds,
         }
     }
 }
@@ -1534,9 +1534,13 @@ impl Into<S3SCORSRule> for CORSRule {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CORSConfiguration(pub Vec<CORSRule>);
 
-impl Into<GetBucketCorsOutput> for CORSConfiguration {
-    fn into(self) -> GetBucketCorsOutput {
-        let cors_rule = self.0.iter().map(|x| CORSRule::into(x.clone())).collect::<Vec<S3SCORSRule>>();
+impl From<CORSConfiguration> for GetBucketCorsOutput {
+    fn from(val: CORSConfiguration) -> Self {
+        let cors_rule = val
+            .0
+            .iter()
+            .map(|x| CORSRule::into(x.clone()))
+            .collect::<Vec<S3SCORSRule>>();
         if cors_rule.is_empty() {
             GetBucketCorsOutput {
                 cors_rules: None,
