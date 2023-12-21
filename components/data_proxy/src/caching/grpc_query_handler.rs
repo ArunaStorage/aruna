@@ -20,6 +20,8 @@ use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
 use aruna_rust_api::api::storage::models::v2::GenericResource;
 use aruna_rust_api::api::storage::models::v2::Hash;
+use aruna_rust_api::api::storage::models::v2::KeyValue;
+use aruna_rust_api::api::storage::models::v2::KeyValueVariant;
 use aruna_rust_api::api::storage::models::v2::Object;
 use aruna_rust_api::api::storage::models::v2::Project;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
@@ -38,6 +40,7 @@ use aruna_rust_api::api::storage::services::v2::GetProjectRequest;
 use aruna_rust_api::api::storage::services::v2::GetPubkeysRequest;
 use aruna_rust_api::api::storage::services::v2::GetUserRedactedRequest;
 use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
+use aruna_rust_api::api::storage::services::v2::UpdateProjectKeyValuesRequest;
 use aruna_rust_api::api::{
     notification::services::v2::event_notification_service_client::EventNotificationServiceClient,
     storage::services::v2::{
@@ -377,6 +380,48 @@ impl GrpcQueryHandler {
 
         self.cache.upsert_object(object.clone(), loc).await?;
         Ok(object)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, obj, token))]
+    pub async fn add_or_replace_key_value_project(
+        &self,
+        token: &str,
+        obj: DPObject,
+        kv: Option<(&str, &str)>,
+    ) -> Result<()> {
+        let remove_cors = obj
+            .key_values
+            .iter()
+            .filter(|e| e.key == "app.aruna-storage.org/cors")
+            .cloned()
+            .collect();
+
+        let mut req = Request::new(UpdateProjectKeyValuesRequest {
+            project_id: obj.id.to_string(),
+            add_key_values: kv
+                .map(|(k, v)| {
+                    vec![KeyValue {
+                        key: k.to_string(),
+                        value: v.to_string(),
+                        variant: KeyValueVariant::Label as i32,
+                    }]
+                })
+                .unwrap_or_default(),
+            remove_key_values: remove_cors,
+        });
+
+        req.metadata_mut().append(
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
+        );
+
+        trace_err!(
+            self.project_service
+                .clone()
+                .update_project_key_values(req)
+                .await
+        )?;
+        Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip(self, object, token, force_update))]

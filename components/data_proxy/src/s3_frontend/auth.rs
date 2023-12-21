@@ -34,7 +34,7 @@ impl S3Auth for AuthProvider {
         match self.cache.auth.read().await.as_ref() {
             Some(auth) => {
                 let result = trace_err!(
-                    auth.check_access(cx.credentials(), cx.method(), cx.s3_path())
+                    auth.check_access(cx.credentials(), cx.method(), cx.s3_path(), cx.headers())
                         .await
                 )
                 .map_err(|err| {

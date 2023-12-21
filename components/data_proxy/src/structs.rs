@@ -22,8 +22,9 @@ use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
 use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
-use http::Method;
+use http::{HeaderValue, Method};
 use s3s::dto::CreateBucketInput;
+use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
 use s3s::path::S3Path;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -31,7 +32,7 @@ use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
 };
-use tracing::error;
+use tracing::{debug, error};
 
 /* ----- Constants ----- */
 pub const ALL_RIGHTS_RESERVED: &str = "AllRightsReserved";
@@ -55,7 +56,7 @@ impl From<&Method> for DbPermissionLevel {
     #[tracing::instrument(level = "trace", skip(method))]
     fn from(method: &Method) -> Self {
         match *method {
-            Method::GET | Method::OPTIONS => DbPermissionLevel::Read,
+            Method::GET | Method::OPTIONS | Method::HEAD => DbPermissionLevel::Read,
             Method::POST | Method::PUT => DbPermissionLevel::Append,
             Method::DELETE => DbPermissionLevel::Write,
             _ => DbPermissionLevel::Admin,
@@ -791,6 +792,55 @@ impl Object {
             })
             .collect()
     }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn project_get_headers(
+        &self,
+        request_method: &http::Method,
+        header: &http::HeaderMap<HeaderValue>,
+    ) -> Option<HashMap<String, String>> {
+        if self.object_type != ObjectType::Project {
+            error!("Invalid object type");
+            return None;
+        }
+
+        let request_origin = header.get(hyper::header::ORIGIN)?.to_str().ok()?;
+
+        let request_headers = header
+            .get(hyper::header::ACCESS_CONTROL_REQUEST_HEADERS)
+            .map(|x| {
+                x.to_str()
+                    .unwrap_or("")
+                    .split(',')
+                    .map(|e| e.trim().to_string())
+                    .collect::<Vec<String>>()
+            });
+
+        let key = self
+            .key_values
+            .iter()
+            .find_map(|e| {
+                if e.key == "app.aruna-storage.org/cors" {
+                    match serde_json::from_str::<CORSConfiguration>(&e.value) {
+                        Ok(config) => Some(config.into_headers(
+                            request_origin.to_string(),
+                            request_method.to_string(),
+                            request_headers.clone(),
+                        )),
+                        _ => {
+                            error!("Invalid cors config");
+                            None
+                        }
+                    }
+                } else {
+                    debug!("No cors config");
+                    None
+                }
+            })
+            .flatten();
+
+        key
+    }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -1413,6 +1463,7 @@ pub struct CheckAccessResult {
     pub missing_resources: Option<Missing>,
     pub object: Option<(Object, Option<ObjectLocation>)>,
     pub bundle: Option<String>,
+    pub headers: Option<HashMap<String, String>>,
 }
 
 impl CheckAccessResult {
@@ -1427,6 +1478,7 @@ impl CheckAccessResult {
         missing_resources: Option<Missing>,
         object: Option<(Object, Option<ObjectLocation>)>,
         bundle: Option<String>,
+        headers: Option<HashMap<String, String>>,
     ) -> Self {
         Self {
             resource_ids,
@@ -1435,7 +1487,124 @@ impl CheckAccessResult {
             token_id,
             object,
             bundle,
+            headers,
         }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CORSRule {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_headers: Option<Vec<String>>,
+    pub allowed_methods: Vec<String>,
+    pub allowed_origins: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expose_headers: Option<Vec<String>>,
+    pub max_age_seconds: i32,
+}
+
+impl From<S3SCORSRule> for CORSRule {
+    fn from(value: S3SCORSRule) -> Self {
+        Self {
+            id: value.id,
+            allowed_headers: value.allowed_headers,
+            allowed_methods: value.allowed_methods,
+            allowed_origins: value.allowed_origins,
+            expose_headers: value.expose_headers,
+            max_age_seconds: value.max_age_seconds,
+        }
+    }
+}
+
+impl From<CORSRule> for S3SCORSRule {
+    fn from(val: CORSRule) -> Self {
+        S3SCORSRule {
+            id: val.id,
+            allowed_headers: val.allowed_headers,
+            allowed_methods: val.allowed_methods,
+            allowed_origins: val.allowed_origins,
+            expose_headers: val.expose_headers,
+            max_age_seconds: val.max_age_seconds,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CORSConfiguration(pub Vec<CORSRule>);
+
+impl From<CORSConfiguration> for GetBucketCorsOutput {
+    fn from(val: CORSConfiguration) -> Self {
+        let cors_rule = val
+            .0
+            .iter()
+            .map(|x| CORSRule::into(x.clone()))
+            .collect::<Vec<S3SCORSRule>>();
+        if cors_rule.is_empty() {
+            GetBucketCorsOutput {
+                cors_rules: None,
+                ..Default::default()
+            }
+        } else {
+            GetBucketCorsOutput {
+                cors_rules: Some(cors_rule),
+                ..Default::default()
+            }
+        }
+    }
+}
+
+impl CORSConfiguration {
+    #[tracing::instrument]
+    pub fn into_headers(
+        self,
+        origin: String,
+        method: String,
+        header: Option<Vec<String>>,
+    ) -> Option<HashMap<String, String>> {
+        for cors_rule in self.0 {
+            if cors_rule.allowed_origins.contains(&origin)
+                && cors_rule.allowed_methods.contains(&method)
+            {
+                let mut headers = HashMap::new();
+                if !cors_rule.allowed_origins.is_empty() {
+                    headers.insert(
+                        "Access-Control-Allow-Origin".to_string(),
+                        cors_rule.allowed_origins.join(", "),
+                    );
+                }
+                if !cors_rule.allowed_methods.is_empty() {
+                    headers.insert(
+                        "Access-Control-Allow-Methods".to_string(),
+                        cors_rule.allowed_methods.join(", "),
+                    );
+                }
+                if let Some(head) = cors_rule.allowed_headers {
+                    headers.insert("Access-Control-Allow-Headers".to_string(), head.join(", "));
+                }
+                if let Some(head) = cors_rule.expose_headers {
+                    headers.insert("Access-Control-Expose-Headers".to_string(), head.join(", "));
+                }
+
+                if cors_rule.max_age_seconds == 0 {
+                    headers.insert(
+                        "Access-Control-Max-Age".to_string(),
+                        cors_rule.max_age_seconds.to_string(),
+                    );
+                }
+
+                if let Some(expected_headers) = header {
+                    for header in expected_headers {
+                        if !headers.contains_key(&header) {
+                            return None;
+                        }
+                    }
+                }
+                return Some(headers);
+            }
+        }
+        None
     }
 }
 
