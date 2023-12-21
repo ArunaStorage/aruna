@@ -387,8 +387,7 @@ impl GrpcQueryHandler {
         &self,
         token: &str,
         obj: DPObject,
-        key: &str,
-        value: &str,
+        kv: Option<(&str, &str)>,
     ) -> Result<()> {
         let remove_cors = obj
             .key_values
@@ -399,11 +398,12 @@ impl GrpcQueryHandler {
 
         let mut req = Request::new(UpdateProjectKeyValuesRequest {
             project_id: obj.id.to_string(),
-            add_key_values: vec![KeyValue {
-                key: key.to_string(),
-                value: value.to_string(),
+            add_key_values: kv.map(|(k,v)| {
+                vec![KeyValue {
+                key: k.to_string(),
+                value: v.to_string(),
                 variant: KeyValueVariant::Label as i32,
-            }],
+            }]}).unwrap_or_default(),
             remove_key_values: remove_cors,
         });
 

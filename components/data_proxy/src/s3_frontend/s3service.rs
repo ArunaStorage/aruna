@@ -36,6 +36,7 @@ use base64::Engine;
 use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use futures_util::TryStreamExt;
+use http::HeaderName;
 use http::HeaderValue;
 use md5::{Digest, Md5};
 use s3s::dto::*;
@@ -996,7 +997,7 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<GetObjectInput>,
     ) -> S3Result<S3Response<GetObjectOutput>> {
-        let CheckAccessResult { object, bundle, .. } = trace_err!(req
+        let CheckAccessResult { object, bundle, headers, .. } = trace_err!(req
             .extensions
             .get::<CheckAccessResult>()
             .cloned()
@@ -1217,6 +1218,8 @@ impl S3 for ArunaS3Service {
                 s3_error!(InternalError, "Internal processing error")
             })));
 
+        
+
         let output = GetObjectOutput {
             body,
             accept_ranges,
@@ -1229,7 +1232,18 @@ impl S3 for ArunaS3Service {
         };
         debug!(?output);
 
-        Ok(S3Response::new(output))
+        let mut resp = S3Response::new(output);
+        if let Some(headers) = headers {
+            for (k, v) in headers {
+                resp.headers.insert(HeaderName::from_bytes(k.as_bytes()).map_err(|_| {
+                    s3_error!(InternalError, "Unable to parse header name")
+                })?
+                , HeaderValue::from_str(&*v).map_err(|_| {
+                    s3_error!(InternalError, "Unable to parse header value")
+                })?);
+            }
+        }
+        Ok(resp)
     }
 
     #[tracing::instrument(err)]
@@ -1237,7 +1251,7 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<HeadObjectInput>,
     ) -> S3Result<S3Response<HeadObjectOutput>> {
-        let CheckAccessResult { object, bundle, .. } = trace_err!(req
+        let CheckAccessResult { object, bundle, headers, .. } = trace_err!(req
             .extensions
             .get::<CheckAccessResult>()
             .cloned()
@@ -1288,7 +1302,19 @@ impl S3 for ArunaS3Service {
 
         debug!(?output);
 
-        Ok(S3Response::new(output))
+        let mut resp = S3Response::new(output);
+        if let Some(headers) = headers {
+            for (k, v) in headers {
+                resp.headers.insert(HeaderName::from_bytes(k.as_bytes()).map_err(|_| {
+                    s3_error!(InternalError, "Unable to parse header name")
+                })?
+                , HeaderValue::from_str(&*v).map_err(|_| {
+                    s3_error!(InternalError, "Unable to parse header value")
+                })?);
+            }
+        }
+
+        Ok(resp)
     }
 
     #[tracing::instrument(err)]
@@ -1308,6 +1334,12 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<ListObjectsV2Input>,
     ) -> S3Result<S3Response<ListObjectsV2Output>> {
+
+        let CheckAccessResult { headers, .. } = trace_err!(req
+            .extensions
+            .get::<CheckAccessResult>()
+            .cloned()
+            .ok_or_else(|| s3_error!(InternalError, "No context found")))?;
         // Fetch the project name, delimiter and prefix from the request
         let project_name = &req.input.bucket;
         let delimiter = req.input.delimiter;
@@ -1413,7 +1445,20 @@ impl S3 for ArunaS3Service {
         };
         debug!(?result);
 
-        Ok(S3Response::new(result))
+        let mut resp = S3Response::new(result);
+
+        if let Some(headers) = headers {
+            for (k, v) in headers {
+                resp.headers.insert(HeaderName::from_bytes(k.as_bytes()).map_err(|_| {
+                    s3_error!(InternalError, "Unable to parse header name")
+                })?
+                , HeaderValue::from_str(&*v).map_err(|_| {
+                    s3_error!(InternalError, "Unable to parse header value")
+                })?);
+            }
+        }
+
+        Ok(resp)
     }
 
     #[tracing::instrument(err)]
@@ -1463,11 +1508,11 @@ impl S3 for ArunaS3Service {
                     .add_or_replace_key_value_project(
                         &token,
                         bucket_obj,
-                        "app.aruna-storage.org/cors",
+                        Some(("app.aruna-storage.org/cors",
                         &serde_json::to_string(&config).map_err(|_| s3_error!(
                             InternalError,
                             "Unable to serialize cors configuration"
-                        ))?
+                        ))?))
                     )
                     .await
             )
@@ -1475,4 +1520,52 @@ impl S3 for ArunaS3Service {
         }
         Ok(S3Response::new(PutBucketCorsOutput::default()))
     }
+
+    #[tracing::instrument(err)]
+    async fn delete_bucket_cors(
+        &self,
+        req: S3Request<DeleteBucketCorsInput>,
+    ) -> S3Result<S3Response<DeleteBucketCorsOutput>> {
+        let data = req.extensions.get::<CheckAccessResult>().cloned();
+
+        if let Some(client) = self.cache.aruna_client.read().await.as_ref() {
+            let CheckAccessResult {
+                user_id,
+                token_id,
+                object,
+                ..
+            } = trace_err!(data.ok_or_else(|| s3_error!(InternalError, "Internal Error")))?;
+
+            let (bucket_obj, _) =
+                object.ok_or_else(|| s3_error!(NoSuchBucket, "Bucket not found"))?;
+
+            let token = trace_err!(self
+                .cache
+                .auth
+                .read()
+                .await
+                .as_ref()
+                .ok_or_else(|| s3_error!(InternalError, "Missing auth handler")))?
+            .sign_impersonating_token(
+                trace_err!(user_id.ok_or_else(|| {
+                    s3_error!(NotSignedUp, "Unauthorized: Impersonating user error")
+                }))?,
+                token_id,
+            )
+            .map_err(|_| s3_error!(NotSignedUp, "Unauthorized: Impersonating error"))?;
+
+            trace_err!(
+                client
+                    .add_or_replace_key_value_project(
+                        &token,
+                        bucket_obj,
+                        None,
+                    )
+                    .await
+            )
+            .map_err(|_| s3_error!(InternalError, "Unable to update KeyValues"))?;
+        }
+        Ok(S3Response::new(DeleteBucketCorsOutput::default()))
+    }
+
 }
