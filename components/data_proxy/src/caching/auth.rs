@@ -223,6 +223,24 @@ impl AuthHandler {
                     Some(user.access_key.clone())
                 };
 
+                let bucket_obj = self.cache.get_full_resource_by_name(crate::structs::ResourceString::Project(b.to_string()));
+
+                if let Some((ref project, _)) = bucket_obj {
+                    if let Some(perm) = user.permissions.get(&project.id) {
+                        if *perm >= DbPermissionLevel::Write {
+                            return Ok(CheckAccessResult {
+                                user_id: Some(user.user_id.to_string()),
+                                token_id: Some(user.access_key.clone()),
+                                resource_ids: Some(ResourceIds::Project(project.id)),
+                                missing_resources: None,
+                                object: bucket_obj,
+                                bundle: None,
+                                headers,
+                            });
+                        }
+                    }
+                }
+
                 return Ok(CheckAccessResult {
                     user_id: Some(user.user_id.to_string()),
                     token_id,
@@ -245,6 +263,25 @@ impl AuthHandler {
                         &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
                     )
                     .ok_or_else(|| anyhow!("Unknown user")))?;
+
+                let bucket_obj = self.cache.get_full_resource_by_name(crate::structs::ResourceString::Project(b.to_string()));
+
+                if let Some((ref project, _)) = bucket_obj {
+                    if let Some(perm) = user.permissions.get(&project.id) {
+                        if *perm >= DbPermissionLevel::Read {
+                            return Ok(CheckAccessResult {
+                                user_id: Some(user.user_id.to_string()),
+                                token_id: Some(user.access_key.clone()),
+                                resource_ids: Some(ResourceIds::Project(project.id)),
+                                missing_resources: None,
+                                object: bucket_obj,
+                                bundle: None,
+                                headers,
+                            });
+                        }
+                    }
+                }
+
 
                 return Ok(CheckAccessResult::new(
                     Some(user.user_id.to_string()),
