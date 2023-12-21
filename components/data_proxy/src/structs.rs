@@ -56,7 +56,7 @@ impl From<&Method> for DbPermissionLevel {
     #[tracing::instrument(level = "trace", skip(method))]
     fn from(method: &Method) -> Self {
         match *method {
-            Method::GET | Method::OPTIONS => DbPermissionLevel::Read,
+            Method::GET | Method::OPTIONS | Method::HEAD => DbPermissionLevel::Read,
             Method::POST | Method::PUT => DbPermissionLevel::Append,
             Method::DELETE => DbPermissionLevel::Write,
             _ => DbPermissionLevel::Admin,

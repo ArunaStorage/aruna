@@ -97,7 +97,7 @@ impl S3 for ArunaS3Service {
             let CheckAccessResult {
                 user_id, token_id, ..
             } = trace_err!(data.ok_or_else(|| s3_error!(InternalError, "Internal Error")))?;
-
+            trace!(?user_id, ?token_id, "impersonating user");
             let token = trace_err!(self
                 .cache
                 .auth
@@ -166,6 +166,7 @@ impl S3 for ArunaS3Service {
             .cloned()
             .ok_or_else(|| s3_error!(UnexpectedContent, "Missing data context")))?;
 
+        trace!(?user_id, ?token_id, "impersonating user");
         let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
         {
             user_id.and_then(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
@@ -1491,6 +1492,8 @@ impl S3 for ArunaS3Service {
                 object,
                 ..
             } = trace_err!(data.ok_or_else(|| s3_error!(InternalError, "Internal Error")))?;
+
+            trace!(?token_id, ?user_id, "put_bucket_cors");
 
             let (bucket_obj, _) =
                 object.ok_or_else(|| s3_error!(NoSuchBucket, "Bucket not found"))?;

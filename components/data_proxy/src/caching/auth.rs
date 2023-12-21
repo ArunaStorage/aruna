@@ -230,7 +230,7 @@ impl AuthHandler {
                         if *perm >= DbPermissionLevel::Write {
                             return Ok(CheckAccessResult {
                                 user_id: Some(user.user_id.to_string()),
-                                token_id: Some(user.access_key.clone()),
+                                token_id: token_id.clone(),
                                 resource_ids: Some(ResourceIds::Project(project.id)),
                                 missing_resources: None,
                                 object: bucket_obj,
@@ -320,6 +320,8 @@ impl AuthHandler {
                             } else {
                                 Some(user.access_key.clone())
                             };
+
+                            trace!(resource_id = ?res, permission = ?perm, user_id = ?user.user_id, key = ?user.access_key, "permission match found");
 
                             return Ok(CheckAccessResult {
                                 user_id: Some(user.user_id.to_string()),
