@@ -12,6 +12,7 @@ use crate::database::dsls::internal_relation_dsl::INTERNAL_RELATION_VARIANT_BELO
 use crate::database::dsls::object_dsl::get_all_objects_with_relations;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::dsls::pub_key_dsl::PubKey as DbPubkey;
+use crate::database::dsls::stats_dsl::ObjectStats;
 use crate::database::dsls::user_dsl::OIDCMapping;
 use crate::database::dsls::user_dsl::User;
 use crate::database::enums::DbPermissionLevel;
@@ -27,22 +28,31 @@ use ahash::RandomState;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
+use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::models::v2::PermissionLevel;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
+use aruna_rust_api::api::storage::models::v2::Stats;
 use aruna_rust_api::api::storage::models::v2::User as APIUser;
 use aruna_rust_api::api::storage::services::v2::get_hierarchy_response::Graph;
 use aruna_rust_api::api::storage::services::v2::UserPermission;
 use async_channel::Sender;
+use chrono::NaiveDateTime;
 use dashmap::mapref::one::Ref;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
+use evmap::shallow_copy::CopyValue;
+use evmap::ReadHandleFactory;
+use evmap::WriteHandle;
 use itertools::Itertools;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 pub struct Cache {
     object_cache: DashMap<DieselUlid, ObjectWithRelations, RandomState>,
+    stats_reader: ReadHandleFactory<DieselUlid, CopyValue<ObjectStats>>, //RwLock<ReadHandle<DieselUlid, ObjectStats>>,
+    stats_writer: Arc<Mutex<WriteHandle<DieselUlid, CopyValue<ObjectStats>>>>,
     user_cache: DashMap<DieselUlid, User, RandomState>,
     pubkeys: DashMap<i16, PubKeyEnum, RandomState>,
     issuer_info: DashMap<String, Issuer>,
@@ -53,9 +63,12 @@ pub struct Cache {
 impl Cache {
     pub fn new() -> Arc<Self> {
         let (issuer_sender, issuer_recv) = async_channel::bounded(50);
+        let (stats_reader, stats_writer) = evmap::new();
 
         let cache = Arc::new(Self {
             object_cache: DashMap::default(),
+            stats_reader: stats_reader.factory(),
+            stats_writer: Arc::new(Mutex::new(stats_writer)),
             user_cache: DashMap::default(),
             pubkeys: DashMap::default(),
             issuer_info: DashMap::default(),
@@ -85,6 +98,15 @@ impl Cache {
         for obj in all_objects {
             self.object_cache.insert(obj.object.id, obj);
         }
+
+        // Object stats update
+        let mut stats_writer = self.stats_writer.lock().await;
+        stats_writer.purge(); // Clear object stats map
+        for stats in ObjectStats::get_all_stats(&client).await? {
+            stats_writer.insert(stats.origin_pid.clone(), stats.into());
+        }
+        stats_writer.refresh();
+        drop(stats_writer);
 
         let users = User::all(&client).await?;
         for user in users {
@@ -142,6 +164,62 @@ impl Cache {
     pub fn get_object(&self, id: &DieselUlid) -> Option<ObjectWithRelations> {
         self.check_lock();
         self.object_cache.get(id).map(|x| x.value().clone())
+    }
+
+    pub fn get_object_stats(&self, id: &DieselUlid) -> Option<CopyValue<ObjectStats>> {
+        match self.stats_reader.handle().get(id) {
+            Some(guard) => {
+                let default: CopyValue<ObjectStats> = ObjectStats {
+                    origin_pid: *id,
+                    count: 0,
+                    size: 0,
+                    last_refresh: NaiveDateTime::default(),
+                }
+                .into();
+                Some(guard.get_one().unwrap_or(&default).clone())
+            }
+            None => None,
+        }
+    }
+
+    pub fn get_protobuf_object(&self, id: &DieselUlid) -> Option<generic_resource::Resource> {
+        if let Some(object) = self.get_object(id) {
+            if object.object.object_type == ObjectType::OBJECT {
+                Some(object.into())
+            } else if let Some(object_stats) = self.get_object_stats(id) {
+                let mut resource: generic_resource::Resource = object.into();
+                match resource {
+                    generic_resource::Resource::Project(ref mut project) => {
+                        project.stats = Some(Stats {
+                            count: object_stats.count,
+                            size: object_stats.size,
+                            last_updated: Some(object_stats.last_refresh.into()),
+                        });
+                    }
+                    generic_resource::Resource::Collection(ref mut collection) => {
+                        collection.stats = Some(Stats {
+                            count: object_stats.count,
+                            size: object_stats.size,
+                            last_updated: Some(object_stats.last_refresh.into()),
+                        });
+                    }
+                    generic_resource::Resource::Dataset(ref mut dataset) => {
+                        dataset.stats = Some(Stats {
+                            count: object_stats.count,
+                            size: object_stats.size,
+                            last_updated: Some(object_stats.last_refresh.into()),
+                        });
+                    }
+                    generic_resource::Resource::Object(_) => {}
+                }
+
+                Some(resource)
+            } else {
+                Some(object.into())
+            }
+        } else {
+            None
+        }
     }
 
     pub fn insert_object(&self, object: ObjectWithRelations) {
@@ -207,6 +285,21 @@ impl Cache {
             self.object_cache.insert(object.object.id, object);
         }
     }
+
+    pub async fn upsert_object_stats(&self, database: Arc<Database>) -> Result<()> {
+        let client = database.get_client().await?;
+        let object_stats = ObjectStats::get_all_stats(&client).await?;
+
+        let mut stats_writer = self.stats_writer.lock().await; //TODO
+        stats_writer.purge(); // Remove all stats
+        for stats in object_stats {
+            stats_writer.insert(stats.origin_pid.clone(), stats.into());
+        }
+        stats_writer.refresh();
+
+        Ok(())
+    }
+
     pub fn update_relations(&self, relations: Vec<InternalRelation>) {
         self.check_lock();
 
