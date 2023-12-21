@@ -1311,6 +1311,8 @@ impl S3 for ArunaS3Service {
 
         debug!(?output);
 
+        debug!(?headers);
+
         let mut resp = S3Response::new(output);
         if let Some(headers) = headers {
             for (k, v) in headers {

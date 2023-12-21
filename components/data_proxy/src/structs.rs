@@ -32,7 +32,7 @@ use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
 };
-use tracing::error;
+use tracing::{error, trace, debug};
 
 /* ----- Constants ----- */
 pub const ALL_RIGHTS_RESERVED: &str = "AllRightsReserved";
@@ -820,7 +820,7 @@ impl Object {
             .key_values
             .iter()
             .find_map(|e| {
-                if e.key == "apps.aruna-storage.org/cors" {
+                if e.key == "app.aruna-storage.org/cors" {
                     match serde_json::from_str::<CORSConfiguration>(&e.value) {
                         Ok(config) => Some(config.into_headers(
                             request_origin.to_string(),
@@ -833,6 +833,7 @@ impl Object {
                         }
                     }
                 } else {
+                    debug!("No cors config");
                     None
                 }
             })
@@ -1551,6 +1552,7 @@ impl Into<GetBucketCorsOutput> for CORSConfiguration {
 }
 
 impl CORSConfiguration {
+    #[tracing::instrument]
     pub fn into_headers(
         self,
         origin: String,
@@ -1594,10 +1596,7 @@ impl CORSConfiguration {
                             return None;
                         }
                     }
-                } else {
-                    return None;
                 }
-
                 return Some(headers);
             }
         }
