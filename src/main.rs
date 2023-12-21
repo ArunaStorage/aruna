@@ -20,7 +20,11 @@ use aruna_rust_api::api::{
 use aruna_server::{
     auth::{permission_handler::PermissionHandler, token_handler::TokenHandler},
     caching::{cache::Cache, notifications_handler::NotificationHandler},
-    database::{self, crud::CrudDb, dsls::endpoint_dsl::Endpoint},
+    database::{
+        self,
+        crud::CrudDb,
+        dsls::{endpoint_dsl::Endpoint, stats_dsl::start_refresh_loop},
+    },
     grpc::{
         authorization::AuthorizationServiceImpl, collections::CollectionServiceImpl,
         datasets::DatasetServiceImpl, endpoints::EndpointServiceImpl, hooks::HookServiceImpl,
@@ -37,7 +41,7 @@ use aruna_server::{
     utils::search_utils,
 };
 use diesel_ulid::DieselUlid;
-use log::{info, warn};
+use log::{error, info, warn};
 use simple_logger::SimpleLogger;
 use tonic::transport::Server;
 
@@ -145,14 +149,35 @@ pub async fn main() -> Result<()> {
         Ok::<(), anyhow::Error>(())
     });
 
+    // Create channel for MV refresh notifications
+    let (n_send, n_recv) = async_channel::unbounded();
     // NotificationHandler
     let _ = NotificationHandler::new(
         db_arc.clone(),
         cache_arc.clone(),
         natsio_arc.clone(),
         meilisearch_arc.clone(),
+        n_send,
     )
     .await?;
+
+    // Init object stats loop
+    let refresh_interval = match dotenvy::var("REFRESH_INTERVAL")?.parse::<i64>() {
+        Ok(interval) => interval,
+        Err(err) => {
+            error!("Could not parse refresh interval: {}", err);
+            300000 // 5 minutes is default
+        }
+    };
+
+    start_refresh_loop(
+        db_arc.clone(),
+        cache_arc.clone(),
+        refresh_interval,
+        natsio_arc.clone(),
+        n_recv,
+    )
+    .await;
 
     // init MailClient
     let _: Option<MailClient> = if !dotenvy::var("ARUNA_DEV_ENV")?.parse::<bool>()? {

@@ -77,3 +77,117 @@ pub async fn get_last_refresh(client: &Client) -> Result<NaiveDateTime> {
     Ok(last_refreshed)
 }
 
+pub async fn start_refresh_loop(
+    database: Arc<Database>,
+    cache: Arc<Cache>,
+    refresh_interval: i64,
+    natsio_handler: Arc<NatsIoHandler>,
+    refresh_receiver: Receiver<i64>,
+) {
+    // Start loop
+    tokio::spawn(async move {
+        loop {
+            // Try to get database connection
+            let client = match database.get_client().await {
+                Ok(client) => client,
+                Err(err) => {
+                    error!("Failed to get database client for MV refresh: {}", err);
+                    tokio::time::sleep(Duration::from_secs(15)).await; // Wait 15s and try again
+                    continue;
+                }
+            };
+
+            // Save current timestamp to check if refresh is necessary
+            let mut current_timestamp = Utc::now().timestamp_millis();
+
+            // Collect latest timestamp of all other started refreshs
+            let mut latest_refresh = None;
+            while let Ok(refresh_timestamp) = refresh_receiver.try_recv() {
+                log::info!("Received other refresh: {}", refresh_timestamp);
+                if let Some(latest_timestamp) = latest_refresh {
+                    if refresh_timestamp > latest_timestamp {
+                        latest_refresh = Some(refresh_timestamp)
+                    }
+                } else {
+                    latest_refresh = Some(refresh_timestamp)
+                }
+            }
+            log::info!("Latest refresh: {:?}", latest_refresh);
+
+            // Evaluate if refresh is necessary
+            let start_refresh = if let Some(refresh_timestamp) = latest_refresh {
+                log::info!(
+                    "Difference to last refresh: {}",
+                    current_timestamp - refresh_timestamp
+                );
+                let start_refresh = (current_timestamp - refresh_timestamp) > refresh_interval;
+                if !start_refresh {
+                    current_timestamp = refresh_timestamp
+                }
+                start_refresh
+            } else {
+                true
+            };
+            log::info!("Start refresh in this iteration: {}", start_refresh);
+
+            // Start MV refresh if conditions are met
+            if start_refresh {
+                match refresh_stats_view(&client).await {
+                    Ok(_) => {
+                        // Send notification that MV refresh has been started
+                        if let Err(err) = natsio_handler
+                            .register_server_event(ServerEvents::MVREFRESH(current_timestamp))
+                            .await
+                        {
+                            error!("Failed to send MV refresh notification: {}", err)
+                        } else {
+                            log::info!(
+                                "Successfully send refresh timestamp to Nats: {}",
+                                current_timestamp
+                            )
+                        }
+                    }
+                    Err(err) => error!("Start MV refresh failed: {}", err),
+                }
+            }
+
+            // Wait in every case for refresh to finish for cache update
+            loop {
+                match get_last_refresh(&client).await {
+                    Ok(last_refresh) => {
+                        if last_refresh.timestamp_millis() >= current_timestamp {
+                            // Update stats in cache if MV has been refreshed
+                            if let Err(err) = cache.upsert_object_stats(database.clone()).await {
+                                error!("Object stats cache update failed: {}", err)
+                            } else {
+                                log::info!("Object stats cache updated")
+                            };
+                            break;
+                        } else {
+                            debug!(
+                                "Refresh still running. Wait 1 sec before re-try: ({}) {} > {}",
+                                last_refresh,
+                                last_refresh.timestamp_millis(),
+                                current_timestamp
+                            );
+                            tokio::time::sleep(Duration::from_secs(1)).await
+                        }
+                    }
+                    Err(err) => {
+                        // On error break to continue outer loop
+                        debug!("Skipped object stats cache update: {}", err);
+                        break;
+                    }
+                }
+            }
+
+            // Sleep for refresh interval
+            tokio::time::sleep(Duration::from_millis(
+                refresh_interval.try_into().unwrap_or(30000),
+            ))
+            .await;
+        }
+
+        //Ok::<(), anyhow::Error>(())
+    });
+}

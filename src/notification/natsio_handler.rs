@@ -19,6 +19,7 @@ use diesel_ulid::DieselUlid;
 use futures::future::try_join_all;
 use futures::StreamExt;
 use prost::bytes::Bytes;
+use serde::{Deserialize, Serialize};
 
 use crate::database::dsls::object_dsl::{Hierarchy, ObjectWithRelations};
 use crate::database::dsls::user_dsl::User;
@@ -33,12 +34,19 @@ use super::utils::{
 
 // ----- Constants used for notifications -------------------- //
 pub const STREAM_NAME: &str = "AOS_STREAM";
-pub const STREAM_SUBJECTS: [&str; 4] = [
+pub const STREAM_SUBJECTS: [&str; 5] = [
     "AOS.RESOURCE.>",
     "AOS.USER.>",
     "AOS.ANNOUNCEMENT.>",
     "AOS.ENDPOINT.>",
+    "AOS.SERVER.>",
 ];
+
+#[derive(Deserialize, Serialize)]
+// Enum for internal events that are only of interest for the ArunaServer instances
+pub enum ServerEvents {
+    MVREFRESH(i64), // UTC timestamp_seconds
+}
 // ----------------------------------------------------------- //
 
 pub struct NatsIoHandler {
@@ -416,6 +424,23 @@ impl NatsIoHandler {
             subject,
         )
         .await?;
+
+        Ok(())
+    }
+
+    /// Function that is only internally available to publish messages in Nats.io which are only
+    /// of interest for all ArunaServer instances.
+    pub async fn register_server_event(&self, event_variant: ServerEvents) -> anyhow::Result<()> {
+        // Serialize event to JSON for message payload
+        let message_json = serde_json::to_string_pretty(&event_variant)?;
+
+        // Create subject depending on ServerEvent
+        let (subject, message) = match event_variant {
+            ServerEvents::MVREFRESH(_) => ("AOS.SERVER.MVREFRESH", Bytes::from(message_json)),
+        };
+
+        // Publish message in Nats.io
+        self.jetstream_context.publish(subject, message).await?;
 
         Ok(())
     }
