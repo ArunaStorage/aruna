@@ -163,6 +163,26 @@ CREATE TABLE IF NOT EXISTS objects (
 );
 CREATE INDEX IF NOT EXISTS objects_pk_idx ON objects (id);
 
+-- Create Materialized View for hierarchy object stats
+CREATE MATERIALIZED VIEW IF NOT EXISTS object_stats AS
+    /*+ indexscan(ir) set(yb_bnl_batch_size 1024) */ 
+    WITH RECURSIVE stats AS (
+    SELECT o.id, o.object_type, o.content_len, ir.origin_pid, ir.target_pid
+        FROM objects o
+        INNER JOIN internal_relations ir ON o.id = ir.target_pid
+        WHERE o.object_type = 'OBJECT' AND ir.relation_name = 'BELONGS_TO'
+    UNION ALL
+    SELECT o2.id, o2.object_type, stats.content_len+o2.content_len, ir2.origin_pid, ir2.target_pid
+        FROM stats, objects o2
+        RIGHT JOIN internal_relations ir2 ON o2.id = ir2.target_pid
+        WHERE o2.id = stats.origin_pid AND ir2.relation_name = 'BELONGS_TO'
+    )
+    SELECT origin_pid, count(origin_pid), sum(content_len)::BIGINT as size, now()::TIMESTAMP as last_refresh
+        FROM stats 
+        GROUP BY origin_pid;
+-- Create unique index for concurrent refreshs
+CREATE UNIQUE INDEX IF NOT EXISTS object_stats_id_idx ON object_stats (origin_pid);
+
 -- Table with endpoints
 CREATE TABLE IF NOT EXISTS endpoints (
     id UUID PRIMARY KEY,
