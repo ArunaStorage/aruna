@@ -997,7 +997,12 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<GetObjectInput>,
     ) -> S3Result<S3Response<GetObjectOutput>> {
-        let CheckAccessResult { object, bundle, headers, .. } = trace_err!(req
+        let CheckAccessResult {
+            object,
+            bundle,
+            headers,
+            ..
+        } = trace_err!(req
             .extensions
             .get::<CheckAccessResult>()
             .cloned()
@@ -1218,8 +1223,6 @@ impl S3 for ArunaS3Service {
                 s3_error!(InternalError, "Internal processing error")
             })));
 
-        
-
         let output = GetObjectOutput {
             body,
             accept_ranges,
@@ -1235,12 +1238,12 @@ impl S3 for ArunaS3Service {
         let mut resp = S3Response::new(output);
         if let Some(headers) = headers {
             for (k, v) in headers {
-                resp.headers.insert(HeaderName::from_bytes(k.as_bytes()).map_err(|_| {
-                    s3_error!(InternalError, "Unable to parse header name")
-                })?
-                , HeaderValue::from_str(&*v).map_err(|_| {
-                    s3_error!(InternalError, "Unable to parse header value")
-                })?);
+                resp.headers.insert(
+                    HeaderName::from_bytes(k.as_bytes())
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header name"))?,
+                    HeaderValue::from_str(&*v)
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header value"))?,
+                );
             }
         }
         Ok(resp)
@@ -1251,7 +1254,12 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<HeadObjectInput>,
     ) -> S3Result<S3Response<HeadObjectOutput>> {
-        let CheckAccessResult { object, bundle, headers, .. } = trace_err!(req
+        let CheckAccessResult {
+            object,
+            bundle,
+            headers,
+            ..
+        } = trace_err!(req
             .extensions
             .get::<CheckAccessResult>()
             .cloned()
@@ -1305,12 +1313,12 @@ impl S3 for ArunaS3Service {
         let mut resp = S3Response::new(output);
         if let Some(headers) = headers {
             for (k, v) in headers {
-                resp.headers.insert(HeaderName::from_bytes(k.as_bytes()).map_err(|_| {
-                    s3_error!(InternalError, "Unable to parse header name")
-                })?
-                , HeaderValue::from_str(&*v).map_err(|_| {
-                    s3_error!(InternalError, "Unable to parse header value")
-                })?);
+                resp.headers.insert(
+                    HeaderName::from_bytes(k.as_bytes())
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header name"))?,
+                    HeaderValue::from_str(&*v)
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header value"))?,
+                );
             }
         }
 
@@ -1334,7 +1342,6 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<ListObjectsV2Input>,
     ) -> S3Result<S3Response<ListObjectsV2Output>> {
-
         let CheckAccessResult { headers, .. } = trace_err!(req
             .extensions
             .get::<CheckAccessResult>()
@@ -1449,12 +1456,12 @@ impl S3 for ArunaS3Service {
 
         if let Some(headers) = headers {
             for (k, v) in headers {
-                resp.headers.insert(HeaderName::from_bytes(k.as_bytes()).map_err(|_| {
-                    s3_error!(InternalError, "Unable to parse header name")
-                })?
-                , HeaderValue::from_str(&*v).map_err(|_| {
-                    s3_error!(InternalError, "Unable to parse header value")
-                })?);
+                resp.headers.insert(
+                    HeaderName::from_bytes(k.as_bytes())
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header name"))?,
+                    HeaderValue::from_str(&*v)
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header value"))?,
+                );
             }
         }
 
@@ -1508,11 +1515,13 @@ impl S3 for ArunaS3Service {
                     .add_or_replace_key_value_project(
                         &token,
                         bucket_obj,
-                        Some(("app.aruna-storage.org/cors",
-                        &serde_json::to_string(&config).map_err(|_| s3_error!(
-                            InternalError,
-                            "Unable to serialize cors configuration"
-                        ))?))
+                        Some((
+                            "app.aruna-storage.org/cors",
+                            &serde_json::to_string(&config).map_err(|_| s3_error!(
+                                InternalError,
+                                "Unable to serialize cors configuration"
+                            ))?
+                        ))
                     )
                     .await
             )
@@ -1556,11 +1565,7 @@ impl S3 for ArunaS3Service {
 
             trace_err!(
                 client
-                    .add_or_replace_key_value_project(
-                        &token,
-                        bucket_obj,
-                        None,
-                    )
+                    .add_or_replace_key_value_project(&token, bucket_obj, None,)
                     .await
             )
             .map_err(|_| s3_error!(InternalError, "Unable to update KeyValues"))?;
@@ -1568,4 +1573,42 @@ impl S3 for ArunaS3Service {
         Ok(S3Response::new(DeleteBucketCorsOutput::default()))
     }
 
+    #[tracing::instrument(err)]
+    async fn get_bucket_location(
+        &self,
+        _req: S3Request<GetBucketLocationInput>,
+    ) -> S3Result<S3Response<GetBucketLocationOutput>> {
+        return Ok(S3Response::new(GetBucketLocationOutput {
+            // TODO: Return proxy location / id -> Not possible restricted set of allowed locations
+            location_constraint: None,
+        }));
+    }
+
+    #[tracing::instrument(err)]
+    async fn get_bucket_cors(
+        &self,
+        req: S3Request<GetBucketCorsInput>,
+    ) -> S3Result<S3Response<GetBucketCorsOutput>> {
+        let data = req.extensions.get::<CheckAccessResult>().cloned();
+
+        let CheckAccessResult { object, .. } =
+            trace_err!(data.ok_or_else(|| s3_error!(InternalError, "Internal Error")))?;
+
+        let (bucket_obj, _) =
+            object.ok_or_else(|| s3_error!(NoSuchBucket, "Bucket not found"))?;
+
+        let cors = bucket_obj
+            .key_values
+            .into_iter()
+            .find(|kv| kv.key == "app.aruna-storage.org/cors")
+            .map(|kv| kv.value);
+
+        if let Some(cors) = cors {
+            let cors: crate::structs::CORSConfiguration =
+                trace_err!(serde_json::from_str(&cors))
+                    .map_err(|_| s3_error!(InternalError, "Unable to deserialize cors"))?;
+            return Ok(S3Response::new(cors.into()));
+        }
+        Ok(S3Response::new(GetBucketCorsOutput::default()))
+    }
 }

@@ -23,7 +23,7 @@ use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use http::{HeaderValue, Method};
-use s3s::dto::CORSRule as S3SCORSRule;
+use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
 use s3s::dto::CreateBucketInput;
 use s3s::path::S3Path;
 use serde::{Deserialize, Serialize};
@@ -804,10 +804,7 @@ impl Object {
             return None;
         }
 
-        let request_origin = header
-            .get(hyper::header::ORIGIN)?
-            .to_str()
-            .ok()?;
+        let request_origin = header.get(hyper::header::ORIGIN)?.to_str().ok()?;
 
         let request_headers = header
             .get(hyper::header::ACCESS_CONTROL_REQUEST_HEADERS)
@@ -1496,27 +1493,62 @@ impl CheckAccessResult {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CORSRule {
-    pub allowed_headers: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_headers: Option<Vec<String>>,
     pub allowed_methods: Vec<String>,
     pub allowed_origins: Vec<String>,
-    pub expose_headers: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expose_headers: Option<Vec<String>>,
     pub max_age_seconds: i32,
 }
 
 impl From<S3SCORSRule> for CORSRule {
     fn from(value: S3SCORSRule) -> Self {
         Self {
-            allowed_headers: value.allowed_headers.unwrap_or_default(),
+            id: value.id,
+            allowed_headers: value.allowed_headers,
             allowed_methods: value.allowed_methods,
             allowed_origins: value.allowed_origins,
-            expose_headers: value.expose_headers.unwrap_or_default(),
+            expose_headers: value.expose_headers,
             max_age_seconds: value.max_age_seconds,
+        }
+    }
+}
+
+impl Into<S3SCORSRule> for CORSRule {
+    fn into(self) -> S3SCORSRule {
+        S3SCORSRule {
+            id: self.id,
+            allowed_headers: self.allowed_headers,
+            allowed_methods: self.allowed_methods,
+            allowed_origins: self.allowed_origins,
+            expose_headers: self.expose_headers,
+            max_age_seconds: self.max_age_seconds,
         }
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CORSConfiguration(pub Vec<CORSRule>);
+
+impl Into<GetBucketCorsOutput> for CORSConfiguration {
+    fn into(self) -> GetBucketCorsOutput {
+        let cors_rule = self.0.iter().map(|x| CORSRule::into(x.clone())).collect::<Vec<S3SCORSRule>>();
+        if cors_rule.is_empty() {
+            GetBucketCorsOutput {
+                cors_rules: None,
+                ..Default::default()
+            }
+        } else {
+            GetBucketCorsOutput {
+                cors_rules: Some(cors_rule),
+                ..Default::default()
+            }
+        }
+    }
+}
 
 impl CORSConfiguration {
     pub fn into_headers(
@@ -1526,7 +1558,9 @@ impl CORSConfiguration {
         header: Option<Vec<String>>,
     ) -> Option<HashMap<String, String>> {
         for cors_rule in self.0 {
-            if cors_rule.allowed_origins.contains(&origin) && cors_rule.allowed_methods.contains(&method) {
+            if cors_rule.allowed_origins.contains(&origin)
+                && cors_rule.allowed_methods.contains(&method)
+            {
                 let mut headers = HashMap::new();
                 if !cors_rule.allowed_origins.is_empty() {
                     headers.insert(
@@ -1540,18 +1574,13 @@ impl CORSConfiguration {
                         cors_rule.allowed_methods.join(","),
                     );
                 }
-                if !cors_rule.allowed_headers.is_empty() {
-                    headers.insert(
-                        "Access-Control-Allow-Headers".to_string(),
-                        cors_rule.allowed_headers.join(","),
-                    );
+                if let Some(head) = cors_rule.allowed_headers {
+                    headers.insert("Access-Control-Allow-Headers".to_string(), head.join(","));
                 }
-                if !cors_rule.expose_headers.is_empty() {
-                    headers.insert(
-                        "Access-Control-Expose-Headers".to_string(),
-                        cors_rule.expose_headers.join(","),
-                    );
+                if let Some(head) = cors_rule.expose_headers {
+                    headers.insert("Access-Control-Expose-Headers".to_string(), head.join(","));
                 }
+
                 if cors_rule.max_age_seconds == 0 {
                     headers.insert(
                         "Access-Control-Max-Age".to_string(),
