@@ -138,7 +138,8 @@ impl S3 for ArunaS3Service {
                     .input
                     .body
                     .as_ref()
-                    .and_then(|b| b.remaining_length().exact())
+                    .map(|b| b.remaining_length().exact())
+                    .flatten()
                 {
                     Some(0) | None => {
                         error!("Missing or invalid (0) content-length");
@@ -771,7 +772,12 @@ impl S3 for ArunaS3Service {
                     .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
                 }
             }
+        } else {
+            // Just update cache
+            trace_err!(self.cache.upsert_object(new_object, Some(location)).await)
+                .map_err(|_| s3_error!(InternalError, "Cache update failed"))?
         }
+
         let output = CreateMultipartUploadOutput {
             key: Some(req.input.key),
             bucket: Some(req.input.bucket),
@@ -793,7 +799,8 @@ impl S3 for ArunaS3Service {
                     .input
                     .body
                     .as_ref()
-                    .and_then(|b| b.remaining_length().exact())
+                    .map(|b| b.remaining_length().exact())
+                    .flatten()
                 {
                     Some(0) | None => {
                         error!("Missing or invalid (0) content-length");
