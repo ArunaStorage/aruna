@@ -1571,20 +1571,20 @@ impl CORSConfiguration {
                 if !cors_rule.allowed_origins.is_empty() {
                     headers.insert(
                         "Access-Control-Allow-Origin".to_string(),
-                        cors_rule.allowed_origins.join(","),
+                        cors_rule.allowed_origins.join(", "),
                     );
                 }
                 if !cors_rule.allowed_methods.is_empty() {
                     headers.insert(
                         "Access-Control-Allow-Methods".to_string(),
-                        cors_rule.allowed_methods.join(","),
+                        cors_rule.allowed_methods.join(", "),
                     );
                 }
                 if let Some(head) = cors_rule.allowed_headers {
-                    headers.insert("Access-Control-Allow-Headers".to_string(), head.join(","));
+                    headers.insert("Access-Control-Allow-Headers".to_string(), head.join(", "));
                 }
                 if let Some(head) = cors_rule.expose_headers {
-                    headers.insert("Access-Control-Expose-Headers".to_string(), head.join(","));
+                    headers.insert("Access-Control-Expose-Headers".to_string(), head.join(", "));
                 }
 
                 if cors_rule.max_age_seconds == 0 {
