@@ -203,7 +203,7 @@ impl AuthHandler {
                 .cache
                 .get_full_resource_by_name(crate::structs::ResourceString::Project(b.to_string()))
             {
-                project.project_get_headers(method, headers)?
+                project.project_get_headers(method, headers)
             } else {
                 None
             };
@@ -346,7 +346,7 @@ impl AuthHandler {
                     .get_full_resource_by_name(crate::structs::ResourceString::Project(
                         bucket.to_string(),
                     )) {
-                project.project_get_headers(method, headers)?
+                project.project_get_headers(method, headers)
             } else {
                 None
             };

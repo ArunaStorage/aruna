@@ -798,17 +798,16 @@ impl Object {
         &self,
         request_method: &http::Method,
         header: &http::HeaderMap<HeaderValue>,
-    ) -> Result<Option<HashMap<String, String>>> {
+    ) -> Option<HashMap<String, String>> {
         if self.object_type != ObjectType::Project {
             error!("Invalid object type");
-            return Err(anyhow!("Invalid object type"));
+            return None;
         }
 
         let request_origin = header
-            .get(hyper::header::ORIGIN)
-            .ok_or_else(|| anyhow!("Missing origin header"))?
+            .get(hyper::header::ORIGIN)?
             .to_str()
-            .map_err(|_| anyhow!("Invalid origin header"))?;
+            .ok()?;
 
         let request_headers = header
             .get(hyper::header::ACCESS_CONTROL_REQUEST_HEADERS)
@@ -842,7 +841,7 @@ impl Object {
             })
             .flatten();
 
-        Ok(key)
+        key
     }
 }
 
