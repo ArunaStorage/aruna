@@ -182,6 +182,14 @@ impl Cache {
         }
     }
 
+    pub fn add_stats_to_object<'a, 'b: 'a>(&'a self, object: &'b mut ObjectWithRelations) {
+        if let Some(object_stats) = self.get_object_stats(&object.object.id) {
+            object.object.content_len = object_stats.size;
+            object.object.count = object_stats.count;
+        }
+    }
+
+
     pub fn get_protobuf_object(&self, id: &DieselUlid) -> Option<generic_resource::Resource> {
         if let Some(object) = self.get_object(id) {
             if object.object.object_type == ObjectType::OBJECT {
