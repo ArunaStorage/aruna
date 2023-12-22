@@ -1498,7 +1498,7 @@ impl S3 for ArunaS3Service {
                 token_id,
                 object,
                 ..
-            } = trace_err!(data.ok_or_else(|| s3_error!(InternalError, "Internal Error")))?;
+            } = trace_err!(data.ok_or_else(|| s3_error!(InvalidObjectState, "Missing CheckAccess extension")))?;
 
             trace!(?token_id, ?user_id, "put_bucket_cors");
 
@@ -1528,7 +1528,7 @@ impl S3 for ArunaS3Service {
                         Some((
                             "app.aruna-storage.org/cors",
                             &serde_json::to_string(&config).map_err(|_| s3_error!(
-                                InternalError,
+                                InvalidArgument,
                                 "Unable to serialize cors configuration"
                             ))?
                         ))
@@ -1602,7 +1602,7 @@ impl S3 for ArunaS3Service {
         let data = req.extensions.get::<CheckAccessResult>().cloned();
 
         let CheckAccessResult { object, .. } =
-            trace_err!(data.ok_or_else(|| s3_error!(InternalError, "Internal Error")))?;
+            trace_err!(data.ok_or_else(|| s3_error!(InvalidObjectState, "Missing CheckAccess extension")))?;
 
         let (bucket_obj, _) = object.ok_or_else(|| s3_error!(NoSuchBucket, "Bucket not found"))?;
 
@@ -1615,9 +1615,24 @@ impl S3 for ArunaS3Service {
         if let Some(cors) = cors {
             let cors: crate::structs::CORSConfiguration =
                 trace_err!(serde_json::from_str(&cors))
-                    .map_err(|_| s3_error!(InternalError, "Unable to deserialize cors"))?;
+                    .map_err(|_| s3_error!(InvalidObjectState, "Unable to deserialize cors from JSON"))?;
             return Ok(S3Response::new(cors.into()));
         }
         Ok(S3Response::new(GetBucketCorsOutput::default()))
+    }
+
+    #[tracing::instrument(err)]
+    async fn list_buckets(
+        &self,
+        req: S3Request<ListBucketsInput>,
+    ) -> S3Result<S3Response<ListBucketsOutput>> {
+
+        let data = req.extensions.get::<CheckAccessResult>().cloned();
+
+        let CheckAccessResult { user_id, token_id, .. } =
+            trace_err!(data.ok_or_else(|| s3_error!(InvalidObjectState, "Missing CheckAccess extension")))?;
+
+        error!("ListBucket is not implemented yet");
+        Err(s3_error!(NotImplemented, "ListBucket is not implemented yet"))
     }
 }
