@@ -286,14 +286,15 @@ impl Cache {
         }
     }
 
-    pub async fn upsert_object_stats(&self, database: Arc<Database>) -> Result<()> {
-        let client = database.get_client().await?;
-        let object_stats = ObjectStats::get_all_stats(&client).await?;
-
-        let mut stats_writer = self.stats_writer.lock().await; //TODO
-        stats_writer.purge(); // Remove all stats
+    pub async fn upsert_object_stats(&self, object_stats: Vec<ObjectStats>) -> Result<()> {
+        let mut stats_writer = self.stats_writer.lock().await;
+        let reader = self.stats_reader.handle();
         for stats in object_stats {
+            if reader.contains_key(&stats.origin_pid) {
+                stats_writer.update(stats.origin_pid.clone(), stats.into());
+            } else {
             stats_writer.insert(stats.origin_pid.clone(), stats.into());
+            }
         }
         stats_writer.refresh();
 
