@@ -148,7 +148,7 @@ CREATE TABLE IF NOT EXISTS objects (
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     created_by UUID NOT NULL REFERENCES users(id),
     content_len BIGINT NOT NULL DEFAULT 0,
-    count INT NOT NULL DEFAULT 0,
+    count BIGINT NOT NULL DEFAULT 0,
     key_values JSONB NOT NULL,
     object_status "ObjectStatus" NOT NULL DEFAULT 'INITIALIZING',
     data_class "DataClass" NOT NULL DEFAULT 'PRIVATE',
