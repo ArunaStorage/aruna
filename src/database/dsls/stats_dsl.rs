@@ -15,12 +15,32 @@ use crate::{
     notification::natsio_handler::{NatsIoHandler, ServerEvents},
 };
 
-#[derive(Copy, Clone, FromRow, Hash, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, FromRow, Hash, Eq)]
 pub struct ObjectStats {
     pub origin_pid: DieselUlid,
     pub count: i64,
     pub size: i64,
     pub last_refresh: NaiveDateTime,
+}
+
+impl Ord for ObjectStats {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Ignore timestamp in order
+        (self.origin_pid, self.count, self.size).cmp(&(other.origin_pid, other.count, other.size))
+    }
+}
+
+impl PartialOrd for ObjectStats {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for ObjectStats {
+    fn eq(&self, other: &Self) -> bool {
+        // Ignore timestamp in equality comparison
+        self.origin_pid == other.origin_pid && self.count == other.count && self.size == other.size
+    }
 }
 
 impl ObjectStats {
