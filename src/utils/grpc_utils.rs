@@ -141,9 +141,9 @@ pub fn get_id_and_ctx(ids: Vec<String>) -> Result<(Vec<DieselUlid>, Vec<Context>
     let (ids, ctxs) = zipped.into_iter().unzip();
     Ok((ids, ctxs))
 }
+
 pub fn query(cache: &Arc<Cache>, id: &DieselUlid) -> Result<generic_resource::Resource, Status> {
-    let owr = cache
-        .get_object(id)
-        .ok_or_else(|| Status::not_found("Resource not found"))?;
-    Ok(owr.into())
+    Ok(cache
+        .get_protobuf_object(id)
+        .ok_or_else(|| Status::not_found("Resource not found"))?)
 }

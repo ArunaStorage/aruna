@@ -437,8 +437,12 @@ impl ObjectService for ObjectServiceImpl {
         let res: Result<Vec<Object>> = ids
             .iter()
             .map(|id| -> Result<Object> {
-                let obj = query(&self.cache, id)?;
-                obj.into_inner()
+                let resource: generic_resource::Resource = self
+                    .cache
+                    .get_object(id)
+                    .ok_or_else(|| Status::not_found("Resource not found"))?
+                    .into();
+                resource.into_inner()
             })
             .collect();
 
