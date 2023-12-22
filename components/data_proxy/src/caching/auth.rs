@@ -230,9 +230,7 @@ impl AuthHandler {
                     headers: None,
                 });
             }
-        } else
-
-        if let Some(b) = path.as_bucket() {
+        } else if let Some(b) = path.as_bucket() {
             trace!("detected as_bucket");
 
             let headers = if let Some((project, _)) = self

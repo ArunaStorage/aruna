@@ -10,6 +10,7 @@ use crate::s3_frontend::utils::list_objects::list_response;
 use crate::s3_frontend::utils::ranges::aruna_range_from_s3range;
 use crate::structs::CheckAccessResult;
 use crate::structs::Object as ProxyObject;
+use crate::structs::ObjectType;
 use crate::structs::PartETag;
 use crate::structs::ResourceString;
 use crate::structs::TypedRelation;
@@ -1498,7 +1499,9 @@ impl S3 for ArunaS3Service {
                 token_id,
                 object,
                 ..
-            } = trace_err!(data.ok_or_else(|| s3_error!(InvalidObjectState, "Missing CheckAccess extension")))?;
+            } = trace_err!(
+                data.ok_or_else(|| s3_error!(InvalidObjectState, "Missing CheckAccess extension"))
+            )?;
 
             trace!(?token_id, ?user_id, "put_bucket_cors");
 
@@ -1601,8 +1604,9 @@ impl S3 for ArunaS3Service {
     ) -> S3Result<S3Response<GetBucketCorsOutput>> {
         let data = req.extensions.get::<CheckAccessResult>().cloned();
 
-        let CheckAccessResult { object, .. } =
-            trace_err!(data.ok_or_else(|| s3_error!(InvalidObjectState, "Missing CheckAccess extension")))?;
+        let CheckAccessResult { object, .. } = trace_err!(
+            data.ok_or_else(|| s3_error!(InvalidObjectState, "Missing CheckAccess extension"))
+        )?;
 
         let (bucket_obj, _) = object.ok_or_else(|| s3_error!(NoSuchBucket, "Bucket not found"))?;
 
@@ -1613,9 +1617,10 @@ impl S3 for ArunaS3Service {
             .map(|kv| kv.value);
 
         if let Some(cors) = cors {
-            let cors: crate::structs::CORSConfiguration =
-                trace_err!(serde_json::from_str(&cors))
-                    .map_err(|_| s3_error!(InvalidObjectState, "Unable to deserialize cors from JSON"))?;
+            let cors: crate::structs::CORSConfiguration = trace_err!(serde_json::from_str(&cors))
+                .map_err(|_| {
+                s3_error!(InvalidObjectState, "Unable to deserialize cors from JSON")
+            })?;
             return Ok(S3Response::new(cors.into()));
         }
         Ok(S3Response::new(GetBucketCorsOutput::default()))
@@ -1626,13 +1631,53 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<ListBucketsInput>,
     ) -> S3Result<S3Response<ListBucketsOutput>> {
-
         let data = req.extensions.get::<CheckAccessResult>().cloned();
 
-        let CheckAccessResult { user_id, token_id, .. } =
-            trace_err!(data.ok_or_else(|| s3_error!(InvalidObjectState, "Missing CheckAccess extension")))?;
+        let CheckAccessResult {
+            user_id, token_id, ..
+        } = trace_err!(
+            data.ok_or_else(|| s3_error!(InvalidObjectState, "Missing CheckAccess extension"))
+        )?;
 
-        error!("ListBucket is not implemented yet");
-        Err(s3_error!(NotImplemented, "ListBucket is not implemented yet"))
+        match (user_id, token_id) {
+            (_, Some(tid)) | (Some(tid), _) => {
+                let perm = self.cache.get_user_by_key(&tid);
+                if let Some(perm) = perm {
+                    let mut buckets = Vec::new();
+                    for (k, _) in perm.permissions {
+                        let (o, _) = self
+                            .cache
+                            .get_resource(&k)
+                            .map_err(|_| s3_error!(InternalError, "Unable to get resource"))?;
+                        if o.object_type == ObjectType::Project {
+                            buckets.push(Bucket {
+                                creation_date: o.created_at.map(|t| {
+                                    s3s::dto::Timestamp::from(
+                                        time::OffsetDateTime::from_unix_timestamp(t.timestamp())
+                                            .unwrap(),
+                                    )
+                                }),
+                                name: Some(o.name),
+                            });
+                        }
+                    }
+                    let bs = if buckets.is_empty() {
+                        None
+                    } else {
+                        Some(buckets)
+                    };
+                    return Ok(S3Response::new(ListBucketsOutput {
+                        buckets: bs,
+                        owner: Some(Owner {
+                            display_name: None,
+                            id: Some(perm.user_id.to_string()),
+                        }),
+                    }));
+                } else {
+                    return Err(s3_error!(InvalidAccessKeyId, "Invalid access key / user"));
+                }
+            }
+            _ => return Err(s3_error!(InvalidAccessKeyId, "Invalid access key / user")),
+        }
     }
 }
