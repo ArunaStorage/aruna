@@ -15,6 +15,7 @@ use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use futures::StreamExt;
 use jsonwebtoken::DecodingKey;
+use log::{debug, error};
 use time::OffsetDateTime;
 
 use crate::database::dsls::pub_key_dsl::PubKey;
@@ -111,9 +112,9 @@ impl NotificationHandler {
                         )
                         .await
                         {
-                            Ok(_) => log::debug!("NotificationHandler cache update successful"),
+                            Ok(_) => debug!("NotificationHandler cache update successful"),
                             Err(err) => {
-                                log::error!("NotificationHandler cache update failed: {err}")
+                                error!("NotificationHandler cache update failed: {err}")
                             }
                         }
                     }
@@ -125,16 +126,11 @@ impl NotificationHandler {
                     //   but is faulty or the database itself is not accessible.
                     match &nats_message.reply {
                         Some(reply_subject) => {
-                            match natsio_handler.acknowledge_raw(reply_subject).await {
-                                Ok(_) => log::debug!(
-                                    "NotificationHandler message acknowledgement successful"
-                                ),
-                                Err(err) => log::error!(
-                                    "NotificationHandler message acknowledgement failed: {err}"
-                                ),
+                            if let Err(err) = natsio_handler.acknowledge_raw(reply_subject).await {
+                                error!("NotificationHandler message acknowledgement failed: {err}")
                             }
                         }
-                        None => log::error!("Nats message "),
+                        None => error!("Nats message does not contain replay subject"),
                     };
                 }
             }
@@ -294,10 +290,10 @@ async fn process_announcement_event(
         match variant {
             AnnEventVariant::NewDataProxyId(id) => {
                 //Note: Endpoint cache currently not implemented
-                log::debug!("Received NewDataProxyId announcement for: {id}")
+                debug!("Received NewDataProxyId announcement for: {id}")
             }
             AnnEventVariant::RemoveDataProxyId(id) => {
-                log::debug!("Received RemoveDataProxy announcement for: {id}");
+                debug!("Received RemoveDataProxy announcement for: {id}");
 
                 // Removes endpoint from all users/resources in cache with full sync.
                 // As the endpoint was already removed from all users and resources on the database
@@ -306,7 +302,7 @@ async fn process_announcement_event(
             }
             AnnEventVariant::UpdateDataProxyId(id) => {
                 //Note: Endpoint cache currently not implemented
-                log::debug!("Received UpdateDataProxyId announcement for: {id}");
+                debug!("Received UpdateDataProxyId announcement for: {id}");
 
                 //ToDo: Update id in all users/resources and pubkeys?
             }
@@ -338,10 +334,10 @@ async fn process_announcement_event(
                 //ToDo: Implement downtime/shutdown preparation
                 //  - Set instance status to something like `HealthStatus::Shutdown`
                 //  - Do not accept any new requests
-                log::debug!("Received Downtime announcement: {:?}", info)
+                debug!("Received Downtime announcement: {:?}", info)
             }
             AnnEventVariant::Version(version) => {
-                log::debug!("Received Version announcement: {:?}", version)
+                debug!("Received Version announcement: {:?}", version)
             }
         }
     } else {
@@ -357,16 +353,14 @@ async fn process_server_event(
     sender: Arc<Sender<i64>>,
 ) -> anyhow::Result<()> {
     match server_event {
-        ServerEvents::MVREFRESH(refresh_timestamp) => match sender.send(refresh_timestamp).await {
-            Ok(_) => log::debug!(
-                "Send MV refresh message to stats loop: {}",
-                refresh_timestamp
-            ),
-            Err(err) => log::error!(
-                "Failed to send refresh start timestamp to stats loop: {}",
-                err
-            ),
-        },
+        ServerEvents::MVREFRESH(refresh_timestamp) => {
+            if let Err(err) = sender.send(refresh_timestamp).await {
+                error!(
+                    "Failed to send refresh started timestamp to stats loop: {}",
+                    err
+                )
+            }
+        }
     }
 
     Ok(())
