@@ -104,7 +104,7 @@ impl Cache {
         let mut stats_writer = self.stats_writer.lock().await;
         stats_writer.purge(); // Clear object stats map
         for stats in ObjectStats::get_all_stats(&client).await? {
-            stats_writer.insert(stats.origin_pid.clone(), stats.into());
+            stats_writer.insert(stats.origin_pid, stats.into());
         }
         stats_writer.refresh();
         drop(stats_writer);
@@ -177,7 +177,7 @@ impl Cache {
                     last_refresh: NaiveDateTime::default(),
                 }
                 .into();
-                Some(guard.get_one().unwrap_or(&default).clone())
+                Some(*guard.get_one().unwrap_or(&default))
             }
             None => None,
         }
@@ -319,9 +319,9 @@ impl Cache {
         let reader = self.stats_reader.handle();
         for stats in object_stats {
             if reader.contains_key(&stats.origin_pid) {
-                stats_writer.update(stats.origin_pid.clone(), stats.into());
+                stats_writer.update(stats.origin_pid, stats.into());
             } else {
-                stats_writer.insert(stats.origin_pid.clone(), stats.into());
+                stats_writer.insert(stats.origin_pid, stats.into());
             }
         }
         stats_writer.refresh();

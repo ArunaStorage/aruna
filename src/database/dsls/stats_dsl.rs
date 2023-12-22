@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, sync::Arc, time::Duration};
+use std::{collections::BTreeSet, hash::Hash, sync::Arc, time::Duration};
 
 use anyhow::{bail, Result};
 use async_channel::Receiver;
@@ -17,7 +17,7 @@ use crate::{
     utils::search_utils,
 };
 
-#[derive(Copy, Clone, Debug, FromRow, Hash, Eq)]
+#[derive(Copy, Clone, Debug, FromRow, Eq)]
 pub struct ObjectStats {
     pub origin_pid: DieselUlid,
     pub count: i64,
@@ -45,6 +45,15 @@ impl PartialEq for ObjectStats {
     }
 }
 
+impl Hash for ObjectStats {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Also ignore timestamp in hash to fulfill agreement with PartialEq
+        self.origin_pid.hash(state);
+        self.count.hash(state);
+        self.size.hash(state);
+    }
+}
+
 impl ObjectStats {
     pub async fn get_object_stats(id: DieselUlid, client: &Client) -> Result<Self> {
         let query = "SELECT * FROM object_stats WHERE id = $1;";
@@ -69,10 +78,7 @@ impl ObjectStats {
 
         let rows = client.query(&prepared, &[]).await?;
 
-        let stats = rows
-            .iter()
-            .map(|row| ObjectStats::from_row(&row))
-            .collect_vec();
+        let stats = rows.iter().map(ObjectStats::from_row).collect_vec();
 
         Ok(stats)
     }
@@ -164,71 +170,63 @@ pub async fn start_refresh_loop(
             }
 
             // Wait in every case for refresh to finish for cache update
-            loop {
-                match get_last_refresh(&client).await {
-                    Ok(last_refresh) => {
-                        if last_refresh.timestamp_millis() >= current_timestamp {
-                            // Fetch all ObjectStats, create diff with last loop iteration and update only changed
-                            let object_stats = BTreeSet::from_iter(
-                                match ObjectStats::get_all_stats(&client).await {
-                                    Ok(stats) => stats,
-                                    Err(err) => {
-                                        error!("Failed to fetch all stats from database: {}", err);
-                                        break;
-                                    }
-                                },
-                            );
-
-                            let diff = object_stats
-                                .difference(&last_object_stats)
-                                .cloned()
-                                .collect_vec();
-
-                            // Save current stats for next iteration
-                            last_object_stats = BTreeSet::from_iter(object_stats);
-
-                            // Update changed stats in cache only if stats are available and anything has changed
-                            if !diff.is_empty() {
-                                if let Err(err) = cache.upsert_object_stats(diff.clone()).await {
-                                    error!("Object stats cache update failed: {}", err)
-                                } else {
-                                    // Update changes in search index
-                                    let ods: Result<Vec<ObjectDocument>> = diff
-                                        .iter()
-                                        .map(|os| -> Result<ObjectDocument> {
-                                            cache.get_object_document(&os.origin_pid).ok_or_else(
-                                                || {
-                                                    anyhow::anyhow!(
-                                                        "Could not find object {} in cache",
-                                                        os.origin_pid
-                                                    )
-                                                },
-                                            )
-                                        })
-                                        .collect();
-
-                                    match ods {
-                                        Ok(index_updates) => {
-                                            search_utils::update_search_index(
-                                                &search_client,
-                                                &cache,
-                                                index_updates,
-                                            )
-                                            .await;
-                                        }
-                                        Err(err) => error!(
-                                            "Failed to fetch objects for search index update: {}",
-                                            err
-                                        ),
-                                    }
-                                };
+            while let Ok(last_refresh) = get_last_refresh(&client).await {
+                if last_refresh.timestamp_millis() >= current_timestamp {
+                    // Fetch all ObjectStats, create diff with last loop iteration and update only changed
+                    let object_stats =
+                        BTreeSet::from_iter(match ObjectStats::get_all_stats(&client).await {
+                            Ok(stats) => stats,
+                            Err(err) => {
+                                error!("Failed to fetch all stats from database: {}", err);
+                                break;
                             }
-                            break;
+                        });
+
+                    let diff = object_stats
+                        .difference(&last_object_stats)
+                        .cloned()
+                        .collect_vec();
+
+                    // Save current stats for next iteration
+                    last_object_stats = BTreeSet::from_iter(object_stats);
+
+                    // Update changed stats in cache only if stats are available and anything has changed
+                    if !diff.is_empty() {
+                        if let Err(err) = cache.upsert_object_stats(diff.clone()).await {
+                            error!("Object stats cache update failed: {}", err)
                         } else {
-                            tokio::time::sleep(Duration::from_secs(1)).await // Wait 1 sec and try again
-                        }
+                            // Update changes in search index
+                            let ods: Result<Vec<ObjectDocument>> = diff
+                                .iter()
+                                .map(|os| -> Result<ObjectDocument> {
+                                    cache.get_object_document(&os.origin_pid).ok_or_else(|| {
+                                        anyhow::anyhow!(
+                                            "Could not find object {} in cache",
+                                            os.origin_pid
+                                        )
+                                    })
+                                })
+                                .collect();
+
+                            match ods {
+                                Ok(index_updates) => {
+                                    search_utils::update_search_index(
+                                        &search_client,
+                                        &cache,
+                                        index_updates,
+                                    )
+                                    .await;
+                                }
+                                Err(err) => error!(
+                                    "Failed to fetch objects for search index update: {}",
+                                    err
+                                ),
+                            }
+                        };
                     }
-                    Err(_) => break, // On error break to continue outer loop
+                    break;
+                } else {
+                    tokio::time::sleep(Duration::from_secs(1)).await // Wait 1 sec and try again
                 }
             }
 

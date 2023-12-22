@@ -72,10 +72,7 @@ impl SearchService for SearchServiceImpl {
         let mut proto_resources = vec![];
         for hit in objects {
             proto_resources.push(GenericResource {
-                resource: Some(tonic_internal!(
-                    Resource::try_from(hit),
-                    "Search result to proto conversion failed"
-                )),
+                resource: Some(Resource::from(hit)),
             })
         }
 

@@ -104,7 +104,7 @@ async fn search_test() {
 
     // Convert all index documents to proto representation
     for doc in all_documents {
-        generic_resource::Resource::try_from(doc).unwrap();
+        let _ = generic_resource::Resource::from(doc);
     }
 }
 

@@ -23,9 +23,7 @@ impl DatabaseHandler {
         let id = delete_request.get_id()?;
 
         // Fetch full object including relations
-        dbg!("Try to fetch root object.");
         let root_object = Object::get_object_with_relations(&id, transaction_client).await?;
-        dbg!(&root_object);
 
         let (object_ids_to_delete, relation_ids_to_delete, affected_resources) =
             match delete_request {
@@ -204,10 +202,6 @@ impl DatabaseHandler {
                     )
                 }
             };
-
-        dbg!(&object_ids_to_delete);
-        dbg!(&relation_ids_to_delete);
-        dbg!(&affected_resources);
 
         // "Delete" relations
         InternalRelation::set_deleted(&relation_ids_to_delete, transaction_client).await?;
