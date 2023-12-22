@@ -11,7 +11,7 @@ use crate::middlelayer::presigned_url_handler::{PresignedDownload, PresignedUplo
 use crate::middlelayer::update_request_types::UpdateObject;
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
+use crate::utils::grpc_utils::{get_id_and_ctx, IntoGenericInner};
 use crate::utils::search_utils;
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Object};
 use aruna_rust_api::api::storage::services::v2::object_service_server::ObjectService;
@@ -83,6 +83,7 @@ impl ObjectService for ObjectServiceImpl {
         // Add or update object in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(object_plus.object.clone())],
         )
         .await;
@@ -232,6 +233,7 @@ impl ObjectService for ObjectServiceImpl {
         // Add or update object in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(object.object.clone())],
         )
         .await;
@@ -284,6 +286,7 @@ impl ObjectService for ObjectServiceImpl {
         // Add or update object in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(object.object.clone())],
         )
         .await;
@@ -326,6 +329,7 @@ impl ObjectService for ObjectServiceImpl {
         // Add or update object in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(new.object.clone())],
         )
         .await;

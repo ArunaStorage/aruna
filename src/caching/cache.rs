@@ -19,6 +19,7 @@ use crate::database::enums::DbPermissionLevel;
 use crate::database::enums::ObjectMapping;
 use crate::database::enums::ObjectStatus;
 use crate::database::enums::ObjectType;
+use crate::search::meilisearch_client::ObjectDocument;
 use crate::utils::cache_utils::{
     get_collection_children, get_dataset_relations, get_project_children,
 };
@@ -189,6 +190,25 @@ impl Cache {
         }
     }
 
+    pub fn get_object_document(&self, id: &DieselUlid) -> Option<ObjectDocument> {
+        if let Some(object) = self.get_object(id) {
+            // Fast return if Object which already has stats
+            if object.object.object_type == ObjectType::OBJECT {
+                return Some(object.object.into());
+            }
+
+            // Try to extend hierarchical objects with stats
+            let mut object_document: ObjectDocument = object.object.into();
+            if let Some(object_stats) = self.get_object_stats(id) {
+                object_document.count = object_stats.count;
+                object_document.size = object_stats.size;
+            }
+
+            Some(object_document)
+        } else {
+            None
+        }
+    }
 
     pub fn get_protobuf_object(&self, id: &DieselUlid) -> Option<generic_resource::Resource> {
         if let Some(object) = self.get_object(id) {
@@ -301,7 +321,7 @@ impl Cache {
             if reader.contains_key(&stats.origin_pid) {
                 stats_writer.update(stats.origin_pid.clone(), stats.into());
             } else {
-            stats_writer.insert(stats.origin_pid.clone(), stats.into());
+                stats_writer.insert(stats.origin_pid.clone(), stats.into());
             }
         }
         stats_writer.refresh();

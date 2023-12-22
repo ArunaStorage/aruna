@@ -208,6 +208,7 @@ async fn process_resource_event(
                         // Update resource search index only for public/private resources
                         search_utils::update_search_index(
                             &search_client,
+                            &cache,
                             vec![ObjectDocument::try_from(proto_resource)?],
                         )
                         .await;
@@ -220,6 +221,7 @@ async fn process_resource_event(
                     // Update resource search index only for public/private resources
                     search_utils::update_search_index(
                         &search_client,
+                        &cache,
                         vec![ObjectDocument::from(object_plus.object.clone())],
                     )
                     .await;

@@ -125,6 +125,7 @@ pub async fn main() -> Result<()> {
     let meilisearch_arc = Arc::new(meilisearch_client);
 
     let db_clone = db_arc.clone();
+    let cache_clone = cache_arc.clone();
     let search_clone = meilisearch_arc.clone();
     tokio::spawn(async move {
         // Delete existing index
@@ -141,7 +142,8 @@ pub async fn main() -> Result<()> {
         };
 
         // Full sync search index with database content
-        if let Err(err) = search_utils::full_sync_search_index(db_clone, search_clone.clone()).await
+        if let Err(err) =
+            search_utils::full_sync_search_index(db_clone, cache_clone, search_clone).await
         {
             warn!("Search index full sync failed: {}", err)
         };
@@ -173,9 +175,10 @@ pub async fn main() -> Result<()> {
     start_refresh_loop(
         db_arc.clone(),
         cache_arc.clone(),
-        refresh_interval,
+        meilisearch_arc.clone(),
         natsio_arc.clone(),
         n_recv,
+        refresh_interval,
     )
     .await;
 

@@ -120,6 +120,10 @@ fn generate_random_object_document() -> ObjectDocument {
         .to_vec()
         .join("-");
     let object_type = ObjectType::try_from(rng.gen_range(1..5)).unwrap();
+    let rand_count = match object_type {
+        ObjectType::OBJECT => 1,
+        _ => rng.gen_range(2..123),
+    };
     let rand_size = rng.gen_range(123..123456789);
     let hook_run_success = rng.gen_bool(0.5).to_string();
     let created_at = format!("{}-01-01 23:59:59", rng.gen_range(2001..2023));
@@ -132,6 +136,7 @@ fn generate_random_object_document() -> ObjectDocument {
         name: project_name,
         description: "ChatGPT should create some hallucinated description of this project."
             .to_string(),
+        count: rand_count,
         size: rand_size,
         labels: vec![
             KeyValue {
