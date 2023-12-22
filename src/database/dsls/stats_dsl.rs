@@ -1,11 +1,11 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
 use anyhow::{bail, Result};
 use async_channel::Receiver;
 use chrono::{NaiveDateTime, Utc};
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
-use log::{debug, error};
+use log::error;
 use postgres_from_row::FromRow;
 use tokio_postgres::Client;
 
@@ -13,6 +13,8 @@ use crate::{
     caching::cache::Cache,
     database::connection::Database,
     notification::natsio_handler::{NatsIoHandler, ServerEvents},
+    search::meilisearch_client::{MeilisearchClient, ObjectDocument},
+    utils::search_utils,
 };
 
 #[derive(Copy, Clone, Debug, FromRow, Hash, Eq)]
@@ -52,7 +54,7 @@ impl ObjectStats {
             Some(row) => ObjectStats::from_row(&row),
             None => ObjectStats {
                 origin_pid: id,
-                count: 0,
+                count: 1,
                 size: 0,
                 last_refresh: NaiveDateTime::default(),
             },
@@ -100,12 +102,14 @@ pub async fn get_last_refresh(client: &Client) -> Result<NaiveDateTime> {
 pub async fn start_refresh_loop(
     database: Arc<Database>,
     cache: Arc<Cache>,
-    refresh_interval: i64,
+    search_client: Arc<MeilisearchClient>,
     natsio_handler: Arc<NatsIoHandler>,
     refresh_receiver: Receiver<i64>,
+    refresh_interval: i64,
 ) {
     // Start loop
     tokio::spawn(async move {
+        let mut last_object_stats = BTreeSet::new();
         loop {
             // Try to get database connection
             let client = match database.get_client().await {
@@ -123,7 +127,6 @@ pub async fn start_refresh_loop(
             // Collect latest timestamp of all other started refreshs
             let mut latest_refresh = None;
             while let Ok(refresh_timestamp) = refresh_receiver.try_recv() {
-                log::info!("Received other refresh: {}", refresh_timestamp);
                 if let Some(latest_timestamp) = latest_refresh {
                     if refresh_timestamp > latest_timestamp {
                         latest_refresh = Some(refresh_timestamp)
@@ -132,14 +135,9 @@ pub async fn start_refresh_loop(
                     latest_refresh = Some(refresh_timestamp)
                 }
             }
-            log::info!("Latest refresh: {:?}", latest_refresh);
 
             // Evaluate if refresh is necessary
             let start_refresh = if let Some(refresh_timestamp) = latest_refresh {
-                log::info!(
-                    "Difference to last refresh: {}",
-                    current_timestamp - refresh_timestamp
-                );
                 let start_refresh = (current_timestamp - refresh_timestamp) > refresh_interval;
                 if !start_refresh {
                     current_timestamp = refresh_timestamp
@@ -148,7 +146,6 @@ pub async fn start_refresh_loop(
             } else {
                 true
             };
-            log::info!("Start refresh in this iteration: {}", start_refresh);
 
             // Start MV refresh if conditions are met
             if start_refresh {
@@ -160,11 +157,6 @@ pub async fn start_refresh_loop(
                             .await
                         {
                             error!("Failed to send MV refresh notification: {}", err)
-                        } else {
-                            log::info!(
-                                "Successfully send refresh timestamp to Nats: {}",
-                                current_timestamp
-                            )
                         }
                     }
                     Err(err) => error!("Start MV refresh failed: {}", err),
@@ -176,28 +168,67 @@ pub async fn start_refresh_loop(
                 match get_last_refresh(&client).await {
                     Ok(last_refresh) => {
                         if last_refresh.timestamp_millis() >= current_timestamp {
-                            // Update stats in cache if MV has been refreshed
-                            if let Err(err) = cache.upsert_object_stats(database.clone()).await {
-                                error!("Object stats cache update failed: {}", err)
-                            } else {
-                                log::info!("Object stats cache updated")
-                            };
+                            // Fetch all ObjectStats, create diff with last loop iteration and update only changed
+                            let object_stats = BTreeSet::from_iter(
+                                match ObjectStats::get_all_stats(&client).await {
+                                    Ok(stats) => stats,
+                                    Err(err) => {
+                                        error!("Failed to fetch all stats from database: {}", err);
+                                        break;
+                                    }
+                                },
+                            );
+
+                            let diff = object_stats
+                                .difference(&last_object_stats)
+                                .cloned()
+                                .collect_vec();
+
+                            // Save current stats for next iteration
+                            last_object_stats = BTreeSet::from_iter(object_stats);
+
+                            // Update changed stats in cache only if stats are available and anything has changed
+                            if !diff.is_empty() {
+                                if let Err(err) = cache.upsert_object_stats(diff.clone()).await {
+                                    error!("Object stats cache update failed: {}", err)
+                                } else {
+                                    // Update changes in search index
+                                    let ods: Result<Vec<ObjectDocument>> = diff
+                                        .iter()
+                                        .map(|os| -> Result<ObjectDocument> {
+                                            cache.get_object_document(&os.origin_pid).ok_or_else(
+                                                || {
+                                                    anyhow::anyhow!(
+                                                        "Could not find object {} in cache",
+                                                        os.origin_pid
+                                                    )
+                                                },
+                                            )
+                                        })
+                                        .collect();
+
+                                    match ods {
+                                        Ok(index_updates) => {
+                                            search_utils::update_search_index(
+                                                &search_client,
+                                                &cache,
+                                                index_updates,
+                                            )
+                                            .await;
+                                        }
+                                        Err(err) => error!(
+                                            "Failed to fetch objects for search index update: {}",
+                                            err
+                                        ),
+                                    }
+                                };
+                            }
                             break;
                         } else {
-                            debug!(
-                                "Refresh still running. Wait 1 sec before re-try: ({}) {} > {}",
-                                last_refresh,
-                                last_refresh.timestamp_millis(),
-                                current_timestamp
-                            );
-                            tokio::time::sleep(Duration::from_secs(1)).await
+                            tokio::time::sleep(Duration::from_secs(1)).await // Wait 1 sec and try again
                         }
                     }
-                    Err(err) => {
-                        // On error break to continue outer loop
-                        debug!("Skipped object stats cache update: {}", err);
-                        break;
-                    }
+                    Err(_) => break, // On error break to continue outer loop
                 }
             }
 
