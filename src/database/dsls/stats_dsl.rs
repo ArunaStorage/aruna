@@ -55,14 +55,14 @@ impl Hash for ObjectStats {
 }
 
 impl ObjectStats {
-    pub async fn get_object_stats(id: DieselUlid, client: &Client) -> Result<Self> {
-        let query = "SELECT * FROM object_stats WHERE id = $1;";
+    pub async fn get_object_stats(id: &DieselUlid, client: &Client) -> Result<Self> {
+        let query = "SELECT * FROM object_stats WHERE origin_pid = $1;";
         let prepared = client.prepare(query).await?;
 
         let stats = match client.query_opt(&prepared, &[&id]).await? {
             Some(row) => ObjectStats::from_row(&row),
             None => ObjectStats {
-                origin_pid: id,
+                origin_pid: *id,
                 count: 1,
                 size: 0,
                 last_refresh: NaiveDateTime::default(),
