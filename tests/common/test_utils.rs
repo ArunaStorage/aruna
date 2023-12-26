@@ -90,7 +90,11 @@ pub fn new_object(user_id: DieselUlid, object_id: DieselUlid, object_type: Objec
         description: "b".to_string(),
         count: 1,
         created_at: None,
-        content_len: 1337,
+        content_len: if let ObjectType::OBJECT = object_type {
+            1337
+        } else {
+            0
+        },
         created_by: user_id,
         key_values: Json(KeyValues(vec![])),
         object_status: ObjectStatus::AVAILABLE,
@@ -136,7 +140,11 @@ pub fn object_from_mapping(
         description: "b".to_string(),
         count: 1,
         created_at: None,
-        content_len: 1337,
+        content_len: if let ObjectType::OBJECT = object_type {
+            1337
+        } else {
+            0
+        },
         created_by: user_id,
         key_values: Json(KeyValues(vec![])),
         object_status: ObjectStatus::AVAILABLE,
