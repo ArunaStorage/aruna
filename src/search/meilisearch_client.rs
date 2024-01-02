@@ -181,7 +181,11 @@ impl From<ObjectDocument> for Collection {
             description: object_document.description,
             key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
-            stats: None,
+            stats: Some(Stats {
+                count: object_document.count,
+                size: object_document.size,
+                last_updated: None,
+            }),
             data_class: object_document.data_class.into(),
             created_at: Some(Timestamp {
                 seconds: object_document.created_at,
@@ -237,7 +241,11 @@ impl From<ObjectDocument> for Dataset {
             description: object_document.description,
             key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
-            stats: None,
+            stats: Some(Stats {
+                count: object_document.count,
+                size: object_document.size,
+                last_updated: None,
+            }),
             data_class: object_document.data_class.into(),
             created_at: Some(Timestamp {
                 seconds: object_document.created_at,
