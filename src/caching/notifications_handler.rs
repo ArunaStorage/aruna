@@ -9,14 +9,17 @@ use aruna_rust_api::api::{
     },
     storage::models::v2::generic_resource,
 };
+use async_channel::Sender;
 use async_nats::jetstream::consumer::DeliverPolicy;
 use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use futures::StreamExt;
 use jsonwebtoken::DecodingKey;
+use log::{debug, error};
 use time::OffsetDateTime;
 
 use crate::database::dsls::pub_key_dsl::PubKey;
+use crate::notification::natsio_handler::ServerEvents;
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::search_utils;
 use crate::{
@@ -41,6 +44,7 @@ impl NotificationHandler {
         cache: Arc<Cache>,
         natsio_handler: Arc<NatsIoHandler>,
         search_client: Arc<MeilisearchClient>,
+        refresh_sender: Sender<i64>,
     ) -> anyhow::Result<Self> {
         // Create standard pull consumer to fetch all notifications
         /*
@@ -71,32 +75,48 @@ impl NotificationHandler {
         let mut messages = pull_consumer.messages().await?;
         let cache_clone = cache.clone();
         let database_clone = database.clone();
+        let sender_arc = Arc::new(refresh_sender);
         tokio::spawn(async move {
             loop {
                 if let Some(Ok(nats_message)) = messages.next().await {
                     log_received!(&nats_message);
 
-                    // Deserialize messages in gRPC definitions
-                    let msg_variant = match serde_json::from_slice(
-                        nats_message.message.payload.to_vec().as_slice(),
-                    ) {
-                        Ok(variant) => variant,
-                        Err(err) => {
-                            return Err::<MessageVariant, anyhow::Error>(anyhow::anyhow!(err))
-                        }
-                    };
+                    if nats_message.subject.starts_with("AOS.SERVER") {
+                        let msg_variant = match serde_json::from_slice(
+                            nats_message.message.payload.to_vec().as_slice(),
+                        ) {
+                            Ok(variant) => variant,
+                            Err(err) => {
+                                return Err::<MessageVariant, anyhow::Error>(anyhow::anyhow!(err))
+                            }
+                        };
 
-                    // Update cache depending on message variant
-                    match NotificationHandler::update_server_cache(
-                        msg_variant,
-                        cache_clone.clone(),
-                        database_clone.clone(),
-                        search_client.clone(),
-                    )
-                    .await
-                    {
-                        Ok(_) => log::info!("NotificationHandler cache update successful"),
-                        Err(err) => log::error!("NotificationHandler cache update failed: {err}"),
+                        let _ = process_server_event(msg_variant, sender_arc.clone()).await;
+                    } else {
+                        // Deserialize messages in gRPC definitions
+                        let msg_variant = match serde_json::from_slice(
+                            nats_message.message.payload.to_vec().as_slice(),
+                        ) {
+                            Ok(variant) => variant,
+                            Err(err) => {
+                                return Err::<MessageVariant, anyhow::Error>(anyhow::anyhow!(err))
+                            }
+                        };
+
+                        // Update cache depending on message variant
+                        match NotificationHandler::update_server_cache(
+                            msg_variant,
+                            cache_clone.clone(),
+                            database_clone.clone(),
+                            search_client.clone(),
+                        )
+                        .await
+                        {
+                            Ok(_) => debug!("NotificationHandler cache update successful"),
+                            Err(err) => {
+                                error!("NotificationHandler cache update failed: {err}")
+                            }
+                        }
                     }
 
                     // Acknowlege received message in every case because the only way cache update can fail is through the database query.
@@ -106,16 +126,11 @@ impl NotificationHandler {
                     //   but is faulty or the database itself is not accessible.
                     match &nats_message.reply {
                         Some(reply_subject) => {
-                            match natsio_handler.acknowledge_raw(reply_subject).await {
-                                Ok(_) => log::info!(
-                                    "NotificationHandler message acknowledgement successful"
-                                ),
-                                Err(err) => log::info!(
-                                    "NotificationHandler message acknowledgement failed: {err}"
-                                ),
+                            if let Err(err) = natsio_handler.acknowledge_raw(reply_subject).await {
+                                error!("NotificationHandler message acknowledgement failed: {err}")
                             }
                         }
-                        None => log::error!("Nats message "),
+                        None => error!("Nats message does not contain replay subject"),
                     };
                 }
             }
@@ -139,7 +154,6 @@ impl NotificationHandler {
             MessageVariant::UserEvent(event) => {
                 process_user_event(event, cache, database).await?;
             }
-
             MessageVariant::AnnouncementEvent(event) => {
                 process_announcement_event(event, cache, database).await?;
             }
@@ -190,6 +204,7 @@ async fn process_resource_event(
                         // Update resource search index only for public/private resources
                         search_utils::update_search_index(
                             &search_client,
+                            &cache,
                             vec![ObjectDocument::try_from(proto_resource)?],
                         )
                         .await;
@@ -202,6 +217,7 @@ async fn process_resource_event(
                     // Update resource search index only for public/private resources
                     search_utils::update_search_index(
                         &search_client,
+                        &cache,
                         vec![ObjectDocument::from(object_plus.object.clone())],
                     )
                     .await;
@@ -274,10 +290,10 @@ async fn process_announcement_event(
         match variant {
             AnnEventVariant::NewDataProxyId(id) => {
                 //Note: Endpoint cache currently not implemented
-                log::info!("Received NewDataProxyId announcement for: {id}")
+                debug!("Received NewDataProxyId announcement for: {id}")
             }
             AnnEventVariant::RemoveDataProxyId(id) => {
-                log::info!("Received RemoveDataProxy announcement for: {id}");
+                debug!("Received RemoveDataProxy announcement for: {id}");
 
                 // Removes endpoint from all users/resources in cache with full sync.
                 // As the endpoint was already removed from all users and resources on the database
@@ -286,7 +302,7 @@ async fn process_announcement_event(
             }
             AnnEventVariant::UpdateDataProxyId(id) => {
                 //Note: Endpoint cache currently not implemented
-                log::info!("Received UpdateDataProxyId announcement for: {id}");
+                debug!("Received UpdateDataProxyId announcement for: {id}");
 
                 //ToDo: Update id in all users/resources and pubkeys?
             }
@@ -318,15 +334,33 @@ async fn process_announcement_event(
                 //ToDo: Implement downtime/shutdown preparation
                 //  - Set instance status to something like `HealthStatus::Shutdown`
                 //  - Do not accept any new requests
-                log::info!("Received Downtime announcement: {:?}", info)
+                debug!("Received Downtime announcement: {:?}", info)
             }
             AnnEventVariant::Version(version) => {
-                log::info!("Received Version announcement: {:?}", version)
+                debug!("Received Version announcement: {:?}", version)
             }
         }
     } else {
         // Return error if variant is None
         bail!("Announcement event variant missing")
+    }
+
+    Ok(())
+}
+
+async fn process_server_event(
+    server_event: ServerEvents,
+    sender: Arc<Sender<i64>>,
+) -> anyhow::Result<()> {
+    match server_event {
+        ServerEvents::MVREFRESH(refresh_timestamp) => {
+            if let Err(err) = sender.send(refresh_timestamp).await {
+                error!(
+                    "Failed to send refresh started timestamp to stats loop: {}",
+                    err
+                )
+            }
+        }
     }
 
     Ok(())
