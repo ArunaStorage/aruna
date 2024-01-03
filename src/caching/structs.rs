@@ -11,6 +11,7 @@ use aruna_rust_api::api::storage::services::v2::full_sync_endpoint_response;
 use aruna_rust_api::api::storage::services::v2::FullSyncEndpointResponse;
 use dashmap::mapref::multiple::RefMulti;
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
 use jsonwebtoken::DecodingKey;
 
 #[derive(Clone)]
@@ -52,6 +53,14 @@ impl TryFrom<PubKey> for PubKeyEnum {
 }
 
 impl ObjectWithRelations {
+    /// Fetches all ids of children which are associated to the object
+    /// through an outbound BELONGS_TO relation.
+    ///
+    /// Returns:
+    ///
+    /// * `Vec<DieselUlid>`:
+    ///   List of all object ids which are associated as a child through a
+    ///   BELONGS_TO relation to the specific object.
     pub fn get_children(&self) -> Vec<DieselUlid> {
         self.outbound_belongs_to
             .0
@@ -60,6 +69,44 @@ impl ObjectWithRelations {
             .collect::<Vec<_>>()
     }
 
+    /// Fetches all ids of children which are associated to the object
+    /// through an outbound BELONGS_TO or DELETED relation.
+    ///
+    /// Returns:
+    ///
+    /// * `Vec<DieselUlid>`:
+    ///   List of all object ids which are associated as a child through a
+    ///   BELONGS_TO or DELETED relation to the specific object.
+    pub fn get_permission_children(&self) -> Vec<DieselUlid> {
+        // Get all BELONGS_TO children
+        let mut object_children = self.get_children();
+
+        // Extend with all DELETED children
+        object_children.extend(
+            self.outbound
+                .0
+                .iter()
+                .filter_map(|c| {
+                    if c.value().relation_name == "DELETED" {
+                        Some(c.value().target_pid)
+                    } else {
+                        None
+                    }
+                })
+                .collect_vec(),
+        );
+
+        object_children
+    }
+
+    /// Fetches all ids of parents which are associated to the object
+    /// through an inbound BELONGS_TO relation.
+    ///
+    /// Returns:
+    ///
+    /// * `Vec<DieselUlid>`:
+    ///   List of all object ids which are associated as a parent through a
+    ///   BELONGS_TO relation to the specific object.
     pub fn get_parents(&self) -> Vec<DieselUlid> {
         self.inbound_belongs_to
             .0

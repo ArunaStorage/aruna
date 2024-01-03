@@ -608,7 +608,7 @@ impl Cache {
 
         while let Some(x) = queue.pop_front() {
             if let Some(x) = self.get_object(&x) {
-                for child in x.get_children() {
+                for child in x.get_permission_children() {
                     if let Some(got_perm) = ctxs.remove(&child) {
                         if got_perm > perm {
                             bail!("Invalid permissions")
