@@ -128,14 +128,19 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self, access_key))]
     /// Requests a secret key from the cache
     pub fn get_secret(&self, access_key: &str) -> Result<SecretKey> {
-        Ok(SecretKey::from(
-            trace_err!(self
-                .users
-                .get(access_key)
-                .ok_or_else(|| anyhow!("User not found")))?
-            .secret
-            .as_ref(),
-        ))
+        let secret = trace_err!(self
+            .users
+            .get(access_key)
+            .ok_or_else(|| anyhow!("User not found")))?
+        .secret
+        .clone();
+
+        if secret.is_empty() {
+            error!("secret is empty");
+            Err(anyhow!("Secret is empty"))
+        } else {
+            Ok(SecretKey::from(secret))
+        }
     }
 
     #[tracing::instrument(level = "trace", skip(self, database))]
@@ -1068,5 +1073,17 @@ impl Cache {
         }
         trace!(?finished);
         Ok(finished)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn get_resource(
+        &self,
+        resource_id: &DieselUlid,
+    ) -> Result<(Object, Option<ObjectLocation>)> {
+        let resource = trace_err!(self
+            .resources
+            .get(resource_id)
+            .ok_or_else(|| anyhow!("Resource not found")))?;
+        Ok(resource.clone())
     }
 }

@@ -196,7 +196,41 @@ impl AuthHandler {
         let db_perm_from_method = DbPermissionLevel::from(method);
         trace!(extracted_perm = ?db_perm_from_method);
 
-        if let Some(b) = path.as_bucket() {
+        if path.is_root() {
+            trace!("detected root");
+            if let Some(creds) = creds {
+                let user = trace_err!(self
+                    .cache
+                    .get_user_by_key(&creds.access_key)
+                    .ok_or_else(|| anyhow!("Unknown user")))?;
+
+                let token_id = if user.user_id.to_string() == user.access_key {
+                    None
+                } else {
+                    Some(user.access_key.clone())
+                };
+
+                return Ok(CheckAccessResult {
+                    user_id: Some(user.user_id.to_string()),
+                    token_id,
+                    resource_ids: None,
+                    missing_resources: None,
+                    object: None,
+                    bundle: None,
+                    headers: None,
+                });
+            } else {
+                return Ok(CheckAccessResult {
+                    user_id: None,
+                    token_id: None,
+                    resource_ids: None,
+                    missing_resources: None,
+                    object: None,
+                    bundle: None,
+                    headers: None,
+                });
+            }
+        } else if let Some(b) = path.as_bucket() {
             trace!("detected as_bucket");
 
             let headers = if let Some((project, _)) = self

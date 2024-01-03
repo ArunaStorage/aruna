@@ -31,6 +31,11 @@ impl S3Auth for AuthProvider {
     #[tracing::instrument(level = "trace", skip(self, cx))]
     async fn check_access(&self, cx: &mut S3AuthContext<'_>) -> S3Result<()> {
         debug!(path = ?cx.s3_path());
+
+        if cx.s3_path().is_root() && cx.credentials().is_none() {
+            return Err(s3_error!(InvalidAccessKeyId, "Missing access key"));
+        }
+
         match self.cache.auth.read().await.as_ref() {
             Some(auth) => {
                 let result = trace_err!(
