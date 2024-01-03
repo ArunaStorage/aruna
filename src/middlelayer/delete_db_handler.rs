@@ -28,7 +28,7 @@ impl DatabaseHandler {
         let (object_ids_to_delete, relation_ids_to_delete, affected_resources) =
             match delete_request {
                 DeleteRequest::Object(request) => {
-                    //  - Set all outbound 'BELONGS_TO' relations to 'DELETED'
+                    //  - Set all inbound 'BELONGS_TO' relations to 'DELETED'
                     //  - Set object_status to 'DELETED'
                     //  - if 'with_revisions: true' repeat for all versions
                     let mut objects = vec![root_object.clone()];
@@ -67,8 +67,8 @@ impl DatabaseHandler {
                         o.get_parents().into_iter().for_each(|p| {
                             affected_resources.insert(p);
                         });
-                        // Collect relations for deletion
-                        o.outbound_belongs_to
+                        // Collect relations to parents for deletion
+                        o.inbound_belongs_to
                             .0
                             .iter()
                             .for_each(|entry| relation_ids.push(entry.value().id))
