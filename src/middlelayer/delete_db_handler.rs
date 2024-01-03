@@ -117,9 +117,7 @@ impl DatabaseHandler {
                                 if resource.object.id != root_object.object.id {
                                     for parent_id in resource.get_parents() {
                                         if !(ids_to_delete.contains(&parent_id)) {
-                                            bail!(
-                                                "Object has parents outside the deletion hierarchy"
-                                            )
+                                            bail!("Resource {} still has parents in multiple hierarchies", resource.object.id)
                                         }
                                     }
                                 } else {
@@ -161,8 +159,11 @@ impl DatabaseHandler {
                             }
                             ObjectType::OBJECT => {
                                 for parent_id in resource.get_parents() {
-                                    if ids_to_delete.contains(&parent_id) {
-                                        bail!("Object has parents outside the deletion hierarchy")
+                                    if !ids_to_delete.contains(&parent_id) {
+                                        bail!(
+                                            "Resource {} still has parents in multiple hierarchies",
+                                            resource.object.id
+                                        )
                                     }
                                 }
                                 ids_to_delete.insert(resource.object.id);
