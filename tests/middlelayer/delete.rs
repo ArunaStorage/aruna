@@ -249,7 +249,7 @@ async fn delete_hierarchies() {
         &vec![
             p1_c1, p1_c2, p2_c2, c1_d1, c2_d1, c2_d2, d1_o1, d1_o2, d2_o2, d2_o3,
         ],
-        &client,
+        client,
     )
     .await
     .unwrap();
@@ -361,7 +361,7 @@ async fn delete_hierarchies() {
         assert_eq!(&del_rel.1.relation_name, "DELETED")
     }
 
-    for resource_id in vec![&collection_02.id, &dataset_02.id] {
+    for resource_id in [&collection_02.id, &dataset_02.id] {
         let del_obj = db_handler.cache.get_object(resource_id).unwrap();
         assert_eq!(del_obj.object.object_status, ObjectStatus::DELETED);
         assert!(del_obj.inbound_belongs_to.0.is_empty());
@@ -404,7 +404,7 @@ async fn delete_hierarchies() {
     assert_eq!(del_obj.outbound.0.len(), 2);
     for del_rel in del_obj.inbound.0 {
         assert_eq!(del_rel.1.origin_pid, project_01.id);
-        assert!(vec![collection_01.id, collection_02.id].contains(&del_rel.1.target_pid));
+        assert!([collection_01.id, collection_02.id].contains(&del_rel.1.target_pid));
         assert_eq!(&del_rel.1.relation_name, "DELETED")
     }
 
