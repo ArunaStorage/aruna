@@ -45,6 +45,7 @@ use evmap::shallow_copy::CopyValue;
 use evmap::ReadHandleFactory;
 use evmap::WriteHandle;
 use itertools::Itertools;
+use log::warn;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -165,6 +166,22 @@ impl Cache {
     pub fn get_object(&self, id: &DieselUlid) -> Option<ObjectWithRelations> {
         self.check_lock();
         self.object_cache.get(id).map(|x| x.value().clone())
+    }
+
+    pub fn get_object_with_stats(&self, id: &DieselUlid) -> Option<ObjectWithRelations> {
+        if let Some(mut object) = self.get_object(id) {
+            if object.object.object_type == ObjectType::OBJECT {
+                Some(object)
+            } else if let Some(object_stats) = self.get_object_stats(id) {
+                object.object.count = object_stats.count;
+                object.object.content_len = object_stats.size;
+                Some(object)
+            } else {
+                Some(object)
+            }
+        } else {
+            None
+        }
     }
 
     pub fn get_object_stats(&self, id: &DieselUlid) -> Option<CopyValue<ObjectStats>> {

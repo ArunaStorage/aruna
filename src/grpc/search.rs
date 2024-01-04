@@ -121,10 +121,10 @@ impl SearchService for SearchServiceImpl {
         } else {
             None
         };
-        let (object_plus, permission) = if let Some(user) = user {
+        let (mut object_plus, permission) = if let Some(user) = user {
             let object = self
                 .cache
-                .get_object(&resource_ulid)
+                .get_object_with_stats(&resource_ulid)
                 .ok_or_else(|| Status::not_found("Object not found"))?;
             let user = self
                 .cache
@@ -168,7 +168,7 @@ impl SearchService for SearchServiceImpl {
             // Get Object from cache
             let mut object_plus = self
                 .cache
-                .get_object(&resource_ulid)
+                .get_object_with_stats(&resource_ulid)
                 .ok_or_else(|| Status::not_found("Object not found"))?;
 
             // Check if object metadata is publicly available
@@ -198,6 +198,7 @@ impl SearchService for SearchServiceImpl {
             object_plus.object.key_values = Json(KeyValues(stripped_labels));
             (object_plus, PermissionLevel::Read)
         };
+        self.cache.add_stats_to_object(&mut object_plus);
 
         // Convert to proto resource
         let generic_object: Resource = object_plus.into();
@@ -258,7 +259,7 @@ impl SearchService for SearchServiceImpl {
             for id in resource_ids {
                 let object = self
                     .cache
-                    .get_object(&id)
+                    .get_object_with_stats(&id)
                     .ok_or_else(|| Status::not_found("Object not found"))?;
                 let user = self
                     .cache
@@ -307,7 +308,7 @@ impl SearchService for SearchServiceImpl {
                 // Get Object from cache
                 let mut object_plus = self
                     .cache
-                    .get_object(&id)
+                    .get_object_with_stats(&id)
                     .ok_or_else(|| Status::not_found("Object not found"))?;
 
                 // Check if object metadata is publicly available
