@@ -308,13 +308,13 @@ impl CollectionService for CollectionServiceImpl {
         let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
         let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
-        let user_id = tonic_auth!(
+        tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
         let mut collection = tonic_internal!(
-            self.database_handler.update_keyvals(request, user_id).await,
+            self.database_handler.update_keyvals(request).await,
             "Internal database error."
         );
         self.cache

@@ -298,13 +298,13 @@ impl ProjectService for ProjectServiceImpl {
         let project_id = tonic_invalid!(request.get_id(), "Invalid project id");
         let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, true);
 
-        let user_id = tonic_auth!(
+        tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
         let mut project = tonic_internal!(
-            self.database_handler.update_keyvals(request, user_id).await,
+            self.database_handler.update_keyvals(request).await,
             "Internal database error."
         );
         self.cache

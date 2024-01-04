@@ -79,8 +79,7 @@ impl DatabaseHandler {
         let mut object = Object::get(object_id, &client)
             .await?
             .ok_or_else(|| anyhow!("Object not found"))?;
-        //let owr = self.cache.get_object(&object_id).ok_or_else(||anyhow!("Object not found"))?;
-        //let mut object = owr.object.clone();
+
         dbg!(&object);
         let status = object
             .key_values
@@ -149,7 +148,7 @@ impl DatabaseHandler {
                 }
             })
             .collect::<Result<Vec<KeyValue>>>()?;
-        object.key_values = Json(crate::database::dsls::object_dsl::KeyValues(kvs));
+        object.key_values = Json(crate::database::dsls::object_dsl::KeyValues(kvs.clone()));
         object.update(transaction_client).await?;
 
         transaction.commit().await?;
@@ -157,7 +156,27 @@ impl DatabaseHandler {
         // Update object in cache
         let owr = Object::get_object_with_relations(&object_id, &client).await?;
         dbg!(&owr);
-        self.cache.upsert_object(&object_id, owr);
+        self.cache.upsert_object(&object_id, owr.clone());
+
+        // Send HookStatusChanged trigger to hook handler
+        let db_handler = DatabaseHandler {
+            database: self.database.clone(),
+            natsio_handler: self.natsio_handler.clone(),
+            cache: self.cache.clone(),
+            hook_sender: self.hook_sender.clone(),
+        };
+        // TODO!
+        // Because we cannot define which project triggered this hooks callback,
+        // we also cannot define the hook_owner.
+        //let user_id = hook.owner; // This is a temporary solution
+        tokio::spawn(async move {
+            let call = db_handler
+                .trigger_hooks(owr, vec![TriggerVariant::HOOK_STATUS_CHANGED], Some(kvs))
+                .await;
+            if call.is_err() {
+                log::error!("{:?}", call);
+            }
+        });
 
         Ok(())
     }
@@ -179,7 +198,7 @@ impl DatabaseHandler {
     pub async fn trigger_hooks(
         &self,
         object: ObjectWithRelations,
-        user_id: DieselUlid,
+        //user_id: DieselUlid,
         triggers: Vec<TriggerVariant>,
         updated_labels: Option<Vec<KeyValue>>,
     ) -> Result<()> {
@@ -244,6 +263,7 @@ impl DatabaseHandler {
             Ok(())
         } else {
             for hook in hooks {
+                let user_id = hook.owner;
                 let message = HookMessage {
                     hook,
                     object: object.clone(),
