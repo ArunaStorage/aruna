@@ -54,10 +54,9 @@ impl ProjectService for ProjectServiceImpl {
 
         // Collect all ids from relations and parse them into ctx
         let mut ctxs = request.get_relation_contexts()?;
-        ctxs.push(Context {
-            allow_service_account: false,
-            ..Default::default()
-        });
+        let mut ctx = Context::registered();
+        ctx.allow_service_account = false;
+        ctxs.push(ctx);
 
         let (user_id, _, is_dataproxy) = tonic_auth!(
             self.authorizer
@@ -67,7 +66,6 @@ impl ProjectService for ProjectServiceImpl {
         );
 
         // Create project in database
-
         let (project, user) = tonic_internal!(
             self.database_handler
                 .create_resource(request, user_id, is_dataproxy)
@@ -84,6 +82,7 @@ impl ProjectService for ProjectServiceImpl {
         // Add or update project in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(project.object.clone())],
         )
         .await;
@@ -121,15 +120,10 @@ impl ProjectService for ProjectServiceImpl {
             "Unauthorized"
         );
 
-        let res = self
-            .cache
-            .get_object(&project_id)
-            .ok_or_else(|| tonic::Status::not_found("Project not found"))?;
-
-        let generic_project: generic_resource::Resource = res.into();
+        let res = query(&self.cache, &project_id)?;
 
         let response = GetProjectResponse {
-            project: Some(generic_project.into_inner()?),
+            project: Some(res.into_inner()?),
         };
 
         return_with_log!(response);
@@ -157,10 +151,7 @@ impl ProjectService for ProjectServiceImpl {
 
         let res: Result<Vec<Project>> = ids
             .iter()
-            .map(|id| -> Result<Project> {
-                let proj = query(&self.cache, id)?;
-                proj.into_inner()
-            })
+            .map(|id| -> Result<Project> { query(&self.cache, id)?.into_inner() })
             .collect();
 
         let response = GetProjectsResponse { projects: res? };
@@ -224,16 +215,19 @@ impl ProjectService for ProjectServiceImpl {
             "Unauthorized"
         );
 
-        let project = tonic_internal!(
+        let mut project = tonic_internal!(
             self.database_handler.update_name(request).await,
             "Internal database error."
         );
+
         self.cache
             .upsert_object(&project.object.id, project.clone());
+        self.cache.add_stats_to_object(&mut project);
 
         // Add or update project in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(project.object.clone())],
         )
         .await;
@@ -265,16 +259,18 @@ impl ProjectService for ProjectServiceImpl {
             "Unauthorized"
         );
 
-        let project = tonic_internal!(
+        let mut project = tonic_internal!(
             self.database_handler.update_description(request).await,
             "Internal database error."
         );
         self.cache
             .upsert_object(&project.object.id, project.clone());
+        self.cache.add_stats_to_object(&mut project);
 
         // Add or update project in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(project.object.clone())],
         )
         .await;
@@ -307,16 +303,18 @@ impl ProjectService for ProjectServiceImpl {
             "Unauthorized"
         );
 
-        let project = tonic_internal!(
+        let mut project = tonic_internal!(
             self.database_handler.update_keyvals(request).await,
             "Internal database error."
         );
         self.cache
             .upsert_object(&project.object.id, project.clone());
+        self.cache.add_stats_to_object(&mut project);
 
         // Add or update project in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(project.object.clone())],
         )
         .await;
@@ -350,16 +348,18 @@ impl ProjectService for ProjectServiceImpl {
             "Unauthorized"
         );
 
-        let project = tonic_internal!(
+        let mut project = tonic_internal!(
             self.database_handler.update_dataclass(request).await,
             "Internal database error."
         );
         self.cache
             .upsert_object(&project.object.id, project.clone());
+        self.cache.add_stats_to_object(&mut project);
 
         // Add or update project in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(project.object.clone())],
         )
         .await;
@@ -405,13 +405,13 @@ impl ProjectService for ProjectServiceImpl {
         }
 
         // Add or update resources in search index
-        search_utils::update_search_index(&self.search_client, search_update).await;
+        search_utils::update_search_index(&self.search_client, &self.cache, search_update).await;
 
         let project: generic_resource::Resource = self
             .cache
-            .get_object(&old_id)
-            .ok_or_else(|| tonic::Status::not_found("Project not found"))?
-            .into();
+            .get_protobuf_object(&old_id)
+            .ok_or_else(|| tonic::Status::not_found("Project not found"))?;
+
         let response = ArchiveProjectResponse {
             project: Some(project.into_inner()?),
         };
@@ -438,10 +438,22 @@ impl ProjectService for ProjectServiceImpl {
             "Unauthorized"
         );
 
-        let project = tonic_invalid!(
+        let mut project = tonic_invalid!(
             self.database_handler.update_license(request).await,
             "Invalid update license request"
         );
+        self.cache
+            .upsert_object(&project.object.id, project.clone());
+        self.cache.add_stats_to_object(&mut project);
+
+        // Add or update project in search index
+        search_utils::update_search_index(
+            &self.search_client,
+            &self.cache,
+            vec![ObjectDocument::from(project.object.clone())],
+        )
+        .await;
+
         let generic_resource: generic_resource::Resource = project.into();
         let response = UpdateProjectLicensesResponse {
             project: Some(generic_resource.into_inner()?),

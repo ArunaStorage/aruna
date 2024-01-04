@@ -23,14 +23,12 @@ impl DatabaseHandler {
         let id = delete_request.get_id()?;
 
         // Fetch full object including relations
-        dbg!("Try to fetch root object.");
         let root_object = Object::get_object_with_relations(&id, transaction_client).await?;
-        dbg!(&root_object);
 
         let (object_ids_to_delete, relation_ids_to_delete, affected_resources) =
             match delete_request {
                 DeleteRequest::Object(request) => {
-                    //  - Set all outbound 'BELONGS_TO' relations to 'DELETED'
+                    //  - Set all inbound 'BELONGS_TO' relations to 'DELETED'
                     //  - Set object_status to 'DELETED'
                     //  - if 'with_revisions: true' repeat for all versions
                     let mut objects = vec![root_object.clone()];
@@ -69,8 +67,8 @@ impl DatabaseHandler {
                         o.get_parents().into_iter().for_each(|p| {
                             affected_resources.insert(p);
                         });
-                        // Collect relations for deletion
-                        o.outbound_belongs_to
+                        // Collect relations to parents for deletion
+                        o.inbound_belongs_to
                             .0
                             .iter()
                             .for_each(|entry| relation_ids.push(entry.value().id))
@@ -119,9 +117,7 @@ impl DatabaseHandler {
                                 if resource.object.id != root_object.object.id {
                                     for parent_id in resource.get_parents() {
                                         if !(ids_to_delete.contains(&parent_id)) {
-                                            bail!(
-                                                "Object has parents outside the deletion hierarchy"
-                                            )
+                                            bail!("Resource {} still has parents in multiple hierarchies", resource.object.id)
                                         }
                                     }
                                 } else {
@@ -163,8 +159,11 @@ impl DatabaseHandler {
                             }
                             ObjectType::OBJECT => {
                                 for parent_id in resource.get_parents() {
-                                    if ids_to_delete.contains(&parent_id) {
-                                        bail!("Object has parents outside the deletion hierarchy")
+                                    if !ids_to_delete.contains(&parent_id) {
+                                        bail!(
+                                            "Resource {} still has parents in multiple hierarchies",
+                                            resource.object.id
+                                        )
                                     }
                                 }
                                 ids_to_delete.insert(resource.object.id);
@@ -204,10 +203,6 @@ impl DatabaseHandler {
                     )
                 }
             };
-
-        dbg!(&object_ids_to_delete);
-        dbg!(&relation_ids_to_delete);
-        dbg!(&affected_resources);
 
         // "Delete" relations
         InternalRelation::set_deleted(&relation_ids_to_delete, transaction_client).await?;

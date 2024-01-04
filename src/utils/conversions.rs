@@ -579,8 +579,8 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
         relations.append(&mut inbound);
         relations.append(&mut outbound);
         let stats = Some(Stats {
-            count: object_with_relations.object.count as i64,
-            size: 0, // TODO
+            count: object_with_relations.object.count,
+            size: object_with_relations.object.content_len,
             last_updated: object_with_relations.object.created_at.map(|t| t.into()),
         });
 

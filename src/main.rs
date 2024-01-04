@@ -20,7 +20,11 @@ use aruna_rust_api::api::{
 use aruna_server::{
     auth::{permission_handler::PermissionHandler, token_handler::TokenHandler},
     caching::{cache::Cache, notifications_handler::NotificationHandler},
-    database::{self, crud::CrudDb, dsls::endpoint_dsl::Endpoint},
+    database::{
+        self,
+        crud::CrudDb,
+        dsls::{endpoint_dsl::Endpoint, stats_dsl::start_refresh_loop},
+    },
     grpc::{
         authorization::AuthorizationServiceImpl, collections::CollectionServiceImpl,
         datasets::DatasetServiceImpl, endpoints::EndpointServiceImpl, hooks::HookServiceImpl,
@@ -37,7 +41,7 @@ use aruna_server::{
     utils::search_utils,
 };
 use diesel_ulid::DieselUlid;
-use log::{info, warn};
+use log::{error, info, warn};
 use simple_logger::SimpleLogger;
 use tonic::transport::Server;
 
@@ -121,32 +125,62 @@ pub async fn main() -> Result<()> {
     let meilisearch_arc = Arc::new(meilisearch_client);
 
     let db_clone = db_arc.clone();
+    let cache_clone = cache_arc.clone();
     let search_clone = meilisearch_arc.clone();
     tokio::spawn(async move {
-        // Create index if not exists on startup
-        search_clone
-            .get_or_create_index(&MeilisearchIndexes::OBJECT.to_string(), Some("id"))
-            .await?;
-
-        if let Err(err) = search_clone.clear_index(MeilisearchIndexes::OBJECT).await {
-            warn!("Search index clearing failed: {}", err)
+        // Delete existing index
+        if let Err(err) = search_clone.delete_index(MeilisearchIndexes::OBJECT).await {
+            warn!("Search index deletion failed: {}", err)
         }
 
-        if let Err(err) = search_utils::full_sync_search_index(db_clone, search_clone).await {
+        // Re-create index with current config
+        if let Err(err) = search_clone
+            .get_or_create_index(&MeilisearchIndexes::OBJECT.to_string(), Some("id"))
+            .await
+        {
+            warn!("Search index creation failed: {}", err)
+        };
+
+        // Full sync search index with database content
+        if let Err(err) =
+            search_utils::full_sync_search_index(db_clone, cache_clone, search_clone).await
+        {
             warn!("Search index full sync failed: {}", err)
         };
 
         Ok::<(), anyhow::Error>(())
     });
 
+    // Create channel for MV refresh notifications
+    let (n_send, n_recv) = async_channel::unbounded();
     // NotificationHandler
     let _ = NotificationHandler::new(
         db_arc.clone(),
         cache_arc.clone(),
         natsio_arc.clone(),
         meilisearch_arc.clone(),
+        n_send,
     )
     .await?;
+
+    // Init object stats loop
+    let refresh_interval = match dotenvy::var("REFRESH_INTERVAL")?.parse::<i64>() {
+        Ok(interval) => interval,
+        Err(err) => {
+            error!("Could not parse refresh interval: {}", err);
+            300000 // 5 minutes is default
+        }
+    };
+
+    start_refresh_loop(
+        db_arc.clone(),
+        cache_arc.clone(),
+        meilisearch_arc.clone(),
+        natsio_arc.clone(),
+        n_recv,
+        refresh_interval,
+    )
+    .await;
 
     // init MailClient
     let _: Option<MailClient> = if !dotenvy::var("ARUNA_DEV_ENV")?.parse::<bool>()? {
