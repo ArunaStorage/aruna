@@ -62,7 +62,7 @@ async fn general_object_stats_test() {
     // Assert that refresh can be started
     // Needs the loop as the first Materialized View refresh, which also creates the table,
     // can fail with a "Restarting a DDL transaction not supported" error.
-    while let Err(_) = refresh_stats(&client).await {
+    while refresh_stats(&client).await.is_err() {
         // Test will timeout if refresh start fails long enough
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -94,7 +94,7 @@ async fn general_object_stats_test() {
 
     // Assert that get_all_stats().len() > 0
     let all_stats = ObjectStats::get_all_stats(&client).await.unwrap();
-    assert!(all_stats.len() > 0);
+    assert!(!all_stats.is_empty());
 
     // Assert that last timestamp is greater than timestamp at the start of the test
     let last_timestamp = get_last_refresh(&client).await.unwrap().timestamp_millis();

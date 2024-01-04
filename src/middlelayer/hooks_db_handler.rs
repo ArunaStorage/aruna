@@ -183,7 +183,6 @@ impl DatabaseHandler {
         triggers: Vec<TriggerVariant>,
         updated_labels: Option<Vec<KeyValue>>,
     ) -> Result<()> {
-        dbg!("Trigger hooks started");
         let client = self.database.get_client().await?;
         let parents = self.cache.upstream_dfs_iterative(&object.object.id)?;
         let projects = DatabaseHandler::collect_projects(parents);
