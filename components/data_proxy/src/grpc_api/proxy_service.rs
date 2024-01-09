@@ -2,7 +2,7 @@ use crate::{
     caching::{auth::get_token_from_md, cache::Cache},
     data_backends::storage_backend::StorageBackend,
     replication::replication_handler::ReplicationMessage,
-    s3_frontend::utils::replication_sink::ReplicationSink,
+    s3_frontend::utils::{debug_transformer::DebugTransformer, replication_sink::ReplicationSink},
     structs::{Object, ObjectLocation},
     trace_err,
 };
@@ -21,7 +21,10 @@ use aruna_rust_api::api::dataproxy::services::v2::{
 use async_channel::Sender;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 use std::{str::FromStr, sync::Arc};
 use tokio::pin;
 use tokio_stream::wrappers::ReceiverStream;
@@ -81,11 +84,11 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
         // Sends initial Vec<(object, location)> to sync/ack/stream handlers
         let (object_input_send, object_input_rcv) = async_channel::bounded(1);
         // Sends ack messages to the ack handler
-        let (object_ack_send, object_ack_rcv) = async_channel::bounded(1000);
+        let (object_ack_send, object_ack_rcv) = async_channel::bounded(100);
         // Sends the finished ack hash map to the output handler to compare send/ack
         let (object_sync_send, object_sync_rcv) = async_channel::bounded(1);
         // Handles output stream
-        let (object_output_send, object_output_rcv) = tokio::sync::mpsc::channel(1000);
+        let (object_output_send, object_output_rcv) = tokio::sync::mpsc::channel(255);
 
         // Recieving loop
         let proxy_replication_service = self.clone();
@@ -100,15 +103,12 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                             Some(message) => match message {
                                 Message::InitMessage(init) => {
                                     trace!(?init);
-                                    trace_err!(
-                                        object_input_send
-                                            .send(
-                                                proxy_replication_service
-                                                    .check_permissions(init, token.clone())
-                                                    .await,
-                                            )
+                                    let msg = trace_err!(
+                                        proxy_replication_service
+                                            .check_permissions(init, token.clone())
                                             .await
-                                    )?;
+                                    );
+                                    trace_err!(object_input_send.send(msg).await)?;
                                 }
                                 Message::InfoAckMessage(InfoAckMessage { object_id }) => {
                                     let object_id = DieselUlid::from_str(&object_id)?;
@@ -212,6 +212,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                         // Store access-checked objects
                         let mut stored_objects: HashMap<DieselUlid, usize> = HashMap::default();
                         for (object, location) in objects {
+                            trace!(?object, ?location);
                             // Get footer
                             let footer = match proxy_replication_service
                                 .get_footer(location.clone())
@@ -237,11 +238,9 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                             };
                             // Get blocklist
                             let blocklist = footer.map(|f| f.get_blocklist());
-                            trace!(?blocklist);
                             // Need to keep track when to create an object, and when to only update the location
                             // Get chunk size from blocklist
                             let max_blocks = blocklist.as_ref().map(|l| l.len()).unwrap_or(1);
-                            trace!(?max_blocks);
                             stored_objects.insert(object.id, max_blocks);
                             // Send ObjectInfo into stream
                             trace_err!(object_output_send
@@ -398,7 +397,7 @@ impl DataproxyReplicationServiceImpl {
         let footer_parser: Option<FooterParser> = if content_length > 5245120 {
             trace!("getting footer");
             // Without encryption block because this is already checked inside
-            let (footer_sender, footer_receiver) = async_channel::bounded(1000);
+            let (footer_sender, footer_receiver) = async_channel::bounded(100);
             pin!(footer_receiver);
 
             let parser = match encryption_key.clone() {
@@ -494,35 +493,41 @@ impl DataproxyReplicationServiceImpl {
         let backend = self.backend.clone();
         tokio::spawn(
             async move {
-                backend
-                    .get_object(location.clone(), None, object_sender)
-                    .await
+                trace_err!(
+                    backend
+                        .get_object(location.clone(), None, object_sender)
+                        .await
+                )
             }
             .instrument(info_span!("get_object")),
         );
 
         // Spawn final part
-        tokio::spawn(
-            async move {
-                pin!(object_receiver);
-                let asrw = ArunaStreamReadWriter::new_with_sink(
-                    // Receive get_object
-                    object_receiver,
-                    // ReplicationSink sends into stream via sender
-                    ReplicationSink::new(object_id, blocklist, sender),
-                );
+        let _ = trace_err!(
+            tokio::spawn(
+                async move {
+                    pin!(object_receiver);
+                    let asrw = ArunaStreamReadWriter::new_with_sink(
+                        // Receive get_object
+                        object_receiver,
+                        // ReplicationSink sends into stream via sender
+                        ReplicationSink::new(object_id, blocklist, sender.clone()),
+                    );
 
-                // Add decryption transformer
-                trace_err!(
-                    asrw.add_transformer(trace_err!(ChaCha20Dec::new(key))?)
-                        .process()
-                        .await
-                )?;
+                    // Add decryption transformer
+                    trace_err!(
+                        asrw.add_transformer(trace_err!(ChaCha20Dec::new(key))?)
+                            .process()
+                            .await
+                    )?;
 
-                Ok::<(), anyhow::Error>(())
-            }
-            .instrument(info_span!("query_data")),
-        );
+                    Ok::<(), anyhow::Error>(())
+                }
+                .instrument(info_span!("query_data")),
+            )
+            .await
+        )?;
+
         Ok(())
     }
 }

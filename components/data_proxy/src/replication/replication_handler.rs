@@ -182,10 +182,11 @@ impl ReplicationHandler {
                         .pull_replication(init_request, endpoint_id)
                         .await
                 )?;
+
                 // This is the init message for object proccessing
                 let (start_sender, start_receiver) = async_channel::bounded(1);
                 // This channel is used to collect all proccessed objects and chunks
-                let (sync_sender, sync_receiver) = async_channel::bounded(1000);
+                let (sync_sender, sync_receiver) = async_channel::bounded(100);
                 // This channel is only used to transmit the sync result to compare
                 // recieved vs requested objects
                 let (finish_sender, finish_receiver) = async_channel::bounded(1);
@@ -208,10 +209,10 @@ impl ReplicationHandler {
                 let request_sender_clone = request_sender.clone();
                 tokio::spawn(async move {
                     let mut counter = 0;
-                    let mut sec_count = 0;
+                    let mut response_counter = 0;
                     while let Some(response) = response_stream.message().await? {
-                        sec_count += 1;
-                        trace!(?sec_count);
+                        response_counter += 1;
+                        trace!(?response_counter);
                         match response.message {
                             Some(ResponseMessage::ObjectInfo(ObjectInfo {
                                 object_id,
@@ -229,7 +230,7 @@ impl ReplicationHandler {
                                 )?;
                                 // .. and a datachannel is created
                                 // and stored in object_handler_map ...
-                                let (object_sdx, object_rcv) = async_channel::bounded(1000);
+                                let (object_sdx, object_rcv) = async_channel::bounded(100);
                                 data_map.insert(
                                     object_id.clone(),
                                     (
@@ -326,7 +327,10 @@ impl ReplicationHandler {
                                 ))
                             }
                         }
+                        trace!("Reached loop end");
                     }
+
+                    trace!("Reached message stream end");
                     Ok::<(), anyhow::Error>(())
                 });
 
@@ -397,7 +401,6 @@ impl ReplicationHandler {
                             )?;
 
                             // TODO: This should probably happen after checking if all chunks were processed
-
                             // Sync with cache and db
                             let location: Option<ObjectLocation> = Some(location.clone());
                             trace_err!(
@@ -492,31 +495,31 @@ impl ReplicationHandler {
         let mut expected = 0;
         let mut retry_counter = 0;
 
-        let (data_sender, data_stream) = async_channel::bounded(1000);
+        let (data_sender, data_stream) = async_channel::bounded(100);
         tokio::spawn(async move {
             while let Ok(data) = data_receiver.recv().await {
                 let trace_message = format!(
-                    "Recieved chunk with idx {:?} for object with id {:?} and size {}",
+                    "Recieved chunk with idx {:?} for object with id {:?} and size {}, expected {}",
                     data.chunk_idx,
                     data.object_id,
                     data.data.len(),
+                    expected,
                 );
                 trace!(trace_message);
                 let chunk = bytes::Bytes::from_iter(data.data.into_iter());
                 // Check if chunk is missing
                 let idx = data.chunk_idx;
 
-                //if idx == 0 {
-                //    ()
-                //} else if idx != previous + 1 {
                 if idx != expected {
                     if retry_counter > 5 {
+                        trace!("Exceeded retries");
                         return Err(anyhow!(
                             "Exceeded retries for chunk because of skipped chunk"
                         ));
                     } else {
                         // TODO:
                         // RetryChunk message
+                        trace!("MissingChunk: Retry chunk {}", expected);
                         trace_err!(stream_sender
                             .send(PullReplicationRequest {
                                 message: Some(Message::ErrorMessage(
@@ -549,14 +552,18 @@ impl ReplicationHandler {
                 //   which in this case is equivalent to [u8; 16]
                 let result = hasher.finalize();
                 let calculated_hash = hex::encode(result);
+                let hash_trace = format!("Calculated hash {}, send hash {}", calculated_hash, hash);
+                trace!(hash_trace);
                 if calculated_hash != hash {
                     if retry_counter > 5 {
+                        trace!("Exceeded retries");
                         return Err(anyhow!(
                             "Exceeded retries for chunk because of differing checksums"
                         ));
                     } else {
                         // TODO:
                         // RetryChunk message
+                        trace!("HashError: Retry chunk {}", expected);
                         trace_err!(stream_sender
                             .send(PullReplicationRequest {
                                 message: Some(Message::ErrorMessage(

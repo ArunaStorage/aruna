@@ -687,8 +687,9 @@ impl GrpcQueryHandler {
             trace_err!(Err(anyhow!("Cannot read auth handler")))?
         };
 
-        let dataproxy_service = DataproxyReplicationServiceClient::new(channel.clone());
-        let (request_stream_sender, request_stream_receiver) = tokio::sync::mpsc::channel(1000);
+        let dataproxy_service = DataproxyReplicationServiceClient::new(channel.clone())
+            .max_decoding_message_size(1024 * 1024 * 10);
+        let (request_stream_sender, request_stream_receiver) = tokio::sync::mpsc::channel(255);
         let mut req = Request::new(ReceiverStream::new(request_stream_receiver));
         req.metadata_mut().append(
             trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,

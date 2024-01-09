@@ -46,19 +46,24 @@ impl ReplicationSink {
             return Ok(());
         }
 
-        let len = 65536 * (self.blocklist[self.chunk_counter as usize] as u64);
+        let len = if self.blocklist.len() == 0 {
+            self.buffer.len() as u64
+        } else {
+            65536 * (self.blocklist[self.chunk_counter as usize] as u64)
+        };
+
+        let data = self.buffer.split_to(len as usize).to_vec();
 
         // create a Md5 hasher instance
         let mut hasher = Md5::new();
         // process input message
-        hasher.update(&self.buffer);
+        hasher.update(&data);
 
         // acquire hash digest in the form of GenericArray,
         // which in this case is equivalent to [u8; 16]
         let result = hasher.finalize();
 
-        let data = self.buffer.split_to(len as usize).to_vec();
-        trace!(data_len = ?data.len());
+        //trace!(data_len = ?data.len());
         let message = PullReplicationResponse {
             message: Some(Message::Chunk(Chunk {
                 object_id: self.object_id.clone(),
@@ -67,12 +72,12 @@ impl ReplicationSink {
                 checksum: hex::encode(result),
             })),
         };
-        let dbg = match message.message.clone().unwrap() {
-            Message::Chunk(chunk) => chunk.chunk_idx.to_string(),
-            _ => "This should not happen".to_string(),
-        };
-        trace!(dbg);
-        trace!(chunk_counter = ?self.chunk_counter, bytes_start = ?self.bytes_start, bytes_counter = ?self.bytes_counter);
+        // let dbg = match message.message.clone().unwrap() {
+        //     Message::Chunk(chunk) => chunk.chunk_idx.to_string(),
+        //     _ => "This should not happen".to_string(),
+        // };
+        // trace!(dbg);
+        // trace!(chunk_counter = ?self.chunk_counter, bytes_start = ?self.bytes_start, bytes_counter = ?self.bytes_counter);
         trace_err!(self.sender.send(Ok(message)).await)?;
         self.chunk_counter += 1;
         self.bytes_start += len;
@@ -90,29 +95,25 @@ impl Transformer for ReplicationSink {
         self.buffer.put(buf.split());
 
         if finished && !self.buffer.is_empty() {
-            trace!(chunk = ?self.chunk_counter, bytes_counter = ?self.bytes_counter, finished = finished, "created and send finish message");
+            //trace!(chunk = ?self.chunk_counter, bytes_counter = ?self.bytes_counter, finished = finished, "created and send finish message");
             trace_err!(self.create_and_send_message().await)?;
             self.is_finished = true;
             return Ok(self.is_finished);
         }
 
-        //if self.chunk_counter >= self.blocklist.len() {
-        //    trace!("Finishing object");
-        //    return Ok(self.is_finished);
-        //} else
-        while (self.bytes_counter - self.bytes_start)
-            > 65536 * (self.blocklist[self.chunk_counter as usize] as u64)
-        {
+        if self.blocklist.len() == 0 && finished && !&self.is_finished {
             trace_err!(self.create_and_send_message().await)?;
+            self.is_finished = true;
+            return Ok(self.is_finished);
+        }
+        if self.blocklist.len() != 0 {
+            while (self.bytes_counter - self.bytes_start)
+                > 65536 * (self.blocklist[self.chunk_counter as usize] as u64)
+            {
+                trace_err!(self.create_and_send_message().await)?;
+            }
         }
 
-        //     //} else if self.block_counter == self.blocklist[self.chunk_counter] {
-        //     if self.chunk_counter < self.blocklist.len() {
-        //         trace!(chunk = ?self.chunk_counter, bytes_counter = ?self.bytes_counter, finished = finished, "created and send message");
-        //         trace_err!(self.create_and_send_message().await)?;
-        //     }
-        //     self.chunk_counter += 1;
-        // }
         Ok(self.is_finished)
     }
 }
