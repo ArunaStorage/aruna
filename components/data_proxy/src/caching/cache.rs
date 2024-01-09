@@ -789,11 +789,11 @@ impl Cache {
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn delete_object(&self, id: DieselUlid) -> Result<()> {
+        // Remove object and location from database
         if let Some(persistence) = self.persistence.read().await.as_ref() {
-            Object::delete(&id, &persistence.get_client().await?).await?;
             ObjectLocation::delete(&id, &persistence.get_client().await?).await?;
+            Object::delete(&id, &persistence.get_client().await?).await?;
         }
-
         self.resources.remove(&id);
         self.paths.retain(|_, v| v != &id);
         Ok(())
