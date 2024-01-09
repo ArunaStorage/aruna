@@ -242,6 +242,21 @@ impl User {
         Ok(User::from_row(&row))
     }
 
+    pub async fn remove_all_user_permissions(
+        client: &Client,
+        user_id: &DieselUlid,
+    ) -> Result<User> {
+        let query = "UPDATE users 
+            SET attributes = jsonb_set(attributes, '{permissions}', '{}') 
+            WHERE id = $1
+            RETURNING *;";
+
+        let prepared = client.prepare(query).await?;
+        let row = client.query_one(&prepared, &[user_id]).await?;
+
+        Ok(User::from_row(&row))
+    }
+
     pub async fn update_user_permission(
         client: &Client,
         user_id: &DieselUlid,

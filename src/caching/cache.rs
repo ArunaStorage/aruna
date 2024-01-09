@@ -45,7 +45,6 @@ use evmap::shallow_copy::CopyValue;
 use evmap::ReadHandleFactory;
 use evmap::WriteHandle;
 use itertools::Itertools;
-use log::warn;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
