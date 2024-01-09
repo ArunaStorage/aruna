@@ -125,7 +125,9 @@ impl BundlerService for BundlerServiceImpl {
             created_at: Some(chrono::Utc::now().naive_utc()), // Now for default
         };
 
-        trace_err!(self.cache.upsert_object(bundler_object, None).await)
+        trace_err!(self.cache.upsert_object(bundler_object, None, true).await) // this true is
+            // redundant if
+            // bundle
             .map_err(|_| tonic::Status::internal("Bundle object upsert failed"))?;
 
         trace_err!(

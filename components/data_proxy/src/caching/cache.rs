@@ -4,7 +4,7 @@ use super::{
 };
 use crate::caching::grpc_query_handler::sort_objects;
 use crate::replication::replication_handler::ReplicationMessage;
-use crate::structs::{DbPermissionLevel, TypedRelation};
+use crate::structs::{DbPermissionLevel, Endpoint, TypedRelation};
 use crate::trace_err;
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
@@ -178,12 +178,31 @@ impl Cache {
         // Sort objects from database before sync
         let mut database_objects = Object::get_all(&client).await?;
         sort_objects(&mut database_objects);
-
+        let self_id = if let Some(abc) = self.auth.read().await.as_ref() {
+            abc.self_id
+        } else {
+            return Err(anyhow!("Could not read self_id"));
+        };
         for object in database_objects {
             let location = ObjectLocation::get_opt(&object.id, &client).await?;
             self.resources.insert(object.id, (object.clone(), location));
 
-            if object.object_type != ObjectType::Bundle {
+            let partial = trace_err!(object
+                .endpoints
+                .iter()
+                .find_map(|Endpoint { id, variant, .. }| {
+                    if &self_id == id {
+                        match variant {
+                            crate::structs::SyncVariant::FullSync(_) => Some(false),
+                            crate::structs::SyncVariant::PartialSync(_) => Some(true),
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| anyhow!("Could not get endpoint info for self_id")))?;
+
+            if !(object.object_type == ObjectType::Bundle || partial) {
                 let tree = self.get_name_trees(&object.id.to_string(), object.object_type)?;
                 for (e, v) in tree {
                     self.paths.insert(e, v);
@@ -763,6 +782,7 @@ impl Cache {
         &self,
         object: Object,
         location: Option<ObjectLocation>,
+        partial_sync: bool,
     ) -> Result<()> {
         trace!(object_id = ?object.id, with_location = location.is_some());
         trace!(?location);
@@ -795,7 +815,8 @@ impl Cache {
         self.paths.retain(|_, v| v != &object_id);
         trace!("inserted paths");
 
-        if object.object_type != ObjectType::Bundle {
+        if !(object.object_type == ObjectType::Bundle || partial_sync) {
+            trace!("Getting name trees because full_sync");
             let tree = self.get_name_trees(&object_id.to_string(), obj_type)?;
             for (e, v) in tree {
                 self.paths.insert(e, v);

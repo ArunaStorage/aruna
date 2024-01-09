@@ -1,5 +1,6 @@
 use crate::replication::replication_handler::Direction;
 use crate::replication::replication_handler::ReplicationMessage;
+use crate::structs::Endpoint as DPEndpoint;
 use crate::structs::Object as DPObject;
 use crate::structs::ObjectLocation;
 use crate::structs::ObjectType;
@@ -23,6 +24,7 @@ use aruna_rust_api::api::notification::services::v2::UserEvent;
 use aruna_rust_api::api::storage::models::v2::data_endpoint::Variant;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
 use aruna_rust_api::api::storage::models::v2::Collection;
+use aruna_rust_api::api::storage::models::v2::DataEndpoint;
 use aruna_rust_api::api::storage::models::v2::Dataset;
 use aruna_rust_api::api::storage::models::v2::EndpointHostVariant;
 use aruna_rust_api::api::storage::models::v2::FullSync;
@@ -230,7 +232,9 @@ impl GrpcQueryHandler {
 
         let object = trace_err!(DPObject::try_from(response))?;
 
-        self.cache.upsert_object(object.clone(), None).await?;
+        self.cache
+            .upsert_object(object.clone(), None, false)
+            .await?;
 
         Ok(object)
     }
@@ -297,7 +301,9 @@ impl GrpcQueryHandler {
 
         let object = trace_err!(DPObject::try_from(response))?;
 
-        self.cache.upsert_object(object.clone(), None).await?;
+        self.cache
+            .upsert_object(object.clone(), None, false)
+            .await?;
 
         Ok(object)
     }
@@ -342,7 +348,9 @@ impl GrpcQueryHandler {
 
         let object = trace_err!(DPObject::try_from(response))?;
 
-        self.cache.upsert_object(object.clone(), None).await?;
+        self.cache
+            .upsert_object(object.clone(), None, false)
+            .await?;
 
         Ok(object)
     }
@@ -396,7 +404,7 @@ impl GrpcQueryHandler {
             loc.id = object.id;
         }
 
-        self.cache.upsert_object(object.clone(), loc).await?;
+        self.cache.upsert_object(object.clone(), loc, false).await?;
         Ok(object)
     }
 
@@ -427,7 +435,9 @@ impl GrpcQueryHandler {
             .object
             .ok_or(anyhow!("response does not contain object")))?,))?;
 
-        self.cache.upsert_object(object.clone(), None).await?;
+        self.cache
+            .upsert_object(object.clone(), None, false)
+            .await?;
 
         Ok(object)
     }
@@ -466,10 +476,12 @@ impl GrpcQueryHandler {
         if let Some(mut location) = location {
             location.id = object.id;
             self.cache
-                .upsert_object(object.clone(), Some(location))
+                .upsert_object(object.clone(), Some(location), false)
                 .await?;
         } else {
-            self.cache.upsert_object(object.clone(), None).await?;
+            self.cache
+                .upsert_object(object.clone(), None, false)
+                .await?;
         }
 
         Ok(object)
@@ -522,7 +534,9 @@ impl GrpcQueryHandler {
         loc.id = object.id;
 
         // Persist Object and Location in cache/database
-        self.cache.upsert_object(object.clone(), Some(loc)).await?;
+        self.cache
+            .upsert_object(object.clone(), Some(loc), false)
+            .await?;
 
         Ok(object)
     }
@@ -591,9 +605,23 @@ impl GrpcQueryHandler {
 
         sort_resources(&mut resources);
         for res in resources {
-            self.cache
-                .upsert_object(trace_err!(DPObject::try_from(res))?, None)
-                .await?
+            let object = trace_err!(DPObject::try_from(res))?;
+            let self_id = trace_err!(DieselUlid::from_str(&self.endpoint_id))?;
+            let partial = trace_err!(object
+                .endpoints
+                .iter()
+                .find_map(|DPEndpoint { id, variant, .. }| {
+                    if &self_id == id {
+                        match variant {
+                            crate::structs::SyncVariant::FullSync(_) => Some(false),
+                            crate::structs::SyncVariant::PartialSync(_) => Some(true),
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| anyhow!("No associated endpoint found")))?;
+            self.cache.upsert_object(object, None, partial).await?
         }
 
         let (keep_alive_tx, mut keep_alive_rx) = tokio::sync::mpsc::channel::<()>(1);
@@ -804,9 +832,28 @@ impl GrpcQueryHandler {
                                 )
                                 .await
                             )?;
-                            // TODO
-                            // - If PartialSync, upsert only to special bucket
-                            self.cache.upsert_object(object.try_into()?, None).await?;
+
+                            let partial = trace_err!(object
+                                .endpoints
+                                .iter()
+                                .find_map(|DataEndpoint { id, variant, .. }| {
+                                    if &self.endpoint_id == id {
+                                        if let Some(var) = variant {
+                                            match var {
+                                                Variant::FullSync(_) => Some(false),
+                                                Variant::PartialSync(_) => Some(true),
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .ok_or_else(|| anyhow!("No associated endpoint found")))?;
+                            self.cache
+                                .upsert_object(object.try_into()?, None, partial)
+                                .await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Collection => {
                             let object = trace_err!(
@@ -816,9 +863,27 @@ impl GrpcQueryHandler {
                                 )
                                 .await
                             )?;
-                            // TODO
-                            // - If PartialSync, upsert only to special bucket
-                            self.cache.upsert_object(object.try_into()?, None).await?;
+                            let partial = trace_err!(object
+                                .endpoints
+                                .iter()
+                                .find_map(|DataEndpoint { id, variant, .. }| {
+                                    if &self.endpoint_id == id {
+                                        if let Some(var) = variant {
+                                            match var {
+                                                Variant::FullSync(_) => Some(false),
+                                                Variant::PartialSync(_) => Some(true),
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .ok_or_else(|| anyhow!("No associated endpoint found")))?;
+                            self.cache
+                                .upsert_object(object.try_into()?, None, partial)
+                                .await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Dataset => {
                             let object = trace_err!(
@@ -828,9 +893,27 @@ impl GrpcQueryHandler {
                                 )
                                 .await
                             )?;
-                            // TODO
-                            // - If PartialSync, upsert only to special bucket
-                            self.cache.upsert_object(object.try_into()?, None).await?;
+                            let partial = trace_err!(object
+                                .endpoints
+                                .iter()
+                                .find_map(|DataEndpoint { id, variant, .. }| {
+                                    if &self.endpoint_id == id {
+                                        if let Some(var) = variant {
+                                            match var {
+                                                Variant::FullSync(_) => Some(false),
+                                                Variant::PartialSync(_) => Some(true),
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .ok_or_else(|| anyhow!("No associated endpoint found")))?;
+                            self.cache
+                                .upsert_object(object.try_into()?, None, partial)
+                                .await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Object => {
                             let object = trace_err!(
@@ -840,10 +923,28 @@ impl GrpcQueryHandler {
                                 )
                                 .await
                             )?;
+                            let partial = trace_err!(object
+                                .endpoints
+                                .iter()
+                                .find_map(|DataEndpoint { id, variant, .. }| {
+                                    if &self.endpoint_id == id {
+                                        if let Some(var) = variant {
+                                            match var {
+                                                Variant::FullSync(_) => Some(false),
+                                                Variant::PartialSync(_) => Some(true),
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .ok_or_else(|| anyhow!("No associated endpoint found")))?;
                             // Update anyway
                             trace_err!(
                                 self.cache
-                                    .upsert_object(object.clone().try_into()?, None)
+                                    .upsert_object(object.clone().try_into()?, None, partial)
                                     .await
                             )?;
                             // Try pull replication
@@ -881,7 +982,7 @@ impl GrpcQueryHandler {
                         Some(Variant::FullSync(FullSync { project_id: wanted })),
                     ) if id == &self.endpoint_id => {
                         // Find a proxy that has a fullsync
-                        let state_of_truth = &object.endpoints.iter().find_map(|ep| {
+                        let full_sync_proxy = &object.endpoints.iter().find_map(|ep| {
                             match (&ep.variant, ep.status()) {
                                 (
                                     Some(Variant::FullSync(FullSync { project_id })),
@@ -890,7 +991,7 @@ impl GrpcQueryHandler {
                                 _ => None,
                             }
                         });
-                        match state_of_truth {
+                        match full_sync_proxy {
                             Some(ep_id) => {
                                 let direction =
                                     Direction::Pull(trace_err!(DieselUlid::from_str(&object.id))?);
@@ -906,49 +1007,64 @@ impl GrpcQueryHandler {
                                 )?;
                             }
                             None => {
-                                todo!(
-                                    "This should not happen, right? 
-                                      I mean, if any ObjectObject is available 
-                                      and no proxy with data can be found 
-                                      someone messed with the dataproxies, right? RIGHT?"
-                                )
+                                error!("ReplicationError: No available proxy found");
+                                trace_err!(
+                                    self.update_replication_status(
+                                        UpdateReplicationStatusRequest {
+                                            object_id: object.id.to_string(),
+                                            endpoint_id: self.endpoint_id.clone(),
+                                            status: ReplicationStatus::Error as i32,
+                                        }
+                                    )
+                                    .await
+                                )?;
                             }
                         }
                     }
                     // ... if my id, waiting and partial sync -> I should request a PartialSync
-                    (ReplicationStatus::Waiting, id, Some(Variant::PartialSync(_origin)))
+                    (ReplicationStatus::Waiting, id, Some(Variant::PartialSync(_)))
                         if id == &self.endpoint_id =>
                     {
                         // Find the full sync proxy and partial sync from there
-                        let state_of_truth = &object.endpoints.iter().find_map(|ep| {
+                        let full_sync_proxy = &object.endpoints.iter().find_map(|ep| {
                             match (&ep.variant, ep.status()) {
-                                (
-                                    Some(Variant::FullSync(FullSync { project_id })),
-                                    ReplicationStatus::Finished,
-                                ) => Some((ep.id.clone(), project_id.clone())),
-                                (_, _) => None,
+                                (Some(Variant::FullSync(_)), ReplicationStatus::Finished) => {
+                                    Some(ep.id.clone())
+                                }
+                                _ => None,
                             }
                         });
-                        match state_of_truth {
-                            Some((_endpoint_id, _project_id)) => {
-                                tokio::spawn(async move {
-                                    // TODO
-                                    // - get s3-bucket with available object
-                                    // - send message to replication handler
-                                    todo!("Try pull")
-                                });
+                        match full_sync_proxy {
+                            Some(ep_id) => {
+                                let direction =
+                                    Direction::Pull(trace_err!(DieselUlid::from_str(&object.id))?);
+                                let endpoint_id = trace_err!(DieselUlid::from_str(ep_id))?;
+                                trace_err!(
+                                    self.cache
+                                        .sender
+                                        .send(ReplicationMessage {
+                                            direction,
+                                            endpoint_id,
+                                        })
+                                        .await
+                                )?;
                             }
                             None => {
-                                todo!(
-                                    "This should not happen, right? 
-                                      I mean, if any ObjectObject is available 
-                                      and no proxy with data can be found 
-                                      someone messed with the dataproxies, right? RIGHT?"
-                                )
+                                error!("ReplicationError: No available proxy found");
+                                trace_err!(
+                                    self.update_replication_status(
+                                        UpdateReplicationStatusRequest {
+                                            object_id: object.id.to_string(),
+                                            endpoint_id: self.endpoint_id.clone(),
+                                            status: ReplicationStatus::Error as i32,
+                                        }
+                                    )
+                                    .await
+                                )?;
                             }
                         }
                     }
-                    // ... if others waiting, and I finished -> I should sync to other dataproxies
+                    // ... if others are waiting, and I finished -> Should I sync to other dataproxies?
                     (ReplicationStatus::Waiting, id, _) if id != &self.endpoint_id => {
                         // TODO
                         // - How to find out if pushing is appropriate for a given dataproxy that is

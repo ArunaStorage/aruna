@@ -2,7 +2,7 @@ use crate::{
     caching::cache::Cache,
     data_backends::storage_backend::StorageBackend,
     s3_frontend::utils::{buffered_s3_sink::BufferedS3Sink, debug_transformer::DebugTransformer},
-    structs::ObjectLocation,
+    structs::{Endpoint, ObjectLocation},
     trace_err,
 };
 use ahash::{HashSet, RandomState};
@@ -27,7 +27,6 @@ use aruna_rust_api::api::{
 use async_channel::{Receiver, Sender};
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
-use futures_util::Sink;
 use md5::{Digest, Md5};
 use sha2::Sha256;
 use std::{str::FromStr, sync::Arc};
@@ -146,6 +145,7 @@ impl ReplicationHandler {
     ) -> Result<Vec<DieselUlid>> {
         // Vec for collecting all processed and finished endpoint batches
         let mut result = Vec::new();
+        let self_ulid = trace_err!(DieselUlid::from_str(&self.self_id))?;
 
         // Iterates over each endpoint
         for endpoint in batch.iter() {
@@ -401,10 +401,29 @@ impl ReplicationHandler {
                             )?;
 
                             // TODO: This should probably happen after checking if all chunks were processed
+                            // Check if partial_sync
+                            let partial = trace_err!(object
+                                .endpoints
+                                .iter()
+                                .find_map(|Endpoint { id, variant, .. }| {
+                                    if &self_ulid == id {
+                                        match variant {
+                                            crate::structs::SyncVariant::FullSync(_) => Some(false),
+                                            crate::structs::SyncVariant::PartialSync(_) => {
+                                                Some(true)
+                                            }
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                },)
+                                .ok_or_else(|| anyhow!("No associated endpoint found")))?;
                             // Sync with cache and db
                             let location: Option<ObjectLocation> = Some(location.clone());
                             trace_err!(
-                                cache.upsert_object(object.clone(), location.clone()).await
+                                cache
+                                    .upsert_object(object.clone(), location.clone(), partial)
+                                    .await
                             )?;
 
                             // Send UpdateStatus to server
@@ -472,7 +491,6 @@ impl ReplicationHandler {
                 });
 
                 //TODO:
-                // - Update endpoint status in server for each object
                 // - If error, maybe set endpoint_status for each failed object to Error?
                 // -> Then we do not have to do this additional check while loading into backend
                 // -> User initiated replications then need to be implemented
@@ -552,8 +570,6 @@ impl ReplicationHandler {
                 //   which in this case is equivalent to [u8; 16]
                 let result = hasher.finalize();
                 let calculated_hash = hex::encode(result);
-                let hash_trace = format!("Calculated hash {}, send hash {}", calculated_hash, hash);
-                trace!(hash_trace);
                 if calculated_hash != hash {
                     if retry_counter > 5 {
                         trace!("Exceeded retries");
