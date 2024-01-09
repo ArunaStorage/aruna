@@ -3,6 +3,7 @@ use super::{
     transforms::ExtractAccessKeyPermissions,
 };
 use crate::caching::grpc_query_handler::sort_objects;
+use crate::data_backends::storage_backend::StorageBackend;
 use crate::structs::{DbPermissionLevel, TypedRelation};
 use crate::trace_err;
 use crate::{
@@ -36,6 +37,7 @@ pub struct Cache {
     pub persistence: RwLock<Option<Database>>,
     pub aruna_client: RwLock<Option<Arc<GrpcQueryHandler>>>,
     pub auth: RwLock<Option<AuthHandler>>,
+    pub backend: Option<Arc<Box<dyn StorageBackend>>>,
 }
 
 impl Cache {
@@ -55,6 +57,7 @@ impl Cache {
         self_id: DieselUlid,
         encoding_key: String,
         encoding_key_serial: i32,
+        backend: Option<Arc<Box<dyn StorageBackend>>>,
     ) -> Result<Arc<Self>> {
         // Initialize cache
         let cache = Arc::new(Cache {
@@ -65,6 +68,7 @@ impl Cache {
             persistence: RwLock::new(None),
             aruna_client: RwLock::new(None),
             auth: RwLock::new(None),
+            backend,
         });
 
         // Initialize auth handler
@@ -794,6 +798,18 @@ impl Cache {
             ObjectLocation::delete(&id, &persistence.get_client().await?).await?;
             Object::delete(&id, &persistence.get_client().await?).await?;
         }
+
+        // Remove data from storage backend
+        if let Some(s3_backend) = &self.backend {
+            if let Some(resource) = self.resources.get(&id) {
+                let (_, loc) = resource.value();
+                if let Some(location) = loc {
+                    s3_backend.delete_object(location.clone()).await?;
+                }
+            }
+        }
+
+        // Remove object and location from cache
         self.resources.remove(&id);
         self.paths.retain(|_, v| v != &id);
         Ok(())

@@ -99,6 +99,7 @@ async fn main() -> Result<()> {
         diesel_ulid::DieselUlid::from_str(&endpoint_id)?,
         encoding_key,
         encoding_key_serial,
+        Some(storage_backend.clone()),
     )
     .await?;
 
