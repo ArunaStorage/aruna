@@ -1,6 +1,7 @@
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::dsls::pub_key_dsl::PubKey;
 use crate::database::dsls::user_dsl::User;
+use crate::database::enums::ObjectStatus;
 use ahash::RandomState;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::generic_resource;
@@ -160,7 +161,9 @@ impl<'a> Iterator for ProxyCacheIterator<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         for res in self.resource_iter.by_ref() {
             let res = res.value();
-            if res.object.endpoints.0.contains_key(&self.endpoint_id) {
+            if res.object.object_status != ObjectStatus::DELETED
+                && res.object.endpoints.0.contains_key(&self.endpoint_id)
+            {
                 return Some(GrpcProxyInfos::Resource(res.clone().into()));
             }
         }
