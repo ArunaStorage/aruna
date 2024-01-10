@@ -145,6 +145,7 @@ pub enum SyncStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Origin {
+    ProjectId(DieselUlid),
     BundleId(DieselUlid),
     CollectionId(DieselUlid),
     DatasetId(DieselUlid),
@@ -438,6 +439,7 @@ impl TryFrom<&DataEndpoint> for Endpoint {
                     map,
                 ) => {
                     let origin = match map.origin.as_ref().ok_or_else(|| anyhow!("No origin found"))? {
+                                aruna_rust_api::api::storage::models::v2::partial_sync::Origin::ProjectId(ref id) => Origin::ProjectId(DieselUlid::from_str(id)?),
                                 aruna_rust_api::api::storage::models::v2::partial_sync::Origin::CollectionId(ref id) => Origin::CollectionId(DieselUlid::from_str(id)?),
                                 aruna_rust_api::api::storage::models::v2::partial_sync::Origin::DatasetId(ref id) => Origin::DatasetId(DieselUlid::from_str(id)?),
                                 aruna_rust_api::api::storage::models::v2::partial_sync::Origin::ObjectId(ref id) => Origin::ObjectId(DieselUlid::from_str(id)?),

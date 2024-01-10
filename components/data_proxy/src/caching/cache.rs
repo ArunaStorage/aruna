@@ -782,7 +782,6 @@ impl Cache {
         &self,
         object: Object,
         location: Option<ObjectLocation>,
-        partial_sync: bool,
     ) -> Result<()> {
         trace!(object_id = ?object.id, with_location = location.is_some());
         trace!(?location);
@@ -815,7 +814,7 @@ impl Cache {
         self.paths.retain(|_, v| v != &object_id);
         trace!("inserted paths");
 
-        if !(object.object_type == ObjectType::Bundle || partial_sync) {
+        if object.object_type != ObjectType::Bundle {
             trace!("Getting name trees because full_sync");
             let tree = self.get_name_trees(&object_id.to_string(), obj_type)?;
             for (e, v) in tree {

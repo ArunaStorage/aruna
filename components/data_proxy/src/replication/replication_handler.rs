@@ -401,29 +401,10 @@ impl ReplicationHandler {
                             )?;
 
                             // TODO: This should probably happen after checking if all chunks were processed
-                            // Check if partial_sync
-                            let partial = trace_err!(object
-                                .endpoints
-                                .iter()
-                                .find_map(|Endpoint { id, variant, .. }| {
-                                    if &self_ulid == id {
-                                        match variant {
-                                            crate::structs::SyncVariant::FullSync(_) => Some(false),
-                                            crate::structs::SyncVariant::PartialSync(_) => {
-                                                Some(true)
-                                            }
-                                        }
-                                    } else {
-                                        None
-                                    }
-                                },)
-                                .ok_or_else(|| anyhow!("No associated endpoint found")))?;
                             // Sync with cache and db
                             let location: Option<ObjectLocation> = Some(location.clone());
                             trace_err!(
-                                cache
-                                    .upsert_object(object.clone(), location.clone(), partial)
-                                    .await
+                                cache.upsert_object(object.clone(), location.clone()).await
                             )?;
 
                             // Send UpdateStatus to server

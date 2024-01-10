@@ -181,12 +181,8 @@ impl S3 for ArunaS3Service {
                 )
                 .map_err(|_| s3_error!(InternalError, "Unable to create object"))?;
 
-                trace_err!(
-                    self.cache
-                        .upsert_object(object, Some(new_location), false)
-                        .await
-                )
-                .map_err(|_| s3_error!(InternalError, "Unable to cache object after finish"))?;
+                trace_err!(self.cache.upsert_object(object, Some(new_location)).await)
+                    .map_err(|_| s3_error!(InternalError, "Unable to cache object after finish"))?;
 
                 trace_err!(self.backend.delete_object(old_location).await)
                     .map_err(|_| s3_error!(InternalError, "Unable to delete old object"))?;
@@ -235,7 +231,7 @@ impl S3 for ArunaS3Service {
             location: Some(new_object.name.to_string()),
         };
 
-        trace_err!(self.cache.upsert_object(new_object, None, false).await)
+        trace_err!(self.cache.upsert_object(new_object, None).await)
             .map_err(|_| s3_error!(InternalError, "Unable to cache new bucket"))?;
 
         debug!(?output);
@@ -497,7 +493,7 @@ impl S3 for ArunaS3Service {
         } else {
             trace_err!(self
                 .cache
-                .upsert_object(new_object, Some(location.clone()), false)
+                .upsert_object(new_object, Some(location.clone()))
                 .await
                 .map_err(|_| s3_error!(InternalError, "Unable to update object location")))?;
         }

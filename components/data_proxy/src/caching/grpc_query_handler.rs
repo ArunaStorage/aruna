@@ -232,9 +232,7 @@ impl GrpcQueryHandler {
 
         let object = trace_err!(DPObject::try_from(response))?;
 
-        self.cache
-            .upsert_object(object.clone(), None, false)
-            .await?;
+        self.cache.upsert_object(object.clone(), None).await?;
 
         Ok(object)
     }
@@ -301,9 +299,7 @@ impl GrpcQueryHandler {
 
         let object = trace_err!(DPObject::try_from(response))?;
 
-        self.cache
-            .upsert_object(object.clone(), None, false)
-            .await?;
+        self.cache.upsert_object(object.clone(), None).await?;
 
         Ok(object)
     }
@@ -348,9 +344,7 @@ impl GrpcQueryHandler {
 
         let object = trace_err!(DPObject::try_from(response))?;
 
-        self.cache
-            .upsert_object(object.clone(), None, false)
-            .await?;
+        self.cache.upsert_object(object.clone(), None).await?;
 
         Ok(object)
     }
@@ -404,7 +398,7 @@ impl GrpcQueryHandler {
             loc.id = object.id;
         }
 
-        self.cache.upsert_object(object.clone(), loc, false).await?;
+        self.cache.upsert_object(object.clone(), loc).await?;
         Ok(object)
     }
 
@@ -435,9 +429,7 @@ impl GrpcQueryHandler {
             .object
             .ok_or(anyhow!("response does not contain object")))?,))?;
 
-        self.cache
-            .upsert_object(object.clone(), None, false)
-            .await?;
+        self.cache.upsert_object(object.clone(), None).await?;
 
         Ok(object)
     }
@@ -476,12 +468,10 @@ impl GrpcQueryHandler {
         if let Some(mut location) = location {
             location.id = object.id;
             self.cache
-                .upsert_object(object.clone(), Some(location), false)
+                .upsert_object(object.clone(), Some(location))
                 .await?;
         } else {
-            self.cache
-                .upsert_object(object.clone(), None, false)
-                .await?;
+            self.cache.upsert_object(object.clone(), None).await?;
         }
 
         Ok(object)
@@ -534,9 +524,7 @@ impl GrpcQueryHandler {
         loc.id = object.id;
 
         // Persist Object and Location in cache/database
-        self.cache
-            .upsert_object(object.clone(), Some(loc), false)
-            .await?;
+        self.cache.upsert_object(object.clone(), Some(loc)).await?;
 
         Ok(object)
     }
@@ -606,22 +594,7 @@ impl GrpcQueryHandler {
         sort_resources(&mut resources);
         for res in resources {
             let object = trace_err!(DPObject::try_from(res))?;
-            let self_id = trace_err!(DieselUlid::from_str(&self.endpoint_id))?;
-            let partial = trace_err!(object
-                .endpoints
-                .iter()
-                .find_map(|DPEndpoint { id, variant, .. }| {
-                    if &self_id == id {
-                        match variant {
-                            crate::structs::SyncVariant::FullSync(_) => Some(false),
-                            crate::structs::SyncVariant::PartialSync(_) => Some(true),
-                        }
-                    } else {
-                        None
-                    }
-                })
-                .ok_or_else(|| anyhow!("No associated endpoint found")))?;
-            self.cache.upsert_object(object, None, partial).await?
+            self.cache.upsert_object(object, None).await?
         }
 
         let (keep_alive_tx, mut keep_alive_rx) = tokio::sync::mpsc::channel::<()>(1);
@@ -833,27 +806,7 @@ impl GrpcQueryHandler {
                                 .await
                             )?;
 
-                            let partial = trace_err!(object
-                                .endpoints
-                                .iter()
-                                .find_map(|DataEndpoint { id, variant, .. }| {
-                                    if &self.endpoint_id == id {
-                                        if let Some(var) = variant {
-                                            match var {
-                                                Variant::FullSync(_) => Some(false),
-                                                Variant::PartialSync(_) => Some(true),
-                                            }
-                                        } else {
-                                            None
-                                        }
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .ok_or_else(|| anyhow!("No associated endpoint found")))?;
-                            self.cache
-                                .upsert_object(object.try_into()?, None, partial)
-                                .await?;
+                            self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Collection => {
                             let object = trace_err!(
@@ -863,27 +816,7 @@ impl GrpcQueryHandler {
                                 )
                                 .await
                             )?;
-                            let partial = trace_err!(object
-                                .endpoints
-                                .iter()
-                                .find_map(|DataEndpoint { id, variant, .. }| {
-                                    if &self.endpoint_id == id {
-                                        if let Some(var) = variant {
-                                            match var {
-                                                Variant::FullSync(_) => Some(false),
-                                                Variant::PartialSync(_) => Some(true),
-                                            }
-                                        } else {
-                                            None
-                                        }
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .ok_or_else(|| anyhow!("No associated endpoint found")))?;
-                            self.cache
-                                .upsert_object(object.try_into()?, None, partial)
-                                .await?;
+                            self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Dataset => {
                             let object = trace_err!(
@@ -893,27 +826,7 @@ impl GrpcQueryHandler {
                                 )
                                 .await
                             )?;
-                            let partial = trace_err!(object
-                                .endpoints
-                                .iter()
-                                .find_map(|DataEndpoint { id, variant, .. }| {
-                                    if &self.endpoint_id == id {
-                                        if let Some(var) = variant {
-                                            match var {
-                                                Variant::FullSync(_) => Some(false),
-                                                Variant::PartialSync(_) => Some(true),
-                                            }
-                                        } else {
-                                            None
-                                        }
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .ok_or_else(|| anyhow!("No associated endpoint found")))?;
-                            self.cache
-                                .upsert_object(object.try_into()?, None, partial)
-                                .await?;
+                            self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Object => {
                             let object = trace_err!(
@@ -923,28 +836,10 @@ impl GrpcQueryHandler {
                                 )
                                 .await
                             )?;
-                            let partial = trace_err!(object
-                                .endpoints
-                                .iter()
-                                .find_map(|DataEndpoint { id, variant, .. }| {
-                                    if &self.endpoint_id == id {
-                                        if let Some(var) = variant {
-                                            match var {
-                                                Variant::FullSync(_) => Some(false),
-                                                Variant::PartialSync(_) => Some(true),
-                                            }
-                                        } else {
-                                            None
-                                        }
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .ok_or_else(|| anyhow!("No associated endpoint found")))?;
                             // Update anyway
                             trace_err!(
                                 self.cache
-                                    .upsert_object(object.clone().try_into()?, None, partial)
+                                    .upsert_object(object.clone().try_into()?, None)
                                     .await
                             )?;
                             // Try pull replication
