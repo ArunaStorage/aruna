@@ -139,7 +139,7 @@ impl DataReplicationService for DataReplicationServiceImpl {
         //     false,
         // );
         let ctx = Context::proxy();
-        let (_, _, is_dataproxy) = tonic_auth!(
+        let (_, _, is_dataproxy, _dataproxy_id) = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(&token, vec![ctx])
                 .await,

@@ -30,7 +30,7 @@ impl PermissionHandler {
         &self,
         token: &str,
         ctxs: Vec<Context>,
-    ) -> Result<(DieselUlid, Option<DieselUlid>, bool), tonic::Status> {
+    ) -> Result<(DieselUlid, Option<DieselUlid>, bool, Option<DieselUlid>), tonic::Status> {
         // What are the cases?
         // 1. User Aruna token       --> (user_id, token_id)
         // 2. User OIDC token        --> (user_id, None)
@@ -97,7 +97,8 @@ impl PermissionHandler {
                 }
 
                 if self.cache.check_proxy_ctxs(&intent.target, &ctxs) {
-                    Ok((main_id, token, true))
+                    //dbg!(&intent.target);
+                    Ok((main_id, token, true, Some(intent.target)))
                 } else {
                     Err(tonic::Status::unauthenticated(
                         "Invalid proxy authentication",
@@ -113,7 +114,7 @@ impl PermissionHandler {
             .cache
             .check_permissions_with_contexts(&ctxs, &permissions, personal, &main_id)
         {
-            Ok((main_id, token, false))
+            Ok((main_id, token, false, None))
         } else {
             Err(tonic::Status::unauthenticated("Invalid permissions"))
         }
@@ -125,7 +126,7 @@ impl PermissionHandler {
         token: &str,
         ctxs: Vec<Context>,
     ) -> Result<DieselUlid, tonic::Status> {
-        let (user_id, _, _) = self.check_permissions_verbose(token, ctxs).await?;
+        let (user_id, _, _, _) = self.check_permissions_verbose(token, ctxs).await?;
         Ok(user_id)
     }
 

@@ -58,7 +58,7 @@ impl CollectionService for CollectionServiceImpl {
         );
         ctxs.push(parent_ctx);
 
-        let (user_id, _, is_dataproxy) = tonic_auth!(
+        let (user_id, _, is_dataproxy, _) = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(&token, ctxs)
                 .await,

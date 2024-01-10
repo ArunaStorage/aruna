@@ -563,19 +563,25 @@ impl DatabaseHandler {
         &self,
         request: FinishObjectStagingRequest,
         user_id: DieselUlid,
+        dataproxy_id: Option<DieselUlid>,
     ) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
         let id = DieselUlid::from_str(&request.object_id)?;
         let object = Object::get(id, &client)
             .await?
             .ok_or_else(|| anyhow!("Object not found"))?;
-        let temp = object
-            .endpoints
-            .0
-            .iter()
-            .next()
-            .ok_or_else(|| anyhow!("No endpoints defined in object"))?;
-        let (endpoint_id, ep_info) = temp.pair();
+        let (endpoint_id, endpoint_info) = if let Some(id) = dataproxy_id {
+            let temp = object
+                .endpoints
+                .0
+                .get(&id)
+                .ok_or_else(|| anyhow!("No endpoints defined in object"))?;
+            (id, temp.clone())
+        } else {
+            return Err(anyhow!("Could not retrieve endpoint info"));
+        };
+
+        //let (endpoint_id, ep_info) = temp.pair();
 
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -594,9 +600,9 @@ impl DatabaseHandler {
         )
         .await?;
         Object::update_endpoints(
-            *endpoint_id,
+            endpoint_id,
             crate::database::dsls::object_dsl::EndpointInfo {
-                replication: ep_info.replication,
+                replication: endpoint_info.replication,
                 status: Some(crate::database::enums::ReplicationStatus::Finished),
             },
             vec![id],

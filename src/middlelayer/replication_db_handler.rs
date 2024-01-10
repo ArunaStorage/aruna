@@ -277,7 +277,8 @@ impl DatabaseHandler {
         let object = Object::get(object_id, &client)
             .await?
             .ok_or_else(|| anyhow!("Object not found"))?;
-        let endpoint_id = DieselUlid::from_str(&request.endpoint_id)?;
+        let endpoint_id = DieselUlid::from_str(&request.endpoint_id)?; // TODO: Remove from API and
+                                                                       // query from token
         let mut endpoint_info = object
             .endpoints
             .0
