@@ -22,6 +22,7 @@ use s3s::auth::SecretKey;
 use std::collections::{HashMap, VecDeque};
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::RwLock;
+use tokio_postgres::GenericClient;
 use tracing::{debug, error, info_span, trace, Instrument};
 
 pub struct Cache {
@@ -233,7 +234,8 @@ impl Cache {
 
                             trace!("update persistence");
                             if let Some(persistence) = cache.persistence.read().await.as_ref() {
-                                user.upsert(&persistence.get_client().await?).await?;
+                                user.upsert(&persistence.get_client().await?.client())
+                                    .await?;
                             }
 
                             return Ok((access_key, new_secret));
@@ -267,9 +269,9 @@ impl Cache {
     pub async fn set_pubkeys(&self, pks: Vec<PubKey>) -> Result<()> {
         trace!(num_pks = pks.len(), "overwriting pks in persistence");
         if let Some(persistence) = self.persistence.read().await.as_ref() {
-            PubKey::delete_all(&persistence.get_client().await?).await?;
+            PubKey::delete_all(&persistence.get_client().await?.client()).await?;
             for pk in pks.iter() {
-                pk.upsert(&persistence.get_client().await?).await?;
+                pk.upsert(&persistence.get_client().await?.client()).await?;
             }
         }
         trace!("clearing pks in cache");
@@ -665,7 +667,8 @@ impl Cache {
                                 mut_entry.clone()
                             };
                             if let Some(persistence) = self.persistence.read().await.as_ref() {
-                                user.upsert(&persistence.get_client().await?).await?;
+                                user.upsert(&persistence.get_client().await?.client())
+                                    .await?;
                             }
                             break;
                         }
@@ -692,7 +695,7 @@ impl Cache {
 
             if let Some(persistence) = self.persistence.read().await.as_ref() {
                 user.value()
-                    .upsert(&persistence.get_client().await?)
+                    .upsert(&persistence.get_client().await?.client())
                     .await?;
             }
 
@@ -714,7 +717,7 @@ impl Cache {
 
             if let Some(persistence) = self.persistence.read().await.as_ref() {
                 user.value()
-                    .upsert(&persistence.get_client().await?)
+                    .upsert(&persistence.get_client().await?.client())
                     .await?;
             }
 
@@ -745,8 +748,11 @@ impl Cache {
             let user = self.users.remove(&key);
             if let Some(persistence) = self.persistence.read().await.as_ref() {
                 if let Some((_, user)) = user {
-                    User::delete(&user.user_id.to_string(), &persistence.get_client().await?)
-                        .await?;
+                    User::delete(
+                        &user.user_id.to_string(),
+                        &persistence.get_client().await?.client(),
+                    )
+                    .await?;
                 }
             }
         }
@@ -761,11 +767,17 @@ impl Cache {
     ) -> Result<()> {
         trace!(object_id = ?object.id, with_location = location.is_some());
         if let Some(persistence) = self.persistence.read().await.as_ref() {
-            object.upsert(&persistence.get_client().await?).await?;
+            let mut client = persistence.get_client().await?;
+            let transaction = client.transaction().await?;
+            let transaction_client = transaction.client();
+
+            object.upsert(transaction_client).await?;
 
             if let Some(l) = &location {
-                l.upsert(&persistence.get_client().await?).await?;
+                l.upsert(transaction_client).await?;
             }
+            
+            transaction.commit().await?;
         }
         let object_id = object.id;
         let obj_type = object.object_type.clone();
@@ -796,8 +808,14 @@ impl Cache {
     pub async fn delete_object(&self, id: DieselUlid) -> Result<()> {
         // Remove object and location from database
         if let Some(persistence) = self.persistence.read().await.as_ref() {
-            ObjectLocation::delete(&id, &persistence.get_client().await?).await?;
-            Object::delete(&id, &persistence.get_client().await?).await?;
+            let mut client = persistence.get_client().await?;
+            let transaction = client.transaction().await?;
+            let transaction_client = transaction.client();
+
+            ObjectLocation::delete(&id, transaction_client).await?;
+            Object::delete(&id, transaction_client).await?;
+
+            transaction.commit().await?;
         }
 
         // Remove data from storage backend

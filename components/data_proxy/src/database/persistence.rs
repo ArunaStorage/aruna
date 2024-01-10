@@ -1,9 +1,9 @@
 use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::Result;
-use deadpool_postgres::Client;
 use postgres_types::{FromSql, ToSql};
 use std::fmt::{Debug, Display, Formatter};
+use tokio_postgres::Client;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct GenericBytes<X: ToSql + for<'a> FromSql<'a> + Send + Sync> {
