@@ -48,7 +48,8 @@ impl Cache {
             with_persistence,
             self_id,
             encoding_key,
-            encoding_key_serial
+            encoding_key_serial,
+            backend
         )
     )]
     pub async fn new(
