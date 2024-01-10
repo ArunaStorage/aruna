@@ -165,7 +165,15 @@ pub async fn start_refresh_loop(
                             error!("Failed to send MV refresh notification: {}", err)
                         }
                     }
-                    Err(err) => error!("Start MV refresh failed: {}", err),
+                    Err(err) => {
+                        error!("Start MV refresh failed: {}", err);
+                        // Sleep for refresh interval and try again
+                        tokio::time::sleep(Duration::from_millis(
+                            refresh_interval.try_into().unwrap_or(30000),
+                        ))
+                        .await;
+                        continue;
+                    }
                 }
             }
 
