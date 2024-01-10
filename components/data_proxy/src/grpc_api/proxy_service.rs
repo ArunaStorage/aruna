@@ -21,10 +21,7 @@ use aruna_rust_api::api::dataproxy::services::v2::{
 use async_channel::Sender;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
-use std::{
-    collections::{HashMap, HashSet},
-    time::Duration,
-};
+use std::collections::{HashMap, HashSet};
 use std::{str::FromStr, sync::Arc};
 use tokio::pin;
 use tokio_stream::wrappers::ReceiverStream;

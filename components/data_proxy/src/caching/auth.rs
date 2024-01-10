@@ -7,6 +7,7 @@ use crate::structs::ObjectLocation;
 use crate::structs::ObjectType;
 use crate::structs::ResourceIds;
 use crate::structs::ResourceResults;
+use crate::structs::SyncVariant;
 use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -353,6 +354,27 @@ impl AuthHandler {
             }
         } else if let Some((bucket, _)) = path.as_object() {
             let ((obj, loc), ids, missing, bundle) = self.extract_object_from_path(path, method)?;
+
+            let partial = obj.endpoints.iter().find_map(|ep| {
+                if ep.id == self.self_id {
+                    match ep.variant {
+                        SyncVariant::PartialSync(_) => Some(true),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            });
+
+            match method {
+                &(Method::PUT | Method::POST | Method::PATCH | Method::DELETE) => {
+                    if partial.is_some() {
+                        return Err(anyhow!("PartialSynced objects cannot be modified"));
+                    }
+                }
+                _ => (),
+            }
+
             if let Some(bundle) = bundle {
                 debug!(bundle, "bundle_detected");
 
