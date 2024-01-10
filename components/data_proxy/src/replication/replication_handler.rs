@@ -145,7 +145,6 @@ impl ReplicationHandler {
     ) -> Result<Vec<DieselUlid>> {
         // Vec for collecting all processed and finished endpoint batches
         let mut result = Vec::new();
-        let self_ulid = trace_err!(DieselUlid::from_str(&self.self_id))?;
 
         // Iterates over each endpoint
         for endpoint in batch.iter() {

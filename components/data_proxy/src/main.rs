@@ -108,6 +108,7 @@ async fn main() -> Result<()> {
         encoding_key_serial,
         sender.clone(),
         self_secret,
+        Some(storage_backend.clone()),
     )
     .await?;
 

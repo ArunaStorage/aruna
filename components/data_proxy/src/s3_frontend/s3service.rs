@@ -10,6 +10,7 @@ use crate::s3_frontend::utils::list_objects::list_response;
 use crate::s3_frontend::utils::ranges::aruna_range_from_s3range;
 use crate::structs::CheckAccessResult;
 use crate::structs::Object as ProxyObject;
+use crate::structs::ObjectType;
 use crate::structs::PartETag;
 use crate::structs::ResourceString;
 use crate::structs::TypedRelation;
@@ -36,10 +37,12 @@ use base64::Engine;
 use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use futures_util::TryStreamExt;
+use http::HeaderName;
 use http::HeaderValue;
 use md5::{Digest, Md5};
 use s3s::dto::*;
 use s3s::s3_error;
+use s3s::stream::ByteStream;
 use s3s::S3Error;
 use s3s::S3Request;
 use s3s::S3Response;
@@ -512,7 +515,12 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<GetObjectInput>,
     ) -> S3Result<S3Response<GetObjectOutput>> {
-        let CheckAccessResult { object, bundle, .. } = trace_err!(req
+        let CheckAccessResult {
+            object,
+            bundle,
+            headers,
+            ..
+        } = trace_err!(req
             .extensions
             .get::<CheckAccessResult>()
             .cloned()
@@ -751,7 +759,18 @@ impl S3 for ArunaS3Service {
         };
         debug!(?output);
 
-        Ok(S3Response::new(output))
+        let mut resp = S3Response::new(output);
+        if let Some(headers) = headers {
+            for (k, v) in headers {
+                resp.headers.insert(
+                    HeaderName::from_bytes(k.as_bytes())
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header name"))?,
+                    HeaderValue::from_str(&v)
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header value"))?,
+                );
+            }
+        }
+        Ok(resp)
     }
 
     #[tracing::instrument(err)]
@@ -759,7 +778,12 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<HeadObjectInput>,
     ) -> S3Result<S3Response<HeadObjectOutput>> {
-        let CheckAccessResult { object, bundle, .. } = trace_err!(req
+        let CheckAccessResult {
+            object,
+            bundle,
+            headers,
+            ..
+        } = trace_err!(req
             .extensions
             .get::<CheckAccessResult>()
             .cloned()
@@ -810,7 +834,21 @@ impl S3 for ArunaS3Service {
 
         debug!(?output);
 
-        Ok(S3Response::new(output))
+        debug!(?headers);
+
+        let mut resp = S3Response::new(output);
+        if let Some(headers) = headers {
+            for (k, v) in headers {
+                resp.headers.insert(
+                    HeaderName::from_bytes(k.as_bytes())
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header name"))?,
+                    HeaderValue::from_str(&v)
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header value"))?,
+                );
+            }
+        }
+
+        Ok(resp)
     }
 
     #[tracing::instrument(err)]
@@ -830,6 +868,11 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<ListObjectsV2Input>,
     ) -> S3Result<S3Response<ListObjectsV2Output>> {
+        let CheckAccessResult { headers, .. } = trace_err!(req
+            .extensions
+            .get::<CheckAccessResult>()
+            .cloned()
+            .ok_or_else(|| s3_error!(InternalError, "No context found")))?;
         // Fetch the project name, delimiter and prefix from the request
         let project_name = &req.input.bucket;
         let delimiter = req.input.delimiter;
@@ -935,7 +978,224 @@ impl S3 for ArunaS3Service {
         };
         debug!(?result);
 
-        Ok(S3Response::new(result))
+        let mut resp = S3Response::new(result);
+
+        if let Some(headers) = headers {
+            for (k, v) in headers {
+                resp.headers.insert(
+                    HeaderName::from_bytes(k.as_bytes())
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header name"))?,
+                    HeaderValue::from_str(&v)
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header value"))?,
+                );
+            }
+        }
+
+        Ok(resp)
+    }
+
+    #[tracing::instrument(err)]
+    async fn put_bucket_cors(
+        &self,
+        req: S3Request<PutBucketCorsInput>,
+    ) -> S3Result<S3Response<PutBucketCorsOutput>> {
+        let config = crate::structs::CORSConfiguration(
+            req.input
+                .cors_configuration
+                .cors_rules
+                .into_iter()
+                .map(CORSRule::into)
+                .collect(),
+        );
+
+        let data = req.extensions.get::<CheckAccessResult>().cloned();
+
+        if let Some(client) = self.cache.aruna_client.read().await.as_ref() {
+            let CheckAccessResult {
+                user_id,
+                token_id,
+                object,
+                ..
+            } = trace_err!(
+                data.ok_or_else(|| s3_error!(InvalidObjectState, "Missing CheckAccess extension"))
+            )?;
+
+            trace!(?token_id, ?user_id, "put_bucket_cors");
+
+            let (bucket_obj, _) =
+                object.ok_or_else(|| s3_error!(NoSuchBucket, "Bucket not found"))?;
+
+            let token = trace_err!(self
+                .cache
+                .auth
+                .read()
+                .await
+                .as_ref()
+                .ok_or_else(|| s3_error!(InternalError, "Missing auth handler")))?
+            .sign_impersonating_token(
+                trace_err!(user_id.ok_or_else(|| {
+                    s3_error!(NotSignedUp, "Unauthorized: Impersonating user error")
+                }))?,
+                token_id,
+            )
+            .map_err(|_| s3_error!(NotSignedUp, "Unauthorized: Impersonating error"))?;
+
+            trace_err!(
+                client
+                    .add_or_replace_key_value_project(
+                        &token,
+                        bucket_obj,
+                        Some((
+                            "app.aruna-storage.org/cors",
+                            &serde_json::to_string(&config).map_err(|_| s3_error!(
+                                InvalidArgument,
+                                "Unable to serialize cors configuration"
+                            ))?
+                        ))
+                    )
+                    .await
+            )
+            .map_err(|_| s3_error!(InternalError, "Unable to update KeyValues"))?;
+        }
+        Ok(S3Response::new(PutBucketCorsOutput::default()))
+    }
+
+    #[tracing::instrument(err)]
+    async fn delete_bucket_cors(
+        &self,
+        req: S3Request<DeleteBucketCorsInput>,
+    ) -> S3Result<S3Response<DeleteBucketCorsOutput>> {
+        let data = req.extensions.get::<CheckAccessResult>().cloned();
+
+        if let Some(client) = self.cache.aruna_client.read().await.as_ref() {
+            let CheckAccessResult {
+                user_id,
+                token_id,
+                object,
+                ..
+            } = trace_err!(data.ok_or_else(|| s3_error!(InternalError, "Internal Error")))?;
+
+            let (bucket_obj, _) =
+                object.ok_or_else(|| s3_error!(NoSuchBucket, "Bucket not found"))?;
+
+            let token = trace_err!(self
+                .cache
+                .auth
+                .read()
+                .await
+                .as_ref()
+                .ok_or_else(|| s3_error!(InternalError, "Missing auth handler")))?
+            .sign_impersonating_token(
+                trace_err!(user_id.ok_or_else(|| {
+                    s3_error!(NotSignedUp, "Unauthorized: Impersonating user error")
+                }))?,
+                token_id,
+            )
+            .map_err(|_| s3_error!(NotSignedUp, "Unauthorized: Impersonating error"))?;
+
+            trace_err!(
+                client
+                    .add_or_replace_key_value_project(&token, bucket_obj, None,)
+                    .await
+            )
+            .map_err(|_| s3_error!(InternalError, "Unable to update KeyValues"))?;
+        }
+        Ok(S3Response::new(DeleteBucketCorsOutput::default()))
+    }
+
+    #[tracing::instrument(err)]
+    async fn get_bucket_location(
+        &self,
+        _req: S3Request<GetBucketLocationInput>,
+    ) -> S3Result<S3Response<GetBucketLocationOutput>> {
+        return Ok(S3Response::new(GetBucketLocationOutput {
+            // TODO: Return proxy location / id -> Not possible restricted set of allowed locations
+            location_constraint: None,
+        }));
+    }
+
+    #[tracing::instrument(err)]
+    async fn get_bucket_cors(
+        &self,
+        req: S3Request<GetBucketCorsInput>,
+    ) -> S3Result<S3Response<GetBucketCorsOutput>> {
+        let data = req.extensions.get::<CheckAccessResult>().cloned();
+
+        let CheckAccessResult { object, .. } = trace_err!(
+            data.ok_or_else(|| s3_error!(InvalidObjectState, "Missing CheckAccess extension"))
+        )?;
+
+        let (bucket_obj, _) = object.ok_or_else(|| s3_error!(NoSuchBucket, "Bucket not found"))?;
+
+        let cors = bucket_obj
+            .key_values
+            .into_iter()
+            .find(|kv| kv.key == "app.aruna-storage.org/cors")
+            .map(|kv| kv.value);
+
+        if let Some(cors) = cors {
+            let cors: crate::structs::CORSConfiguration = trace_err!(serde_json::from_str(&cors))
+                .map_err(|_| {
+                s3_error!(InvalidObjectState, "Unable to deserialize cors from JSON")
+            })?;
+            return Ok(S3Response::new(cors.into()));
+        }
+        Ok(S3Response::new(GetBucketCorsOutput::default()))
+    }
+
+    #[tracing::instrument(err)]
+    async fn list_buckets(
+        &self,
+        req: S3Request<ListBucketsInput>,
+    ) -> S3Result<S3Response<ListBucketsOutput>> {
+        let data = req.extensions.get::<CheckAccessResult>().cloned();
+
+        let CheckAccessResult {
+            user_id, token_id, ..
+        } = trace_err!(
+            data.ok_or_else(|| s3_error!(InvalidObjectState, "Missing CheckAccess extension"))
+        )?;
+
+        match (user_id, token_id) {
+            (_, Some(tid)) | (Some(tid), _) => {
+                let perm = self.cache.get_user_by_key(&tid);
+                if let Some(perm) = perm {
+                    let mut buckets = Vec::new();
+                    for (k, _) in perm.permissions {
+                        let (o, _) = self
+                            .cache
+                            .get_resource(&k)
+                            .map_err(|_| s3_error!(InternalError, "Unable to get resource"))?;
+                        if o.object_type == ObjectType::Project {
+                            buckets.push(Bucket {
+                                creation_date: o.created_at.map(|t| {
+                                    s3s::dto::Timestamp::from(
+                                        time::OffsetDateTime::from_unix_timestamp(t.timestamp())
+                                            .unwrap(),
+                                    )
+                                }),
+                                name: Some(o.name),
+                            });
+                        }
+                    }
+                    let bs = if buckets.is_empty() {
+                        None
+                    } else {
+                        Some(buckets)
+                    };
+                    return Ok(S3Response::new(ListBucketsOutput {
+                        buckets: bs,
+                        owner: Some(Owner {
+                            display_name: None,
+                            id: Some(perm.user_id.to_string()),
+                        }),
+                    }));
+                } else {
+                    return Err(s3_error!(InvalidAccessKeyId, "Invalid access key / user"));
+                }
+            }
+            _ => return Err(s3_error!(InvalidAccessKeyId, "Invalid access key / user")),
+        }
     }
 
     #[tracing::instrument(err, skip(self, req))]

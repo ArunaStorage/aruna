@@ -3,6 +3,7 @@ use super::{
     transforms::ExtractAccessKeyPermissions,
 };
 use crate::caching::grpc_query_handler::sort_objects;
+use crate::data_backends::storage_backend::StorageBackend;
 use crate::replication::replication_handler::ReplicationMessage;
 use crate::structs::{DbPermissionLevel, Endpoint, TypedRelation};
 use crate::trace_err;
@@ -39,6 +40,7 @@ pub struct Cache {
     pub aruna_client: RwLock<Option<Arc<GrpcQueryHandler>>>,
     pub auth: RwLock<Option<AuthHandler>>,
     pub sender: Sender<ReplicationMessage>,
+    pub backend: Option<Arc<Box<dyn StorageBackend>>>,
 }
 
 impl Cache {
@@ -49,7 +51,8 @@ impl Cache {
             with_persistence,
             self_id,
             encoding_key,
-            encoding_key_serial
+            encoding_key_serial,
+            backend
         )
     )]
     pub async fn new(
@@ -60,6 +63,7 @@ impl Cache {
         encoding_key_serial: i32,
         sender: Sender<ReplicationMessage>,
         self_secret: String,
+        backend: Option<Arc<Box<dyn StorageBackend>>>,
     ) -> Result<Arc<Self>> {
         // Initialize cache
         let cache = Arc::new(Cache {
@@ -71,6 +75,7 @@ impl Cache {
             aruna_client: RwLock::new(None),
             auth: RwLock::new(None),
             sender,
+            backend,
         });
 
         // Initialize auth handler
@@ -154,14 +159,19 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self, access_key))]
     /// Requests a secret key from the cache
     pub fn get_secret(&self, access_key: &str) -> Result<SecretKey> {
-        Ok(SecretKey::from(
-            trace_err!(self
-                .users
-                .get(access_key)
-                .ok_or_else(|| anyhow!("User not found")))?
-            .secret
-            .as_ref(),
-        ))
+        let secret = trace_err!(self
+            .users
+            .get(access_key)
+            .ok_or_else(|| anyhow!("User not found")))?
+        .secret
+        .clone();
+
+        if secret.is_empty() {
+            error!("secret is empty");
+            Err(anyhow!("Secret is empty"))
+        } else {
+            Ok(SecretKey::from(secret))
+        }
     }
 
     #[tracing::instrument(level = "trace", skip(self, database))]
@@ -178,35 +188,14 @@ impl Cache {
         // Sort objects from database before sync
         let mut database_objects = Object::get_all(&client).await?;
         sort_objects(&mut database_objects);
-        let self_id = if let Some(abc) = self.auth.read().await.as_ref() {
-            abc.self_id
-        } else {
-            return Err(anyhow!("Could not read self_id"));
-        };
+
         for object in database_objects {
             let location = ObjectLocation::get_opt(&object.id, &client).await?;
             self.resources.insert(object.id, (object.clone(), location));
 
-            let partial = trace_err!(object
-                .endpoints
-                .iter()
-                .find_map(|Endpoint { id, variant, .. }| {
-                    if &self_id == id {
-                        match variant {
-                            crate::structs::SyncVariant::FullSync(_) => Some(false),
-                            crate::structs::SyncVariant::PartialSync(_) => Some(true),
-                        }
-                    } else {
-                        None
-                    }
-                })
-                .ok_or_else(|| anyhow!("Could not get endpoint info for self_id")))?;
-
-            if !(object.object_type == ObjectType::Bundle || partial) {
-                let tree = self.get_name_trees(&object.id.to_string(), object.object_type)?;
-                for (e, v) in tree {
-                    self.paths.insert(e, v);
-                }
+            let tree = self.get_name_trees(&object.id.to_string(), object.object_type)?;
+            for (e, v) in tree {
+                self.paths.insert(e, v);
             }
         }
         debug!("synced objects");
@@ -322,6 +311,19 @@ impl Cache {
         }
         trace!("updated pks in cache");
         Ok(())
+    }
+    #[tracing::instrument(level = "trace", skip(self, res))]
+    pub fn get_full_resource_by_name(
+        &self,
+        res: ResourceString,
+    ) -> Option<(Object, Option<ObjectLocation>)> {
+        self.paths
+            .get(&res)
+            .and_then(|e| {
+                let id = e.value().clone();
+                self.resources.get(&id.get_id()).map(|e| e.value().clone())
+            })
+            .clone()
     }
 
     #[tracing::instrument(level = "trace", skip(self, res))]
@@ -826,11 +828,23 @@ impl Cache {
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn delete_object(&self, id: DieselUlid) -> Result<()> {
+        // Remove object and location from database
         if let Some(persistence) = self.persistence.read().await.as_ref() {
-            Object::delete(&id, &persistence.get_client().await?).await?;
             ObjectLocation::delete(&id, &persistence.get_client().await?).await?;
+            Object::delete(&id, &persistence.get_client().await?).await?;
         }
 
+        // Remove data from storage backend
+        if let Some(s3_backend) = &self.backend {
+            if let Some(resource) = self.resources.get(&id) {
+                let (_, loc) = resource.value();
+                if let Some(location) = loc {
+                    s3_backend.delete_object(location.clone()).await?;
+                }
+            }
+        }
+
+        // Remove object and location from cache
         self.resources.remove(&id);
         self.paths.retain(|_, v| v != &id);
         Ok(())
@@ -1110,5 +1124,17 @@ impl Cache {
         }
         trace!(?finished);
         Ok(finished)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn get_resource(
+        &self,
+        resource_id: &DieselUlid,
+    ) -> Result<(Object, Option<ObjectLocation>)> {
+        let resource = trace_err!(self
+            .resources
+            .get(resource_id)
+            .ok_or_else(|| anyhow!("Resource not found")))?;
+        Ok(resource.clone())
     }
 }
