@@ -120,10 +120,10 @@ impl DataReplicationService for DataReplicationServiceImpl {
 
         // Consume gRPC request into its parts
         let (metadata, _, request) = request.into_parts();
-        let object_id = tonic_invalid!(
-            diesel_ulid::DieselUlid::from_str(&request.object_id),
-            "Invalid project id"
-        );
+        // let object_id = tonic_invalid!(
+        //     diesel_ulid::DieselUlid::from_str(&request.object_id),
+        //     "Invalid project id"
+        // );
         // Extract token from request and check permissions
         let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
 
@@ -161,6 +161,8 @@ impl DataReplicationService for DataReplicationServiceImpl {
         &self,
         _request: Request<DeleteReplicationRequest>,
     ) -> Result<Response<DeleteReplicationResponse>> {
+        // TODO:
+        // - One proxy must stay full sync
         Err(tonic::Status::unimplemented(
             "DeleteReplicationStatus not yet implemented",
         ))

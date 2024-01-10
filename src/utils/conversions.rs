@@ -1598,6 +1598,7 @@ impl From<ReplicationType> for Variant {
             ReplicationType::FullSync(project_id) => Variant::FullSync(aruna_rust_api::api::storage::models::v2::FullSync { project_id: project_id.to_string()}),
             ReplicationType::PartialSync(sync_object) => {
                 match sync_object {
+                    SyncObject::ProjectId(id) => Variant::PartialSync(aruna_rust_api::api::storage::models::v2::PartialSync { origin: Some(aruna_rust_api::api::storage::models::v2::partial_sync::Origin::ProjectId(id.to_string())) }),
                     SyncObject::CollectionId(id) => Variant::PartialSync(aruna_rust_api::api::storage::models::v2::PartialSync { origin: Some(aruna_rust_api::api::storage::models::v2::partial_sync::Origin::CollectionId(id.to_string())) }),
                     SyncObject::DatasetId(id) => Variant::PartialSync(aruna_rust_api::api::storage::models::v2::PartialSync { origin: Some(aruna_rust_api::api::storage::models::v2::partial_sync::Origin::DatasetId(id.to_string())) }),
                     SyncObject::ObjectId(id) => Variant::PartialSync(aruna_rust_api::api::storage::models::v2::PartialSync { origin: Some(aruna_rust_api::api::storage::models::v2::partial_sync::Origin::ObjectId(id.to_string())) }),

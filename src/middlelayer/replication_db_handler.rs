@@ -19,6 +19,7 @@ use aruna_rust_api::api::{
     },
 };
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
 use std::str::FromStr;
 
 impl DatabaseHandler {
@@ -116,9 +117,7 @@ impl DatabaseHandler {
         let mut sub_res: Vec<Object> =
             Object::fetch_recursive_objects(&resource_id, &client).await?;
         sub_res.push(res);
-        // Create transaction for status & endpoint updates
-        let transaction = client.transaction().await?;
-        let transaction_client = transaction.client();
+
         // Collect all objects
         let objects: Vec<DieselUlid> = sub_res
             .iter()
@@ -127,6 +126,7 @@ impl DatabaseHandler {
                 _ => None,
             })
             .collect();
+
         // Collect all none-objects
         let hierarchy_resources: Vec<DieselUlid> = sub_res
             .iter()
@@ -135,13 +135,54 @@ impl DatabaseHandler {
                 _ => Some(r.id),
             })
             .collect();
+
+        // TODO:
+        // - Find out which resources are outside of fullsync
+        let mut all_affected = Vec::new();
+        for object in &sub_res {
+            let mut hierarchy = Object::fetch_object_hierarchies_by_id(&object.id, &client).await?;
+            all_affected.append(&mut hierarchy);
+        }
+
+        let mut partial_synced_hierarchy = Vec::new();
+        let mut partial_synced_objects = Vec::new();
+        for affected_hierarchy in &all_affected {
+            let mut flattened_hierarchy = vec![affected_hierarchy.project_id.clone()];
+            if let Some(collection) = &affected_hierarchy.collection_id {
+                flattened_hierarchy.push(collection.to_string());
+            }
+            if let Some(dataset) = &affected_hierarchy.dataset_id {
+                flattened_hierarchy.push(dataset.to_string());
+            }
+            if let Some(object) = &affected_hierarchy.object_id {
+                if !objects.iter().map(|id| id.to_string()).contains(object) {
+                    partial_synced_objects.push(DieselUlid::from_str(object)?);
+                }
+            }
+            for id in flattened_hierarchy {
+                if !hierarchy_resources
+                    .iter()
+                    .map(|id| id.to_string())
+                    .contains(&id)
+                {
+                    partial_synced_hierarchy.push(DieselUlid::from_str(&id)?);
+                }
+            }
+        }
         dbg!(&objects);
         dbg!(&hierarchy_resources);
+        dbg!(&partial_synced_hierarchy);
+        dbg!(&partial_synced_objects);
+
+        // Create transaction for status & endpoint updates
+        let transaction = client.transaction().await?;
+        let transaction_client = transaction.client();
+
         // Update objects with Status and EndpointInfo
         if !objects.is_empty() {
             Object::update_endpoints(
                 proxy_id,
-                endpoint_status_objects,
+                endpoint_status_objects.clone(),
                 objects,
                 transaction_client,
             )
@@ -153,8 +194,48 @@ impl DatabaseHandler {
         if !hierarchy_resources.is_empty() {
             Object::update_endpoints(
                 proxy_id,
-                endpoint_status_hierarchy,
+                endpoint_status_hierarchy.clone(),
                 hierarchy_resources,
+                transaction_client,
+            )
+            .await?;
+        }
+        // Update not-explicit synced with PartialSyncInfo
+        if !partial_synced_hierarchy.is_empty() {
+            let ep_status_hierarchy = match endpoint_status_hierarchy.replication {
+                crate::database::enums::ReplicationType::FullSync(id) => EndpointInfo {
+                    replication: crate::database::enums::ReplicationType::PartialSync(
+                        SyncObject::ProjectId(id),
+                    ),
+                    status: None,
+                },
+                crate::database::enums::ReplicationType::PartialSync(_) => {
+                    endpoint_status_hierarchy
+                }
+            };
+            Object::update_endpoints(
+                proxy_id,
+                ep_status_hierarchy,
+                partial_synced_hierarchy.clone(),
+                transaction_client,
+            )
+            .await?;
+        }
+
+        if !partial_synced_objects.is_empty() {
+            let ep_status_objects = match endpoint_status_objects.replication {
+                crate::database::enums::ReplicationType::FullSync(id) => EndpointInfo {
+                    replication: crate::database::enums::ReplicationType::PartialSync(
+                        SyncObject::ProjectId(id),
+                    ),
+                    status: Some(ReplicationStatus::Waiting),
+                },
+                crate::database::enums::ReplicationType::PartialSync(_) => endpoint_status_objects,
+            };
+            Object::update_endpoints(
+                proxy_id,
+                ep_status_objects,
+                partial_synced_objects.clone(),
                 transaction_client,
             )
             .await?;
@@ -164,6 +245,8 @@ impl DatabaseHandler {
         // Try to emit object updated notification(s)
         let mut all_updated: Vec<DieselUlid> = sub_res.iter().map(|r| r.id).collect();
         all_updated.push(resource_id);
+        all_updated.append(&mut partial_synced_objects);
+        all_updated.append(&mut partial_synced_hierarchy);
         let mut all = Object::get_objects_with_relations(&all_updated, &client).await?;
         sort_objects(&mut all);
         dbg!(&all);

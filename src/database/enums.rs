@@ -227,6 +227,7 @@ pub enum ReplicationType {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 pub enum SyncObject {
+    ProjectId(DieselUlid),
     CollectionId(DieselUlid),
     DatasetId(DieselUlid),
     ObjectId(DieselUlid),

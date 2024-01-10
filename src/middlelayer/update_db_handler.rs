@@ -6,7 +6,7 @@ use crate::database::dsls::internal_relation_dsl::{
 };
 use crate::database::dsls::license_dsl::ALL_RIGHTS_RESERVED;
 use crate::database::dsls::object_dsl::{KeyValue, KeyValueVariant, Object, ObjectWithRelations};
-use crate::database::enums::{EndpointStatus, ObjectStatus};
+use crate::database::enums::ObjectStatus;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
@@ -587,7 +587,7 @@ impl DatabaseHandler {
         let content_len = request.content_len;
         Object::finish_object_staging(
             &id,
-            &transaction_client,
+            transaction_client,
             hashes,
             content_len,
             ObjectStatus::AVAILABLE,
@@ -623,11 +623,31 @@ impl DatabaseHandler {
             }
         });
 
+        // Try to emit object updated notification(s)
+        let hierarchies = object.object.fetch_object_hierarchies(&client).await?;
+        if let Err(err) = self
+            .natsio_handler
+            .register_resource_event(
+                &object,
+                hierarchies,
+                EventVariant::Updated,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
+            .await
+        {
+            // Log error, rollback transaction and return
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            Err(anyhow::anyhow!("Notification emission failed"))
+        } else {
+            //transaction.commit().await?;
+            Ok(object)
+        }
         // TODO
         // - UpdateObjectEvent
         // - Replication logic
         //  ->  DataProxy, that calls finish, is updated to
         //      ReplicationStatus::Finished
-        Ok(object)
+        //Ok(object)
     }
 }

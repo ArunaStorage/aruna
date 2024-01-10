@@ -7,11 +7,10 @@ use aruna_rust_api::api::{
     storage::services::v2::{
         authorization_service_server::AuthorizationServiceServer,
         collection_service_server::CollectionServiceServer,
-        data_replication_service_server::{DataReplicationService, DataReplicationServiceServer},
+        data_replication_service_server::DataReplicationServiceServer,
         dataset_service_server::DatasetServiceServer,
         endpoint_service_server::EndpointServiceServer,
-        license_service_server::LicenseServiceServer,
-        object_service_server::ObjectServiceServer,
+        license_service_server::LicenseServiceServer, object_service_server::ObjectServiceServer,
         project_service_server::ProjectServiceServer,
         relations_service_server::RelationsServiceServer,
         search_service_server::SearchServiceServer,
