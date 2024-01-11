@@ -277,6 +277,14 @@ impl AuthHandler {
                         ));
 
                 if let Some((ref project, _)) = bucket_obj {
+                    if let Some(ep) = project.endpoints.iter().find(|ep| ep.id == self.self_id) {
+                        match ep.variant {
+                            SyncVariant::PartialSync(_) => {
+                                return Err(anyhow!("Can not modify partial sync resources"));
+                            }
+                            _ => (),
+                        }
+                    }
                     if let Some(perm) = user.permissions.get(&project.id) {
                         if *perm >= DbPermissionLevel::Write {
                             return Ok(CheckAccessResult {
@@ -353,6 +361,14 @@ impl AuthHandler {
                 ));
             }
         } else if let Some((bucket, _)) = path.as_object() {
+            if bucket == "objects" || bucket == "bundles" {
+                match method {
+                    &(Method::PUT | Method::POST | Method::PATCH | Method::DELETE) => {
+                        return Err(anyhow!("Can not modify special bucket"));
+                    }
+                    _ => (),
+                }
+            }
             let ((obj, loc), ids, missing, bundle) = self.extract_object_from_path(path, method)?;
 
             let partial = obj.endpoints.iter().find_map(|ep| {
@@ -369,7 +385,7 @@ impl AuthHandler {
             match method {
                 &(Method::PUT | Method::POST | Method::PATCH | Method::DELETE) => {
                     if partial.is_some() {
-                        return Err(anyhow!("PartialSynced objects cannot be modified"));
+                        return Err(anyhow!("PartialSync objects cannot be modified"));
                     }
                 }
                 _ => (),
@@ -468,19 +484,32 @@ impl AuthHandler {
                 }
             }
 
-            let headers = if let Some((project, _)) =
-                self.cache
-                    .get_full_resource_by_name(crate::structs::ResourceString::Project(
-                        bucket.to_string(),
-                    )) {
-                project.project_get_headers(method, headers)
+            let (headers, bucket_is_partial) = if let Some((project, _)) = self
+                .cache
+                .get_full_resource_by_name(crate::structs::ResourceString::Project(
+                    bucket.to_string(),
+                )) {
+                let partial =
+                    if let Some(ep) = project.endpoints.iter().find(|ep| ep.id == self.self_id) {
+                        match ep.variant {
+                            SyncVariant::PartialSync(_) => true,
+                            _ => false,
+                        }
+                    } else {
+                        false
+                    };
+                (project.project_get_headers(method, headers), partial)
             } else {
-                None
+                (None, false)
             };
 
             match method {
                 &Method::GET | &Method::HEAD | &Method::OPTIONS | &Method::DELETE => {
                     if missing.is_some() {
+                        bail!("Resource not found")
+                    } else if bucket_is_partial {
+                        // This should work, because if bundle is already checked,
+                        // so this part is only evaluated if bucket is a name
                         bail!("Resource not found")
                     }
                 }
