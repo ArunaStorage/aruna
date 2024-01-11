@@ -45,7 +45,7 @@ use aruna_rust_api::api::hooks::services::v2::{
 use aruna_rust_api::api::storage::models::v2::data_endpoint::Variant;
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, CustomAttributes, DataClass as APIDataClass, DataEndpoint,
-    License as APILicense, OidcMapping, Permission, PermissionLevel,
+    InternalRelationVariant, License as APILicense, OidcMapping, Permission, PermissionLevel,
     ReplicationStatus as APIReplicationStatus, ResourceVariant, Status, Token, User as ApiUser,
     UserAttributes,
 };
@@ -905,6 +905,14 @@ impl InternalRelation {
                     .get_object(&DieselUlid::from_str(&api_rel.resource_id)?)
                     .ok_or_else(|| anyhow!("other_obj not found"))?;
 
+                if self_obj.object.object_type == other_obj.object.object_type
+                    && api_rel.defined_variant == InternalRelationVariant::BelongsTo as i32
+                {
+                    return Err(anyhow!(
+                        "Can not assign BelongsTo relation to same-level hierarchy object"
+                    ));
+                }
+
                 Ok(InternalRelation {
                     id: DieselUlid::generate(),
                     origin_pid: other_obj.object.id,
@@ -924,6 +932,14 @@ impl InternalRelation {
                 let self_obj = cache
                     .get_object(&DieselUlid::from_str(&api_rel.resource_id)?)
                     .ok_or_else(|| anyhow!("other_obj not found"))?;
+
+                if self_obj.object.object_type == other_obj.object.object_type
+                    && api_rel.defined_variant == InternalRelationVariant::BelongsTo as i32
+                {
+                    return Err(anyhow!(
+                        "Can not assign BelongsTo relation to same-level hierarchy object"
+                    ));
+                }
 
                 Ok(InternalRelation {
                     id: DieselUlid::generate(),
