@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use anyhow::Result;
 use aruna_file::transformer::{Sink, Transformer};
 use aruna_rust_api::api::dataproxy::services::v2::{
@@ -15,6 +16,7 @@ pub struct ReplicationSink {
     blocklist: Vec<u8>,
     chunk_counter: usize, // One chunk contains multiple blocks
     sender: TokioSender<Result<PullReplicationResponse, tonic::Status>>,
+    error_recv: async_channel::Receiver<Option<(i64, String)>>,
     buffer: BytesMut,
     is_finished: bool,
     bytes_counter: u64,
@@ -29,11 +31,13 @@ impl ReplicationSink {
         object_id: String,
         blocklist: Vec<u8>,
         sender: TokioSender<Result<PullReplicationResponse, tonic::Status>>,
+        error_recv: async_channel::Receiver<Option<(i64, String)>>,
     ) -> ReplicationSink {
         ReplicationSink {
             object_id,
             blocklist,
             sender,
+            error_recv,
             chunk_counter: 0,
             buffer: BytesMut::with_capacity((1024 * 1024 * 5) + 128),
             is_finished: false,
@@ -63,7 +67,6 @@ impl ReplicationSink {
         // which in this case is equivalent to [u8; 16]
         let result = hasher.finalize();
 
-        //trace!(data_len = ?data.len());
         let message = PullReplicationResponse {
             message: Some(Message::Chunk(Chunk {
                 object_id: self.object_id.clone(),
@@ -72,13 +75,19 @@ impl ReplicationSink {
                 checksum: hex::encode(result),
             })),
         };
-        // let dbg = match message.message.clone().unwrap() {
-        //     Message::Chunk(chunk) => chunk.chunk_idx.to_string(),
-        //     _ => "This should not happen".to_string(),
-        // };
-        // trace!(dbg);
-        // trace!(chunk_counter = ?self.chunk_counter, bytes_start = ?self.bytes_start, bytes_counter = ?self.bytes_counter);
-        trace_err!(self.sender.send(Ok(message)).await)?;
+
+        trace_err!(self.sender.send(Ok(message.clone())).await)?;
+
+        // Send chunk again if lost,
+        // else abort (TODO: Retry object)
+        if let Some((idx, id)) = trace_err!(self.error_recv.recv().await)? {
+            if self.object_id == id && self.chunk_counter as i64 == idx {
+                trace_err!(self.sender.send(Ok(message)).await)?;
+            } else {
+                return Err(anyhow!("Can not retry chunk"));
+            }
+        }
+
         self.chunk_counter += 1;
         self.bytes_start += len;
 
@@ -90,12 +99,11 @@ impl ReplicationSink {
 impl Transformer for ReplicationSink {
     #[tracing::instrument(level = "trace", skip(self, buf, finished))]
     async fn process_bytes(&mut self, buf: &mut BytesMut, finished: bool, _: bool) -> Result<bool> {
-        // 65536
+        // blocksize: 65536
         self.bytes_counter += buf.len() as u64;
         self.buffer.put(buf.split());
 
         if finished && !self.buffer.is_empty() {
-            //trace!(chunk = ?self.chunk_counter, bytes_counter = ?self.bytes_counter, finished = finished, "created and send finish message");
             trace_err!(self.create_and_send_message().await)?;
             self.is_finished = true;
             return Ok(self.is_finished);

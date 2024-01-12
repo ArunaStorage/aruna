@@ -2,7 +2,7 @@ use crate::{
     caching::{auth::get_token_from_md, cache::Cache},
     data_backends::storage_backend::StorageBackend,
     replication::replication_handler::ReplicationMessage,
-    s3_frontend::utils::{debug_transformer::DebugTransformer, replication_sink::ReplicationSink},
+    s3_frontend::utils::replication_sink::ReplicationSink,
     structs::{Object, ObjectLocation},
     trace_err,
 };
@@ -12,13 +12,17 @@ use aruna_file::{
     transformer::ReadWriter, transformers::decrypt::ChaCha20Dec,
 };
 
-use aruna_rust_api::api::dataproxy::services::v2::dataproxy_replication_service_server::DataproxyReplicationService;
+use aruna_rust_api::api::dataproxy::services::v2::{
+    dataproxy_replication_service_server::DataproxyReplicationService,
+    error_message::{self, Error},
+    ErrorMessage, RetryChunkMessage,
+};
 use aruna_rust_api::api::dataproxy::services::v2::{
     pull_replication_request::Message, pull_replication_response, ChunkAckMessage, InfoAckMessage,
     InitMessage, PullReplicationRequest, PullReplicationResponse, PushReplicationRequest,
     PushReplicationResponse,
 };
-use async_channel::Sender;
+use async_channel::{Receiver, Sender};
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use std::collections::{HashMap, HashSet};
@@ -86,6 +90,8 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
         let (object_sync_send, object_sync_rcv) = async_channel::bounded(1);
         // Handles output stream
         let (object_output_send, object_output_rcv) = tokio::sync::mpsc::channel(255);
+        // Error and retry handling for ArunaStreamReadWriter
+        let (retry_send, retry_rcv) = async_channel::bounded(1);
 
         // Recieving loop
         let proxy_replication_service = self.clone();
@@ -125,8 +131,22 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                             .send(AckSync::ObjectChunk(object_id, chunk_idx))
                                             .await
                                     )?;
+                                    trace_err!(retry_send.send(None).await)?;
                                 }
-                                Message::ErrorMessage(_) => {
+                                Message::ErrorMessage(ErrorMessage { error }) => {
+                                    if let Some(err) = error {
+                                        match err {
+                                            Error::RetryChunk(RetryChunkMessage {
+                                                object_id,
+                                                chunk_idx,
+                                            }) => {
+                                                let msg = Some((chunk_idx, object_id));
+                                                trace_err!(retry_send.send(msg).await)?;
+                                            }
+                                            Error::Abort(_) => return Err(anyhow!("Aborted sync")),
+                                            Error::RetryObjectId(_object_id) => todo!(),
+                                        }
+                                    }
                                     // TODO!
                                     // - Error handling
                                     // - Retry logic
@@ -140,6 +160,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                 }
                                 Message::FinishMessage(_) => {
                                     trace_err!(object_ack_send.send(AckSync::Finish).await)?;
+                                    return Ok(());
                                 }
                             },
                             _ => {
@@ -183,13 +204,10 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                 match object_input_rcv.recv().await {
                     // Errors
                     Err(err) => {
-                        error!("{err}");
-                        trace_err!(
-                            object_output_send
-                                .clone()
-                                .send(Err(tonic::Status::internal("ObjectInputChannel closed")))
-                                .await
-                        )?;
+                        // Technically no error, because rcv was closed and just has one init msg
+                        // therefore closed means finished
+                        trace!(?err);
+                        return Ok(());
                     }
                     Ok(Err(err)) => {
                         error!("{err}");
@@ -263,6 +281,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                         location,
                                         blocklist.unwrap_or(Vec::default()),
                                         object_output_send.clone(),
+                                        retry_rcv.clone(),
                                     )
                                     .await
                             )?;
@@ -477,6 +496,7 @@ impl DataproxyReplicationServiceImpl {
         location: ObjectLocation,
         blocklist: Vec<u8>,
         sender: tokio::sync::mpsc::Sender<Result<PullReplicationResponse, tonic::Status>>,
+        error_rcv: Receiver<Option<(i64, String)>>, // contains chunk_idx and object_id
     ) -> Result<()> {
         // Get encryption_key
         let key = location
@@ -508,7 +528,7 @@ impl DataproxyReplicationServiceImpl {
                         // Receive get_object
                         object_receiver,
                         // ReplicationSink sends into stream via sender
-                        ReplicationSink::new(object_id, blocklist, sender.clone()),
+                        ReplicationSink::new(object_id, blocklist, sender.clone(), error_rcv),
                     );
 
                     // Add decryption transformer
