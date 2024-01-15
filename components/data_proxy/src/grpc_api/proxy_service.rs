@@ -13,8 +13,7 @@ use aruna_file::{
 };
 
 use aruna_rust_api::api::dataproxy::services::v2::{
-    dataproxy_replication_service_server::DataproxyReplicationService,
-    error_message::{self, Error},
+    dataproxy_replication_service_server::DataproxyReplicationService, error_message::Error,
     ErrorMessage, RetryChunkMessage,
 };
 use aruna_rust_api::api::dataproxy::services::v2::{
@@ -83,7 +82,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
             .map_err(|_| tonic::Status::unauthenticated("Token not found"))?;
 
         // Sends initial Vec<(object, location)> to sync/ack/stream handlers
-        let (object_input_send, object_input_rcv) = async_channel::bounded(1);
+        let (object_input_send, object_input_rcv) = async_channel::bounded(5);
         // Sends ack messages to the ack handler
         let (object_ack_send, object_ack_rcv) = async_channel::bounded(100);
         // Sends the finished ack hash map to the output handler to compare send/ack
@@ -144,19 +143,64 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                                 trace_err!(retry_send.send(msg).await)?;
                                             }
                                             Error::Abort(_) => return Err(anyhow!("Aborted sync")),
-                                            Error::RetryObjectId(_object_id) => todo!(),
+                                            Error::RetryObjectId(object_id) => {
+                                                let ulid =
+                                                    trace_err!(DieselUlid::from_str(&object_id))?;
+                                                let (object, location) =
+                                                    trace_err!(proxy_replication_service
+                                                        .cache
+                                                        .get_resource(&ulid))?;
+                                                // TODO:
+                                                // - Check permissions for dataproxy
+                                                if let Some(auth) = proxy_replication_service
+                                                    .cache
+                                                    .auth
+                                                    .read()
+                                                    .await
+                                                    .as_ref()
+                                                {
+                                                    // Returns claims.sub as id -> Can return UserIds or DataproxyIds
+                                                    // -> UserIds cannot be found in object.endpoints, so this should be safe
+                                                    let (dataproxy_id, _) =
+                                                        trace_err!(auth.check_permissions(&token))
+                                                            .map_err(|_| {
+                                                                tonic::Status::unauthenticated(
+                                                                    "DataProxy not authenticated",
+                                                                )
+                                                            })?;
+                                                    if object
+                                                        .endpoints
+                                                        .iter()
+                                                        .find(|ep| ep.id == dataproxy_id)
+                                                        .is_none()
+                                                    {
+                                                        trace!("Endpoint has no permission to replicate object");
+                                                        trace_err!(
+                                                            output_sender
+                                                                .send(Err(
+                                                                    tonic::Status::unauthenticated(
+                                                                        "Access denied",
+                                                                    )
+                                                                ))
+                                                                .await
+                                                        )?;
+                                                    } else {
+                                                        trace_err!(
+                                                            object_input_send
+                                                                .send(Ok(vec![(
+                                                                    object,
+                                                                    trace_err!(location
+                                                                        .ok_or_else(|| anyhow!(
+                                                                    "No object location found"
+                                                                )))?
+                                                                )]))
+                                                                .await
+                                                        )?;
+                                                    };
+                                                }
+                                            }
                                         }
                                     }
-                                    // TODO!
-                                    // - Error handling
-                                    // - Retry logic
-                                    trace_err!(
-                                        output_sender
-                                            .send(Err(tonic::Status::unimplemented(
-                                                "Retry and Error logic is not implemented yet",
-                                            )))
-                                            .await
-                                    )?;
                                 }
                                 Message::FinishMessage(_) => {
                                     trace_err!(object_ack_send.send(AckSync::Finish).await)?;

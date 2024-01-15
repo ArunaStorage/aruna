@@ -22,11 +22,14 @@ use aruna_rust_api::api::{
     storage::services::v2::UpdateReplicationStatusRequest,
 };
 use async_channel::{Receiver, Sender};
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use diesel_ulid::DieselUlid;
 use md5::{Digest, Md5};
 use sha2::Sha256;
-use std::{str::FromStr, sync::Arc};
+use std::{
+    str::FromStr,
+    sync::{Arc, Mutex},
+};
 use tokio::pin;
 use tracing::trace;
 
@@ -202,6 +205,19 @@ impl ReplicationHandler {
                         RandomState,
                     >,
                 > = Arc::new(DashMap::default());
+                for object in pull {
+                    let (object_sdx, object_rcv) = async_channel::bounded(100);
+                    object_handler_map.insert(
+                        object.to_string(),
+                        (
+                            object_sdx,
+                            object_rcv,
+                            Default::default(),
+                            Default::default(),
+                            Default::default(),
+                        ),
+                    );
+                }
 
                 trace!(?object_handler_map);
                 // Response handler:
@@ -229,24 +245,16 @@ impl ReplicationHandler {
                                     sync_sender_clone.send(RcvSync::Info(id, chunks)).await
                                 )?;
                                 // .. and a datachannel is created
+                                let block_list = trace_err!(block_list
+                                    .iter()
+                                    .map(|block| u8::try_from(*block)
+                                        .map_err(|_| anyhow!("Could not convert blocklist to u8")))
+                                    .collect::<Result<Vec<u8>>>())?
+                                .clone();
                                 // and stored in object_handler_map ...
-                                let (object_sdx, object_rcv) = async_channel::bounded(100);
-                                data_map.insert(
-                                    object_id.clone(),
-                                    (
-                                        object_sdx.clone(),
-                                        object_rcv.clone(),
-                                        chunks,
-                                        trace_err!(block_list
-                                            .iter()
-                                            .map(|block| u8::try_from(*block).map_err(|_| anyhow!(
-                                                "Could not convert blocklist to u8"
-                                            )))
-                                            .collect::<Result<Vec<u8>>>())?
-                                        .clone(),
-                                        raw_size,
-                                    ),
-                                );
+                                data_map.alter(&object_id, |_, (sdx, rcv, ..)| {
+                                    (sdx.clone(), rcv.clone(), chunks, block_list, raw_size)
+                                });
                                 // ... and then ObjectInfo gets acknowledged
                                 trace_err!(
                                     request_sender_clone
@@ -355,6 +363,9 @@ impl ReplicationHandler {
                 let backend = self.backend.clone();
                 let query_handler = query_handler.clone();
                 let request_sdx = request_sender.clone();
+                let finished_objects: Arc<DashMap<Direction, bool, RandomState>> =
+                    Arc::new(DashMap::default()); // Syncs if object is already synced
+                let finished_clone = finished_objects.clone();
                 tokio::spawn(async move {
                     // For now, every entry of the object_handler_map is proccessed
                     // consecutively
@@ -383,10 +394,12 @@ impl ReplicationHandler {
                                 };
                                 trace!(?object);
                                 // If no location is found, a new one is created
-                                let mut location = if let Some(location) = location {
+                                let mut location = if let Some(_) = location {
                                     // TODO:
                                     // - Skip if object was already synced
-                                    location
+                                    finished_clone.insert(Direction::Pull(object_id), true);
+                                    object_handler_map.remove(&id);
+                                    continue;
                                 } else {
                                     trace_err!(
                                         backend
@@ -452,8 +465,7 @@ impl ReplicationHandler {
                 // - If error, maybe set endpoint_status for each failed object to Error?
                 // -> Then we do not have to do this additional check while loading into backend
                 // -> User initiated replications then need to be implemented
-                //let finished_objects = trace_err!(trace_err!(tokio::spawn(async move {
-                let mut finished_objects = Vec::new();
+                //let mut finished_objects = Vec::new();
                 while let Ok(finished) = finish_receiver.recv().await {
                     // Collection ObjectInfo
                     let inits = finished.iter().filter_map(|msg| match msg {
@@ -471,9 +483,16 @@ impl ReplicationHandler {
                             .collect::<Vec<_>>()
                             .len();
                         if *chunks as usize != collected {
-                            trace!("Not all chunks received, aborting ...");
-                            // Send abort message if not all chunks were processed
-                            trace_err!(request_sender
+                            // Look if already synced
+                            if let Some(object) = finished_objects.get(&Direction::Pull(*object_id))
+                            {
+                                let (_, is_synced) = object.pair();
+                                if *is_synced {
+                                    continue;
+                                } else {
+                                    trace!("Not all chunks received, aborting ...");
+                                    // Send abort message if not all chunks were processed
+                                    trace_err!(request_sender
                                             .send(
                                                 PullReplicationRequest {
                                                     message: Some(
@@ -488,9 +507,30 @@ impl ReplicationHandler {
                                                 }
                                             )
                                             .await)?;
-                            return Err(anyhow!("Not all chunks recieved, aborting sync"));
+                                    return Err(anyhow!("Not all chunks recieved, aborting sync"));
+                                }
+                            } else {
+                                trace!("Not all chunks received, aborting ...");
+                                // Send abort message if not all chunks were processed
+                                trace_err!(request_sender
+                                            .send(
+                                                PullReplicationRequest {
+                                                    message: Some(
+                                                        Message::ErrorMessage(
+                                                            aruna_rust_api::api::dataproxy::services::v2::ErrorMessage {
+                                                                error: Some(
+                                                                    error_message::Error::Abort(aruna_rust_api::api::dataproxy::services::v2::Empty{})
+                                                                )
+                                                            }
+                                                        )
+                                                    )
+                                                }
+                                            )
+                                            .await)?;
+                                return Err(anyhow!("Not all chunks recieved, aborting sync"));
+                            }
                         }
-                        finished_objects.push(Direction::Pull(*object_id));
+                        finished_objects.insert(Direction::Pull(*object_id), false);
                     }
                     // Send finish message if everything was processed
                     trace_err!(
@@ -504,7 +544,14 @@ impl ReplicationHandler {
                     )?;
                 }
                 trace!("Writing results");
-                result.push((endpoint_id, finished_objects.clone()));
+                if let Some(map) = Arc::into_inner(finished_objects) {
+                    let (objects, _): (Vec<Direction>, Vec<bool>) = map.into_iter().unzip();
+                    let finished_objects = Vec::from_iter(objects);
+                    result.push((endpoint_id, finished_objects));
+                    // It is not that much of a problem if this does not get written, because it
+                    // will be skipped when the next batch gets processed by the replication
+                    // handler
+                };
             };
             // Write endpoint into results
             //result.push(*endpoint.key());
