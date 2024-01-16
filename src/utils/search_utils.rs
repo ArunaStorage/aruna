@@ -1,3 +1,4 @@
+use crate::caching::cache::Cache;
 use crate::database::connection::Database;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::object_dsl::Object;
@@ -26,13 +27,22 @@ pub async fn remove_from_search_index(
 /// Updates the resource search index in a background thread.
 pub async fn update_search_index(
     search_client: &Arc<MeilisearchClient>,
+    cache: &Arc<Cache>,
     index_updates: Vec<ObjectDocument>,
 ) {
-    // Remove confidential/workspace objects
+    // Remove confidential/workspace objects and add stats
     let final_updates = index_updates
         .into_iter()
-        .filter_map(|od| match od.data_class {
-            DataClass::PUBLIC | DataClass::PRIVATE => Some(od),
+        .filter_map(|mut od| match od.data_class {
+            DataClass::PUBLIC | DataClass::PRIVATE => {
+                if od.object_type_id < 3 {
+                    if let Some(stats) = cache.get_object_stats(&od.id) {
+                        od.count = stats.count;
+                        od.size = stats.size;
+                    }
+                }
+                Some(od)
+            }
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -56,6 +66,7 @@ pub async fn update_search_index(
 /// chunks of 100.000 elements.
 pub async fn full_sync_search_index(
     database_conn: Arc<Database>,
+    cache: Arc<Cache>,
     search_client: Arc<MeilisearchClient>,
 ) -> anyhow::Result<()> {
     let client = database_conn.get_client().await?; // No transaction; only read
@@ -64,7 +75,13 @@ pub async fn full_sync_search_index(
         .into_iter()
         .filter(|o| o.data_class == DataClass::PUBLIC || o.data_class == DataClass::PRIVATE)
         .filter(|o| o.object_status != ObjectStatus::DELETED)
-        .map(|o| o.into())
+        .map(|mut o| {
+            if let Some(stats) = cache.get_object_stats(&o.id) {
+                o.count = stats.count;
+                o.content_len = stats.size;
+            }
+            o.into()
+        })
         .collect_vec();
 
     // Update search index in chunks of 100.000 Objects

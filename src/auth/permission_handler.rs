@@ -62,6 +62,7 @@ impl PermissionHandler {
                         dbg!(&ctx);
                         match ctx.variant {
                             ContextVariant::SelfUser
+                            | ContextVariant::Registered
                             | ContextVariant::GlobalProxy
                             | ContextVariant::Resource(_) => {}
                             _ => return Err(tonic::Status::invalid_argument(

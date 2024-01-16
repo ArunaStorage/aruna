@@ -2,7 +2,7 @@ use postgres_types::ToSql;
 
 use crate::database::{dsls::object_dsl::ObjectWithRelations, enums::ObjectType};
 
-pub fn create_multi_query(vec: &Vec<&(dyn ToSql + Sync)>) -> String {
+pub fn create_multi_query(vec: &[&(dyn ToSql + Sync)]) -> String {
     let mut result = "(".to_string();
     for count in 1..vec.len() {
         result.push_str(format!("${count},").as_str());

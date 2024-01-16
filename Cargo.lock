@@ -100,6 +100,8 @@ dependencies = [
  "deadpool-postgres",
  "diesel-ulid",
  "dotenvy",
+ "evmap",
+ "evmap-derive",
  "futures",
  "hex",
  "hmac",
@@ -1306,6 +1308,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "evmap"
+version = "10.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e3ea06a83f97d3dc2eb06e51e7a729b418f0717a5558a5c870e3d5156dc558d"
+dependencies = [
+ "hashbag",
+ "slab",
+ "smallvec",
+]
+
+[[package]]
+name = "evmap-derive"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "332b1937705b7ed2fce76837024e9ae6f41cd2ad18a32c052de081f89982561b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "fallible-iterator"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1546,6 +1570,12 @@ dependencies = [
  "tokio-util",
  "tracing",
 ]
+
+[[package]]
+name = "hashbag"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3d44c238cb72d3e8993a30c32e97b2b2c2c1a12388603f28c4f19a44c4396bc"
 
 [[package]]
 name = "hashbrown"

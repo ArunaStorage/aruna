@@ -89,6 +89,7 @@ impl DatasetService for DatasetServiceImpl {
         // Add or update dataset in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(dataset.object.clone())],
         )
         .await;
@@ -127,15 +128,10 @@ impl DatasetService for DatasetServiceImpl {
             "Unauthorized"
         );
 
-        let res = self
-            .cache
-            .get_object(&dataset_id)
-            .ok_or_else(|| tonic::Status::not_found("Dataset not found"))?;
-
-        let generic_dataset: generic_resource::Resource = res.into();
+        let proto_dataset = query(&self.cache, &dataset_id)?;
 
         let response = GetDatasetResponse {
-            dataset: Some(generic_dataset.into_inner()?),
+            dataset: Some(proto_dataset.into_inner()?),
         };
 
         return_with_log!(response);
@@ -163,10 +159,7 @@ impl DatasetService for DatasetServiceImpl {
 
         let res: Result<Vec<Dataset>> = ids
             .iter()
-            .map(|id| -> Result<Dataset> {
-                let ds = query(&self.cache, id)?;
-                ds.into_inner()
-            })
+            .map(|id| -> Result<Dataset> { query(&self.cache, id)?.into_inner() })
             .collect();
 
         let response = GetDatasetsResponse { datasets: res? };
@@ -233,16 +226,18 @@ impl DatasetService for DatasetServiceImpl {
             "Unauthorized"
         );
 
-        let dataset = tonic_internal!(
+        let mut dataset = tonic_internal!(
             self.database_handler.update_name(request).await,
             "Internal database error."
         );
         self.cache
             .upsert_object(&dataset.object.id, dataset.clone());
+        self.cache.add_stats_to_object(&mut dataset);
 
         // Add or update dataset in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(dataset.object.clone())],
         )
         .await;
@@ -275,16 +270,18 @@ impl DatasetService for DatasetServiceImpl {
             "Unauthorized"
         );
 
-        let dataset = tonic_internal!(
+        let mut dataset = tonic_internal!(
             self.database_handler.update_description(request).await,
             "Internal database error."
         );
         self.cache
             .upsert_object(&dataset.object.id, dataset.clone());
+        self.cache.add_stats_to_object(&mut dataset);
 
         // Add or update dataset in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(dataset.object.clone())],
         )
         .await;
@@ -296,6 +293,7 @@ impl DatasetService for DatasetServiceImpl {
         };
         return_with_log!(response);
     }
+
     async fn update_dataset_key_values(
         &self,
         request: Request<UpdateDatasetKeyValuesRequest>,
@@ -311,21 +309,23 @@ impl DatasetService for DatasetServiceImpl {
         let dataset_id = tonic_invalid!(request.get_id(), "Invalid dataset id.");
         let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::WRITE, true);
 
-        let user_id = tonic_auth!(
+        tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
-        let dataset = tonic_internal!(
-            self.database_handler.update_keyvals(request, user_id).await,
+        let mut dataset = tonic_internal!(
+            self.database_handler.update_keyvals(request).await,
             "Internal database error."
         );
         self.cache
             .upsert_object(&dataset.object.id, dataset.clone());
+        self.cache.add_stats_to_object(&mut dataset);
 
         // Add or update dataset in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(dataset.object.clone())],
         )
         .await;
@@ -359,16 +359,18 @@ impl DatasetService for DatasetServiceImpl {
             "Unauthorized"
         );
 
-        let dataset = tonic_internal!(
+        let mut dataset = tonic_internal!(
             self.database_handler.update_dataclass(request).await,
             "Internal database error."
         );
         self.cache
             .upsert_object(&dataset.object.id, dataset.clone());
+        self.cache.add_stats_to_object(&mut dataset);
 
         // Add or update dataset in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(dataset.object.clone())],
         )
         .await;
@@ -380,6 +382,7 @@ impl DatasetService for DatasetServiceImpl {
         };
         return_with_log!(response);
     }
+
     async fn snapshot_dataset(
         &self,
         request: Request<SnapshotDatasetRequest>,
@@ -412,18 +415,18 @@ impl DatasetService for DatasetServiceImpl {
         // Add or update dataset in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(dataset[0].object.clone())],
         )
         .await;
 
-        let dataset: generic_resource::Resource = self
+        let proto_dataset: generic_resource::Resource = self
             .cache
-            .get_object(&new_id)
-            .ok_or_else(|| tonic::Status::not_found("Dataset not found"))?
-            .into();
+            .get_protobuf_object(&new_id)
+            .ok_or_else(|| tonic::Status::not_found("Dataset not found"))?;
 
         let response = SnapshotDatasetResponse {
-            dataset: Some(dataset.into_inner()?),
+            dataset: Some(proto_dataset.into_inner()?),
         };
         return_with_log!(response);
     }
@@ -440,19 +443,31 @@ impl DatasetService for DatasetServiceImpl {
         );
 
         let request = LicenseUpdate::Dataset(request.into_inner());
-        let project_id = tonic_invalid!(request.get_id(), "Invalid dataset id");
-        let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, false);
+        let dataset_id = tonic_invalid!(request.get_id(), "Invalid dataset id");
+        let ctx = Context::res_ctx(dataset_id, DbPermissionLevel::WRITE, false);
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
-        let project = tonic_invalid!(
+        let mut dataset = tonic_invalid!(
             self.database_handler.update_license(request).await,
             "Invalid update license request"
         );
-        let generic_resource: generic_resource::Resource = project.into();
+        self.cache
+            .upsert_object(&dataset.object.id, dataset.clone());
+        self.cache.add_stats_to_object(&mut dataset);
+
+        // Add or update dataset in search index
+        search_utils::update_search_index(
+            &self.search_client,
+            &self.cache,
+            vec![ObjectDocument::from(dataset.object.clone())],
+        )
+        .await;
+
+        let generic_resource: generic_resource::Resource = dataset.into();
         let response = UpdateDatasetLicensesResponse {
             dataset: Some(generic_resource.into_inner()?),
         };

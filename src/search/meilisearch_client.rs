@@ -5,10 +5,13 @@ use crate::database::{
 use anyhow::bail;
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource::Resource, Collection, Dataset, KeyValue as ApiKeyValue,
-    KeyValueVariant as ApiKeyValueVariant, Object, Project, Status as ApiStatus,
+    KeyValueVariant as ApiKeyValueVariant, Object, Project, Stats, Status as ApiStatus,
 };
 use diesel_ulid::DieselUlid;
-use meilisearch_sdk::{indexes::Index, settings::PaginationSetting, task_info::TaskInfo, Client};
+use log::debug;
+use meilisearch_sdk::{
+    indexes::Index, settings::PaginationSetting, task_info::TaskInfo, Client, Task,
+};
 use prost_wkt_types::Timestamp;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{fmt::Display, str::FromStr};
@@ -42,7 +45,8 @@ pub struct ObjectDocument {
     pub status: ObjectStatus,
     pub name: String,
     pub description: String,
-    pub size: i64,             // Yay or nay?
+    pub count: i64,
+    pub size: i64,
     pub labels: Vec<KeyValue>, // Without specific internal labels
     pub data_class: DataClass,
     pub created_at: i64, // Converted to UNIX timestamp for filtering/sorting
@@ -71,6 +75,7 @@ impl From<DbObject> for ObjectDocument {
             status: db_object.object_status,
             name: db_object.name,
             description: db_object.description,
+            count: db_object.count,
             size: db_object.content_len,
             labels: filtered_labels,
             data_class: db_object.data_class,
@@ -83,16 +88,14 @@ impl From<DbObject> for ObjectDocument {
 }
 
 // Conversion from ObjectDocument into generic API resource.
-impl TryFrom<ObjectDocument> for Resource {
-    type Error = anyhow::Error;
-
-    fn try_from(index_object: ObjectDocument) -> Result<Self, Self::Error> {
-        Ok(match index_object.object_type {
+impl From<ObjectDocument> for Resource {
+    fn from(index_object: ObjectDocument) -> Self {
+        match index_object.object_type {
             ObjectType::PROJECT => Resource::Project(index_object.into()), // ObjectType::PROJECT
             ObjectType::COLLECTION => Resource::Collection(index_object.into()), // ObjectType::COLLECTION
             ObjectType::DATASET => Resource::Dataset(index_object.into()), // ObjectType::DATASET
             ObjectType::OBJECT => Resource::Object(index_object.into()),   // ObjectType::OBJECT
-        })
+        }
     }
 }
 // Conversion from generic API resource into ObjectDocument.
@@ -118,7 +121,11 @@ impl From<ObjectDocument> for Project {
             description: object_document.description,
             key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
-            stats: None,
+            stats: Some(Stats {
+                count: object_document.count,
+                size: object_document.size,
+                last_updated: None,
+            }),
             data_class: object_document.data_class.into(),
             created_at: Some(Timestamp {
                 seconds: object_document.created_at,
@@ -138,6 +145,13 @@ impl TryFrom<Project> for ObjectDocument {
     type Error = anyhow::Error;
 
     fn try_from(project: Project) -> Result<Self, Self::Error> {
+        // Evaluate provided object stats
+        let stats = project.stats.unwrap_or(Stats {
+            count: 1,
+            size: 0,
+            last_updated: None,
+        });
+
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&project.id)?,
@@ -146,11 +160,8 @@ impl TryFrom<Project> for ObjectDocument {
             status: ObjectStatus::try_from(project.status)?,
             name: project.name,
             description: project.description,
-            size: if let Some(stats) = project.stats {
-                stats.size
-            } else {
-                0
-            },
+            count: stats.count,
+            size: stats.size,
             labels: convert_proto_to_key_value(project.key_values)?,
             data_class: DataClass::try_from(project.data_class)?,
             created_at: project.created_at.unwrap_or_default().seconds,
@@ -170,7 +181,11 @@ impl From<ObjectDocument> for Collection {
             description: object_document.description,
             key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
-            stats: None,
+            stats: Some(Stats {
+                count: object_document.count,
+                size: object_document.size,
+                last_updated: None,
+            }),
             data_class: object_document.data_class.into(),
             created_at: Some(Timestamp {
                 seconds: object_document.created_at,
@@ -190,6 +205,13 @@ impl TryFrom<Collection> for ObjectDocument {
     type Error = anyhow::Error;
 
     fn try_from(collection: Collection) -> Result<Self, Self::Error> {
+        // Evaluate provided object stats
+        let stats = collection.stats.unwrap_or(Stats {
+            count: 1,
+            size: 0,
+            last_updated: None,
+        });
+
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&collection.id)?,
@@ -198,11 +220,8 @@ impl TryFrom<Collection> for ObjectDocument {
             status: ObjectStatus::try_from(collection.status)?,
             name: collection.name,
             description: collection.description,
-            size: if let Some(stats) = collection.stats {
-                stats.size
-            } else {
-                0
-            },
+            count: stats.count,
+            size: stats.size,
             labels: convert_proto_to_key_value(collection.key_values)?,
             data_class: DataClass::try_from(collection.data_class)?,
             created_at: collection.created_at.unwrap_or_default().seconds,
@@ -222,7 +241,11 @@ impl From<ObjectDocument> for Dataset {
             description: object_document.description,
             key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
-            stats: None,
+            stats: Some(Stats {
+                count: object_document.count,
+                size: object_document.size,
+                last_updated: None,
+            }),
             data_class: object_document.data_class.into(),
             created_at: Some(Timestamp {
                 seconds: object_document.created_at,
@@ -242,6 +265,13 @@ impl TryFrom<Dataset> for ObjectDocument {
     type Error = anyhow::Error;
 
     fn try_from(dataset: Dataset) -> Result<Self, Self::Error> {
+        // Evaluate provided object stats
+        let stats = dataset.stats.unwrap_or(Stats {
+            count: 1,
+            size: 0,
+            last_updated: None,
+        });
+
         // Build and return ObjectDocument
         Ok(ObjectDocument {
             id: DieselUlid::from_str(&dataset.id)?,
@@ -250,11 +280,8 @@ impl TryFrom<Dataset> for ObjectDocument {
             status: ObjectStatus::try_from(dataset.status)?,
             name: dataset.name,
             description: dataset.description,
-            size: if let Some(stats) = dataset.stats {
-                stats.size
-            } else {
-                0
-            },
+            count: stats.count,
+            size: stats.size,
             labels: convert_proto_to_key_value(dataset.key_values)?,
             data_class: DataClass::try_from(dataset.data_class)?,
             created_at: dataset.created_at.unwrap_or_default().seconds,
@@ -303,6 +330,7 @@ impl TryFrom<Object> for ObjectDocument {
             status: ObjectStatus::try_from(object.status)?,
             name: object.name,
             description: object.description,
+            count: 1,
             size: object.content_len,
             labels: convert_proto_to_key_value(object.key_values)?,
             data_class: DataClass::try_from(object.data_class)?,
@@ -378,8 +406,10 @@ impl MeilisearchClient {
         primary_key: Option<&str>, // Has to be unique index document attribute, so most likely 'id'
     ) -> anyhow::Result<Index> {
         Ok(if let Ok(index) = self.client.get_index(index_name).await {
+            debug!("Re-use already existing search index: {}", index_name);
             index
         } else {
+            debug!("Create new search index: {}", index_name);
             // Create index in Meilisearch server
             let index = match self
                 .client
@@ -404,13 +434,14 @@ impl MeilisearchClient {
             };
 
             // Set the filterable attributes of the index
-            index
+            match index
                 .set_filterable_attributes([
                     "name",
                     "description",    // e.g. description = ""
-                    "object_type",    //e.g. = OBJECT or IN [PROJECT, DATASET]
+                    "object_type",    // e.g. = OBJECT or IN [PROJECT, DATASET]
                     "object_type_id", // e.g. object_type = 1 or object_type > 2
                     "status",         // e.g. = "AVAILABLE" or IN [AVAILABLE, ERROR]
+                    "count",          // e.g. count > 1
                     "size",           // e.g. size > 12345
                     "labels.key",
                     "labels.value",
@@ -422,38 +453,62 @@ impl MeilisearchClient {
                 ])
                 .await?
                 .wait_for_completion(&self.client, None, None)
-                .await?;
+                .await?
+            {
+                Task::Succeeded { .. } => {}
+                _ => bail!("Search index creation failed: Could not set filterable attributes"),
+            };
 
             // Set the sortable attributes of the index
             //TODO: Implement in API
-            index
+            match index
                 .set_sortable_attributes(["size", "object_type_id", "created_at"])
                 .await?
                 .wait_for_completion(&self.client, None, None)
-                .await?;
+                .await?
+            {
+                Task::Succeeded { .. } => {}
+                _ => bail!("Search index creation failed: Could not set sortable attributes"),
+            };
 
-            //ToDo: Exclude fields from search?
+            //TODO: Exclude fields from search?
             //index.set_searchable_attributes(&[]).await?;
 
-            index
+            // Set pagination configuration
+            match index
                 .set_pagination(PaginationSetting {
-                    max_total_hits: 100,
+                    max_total_hits: std::u32::MAX as usize,
                 })
                 .await?
                 .wait_for_completion(&self.client, None, None)
-                .await?;
+                .await?
+            {
+                Task::Succeeded { .. } => {}
+                _ => bail!("Search index creation failed: Could not set pagination configuration"),
+            };
 
             index
         })
     }
 
     ///ToDo: Rust Doc
-    pub async fn clear_index(&self, index: MeilisearchIndexes) -> anyhow::Result<TaskInfo> {
+    pub async fn delete_index(&self, index: MeilisearchIndexes) -> anyhow::Result<()> {
         // Extract index name of enum variant
         let index_name = index.to_string();
 
-        // Delete documents to search
-        Ok(self.client.index(index_name).delete_all_documents().await?)
+        // Start deletion task in Meilisearch
+        let deletion_result = self
+            .client
+            .delete_index(index_name)
+            .await?
+            .wait_for_completion(&self.client, None, None)
+            .await?;
+
+        // Evaluate deletion task result
+        match deletion_result {
+            Task::Succeeded { .. } => Ok(()),
+            _ => bail!("Search index deletion failed."),
+        }
     }
 
     ///ToDo: Rust Doc

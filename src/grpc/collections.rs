@@ -90,6 +90,7 @@ impl CollectionService for CollectionServiceImpl {
         // Add or update collection in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(collection.object.clone())],
         )
         .await;
@@ -128,15 +129,9 @@ impl CollectionService for CollectionServiceImpl {
             "Unauthorized"
         );
 
-        let res = self
-            .cache
-            .get_object(&collection_id)
-            .ok_or_else(|| tonic::Status::not_found("Collection not found"))?;
-
-        let generic_collection: generic_resource::Resource = res.into();
-
+        let res = query(&self.cache, &collection_id)?;
         let response = GetCollectionResponse {
-            collection: Some(generic_collection.into_inner()?),
+            collection: Some(res.into_inner()?),
         };
 
         return_with_log!(response);
@@ -164,10 +159,7 @@ impl CollectionService for CollectionServiceImpl {
 
         let res: Result<Vec<Collection>> = ids
             .iter()
-            .map(|id| -> Result<Collection> {
-                let coll = query(&self.cache, id)?;
-                coll.into_inner()
-            })
+            .map(|id| -> Result<Collection> { query(&self.cache, id)?.into_inner() })
             .collect();
 
         let response = GetCollectionsResponse { collections: res? };
@@ -233,16 +225,18 @@ impl CollectionService for CollectionServiceImpl {
             "Unauthorized"
         );
 
-        let collection = tonic_internal!(
+        let mut collection = tonic_internal!(
             self.database_handler.update_name(request).await,
             "Internal database error."
         );
         self.cache
             .upsert_object(&collection.object.id, collection.clone());
+        self.cache.add_stats_to_object(&mut collection);
 
         // Add or update collection in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(collection.object.clone())],
         )
         .await;
@@ -275,16 +269,18 @@ impl CollectionService for CollectionServiceImpl {
             "Unauthorized"
         );
 
-        let collection = tonic_internal!(
+        let mut collection = tonic_internal!(
             self.database_handler.update_description(request).await,
             "Internal database error."
         );
         self.cache
             .upsert_object(&collection.object.id, collection.clone());
+        self.cache.add_stats_to_object(&mut collection);
 
         // Add or update collection in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(collection.object.clone())],
         )
         .await;
@@ -312,21 +308,23 @@ impl CollectionService for CollectionServiceImpl {
         let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id.");
         let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, true);
 
-        let user_id = tonic_auth!(
+        tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
-        let collection = tonic_internal!(
-            self.database_handler.update_keyvals(request, user_id).await,
+        let mut collection = tonic_internal!(
+            self.database_handler.update_keyvals(request).await,
             "Internal database error."
         );
         self.cache
             .upsert_object(&collection.object.id, collection.clone());
+        self.cache.add_stats_to_object(&mut collection);
 
         // Add or update collection in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(collection.object.clone())],
         )
         .await;
@@ -359,16 +357,18 @@ impl CollectionService for CollectionServiceImpl {
             "Unauthorized"
         );
 
-        let collection = tonic_internal!(
+        let mut collection = tonic_internal!(
             self.database_handler.update_dataclass(request).await,
             "Internal database error."
         );
         self.cache
             .upsert_object(&collection.object.id, collection.clone());
+        self.cache.add_stats_to_object(&mut collection);
 
         // Add or update collection in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(collection.object.clone())],
         )
         .await;
@@ -413,13 +413,12 @@ impl CollectionService for CollectionServiceImpl {
         }
 
         // Add or update collection in search index
-        search_utils::update_search_index(&self.search_client, search_update).await;
+        search_utils::update_search_index(&self.search_client, &self.cache, search_update).await;
 
         let collection: generic_resource::Resource = self
             .cache
-            .get_object(&new_id)
-            .ok_or_else(|| tonic::Status::not_found("Collection not found"))?
-            .into();
+            .get_protobuf_object(&new_id)
+            .ok_or_else(|| tonic::Status::not_found("Collection not found"))?;
 
         let response = SnapshotCollectionResponse {
             collection: Some(collection.into_inner()?),
@@ -439,19 +438,31 @@ impl CollectionService for CollectionServiceImpl {
         );
 
         let request = LicenseUpdate::Collection(request.into_inner());
-        let project_id = tonic_invalid!(request.get_id(), "Invalid collection id");
-        let ctx = Context::res_ctx(project_id, DbPermissionLevel::WRITE, false);
+        let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id");
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, false);
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
         );
 
-        let project = tonic_invalid!(
+        let mut collection = tonic_invalid!(
             self.database_handler.update_license(request).await,
             "Invalid update license request"
         );
-        let generic_resource: generic_resource::Resource = project.into();
+        self.cache
+            .upsert_object(&collection.object.id, collection.clone());
+        self.cache.add_stats_to_object(&mut collection);
+
+        // Add or update collection in search index
+        search_utils::update_search_index(
+            &self.search_client,
+            &self.cache,
+            vec![ObjectDocument::from(collection.object.clone())],
+        )
+        .await;
+
+        let generic_resource: generic_resource::Resource = collection.into();
         let response = UpdateCollectionLicensesResponse {
             collection: Some(generic_resource.into_inner()?),
         };

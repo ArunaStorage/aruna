@@ -69,6 +69,7 @@ impl RelationsService for RelationsServiceImpl {
         // Add or update object in search index
         search_utils::update_search_index(
             &self.search_client,
+            &self.cache,
             vec![ObjectDocument::from(object.object.clone())],
         )
         .await;
