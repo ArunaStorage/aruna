@@ -48,7 +48,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
                 let (access_key, secret_key) = trace_err!(
                     self.cache.clone().create_or_get_secret(user, tid).await
                 )
-                    .map_err(|_| tonic::Status::unauthenticated("Unable to authenticate user"))?;
+                .map_err(|_| tonic::Status::unauthenticated("Unable to authenticate user"))?;
 
                 Ok(tonic::Response::new(GetCredentialsResponse {
                     access_key,
@@ -65,7 +65,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
             Err(tonic::Status::unauthenticated(
                 "Unable to authenticate user",
             ))
-        }
+        };
     }
 
     #[tracing::instrument(level = "trace", skip(self, _request))]

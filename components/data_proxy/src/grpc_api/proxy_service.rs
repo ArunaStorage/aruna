@@ -91,6 +91,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
         let (object_output_send, object_output_rcv) = tokio::sync::mpsc::channel(255);
         // Error and retry handling for ArunaStreamReadWriter
         let (retry_send, retry_rcv) = async_channel::bounded(1);
+        //let (finished_send, finished_rcv) = async_channel::bounded(1);
 
         // Recieving loop
         let proxy_replication_service = self.clone();
@@ -110,6 +111,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                             .check_permissions(init, token.clone())
                                             .await
                                     );
+                                    // trace_err!(finished_send.send(false).await)?;
                                     trace_err!(object_input_send.send(msg).await)?;
                                 }
                                 Message::InfoAckMessage(InfoAckMessage { object_id }) => {
@@ -150,8 +152,6 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                                     trace_err!(proxy_replication_service
                                                         .cache
                                                         .get_resource(&ulid))?;
-                                                // TODO:
-                                                // - Check permissions for dataproxy
                                                 if let Some(auth) = proxy_replication_service
                                                     .cache
                                                     .auth
@@ -203,6 +203,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                     }
                                 }
                                 Message::FinishMessage(_) => {
+                                    // trace_err!(finished_send.send(true).await)?;
                                     trace_err!(object_ack_send.send(AckSync::Finish).await)?;
                                     return Ok(());
                                 }
@@ -251,7 +252,17 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                         // Technically no error, because rcv was closed and just has one init msg
                         // therefore closed means finished
                         trace!(?err);
-                        return Ok(());
+                        // if let Ok(finished) = finished_rcv.recv().await {
+                        //     if finished {
+                        //         trace!("finished called in match statement");
+                        //         return Ok(());
+                        //     } else {
+                        //         return Err(anyhow!("Receiving from closed channel"));
+                        //     }
+                        // } else {
+                        //     return Err(anyhow!("Receiving from closed channel"));
+                        // }
+                        return Err(anyhow!("Receiving from closed channel"));
                     }
                     Ok(Err(err)) => {
                         error!("{err}");
@@ -270,7 +281,17 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                     Ok(Ok(objects)) => {
                         // Store access-checked objects
                         let mut stored_objects: HashMap<DieselUlid, usize> = HashMap::default();
+                        //let mut finished = false; // Needed to not store state
                         for (object, location) in objects {
+                            // if !finished {
+                            //     if let Ok(finished_rcv) = finished_rcv.recv().await {
+                            //         finished = finished_rcv;
+                            //     }
+                            // } else {
+                            //     trace!("finished called in object handling loop");
+                            //     return Ok(());
+                            // }
+
                             trace!(?object, ?location);
                             // Get footer
                             let footer = match proxy_replication_service

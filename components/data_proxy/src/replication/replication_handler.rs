@@ -201,7 +201,14 @@ impl ReplicationHandler {
                 let object_handler_map: Arc<
                     DashMap<
                         String,
-                        (Sender<DataChunk>, Receiver<DataChunk>, i64, Vec<u8>, i64),
+                        (
+                            Sender<DataChunk>,
+                            Receiver<DataChunk>,
+                            i64,
+                            Vec<u8>,
+                            i64,
+                            bool,
+                        ),
                         RandomState,
                     >,
                 > = Arc::new(DashMap::default());
@@ -210,11 +217,12 @@ impl ReplicationHandler {
                     object_handler_map.insert(
                         object.to_string(),
                         (
-                            object_sdx,
-                            object_rcv,
+                            object_sdx.clone(),
+                            object_rcv.clone(),
                             Default::default(),
                             Default::default(),
                             Default::default(),
+                            false,
                         ),
                     );
                 }
@@ -252,9 +260,18 @@ impl ReplicationHandler {
                                     .collect::<Result<Vec<u8>>>())?
                                 .clone();
                                 // and stored in object_handler_map ...
-                                data_map.alter(&object_id, |_, (sdx, rcv, ..)| {
-                                    (sdx.clone(), rcv.clone(), chunks, block_list, raw_size)
-                                });
+                                {
+                                    data_map.alter(&object_id, |_, (sdx, rcv, ..)| {
+                                        (
+                                            sdx,
+                                            rcv,
+                                            chunks.clone(),
+                                            block_list.clone(),
+                                            raw_size.clone(),
+                                            true,
+                                        )
+                                    });
+                                }
                                 // ... and then ObjectInfo gets acknowledged
                                 trace_err!(
                                     request_sender_clone
@@ -370,14 +387,16 @@ impl ReplicationHandler {
                     // For now, every entry of the object_handler_map is proccessed
                     // consecutively
                     while start_receiver.recv().await.is_ok() {
+                        let mut batch_counter = 0;
                         loop {
+                            batch_counter += 1;
                             let mut batch = Vec::new();
                             for entry in object_handler_map.iter() {
                                 let (key, value) = entry.pair();
                                 batch.push((key.clone(), value.clone()));
                             }
                             for entry in batch.clone() {
-                                let (id, (_, rcv, chunks, blocklist, raw_size)) = {
+                                let (id, (_, rcv, chunks, blocklist, raw_size, synced)) = {
                                     let (key, value) = entry;
                                     (key.clone(), value.clone())
                                 };
@@ -397,20 +416,24 @@ impl ReplicationHandler {
                                 let mut location = if let Some(_) = location {
                                     // TODO:
                                     // - Skip if object was already synced
-                                    finished_clone.insert(Direction::Pull(object_id), true);
+                                    finished_clone.insert(Direction::Pull(object_id.clone()), true);
                                     object_handler_map.remove(&id);
                                     continue;
                                 } else {
-                                    trace_err!(
-                                        backend
-                                            .initialize_location(
-                                                &object,
-                                                Some(raw_size),
-                                                None,
-                                                false
-                                            )
-                                            .await
-                                    )?
+                                    if !synced {
+                                        continue;
+                                    } else {
+                                        trace_err!(
+                                            backend
+                                                .initialize_location(
+                                                    &object,
+                                                    Some(raw_size),
+                                                    None,
+                                                    false
+                                                )
+                                                .await
+                                        )?
+                                    }
                                 };
                                 trace!("Load into backend");
                                 // Send Chunks get processed
@@ -446,12 +469,30 @@ impl ReplicationHandler {
                                         })
                                         .await
                                 )?;
-                                object_handler_map.remove(&id);
+                                {
+                                    object_handler_map.remove(&id);
+                                }
                                 trace!( msg="Removed entry from map", map = ?object_handler_map);
                             }
                             if object_handler_map.is_empty() {
                                 trace!("Object handler map is empty, finishing replication... ");
                                 // Check if all chunks found in object infos are also processed
+                                trace_err!(sync_sender.send(RcvSync::Finish).await)?;
+                                break;
+                            } else if batch_counter > 20 {
+                                trace_err!(request_sdx.send(
+                                    PullReplicationRequest {
+                                                    message: Some(
+                                                        Message::ErrorMessage(
+                                                            aruna_rust_api::api::dataproxy::services::v2::ErrorMessage {
+                                                                error: Some(
+                                                                    error_message::Error::Abort(aruna_rust_api::api::dataproxy::services::v2::Empty{})
+                                                                )
+                                                            }
+                                                        )
+                                                    )
+                                                }
+                                        ).await)?;
                                 trace_err!(sync_sender.send(RcvSync::Finish).await)?;
                                 break;
                             }
