@@ -22,14 +22,11 @@ use aruna_rust_api::api::{
     storage::services::v2::UpdateReplicationStatusRequest,
 };
 use async_channel::{Receiver, Sender};
-use dashmap::{DashMap, DashSet};
+use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use md5::{Digest, Md5};
 use sha2::Sha256;
-use std::{
-    str::FromStr,
-    sync::{Arc, Mutex},
-};
+use std::{str::FromStr, sync::Arc};
 use tokio::pin;
 use tracing::trace;
 

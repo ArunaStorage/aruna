@@ -24,9 +24,12 @@ use aruna_rust_api::api::dataproxy::services::v2::{
 use async_channel::{Receiver, Sender};
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    //sync::Mutex,
+};
 use std::{str::FromStr, sync::Arc};
-use tokio::pin;
+use tokio::{pin, sync::Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::Streaming;
 use tracing::{error, info_span, trace, Instrument};
@@ -90,8 +93,10 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
         // Handles output stream
         let (object_output_send, object_output_rcv) = tokio::sync::mpsc::channel(255);
         // Error and retry handling for ArunaStreamReadWriter
-        let (retry_send, retry_rcv) = async_channel::bounded(1);
-        //let (finished_send, finished_rcv) = async_channel::bounded(1);
+        let (retry_send, retry_rcv) = async_channel::bounded(5);
+
+        let finished_state_handler = Arc::new(Mutex::new(false));
+        let finished_state_clone = finished_state_handler.clone();
 
         // Recieving loop
         let proxy_replication_service = self.clone();
@@ -203,6 +208,10 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                     }
                                 }
                                 Message::FinishMessage(_) => {
+                                    {
+                                        let mut lock = finished_state_clone.lock().await;
+                                        *lock = true;
+                                    }
                                     // trace_err!(finished_send.send(true).await)?;
                                     trace_err!(object_ack_send.send(AckSync::Finish).await)?;
                                     return Ok(());
@@ -252,17 +261,12 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                         // Technically no error, because rcv was closed and just has one init msg
                         // therefore closed means finished
                         trace!(?err);
-                        // if let Ok(finished) = finished_rcv.recv().await {
-                        //     if finished {
-                        //         trace!("finished called in match statement");
-                        //         return Ok(());
-                        //     } else {
-                        //         return Err(anyhow!("Receiving from closed channel"));
-                        //     }
-                        // } else {
-                        //     return Err(anyhow!("Receiving from closed channel"));
-                        // }
-                        return Err(anyhow!("Receiving from closed channel"));
+                        if *finished_state_handler.lock().await {
+                            trace!("finished called in match statement");
+                            return Ok(());
+                        } else {
+                            return Err(anyhow!("Receiving from closed channel"));
+                        }
                     }
                     Ok(Err(err)) => {
                         error!("{err}");
@@ -283,6 +287,12 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                         let mut stored_objects: HashMap<DieselUlid, usize> = HashMap::default();
                         //let mut finished = false; // Needed to not store state
                         for (object, location) in objects {
+                            if *finished_state_handler.lock().await {
+                                //if *finished {
+                                trace!("finished called in match statement");
+                                return Ok(());
+                                //}
+                            }
                             // if !finished {
                             //     if let Ok(finished_rcv) = finished_rcv.recv().await {
                             //         finished = finished_rcv;
