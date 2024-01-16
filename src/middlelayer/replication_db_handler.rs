@@ -296,6 +296,9 @@ impl DatabaseHandler {
         endpoint_info.status = Some(status);
         Object::update_endpoints(endpoint_id, endpoint_info.clone(), vec![object_id], &client)
             .await?;
+        // Update cache
+        let updated = Object::get_object_with_relations(&object_id, &client).await?;
+        self.cache.upsert_object(&object_id, updated);
         Ok(())
     }
 }
