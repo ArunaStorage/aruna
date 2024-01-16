@@ -293,11 +293,6 @@ impl S3Backend {
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_random_bucket(&self) -> String {
-        let bucket: String = thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(2)
-            .map(char::from)
-            .collect();
-        format!("{}-{}", self.endpoint_id, bucket).to_ascii_lowercase()
+        format!("{}-{:x}", self.endpoint_id, rand::thread_rng().gen::<u8>()).to_ascii_lowercase()
     }
 }
