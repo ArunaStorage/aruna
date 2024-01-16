@@ -7,7 +7,6 @@ use aruna_rust_api::api::dataproxy::services::v2::{
 use bytes::{BufMut, BytesMut};
 use md5::{Digest, Md5};
 use tokio::sync::mpsc::Sender as TokioSender;
-use tracing::trace;
 
 use crate::trace_err;
 

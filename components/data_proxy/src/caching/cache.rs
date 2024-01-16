@@ -5,7 +5,7 @@ use super::{
 use crate::caching::grpc_query_handler::sort_objects;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::replication::replication_handler::ReplicationMessage;
-use crate::structs::{DbPermissionLevel, Endpoint, TypedRelation};
+use crate::structs::{DbPermissionLevel, TypedRelation};
 use crate::trace_err;
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},

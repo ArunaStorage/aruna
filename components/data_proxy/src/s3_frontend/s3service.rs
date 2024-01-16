@@ -42,7 +42,6 @@ use http::HeaderValue;
 use md5::{Digest, Md5};
 use s3s::dto::*;
 use s3s::s3_error;
-use s3s::stream::ByteStream;
 use s3s::S3Error;
 use s3s::S3Request;
 use s3s::S3Response;

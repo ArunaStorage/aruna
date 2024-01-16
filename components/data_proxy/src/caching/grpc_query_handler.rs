@@ -1,6 +1,5 @@
 use crate::replication::replication_handler::Direction;
 use crate::replication::replication_handler::ReplicationMessage;
-use crate::structs::Endpoint as DPEndpoint;
 use crate::structs::Object as DPObject;
 use crate::structs::ObjectLocation;
 use crate::structs::ObjectType;
@@ -24,7 +23,6 @@ use aruna_rust_api::api::notification::services::v2::UserEvent;
 use aruna_rust_api::api::storage::models::v2::data_endpoint::Variant;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
 use aruna_rust_api::api::storage::models::v2::Collection;
-use aruna_rust_api::api::storage::models::v2::DataEndpoint;
 use aruna_rust_api::api::storage::models::v2::Dataset;
 use aruna_rust_api::api::storage::models::v2::EndpointHostVariant;
 use aruna_rust_api::api::storage::models::v2::FullSync;

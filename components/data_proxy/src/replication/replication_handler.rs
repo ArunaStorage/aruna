@@ -145,7 +145,6 @@ impl ReplicationHandler {
     async fn process(
         &self,
         batch: Arc<DashMap<DieselUlid, Vec<Direction>, RandomState>>,
-        // aruna_client: Option<&Arc<GrpcQueryHandler>>,
     ) -> Result<Vec<(DieselUlid, Vec<Direction>)>> {
         // Vec for collecting all processed and finished endpoint batches
         let mut result = Vec::new();
@@ -477,6 +476,7 @@ impl ReplicationHandler {
                                 trace_err!(sync_sender.send(RcvSync::Finish).await)?;
                                 break;
                             } else if batch_counter > 20 {
+                                // Exit after arbitrary number of tries
                                 trace_err!(request_sdx.send(
                                     PullReplicationRequest {
                                                     message: Some(

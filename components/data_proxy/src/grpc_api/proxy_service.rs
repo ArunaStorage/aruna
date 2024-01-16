@@ -258,13 +258,11 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                 match object_input_rcv.recv().await {
                     // Errors
                     Err(err) => {
-                        // Technically no error, because rcv was closed and just has one init msg
-                        // therefore closed means finished
-                        trace!(?err);
                         if *finished_state_handler.lock().await {
-                            trace!("finished called in match statement");
+                            // Technically no error, because rcv was closed because sender finished
                             return Ok(());
                         } else {
+                            trace!(?err);
                             return Err(anyhow!("Receiving from closed channel"));
                         }
                     }
@@ -285,22 +283,11 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                     Ok(Ok(objects)) => {
                         // Store access-checked objects
                         let mut stored_objects: HashMap<DieselUlid, usize> = HashMap::default();
-                        //let mut finished = false; // Needed to not store state
                         for (object, location) in objects {
                             if *finished_state_handler.lock().await {
-                                //if *finished {
                                 trace!("finished called in match statement");
                                 return Ok(());
-                                //}
                             }
-                            // if !finished {
-                            //     if let Ok(finished_rcv) = finished_rcv.recv().await {
-                            //         finished = finished_rcv;
-                            //     }
-                            // } else {
-                            //     trace!("finished called in object handling loop");
-                            //     return Ok(());
-                            // }
 
                             trace!(?object, ?location);
                             // Get footer
@@ -365,9 +352,6 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                         // Check if any message was unacknowledged
                         if let Ok(ack_msgs) = object_sync_rcv.recv().await {
                             for (id, max_blocks) in stored_objects.iter() {
-                                // TODO!
-                                // - Error handling
-                                // - Retry logic
                                 if ack_msgs.get(&AckSync::ObjectInit(*id)).is_none() {
                                     trace_err!(
                                         object_output_send
