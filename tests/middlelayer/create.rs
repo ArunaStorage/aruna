@@ -10,7 +10,7 @@ use aruna_server::caching::cache::Cache;
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::license_dsl::ALL_RIGHTS_RESERVED;
 use aruna_server::database::dsls::object_dsl::EndpointInfo;
-use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType};
+use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType, ReplicationStatus};
 use aruna_server::middlelayer::create_request_types::CreateRequest;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
@@ -302,6 +302,7 @@ async fn create_object() {
         .create_resource(request, user.id, false)
         .await
         .unwrap();
+    dbg!(&obj);
 
     assert_eq!(obj.object.created_by, user.id);
     assert_eq!(obj.object.object_type, ObjectType::OBJECT);
@@ -319,7 +320,7 @@ async fn create_object() {
         default_endpoint,
         EndpointInfo {
             replication: aruna_server::database::enums::ReplicationType::FullSync(parent.object.id),
-            status: None,
+            status: Some(ReplicationStatus::Waiting),
         }
     )));
     assert!(obj.inbound.0.is_empty());

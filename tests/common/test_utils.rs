@@ -15,10 +15,13 @@ use aruna_server::{
         dsls::{
             internal_relation_dsl::InternalRelation,
             license_dsl::ALL_RIGHTS_RESERVED,
-            object_dsl::{ExternalRelations, Hashes, KeyValues, Object},
+            object_dsl::{EndpointInfo, ExternalRelations, Hashes, KeyValues, Object},
             user_dsl::{User, UserAttributes},
         },
-        enums::{DataClass, DbPermissionLevel, ObjectMapping, ObjectStatus, ObjectType},
+        enums::{
+            DataClass, DbPermissionLevel, ObjectMapping, ObjectStatus, ObjectType,
+            ReplicationStatus, ReplicationType,
+        },
     },
     grpc::{
         authorization::AuthorizationServiceImpl, collections::CollectionServiceImpl,
@@ -103,7 +106,15 @@ pub fn new_object(user_id: DieselUlid, object_id: DieselUlid, object_type: Objec
         external_relations: Json(ExternalRelations(DashMap::default())),
         hashes: Json(Hashes(Vec::new())),
         dynamic: false,
-        endpoints: Json(DashMap::default()),
+        endpoints: Json(DashMap::from_iter([(
+            DieselUlid::generate(),
+            EndpointInfo {
+                replication: ReplicationType::PartialSync(
+                    aruna_server::database::enums::SyncObject::ObjectId(object_id),
+                ),
+                status: Some(ReplicationStatus::Waiting),
+            },
+        )])),
         data_license: ALL_RIGHTS_RESERVED.to_string(),
         metadata_license: ALL_RIGHTS_RESERVED.to_string(),
     }
