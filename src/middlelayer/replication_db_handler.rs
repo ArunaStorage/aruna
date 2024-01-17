@@ -269,6 +269,7 @@ impl DatabaseHandler {
         }
         Ok(APIReplicationStatus::Waiting)
     }
+
     pub async fn update_replication_status(
         &self,
         request: UpdateReplicationStatusRequest,
@@ -297,6 +298,7 @@ impl DatabaseHandler {
         endpoint_info.status = Some(status);
         Object::update_endpoints(endpoint_id, endpoint_info.clone(), vec![object_id], &client)
             .await?;
+
         // Update cache
         let updated = Object::get_object_with_relations(&object_id, &client).await?;
         self.cache.upsert_object(&object_id, updated);
@@ -350,6 +352,31 @@ impl DatabaseHandler {
         resource_id: DieselUlid,
     ) -> Result<()> {
         let mut client = self.database.get_client().await?;
+        let specified_resource = Object::get(resource_id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("Specified resource not found"))?;
+        if let Some(ep) = specified_resource.endpoints.0.get(&endpoint_id) {
+            match ep.replication {
+                ReplicationType::FullSync(id) => {
+                    if resource_id != id {
+                        return Err(anyhow!(
+                            "Can not delete lower hierarchy objects when full synced"
+                        ));
+                    }
+                }
+                ReplicationType::PartialSync(id) => {
+                    let id = match id {
+                        SyncObject::ProjectId(id) => id,
+                        SyncObject::CollectionId(id) => id,
+                        SyncObject::DatasetId(id) => id,
+                        SyncObject::ObjectId(id) => id,
+                    };
+                    if resource_id != id {
+                        return Err(anyhow!("Can only delete root partial synced objects"));
+                    }
+                }
+            }
+        }
         let mut resource_ids: Vec<DieselUlid> = vec![resource_id];
         let mut updated_objects = Vec::new();
         resource_ids.append(&mut self.cache.get_subresources(&resource_id)?);
