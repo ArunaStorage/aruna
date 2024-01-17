@@ -551,7 +551,6 @@ impl DatabaseHandler {
     pub async fn finish_object(
         &self,
         request: FinishObjectStagingRequest,
-        user_id: DieselUlid,
         dataproxy_id: Option<DieselUlid>,
     ) -> Result<ObjectWithRelations> {
         let mut client = self.database.get_client().await?;
@@ -569,8 +568,6 @@ impl DatabaseHandler {
         } else {
             return Err(anyhow!("Could not retrieve endpoint info"));
         };
-
-        //let (endpoint_id, ep_info) = temp.pair();
 
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();

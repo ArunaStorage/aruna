@@ -240,15 +240,15 @@ impl Object {
         client: &Client,
         object_id: &DieselUlid,
         endpoint_id: &DieselUlid,
-        full_sync: bool,
+        endpoint_info: EndpointInfo,
     ) -> Result<Object> {
         let query = "UPDATE objects 
             SET endpoints = endpoints || $1::jsonb 
             WHERE id = $2
             RETURNING *;";
 
-        let insert: DashMap<DieselUlid, bool, RandomState> =
-            DashMap::from_iter([(*endpoint_id, full_sync)]);
+        let insert: DashMap<DieselUlid, EndpointInfo, RandomState> =
+            DashMap::from_iter([(*endpoint_id, endpoint_info)]);
         let prepared = client.prepare(query).await?;
         let row = client
             .query_one(&prepared, &[&Json(insert), object_id])
