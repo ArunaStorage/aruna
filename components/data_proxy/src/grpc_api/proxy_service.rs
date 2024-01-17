@@ -173,11 +173,10 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                                                     "DataProxy not authenticated",
                                                                 )
                                                             })?;
-                                                    if object
+                                                    if !object
                                                         .endpoints
                                                         .iter()
-                                                        .find(|ep| ep.id == dataproxy_id)
-                                                        .is_none()
+                                                        .any(|ep| ep.id == dataproxy_id)
                                                     {
                                                         trace!("Endpoint has no permission to replicate object");
                                                         trace_err!(
@@ -445,7 +444,7 @@ impl DataproxyReplicationServiceImpl {
                 .map_err(|_| tonic::Status::unauthenticated("DataProxy not authenticated"))?;
             if !object_endpoint_map.iter().all(|map| {
                 let (_, eps) = map.pair();
-                eps.iter().find(|ep| ep.id == dataproxy_id).is_some()
+                eps.iter().any(|ep| ep.id == dataproxy_id)
             }) {
                 error!("Unauthorized DataProxy request");
                 return Err(tonic::Status::unauthenticated(

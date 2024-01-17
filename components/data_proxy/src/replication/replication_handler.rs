@@ -61,6 +61,20 @@ pub struct ReplicationHandler {
     pub self_id: String,
 }
 
+type ObjectHandler = Arc<
+    DashMap<
+        String,
+        (
+            Sender<DataChunk>,
+            Receiver<DataChunk>,
+            i64,
+            Vec<u8>,
+            i64,
+            bool,
+        ),
+        RandomState,
+    >,
+>;
 impl ReplicationHandler {
     #[tracing::instrument(level = "trace", skip(cache, backend, receiver))]
     pub fn new(
@@ -117,7 +131,7 @@ impl ReplicationHandler {
                     queue.alter(&id, |_, directions| {
                         directions
                             .into_iter()
-                            .filter(|dir| !objects.contains(&dir))
+                            .filter(|dir| !objects.contains(dir))
                             .collect::<Vec<Direction>>()
                             .clone()
                     });
@@ -192,22 +206,10 @@ impl ReplicationHandler {
                 // This channel is only used to transmit the sync result to compare
                 // recieved vs requested objects
                 let (finish_sender, finish_receiver) = async_channel::bounded(1);
+
                 // This map collects for each object_id a channel for datatransmission
                 // TODO: This could be used to make parallel requests later
-                let object_handler_map: Arc<
-                    DashMap<
-                        String,
-                        (
-                            Sender<DataChunk>,
-                            Receiver<DataChunk>,
-                            i64,
-                            Vec<u8>,
-                            i64,
-                            bool,
-                        ),
-                        RandomState,
-                    >,
-                > = Arc::new(DashMap::default());
+                let object_handler_map: ObjectHandler = Arc::new(DashMap::default());
                 for object in pull {
                     let (object_sdx, object_rcv) = async_channel::bounded(100);
                     object_handler_map.insert(
@@ -258,14 +260,7 @@ impl ReplicationHandler {
                                 // and stored in object_handler_map ...
                                 {
                                     data_map.alter(&object_id, |_, (sdx, rcv, ..)| {
-                                        (
-                                            sdx,
-                                            rcv,
-                                            chunks.clone(),
-                                            block_list.clone(),
-                                            raw_size.clone(),
-                                            true,
-                                        )
+                                        (sdx, rcv, chunks, block_list.clone(), raw_size, true)
                                     });
                                 }
                                 // ... and then ObjectInfo gets acknowledged
@@ -409,27 +404,25 @@ impl ReplicationHandler {
                                 };
                                 trace!(?object);
                                 // If no location is found, a new one is created
-                                let mut location = if let Some(_) = location {
+                                let mut location = if location.is_some() {
                                     // TODO:
                                     // - Skip if object was already synced
-                                    finished_clone.insert(Direction::Pull(object_id.clone()), true);
+                                    finished_clone.insert(Direction::Pull(object_id), true);
                                     object_handler_map.remove(&id);
                                     continue;
+                                } else if !synced {
+                                    continue;
                                 } else {
-                                    if !synced {
-                                        continue;
-                                    } else {
-                                        trace_err!(
-                                            backend
-                                                .initialize_location(
-                                                    &object,
-                                                    Some(raw_size),
-                                                    None,
-                                                    false
-                                                )
-                                                .await
-                                        )?
-                                    }
+                                    trace_err!(
+                                        backend
+                                            .initialize_location(
+                                                &object,
+                                                Some(raw_size),
+                                                None,
+                                                false
+                                            )
+                                            .await
+                                    )?
                                 };
                                 trace!("Load into backend");
                                 // Send Chunks get processed

@@ -278,11 +278,8 @@ impl AuthHandler {
 
                 if let Some((ref project, _)) = bucket_obj {
                     if let Some(ep) = project.endpoints.iter().find(|ep| ep.id == self.self_id) {
-                        match ep.variant {
-                            SyncVariant::PartialSync(_) => {
-                                return Err(anyhow!("Can not modify partial sync resources"));
-                            }
-                            _ => (),
+                        if let SyncVariant::PartialSync(_) = ep.variant {
+                            return Err(anyhow!("Can not modify partial sync resources"));
                         }
                     }
                     if let Some(perm) = user.permissions.get(&project.id) {
@@ -362,11 +359,8 @@ impl AuthHandler {
             }
         } else if let Some((bucket, _)) = path.as_object() {
             if bucket == "objects" || bucket == "bundles" {
-                match method {
-                    &(Method::PUT | Method::POST | Method::PATCH | Method::DELETE) => {
-                        return Err(anyhow!("Can not modify special bucket"));
-                    }
-                    _ => (),
+                if let &(Method::PUT | Method::POST | Method::PATCH | Method::DELETE) = method {
+                    return Err(anyhow!("Can not modify special bucket"));
                 }
             }
             let ((obj, loc), ids, missing, bundle) = self.extract_object_from_path(path, method)?;
@@ -382,13 +376,10 @@ impl AuthHandler {
                 }
             });
 
-            match method {
-                &(Method::PUT | Method::POST | Method::PATCH | Method::DELETE) => {
-                    if partial.is_some() {
-                        return Err(anyhow!("PartialSync objects cannot be modified"));
-                    }
+            if let &(Method::PUT | Method::POST | Method::PATCH | Method::DELETE) = method {
+                if partial.is_some() {
+                    return Err(anyhow!("PartialSync objects cannot be modified"));
                 }
-                _ => (),
             }
 
             if let Some(bundle) = bundle {
@@ -491,10 +482,7 @@ impl AuthHandler {
                 )) {
                 let partial =
                     if let Some(ep) = project.endpoints.iter().find(|ep| ep.id == self.self_id) {
-                        match ep.variant {
-                            SyncVariant::PartialSync(_) => true,
-                            _ => false,
-                        }
+                        matches!(ep.variant, SyncVariant::PartialSync(_))
                     } else {
                         false
                     };
@@ -505,9 +493,7 @@ impl AuthHandler {
 
             match method {
                 &Method::GET | &Method::HEAD | &Method::OPTIONS | &Method::DELETE => {
-                    if missing.is_some() {
-                        bail!("Resource not found")
-                    } else if bucket_is_partial {
+                    if missing.is_some() || bucket_is_partial {
                         // This should work, because if bundle is already checked,
                         // so this part is only evaluated if bucket is a name
                         bail!("Resource not found")

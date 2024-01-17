@@ -69,7 +69,7 @@ pub struct User {
     pub access_key: String,
     pub user_id: DieselUlid,
     pub secret: String,
-    pub admin: bool,
+    pub admin: bool, // Admin of this dataproxy instance
     pub permissions: HashMap<DieselUlid, DbPermissionLevel>,
 }
 

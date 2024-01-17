@@ -49,10 +49,10 @@ impl ReplicationSink {
             return Ok(());
         }
 
-        let len = if self.blocklist.len() == 0 {
+        let len = if self.blocklist.is_empty() {
             self.buffer.len() as u64
         } else {
-            65536 * (self.blocklist[self.chunk_counter as usize] as u64)
+            65536 * (self.blocklist[self.chunk_counter] as u64)
         };
 
         let data = self.buffer.split_to(len as usize).to_vec();
@@ -108,14 +108,14 @@ impl Transformer for ReplicationSink {
             return Ok(self.is_finished);
         }
 
-        if self.blocklist.len() == 0 && finished && !&self.is_finished {
+        if self.blocklist.is_empty() && finished && !&self.is_finished {
             trace_err!(self.create_and_send_message().await)?;
             self.is_finished = true;
             return Ok(self.is_finished);
         }
-        if self.blocklist.len() != 0 {
+        if !self.blocklist.is_empty() {
             while (self.bytes_counter - self.bytes_start)
-                > 65536 * (self.blocklist[self.chunk_counter as usize] as u64)
+                > 65536 * (self.blocklist[self.chunk_counter] as u64)
             {
                 trace_err!(self.create_and_send_message().await)?;
             }

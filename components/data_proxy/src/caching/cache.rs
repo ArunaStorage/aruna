@@ -92,14 +92,14 @@ impl Cache {
         cache.set_auth(auth_handler).await;
 
         // Initialize DataProxy as User
-        let self_user = User {
-            access_key: self_id.to_string(),
-            user_id: self_id,
-            secret: self_secret.clone(),
-            admin: true,
-            permissions: HashMap::default(),
-        };
-        cache.users.insert(self_id.to_string(), self_user.clone());
+        // let self_user = User {
+        //     access_key: self_id.to_string(),
+        //     user_id: self_id,
+        //     secret: self_secret.clone(),
+        //     admin: true,
+        //     permissions: HashMap::default(),
+        // };
+        // cache.users.insert(self_id.to_string(), self_user.clone());
 
         // Set database conn in cache
         if with_persistence {
@@ -254,7 +254,7 @@ impl Cache {
 
                             trace!("update persistence");
                             if let Some(persistence) = cache.persistence.read().await.as_ref() {
-                                user.upsert(&persistence.get_client().await?.client())
+                                user.upsert(persistence.get_client().await?.client())
                                     .await?;
                             }
 
@@ -289,9 +289,9 @@ impl Cache {
     pub async fn set_pubkeys(&self, pks: Vec<PubKey>) -> Result<()> {
         trace!(num_pks = pks.len(), "overwriting pks in persistence");
         if let Some(persistence) = self.persistence.read().await.as_ref() {
-            PubKey::delete_all(&persistence.get_client().await?.client()).await?;
+            PubKey::delete_all(persistence.get_client().await?.client()).await?;
             for pk in pks.iter() {
-                pk.upsert(&persistence.get_client().await?.client()).await?;
+                pk.upsert(persistence.get_client().await?.client()).await?;
             }
         }
         trace!("clearing pks in cache");
@@ -688,7 +688,7 @@ impl Cache {
                                 mut_entry.clone()
                             };
                             if let Some(persistence) = self.persistence.read().await.as_ref() {
-                                user.upsert(&persistence.get_client().await?.client())
+                                user.upsert(persistence.get_client().await?.client())
                                     .await?;
                             }
                             break;
@@ -716,7 +716,7 @@ impl Cache {
 
             if let Some(persistence) = self.persistence.read().await.as_ref() {
                 user.value()
-                    .upsert(&persistence.get_client().await?.client())
+                    .upsert(persistence.get_client().await?.client())
                     .await?;
             }
 
@@ -738,7 +738,7 @@ impl Cache {
 
             if let Some(persistence) = self.persistence.read().await.as_ref() {
                 user.value()
-                    .upsert(&persistence.get_client().await?.client())
+                    .upsert(persistence.get_client().await?.client())
                     .await?;
             }
 
@@ -771,7 +771,7 @@ impl Cache {
                 if let Some((_, user)) = user {
                     User::delete(
                         &user.user_id.to_string(),
-                        &persistence.get_client().await?.client(),
+                        persistence.get_client().await?.client(),
                     )
                     .await?;
                 }
