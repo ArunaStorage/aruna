@@ -12,9 +12,10 @@ use anyhow::{anyhow, Result};
 use aruna_rust_api::api::{
     notification::services::v2::EventVariant,
     storage::{
-        models::v2::ReplicationStatus as APIReplicationStatus,
+        models::v2::{DataEndpoint, ReplicationStatus as APIReplicationStatus},
         services::v2::{
-            partial_replicate_data_request::DataVariant, UpdateReplicationStatusRequest,
+            partial_replicate_data_request::DataVariant, GetReplicationStatusResponse,
+            ReplicationInfo, UpdateReplicationStatusRequest,
         },
     },
 };
@@ -300,5 +301,46 @@ impl DatabaseHandler {
         let updated = Object::get_object_with_relations(&object_id, &client).await?;
         self.cache.upsert_object(&object_id, updated);
         Ok(())
+    }
+    pub async fn get_replication_status(
+        &self,
+        endpoint_id: DieselUlid,
+        resource_id: DieselUlid,
+    ) -> Result<GetReplicationStatusResponse> {
+        let sub_resources = self.cache.get_subresources(&resource_id)?;
+        let mut infos: Vec<ReplicationInfo> = Vec::new();
+        for id in sub_resources {
+            if let Some(resource) = self.cache.get_object(&id) {
+                let endpoint_info = if let Some(ep) = resource.object.endpoints.0.get(&endpoint_id)
+                {
+                    Some(DataEndpoint {
+                        id: endpoint_id.to_string(),
+                        variant: Some(ep.replication.into()),
+                        status: ep
+                            .status
+                            .map(|status| ReplicationStatus::from(status) as i32),
+                    })
+                } else {
+                    continue; // not sure if this is the right call, but for partial synced there
+                              // is the possibility of objects that do not have the requested
+                              // endpoint id as a sub-resource
+                };
+                let info = ReplicationInfo {
+                    resource: Some(
+                        match resource.object.object_type {
+                            ObjectType::PROJECT => aruna_rust_api::api::storage::services::v2::replication_info::Resource::ProjectId(id.to_string()),
+                            ObjectType::COLLECTION => aruna_rust_api::api::storage::services::v2::replication_info::Resource::CollectionId(id.to_string()),
+                            ObjectType::DATASET => aruna_rust_api::api::storage::services::v2::replication_info::Resource::DatasetId(id.to_string()),
+                            ObjectType::OBJECT => aruna_rust_api::api::storage::services::v2::replication_info::Resource::ObjectId(id.to_string()),
+                        },
+                    ),
+                    endpoint_info,
+                };
+                infos.push(info);
+            } else {
+                return Err(anyhow!("Resource not found"));
+            }
+        }
+        Ok(GetReplicationStatusResponse { infos })
     }
 }
