@@ -175,12 +175,45 @@ impl DataReplicationService for DataReplicationServiceImpl {
     }
     async fn delete_replication(
         &self,
-        _request: Request<DeleteReplicationRequest>,
+        request: Request<DeleteReplicationRequest>,
     ) -> Result<Response<DeleteReplicationResponse>> {
-        // TODO:
-        // - One proxy must stay full sync
-        Err(tonic::Status::unimplemented(
-            "DeleteReplicationStatus not yet implemented",
-        ))
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (metadata, _, request) = request.into_parts();
+
+        // Parse ids
+        let (endpoint_id, resource_id) = (
+            tonic_invalid!(
+                diesel_ulid::DieselUlid::from_str(&request.endpoint_id),
+                "Invalid endpoint id"
+            ),
+            tonic_invalid!(
+                diesel_ulid::DieselUlid::from_str(&request.resource_id),
+                "Invalid resource id"
+            ),
+        );
+        // Extract token from request and check permissions
+        let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
+
+        // Check if allowed
+        let ctx = Context::res_ctx(
+            resource_id,
+            crate::database::enums::DbPermissionLevel::READ,
+            true,
+        );
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        tonic_internal!(
+            self.database_handler
+                .delete_replication(endpoint_id, resource_id)
+                .await,
+            "Internal replication error"
+        );
+
+        return_with_log!(DeleteReplicationResponse {});
     }
 }

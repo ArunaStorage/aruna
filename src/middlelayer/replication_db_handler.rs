@@ -3,7 +3,7 @@ use crate::{
     database::{
         crud::CrudDb,
         dsls::object_dsl::{EndpointInfo, Object},
-        enums::{ObjectType, ReplicationStatus, SyncObject},
+        enums::{ObjectType, ReplicationStatus, ReplicationType, SyncObject},
     },
     middlelayer::db_handler::DatabaseHandler,
     utils::database_utils::sort_objects,
@@ -342,5 +342,80 @@ impl DatabaseHandler {
             }
         }
         Ok(GetReplicationStatusResponse { infos })
+    }
+
+    pub async fn delete_replication(
+        &self,
+        endpoint_id: DieselUlid,
+        resource_id: DieselUlid,
+    ) -> Result<()> {
+        let mut client = self.database.get_client().await?;
+        let mut resource_ids: Vec<DieselUlid> = vec![resource_id];
+        let mut updated_objects = Vec::new();
+        resource_ids.append(&mut self.cache.get_subresources(&resource_id)?);
+        for res in resource_ids {
+            let mut object = Object::get_object_with_relations(&res, &client).await?;
+
+            // Remove endpoint and check if at least one FullSync proxy remains
+            let temp_eps = object.object.endpoints.0.clone();
+            temp_eps.remove(&endpoint_id);
+            if temp_eps
+                .iter()
+                .any(|ep| matches!(ep.replication, ReplicationType::FullSync(_)))
+            {
+                object.object.endpoints.0 = temp_eps;
+                updated_objects.push(object);
+            } else {
+                return Err(anyhow!(
+                    "At least one FullSync proxy needs to be defined for object"
+                ));
+            }
+        }
+        let transaction = client.transaction().await?;
+        let transaction_client = transaction.client();
+        for object in &updated_objects {
+            object.object.update(transaction_client).await?;
+            self.cache.upsert_object(&object.object.id, object.clone());
+        }
+        transaction.commit().await?;
+
+        for object in updated_objects {
+            let hierarchies = object.object.fetch_object_hierarchies(&client).await?;
+            let block_id = DieselUlid::generate();
+
+            if let Err(err) = self
+                .natsio_handler
+                .register_dataproxy_event(
+                    &object,
+                    hierarchies.clone(),
+                    EventVariant::Deleted,
+                    endpoint_id,
+                    Some(&block_id),
+                )
+                .await
+            {
+                // Log error, rollback transaction and return
+                log::error!("{}", err);
+                return Err(anyhow::anyhow!("Notification emission failed"));
+            }
+            let block_id = DieselUlid::generate();
+
+            if let Err(err) = self
+                .natsio_handler
+                .register_resource_event(
+                    &object,
+                    hierarchies,
+                    EventVariant::Updated,
+                    Some(&block_id),
+                )
+                .await
+            {
+                // Log error, rollback transaction and return
+                log::error!("{}", err);
+                return Err(anyhow::anyhow!("Notification emission failed"));
+            }
+        }
+
+        Ok(())
     }
 }
