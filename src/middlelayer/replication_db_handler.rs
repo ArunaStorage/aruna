@@ -293,7 +293,7 @@ impl DatabaseHandler {
             APIReplicationStatus::Waiting => ReplicationStatus::Waiting,
             APIReplicationStatus::Running => ReplicationStatus::Running,
             APIReplicationStatus::Finished => ReplicationStatus::Finished,
-            APIReplicationStatus::Error => ReplicationStatus::Finished,
+            APIReplicationStatus::Error => ReplicationStatus::Error,
         };
         endpoint_info.status = Some(status);
         Object::update_endpoints(endpoint_id, endpoint_info.clone(), vec![object_id], &client)
@@ -315,12 +315,13 @@ impl DatabaseHandler {
             if let Some(resource) = self.cache.get_object(&id) {
                 let endpoint_info = if let Some(ep) = resource.object.endpoints.0.get(&endpoint_id)
                 {
+                    dbg!(ep.status);
                     Some(DataEndpoint {
                         id: endpoint_id.to_string(),
                         variant: Some(ep.replication.into()),
                         status: ep
                             .status
-                            .map(|status| ReplicationStatus::from(status) as i32),
+                            .map(|status| APIReplicationStatus::from(status) as i32),
                     })
                 } else {
                     continue; // not sure if this is the right call, but for partial synced there
