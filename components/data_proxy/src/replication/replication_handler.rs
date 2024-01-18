@@ -211,6 +211,15 @@ impl ReplicationHandler {
                 // TODO: This could be used to make parallel requests later
                 let object_handler_map: ObjectHandler = Arc::new(DashMap::default());
                 for object in pull {
+                    trace_err!(
+                        query_handler
+                            .update_replication_status(UpdateReplicationStatusRequest {
+                                object_id: object.to_string(),
+                                endpoint_id: self_id.clone(),
+                                status: ReplicationStatus::Running as i32,
+                            })
+                            .await
+                    )?;
                     let (object_sdx, object_rcv) = async_channel::bounded(100);
                     object_handler_map.insert(
                         object.to_string(),
