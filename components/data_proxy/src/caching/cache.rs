@@ -63,7 +63,6 @@ impl Cache {
         encoding_key: String,
         encoding_key_serial: i32,
         sender: Sender<ReplicationMessage>,
-        self_secret: String,
         backend: Option<Arc<Box<dyn StorageBackend>>>,
     ) -> Result<Arc<Self>> {
         // Initialize cache
@@ -80,26 +79,11 @@ impl Cache {
         });
 
         // Initialize auth handler
-        let auth_handler = AuthHandler::new(
-            cache.clone(),
-            self_id,
-            self_secret.clone(),
-            encoding_key,
-            encoding_key_serial,
-        );
+        let auth_handler =
+            AuthHandler::new(cache.clone(), self_id, encoding_key, encoding_key_serial);
 
         // Set auth handler in cache
         cache.set_auth(auth_handler).await;
-
-        // Initialize DataProxy as User
-        // let self_user = User {
-        //     access_key: self_id.to_string(),
-        //     user_id: self_id,
-        //     secret: self_secret.clone(),
-        //     admin: true,
-        //     permissions: HashMap::default(),
-        // };
-        // cache.users.insert(self_id.to_string(), self_user.clone());
 
         // Set database conn in cache
         if with_persistence {

@@ -90,7 +90,6 @@ async fn main() -> Result<()> {
     let encoding_key = trace_err!(dotenvy::var("DATA_PROXY_ENCODING_KEY"))?;
     let encoding_key_serial =
         trace_err!(trace_err!(dotenvy::var("DATA_PROXY_PUBKEY_SERIAL"))?.parse::<i32>())?;
-    let self_secret = trace_err!(dotenvy::var("DATA_PROXY_SELF_SECRET"))?;
 
     drop(guard);
 
@@ -107,7 +106,6 @@ async fn main() -> Result<()> {
         encoding_key,
         encoding_key_serial,
         sender.clone(),
-        self_secret,
         Some(storage_backend.clone()),
     )
     .await?;
