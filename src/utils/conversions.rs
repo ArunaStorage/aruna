@@ -21,7 +21,7 @@ use crate::database::dsls::user_dsl::{
 use crate::database::dsls::workspaces_dsl::WorkspaceTemplate;
 use crate::database::enums::{
     DbPermissionLevel, EndpointVariant, NotificationReferenceType, ObjectMapping,
-    PersistentNotificationVariant, ReplicationStatus, ReplicationType, SyncObject,
+    PersistentNotificationVariant, ReplicationStatus, ReplicationType,
 };
 use crate::database::{
     dsls::endpoint_dsl::{Endpoint as DBEndpoint, HostConfig, HostConfigs},
@@ -1611,15 +1611,10 @@ impl TryFrom<Vec<Relation>> for ContextContainer {
 impl From<ReplicationType> for Variant {
     fn from(input: ReplicationType) -> Self {
         match input {
-            ReplicationType::FullSync(project_id) => Variant::FullSync(aruna_rust_api::api::storage::models::v2::FullSync { project_id: project_id.to_string()}),
-            ReplicationType::PartialSync(sync_object) => {
-                match sync_object {
-                    SyncObject::ProjectId(id) => Variant::PartialSync(aruna_rust_api::api::storage::models::v2::PartialSync { origin: Some(aruna_rust_api::api::storage::models::v2::partial_sync::Origin::ProjectId(id.to_string())) }),
-                    SyncObject::CollectionId(id) => Variant::PartialSync(aruna_rust_api::api::storage::models::v2::PartialSync { origin: Some(aruna_rust_api::api::storage::models::v2::partial_sync::Origin::CollectionId(id.to_string())) }),
-                    SyncObject::DatasetId(id) => Variant::PartialSync(aruna_rust_api::api::storage::models::v2::PartialSync { origin: Some(aruna_rust_api::api::storage::models::v2::partial_sync::Origin::DatasetId(id.to_string())) }),
-                    SyncObject::ObjectId(id) => Variant::PartialSync(aruna_rust_api::api::storage::models::v2::PartialSync { origin: Some(aruna_rust_api::api::storage::models::v2::partial_sync::Origin::ObjectId(id.to_string())) }),
-                }
+            ReplicationType::FullSync => {
+                Variant::FullSync(aruna_rust_api::api::storage::models::v2::FullSync {})
             }
+            ReplicationType::PartialSync(inheritance) => Variant::PartialSync(inheritance),
         }
     }
 }

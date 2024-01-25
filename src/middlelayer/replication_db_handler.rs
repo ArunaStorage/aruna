@@ -3,7 +3,7 @@ use crate::{
     database::{
         crud::CrudDb,
         dsls::object_dsl::{EndpointInfo, Object},
-        enums::{ObjectType, ReplicationStatus, ReplicationType, SyncObject},
+        enums::{ObjectType, ReplicationStatus, ReplicationType},
     },
     middlelayer::db_handler::DatabaseHandler,
     utils::database_utils::sort_objects,
@@ -39,11 +39,11 @@ impl DatabaseHandler {
                     };
                     let proxy_id = DieselUlid::from_str(&request.endpoint_id)?;
                     let endpoint_status_objects = EndpointInfo {
-                        replication: crate::database::enums::ReplicationType::FullSync(project_id),
+                        replication: crate::database::enums::ReplicationType::FullSync,
                         status: Some(ReplicationStatus::Waiting),
                     };
                     let endpoint_status_hierarchy = EndpointInfo {
-                        replication: crate::database::enums::ReplicationType::FullSync(project_id),
+                        replication: crate::database::enums::ReplicationType::FullSync,
                         status: None,
                     };
 
@@ -72,34 +72,26 @@ impl DatabaseHandler {
                             return Err(anyhow!("Invalid resource id"));
                         }
                     };
-                    let sync_object =
-                        if let Some(object) = Object::get(resource_id, &client).await? {
-                            if object.object_type != request_type {
-                                return Err(anyhow!("Wrong ObjectType"));
-                            } else {
-                                match object.object_type {
-                                    ObjectType::PROJECT => {
-                                        return Err(anyhow!("Projects can only be full sync"));
-                                    }
-                                    ObjectType::COLLECTION => SyncObject::CollectionId(resource_id),
-                                    ObjectType::DATASET => SyncObject::DatasetId(resource_id),
-                                    ObjectType::OBJECT => SyncObject::ObjectId(resource_id),
-                                }
-                            }
-                        } else {
-                            return Err(anyhow!("Resource not found"));
-                        };
+                    let proxy_id = DieselUlid::from_str(&request.endpoint_id)?;
+                    let origin = Object::get(resource_id, &client)
+                        .await?
+                        .ok_or_else(|| anyhow!("Object not found"))?;
+                    if origin.object_type != request_type {
+                        return Err(anyhow!("Wrong data variant provided"));
+                    } else if let Some(ep) = origin.endpoints.0.get(&proxy_id) {
+                        if ep.replication == ReplicationType::FullSync {
+                            return Err(anyhow!("Cannot overwrite FullSync status for Endpoint"));
+                            // TODO: At least for now this is not allowed, because additional
+                            // logic for checking is needed
+                        }
+                    }
                     let proxy_id = DieselUlid::from_str(&request.endpoint_id)?;
                     let endpoint_status_objects = EndpointInfo {
-                        replication: crate::database::enums::ReplicationType::PartialSync(
-                            sync_object,
-                        ),
+                        replication: crate::database::enums::ReplicationType::PartialSync(true),
                         status: Some(ReplicationStatus::Waiting),
                     };
                     let endpoint_status_hierarchy = EndpointInfo {
-                        replication: crate::database::enums::ReplicationType::PartialSync(
-                            sync_object,
-                        ),
+                        replication: crate::database::enums::ReplicationType::PartialSync(true),
                         status: None,
                     };
 
@@ -204,10 +196,8 @@ impl DatabaseHandler {
         // Update not-explicit synced with PartialSyncInfo
         if !partial_synced_hierarchy.is_empty() {
             let ep_status_hierarchy = match endpoint_status_hierarchy.replication {
-                crate::database::enums::ReplicationType::FullSync(id) => EndpointInfo {
-                    replication: crate::database::enums::ReplicationType::PartialSync(
-                        SyncObject::ProjectId(id),
-                    ),
+                crate::database::enums::ReplicationType::FullSync => EndpointInfo {
+                    replication: crate::database::enums::ReplicationType::PartialSync(false),
                     status: None,
                 },
                 crate::database::enums::ReplicationType::PartialSync(_) => {
@@ -225,10 +215,8 @@ impl DatabaseHandler {
 
         if !partial_synced_objects.is_empty() {
             let ep_status_objects = match endpoint_status_objects.replication {
-                crate::database::enums::ReplicationType::FullSync(id) => EndpointInfo {
-                    replication: crate::database::enums::ReplicationType::PartialSync(
-                        SyncObject::ProjectId(id),
-                    ),
+                crate::database::enums::ReplicationType::FullSync => EndpointInfo {
+                    replication: crate::database::enums::ReplicationType::PartialSync(false),
                     status: Some(ReplicationStatus::Waiting),
                 },
                 crate::database::enums::ReplicationType::PartialSync(_) => endpoint_status_objects,
@@ -309,7 +297,9 @@ impl DatabaseHandler {
         endpoint_id: DieselUlid,
         resource_id: DieselUlid,
     ) -> Result<GetReplicationStatusResponse> {
-        let sub_resources = self.cache.get_subresources(&resource_id)?;
+        let mut sub_resources = vec![resource_id];
+        sub_resources.append(&mut self.cache.get_subresources(&resource_id)?);
+
         let mut infos: Vec<ReplicationInfo> = Vec::new();
         for id in sub_resources {
             if let Some(resource) = self.cache.get_object(&id) {
@@ -358,22 +348,46 @@ impl DatabaseHandler {
             .ok_or_else(|| anyhow!("Specified resource not found"))?;
         if let Some(ep) = specified_resource.endpoints.0.get(&endpoint_id) {
             match ep.replication {
-                ReplicationType::FullSync(id) => {
-                    if resource_id != id {
+                ReplicationType::FullSync => {
+                    if specified_resource.object_type != ObjectType::PROJECT {
                         return Err(anyhow!(
                             "Can not delete lower hierarchy objects when full synced"
                         ));
                     }
                 }
-                ReplicationType::PartialSync(id) => {
-                    let id = match id {
-                        SyncObject::ProjectId(id) => id,
-                        SyncObject::CollectionId(id) => id,
-                        SyncObject::DatasetId(id) => id,
-                        SyncObject::ObjectId(id) => id,
-                    };
-                    if resource_id != id {
+                ReplicationType::PartialSync(inherits) => {
+                    if !inherits {
                         return Err(anyhow!("Can only delete root partial synced objects"));
+                    } else {
+                        let higher_ups: Vec<DieselUlid> =
+                            Object::fetch_object_hierarchies_by_id(&resource_id, &client)
+                                .await?
+                                .into_iter()
+                                .map(|hierarchy| -> Result<Vec<DieselUlid>> {
+                                    let mut flattened =
+                                        vec![DieselUlid::from_str(&hierarchy.project_id)?];
+                                    if let Some(id) = hierarchy.collection_id {
+                                        flattened.push(DieselUlid::from_str(&id)?);
+                                    }
+                                    if let Some(id) = hierarchy.dataset_id {
+                                        flattened.push(DieselUlid::from_str(&id)?);
+                                    }
+                                    if let Some(id) = hierarchy.object_id {
+                                        flattened.push(DieselUlid::from_str(&id)?);
+                                    }
+                                    Ok(flattened)
+                                })
+                                .collect::<Result<Vec<Vec<DieselUlid>>>>()?
+                                .into_iter()
+                                .flatten()
+                                .dedup()
+                                .collect();
+                        let higher_ups = Object::get_objects(&higher_ups, &client).await?;
+                        for resource in higher_ups {
+                            if resource.endpoints.0.get(&endpoint_id).is_some() {
+                                return Err(anyhow!("Cannot delete replication if higher resources exist with specified dataproxy replication"));
+                            }
+                        }
                     }
                 }
             }
@@ -389,7 +403,7 @@ impl DatabaseHandler {
             temp_eps.remove(&endpoint_id);
             if temp_eps
                 .iter()
-                .any(|ep| matches!(ep.replication, ReplicationType::FullSync(_)))
+                .any(|ep| matches!(ep.replication, ReplicationType::FullSync))
             {
                 object.object.endpoints.0 = temp_eps;
                 updated_objects.push(object);

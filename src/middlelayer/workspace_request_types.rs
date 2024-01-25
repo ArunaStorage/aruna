@@ -59,7 +59,7 @@ impl CreateWorkspace {
             (
                 *id,
                 EndpointInfo {
-                    replication: crate::database::enums::ReplicationType::FullSync(*id),
+                    replication: crate::database::enums::ReplicationType::FullSync,
                     status: None,
                 },
             )

@@ -7,7 +7,9 @@ use crate::database::dsls::license_dsl::{License, ALL_RIGHTS_RESERVED};
 use crate::database::dsls::object_dsl::{
     EndpointInfo, ExternalRelations, Hashes, KeyValues, Object,
 };
-use crate::database::enums::{DbPermissionLevel, ObjectStatus, ObjectType};
+use crate::database::enums::{
+    DbPermissionLevel, ObjectStatus, ObjectType, ReplicationStatus, ReplicationType,
+};
 use crate::utils::conversions::ContextContainer;
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
@@ -264,7 +266,6 @@ impl CreateRequest {
         &self,
         cache: Arc<Cache>,
         db_client: &Client,
-        id: DieselUlid,
     ) -> Result<DashMap<DieselUlid, EndpointInfo, RandomState>> {
         match self {
             CreateRequest::Project(req, default_endpoint) => {
@@ -272,7 +273,7 @@ impl CreateRequest {
                     Ok(DashMap::from_iter([(
                         DieselUlid::from_str(default_endpoint)?,
                         EndpointInfo {
-                            replication: crate::database::enums::ReplicationType::FullSync(id), // at least one full sync endpoint is needed for projects
+                            replication: crate::database::enums::ReplicationType::FullSync, // at least one full sync endpoint is needed for projects
                             status: None,
                         },
                     )]))
@@ -283,7 +284,7 @@ impl CreateRequest {
                         Some(_) => Ok(DashMap::from_iter([(
                             endpoint_id,
                             EndpointInfo {
-                                replication: crate::database::enums::ReplicationType::FullSync(id),
+                                replication: crate::database::enums::ReplicationType::FullSync,
                                 status: None,
                             }, // at least one full sync endpoint is needed for projects
                         )])),
@@ -298,21 +299,36 @@ impl CreateRequest {
                 let parent = cache
                     .get_object(&parent.get_id()?)
                     .ok_or_else(|| anyhow!("Parent not found"))?;
-                Ok(parent
-                    .object
-                    .endpoints
-                    .0
-                    .into_iter()
-                    .map(|(id, info)| {
-                        (
-                            id,
-                            EndpointInfo {
-                                replication: info.replication,
-                                status: Some(crate::database::enums::ReplicationStatus::Waiting),
-                            },
-                        )
-                    })
-                    .collect())
+                Ok(DashMap::from_iter(
+                    parent
+                        .object
+                        .endpoints
+                        .0
+                        .into_iter()
+                        .filter_map(|(id, info)| {
+                            if let ReplicationType::PartialSync(inheritance) = info.replication {
+                                if inheritance {
+                                    Some((
+                                        id,
+                                        EndpointInfo {
+                                            replication: info.replication, // If not cloned, this could deadlock, right?
+                                            status: Some(ReplicationStatus::Waiting),
+                                        },
+                                    ))
+                                } else {
+                                    None
+                                }
+                            } else {
+                                Some((
+                                    id,
+                                    EndpointInfo {
+                                        replication: info.replication, // If not cloned, this could deadlock, right?
+                                        status: Some(ReplicationStatus::Waiting),
+                                    },
+                                ))
+                            }
+                        }),
+                ))
             }
             _ => {
                 let parent = self
@@ -321,7 +337,36 @@ impl CreateRequest {
                 let parent = cache
                     .get_object(&parent.get_id()?)
                     .ok_or_else(|| anyhow!("Parent not found"))?;
-                Ok(parent.object.endpoints.0.into_iter().collect())
+                let filtered_endpoints =
+                    parent
+                        .object
+                        .endpoints
+                        .0
+                        .into_iter()
+                        .filter_map(|(id, info)| {
+                            if let ReplicationType::PartialSync(inheritance) = info.replication {
+                                if inheritance {
+                                    Some((
+                                        id,
+                                        EndpointInfo {
+                                            replication: info.replication, // If not cloned, this could deadlock, right?
+                                            status: None,
+                                        },
+                                    ))
+                                } else {
+                                    None
+                                }
+                            } else {
+                                Some((
+                                    id,
+                                    EndpointInfo {
+                                        replication: info.replication, // If not cloned, this could deadlock, right?
+                                        status: None,
+                                    },
+                                ))
+                            }
+                        });
+                Ok(DashMap::from_iter(filtered_endpoints))
             }
         }
     }
@@ -342,7 +387,7 @@ impl CreateRequest {
             None => Hashes(Vec::new()),
         };
         let (metadata_license, data_license) = self.get_licenses(client).await?;
-        let endpoints = self.get_endpoint(cache, client, id).await?;
+        let endpoints = self.get_endpoint(cache, client).await?;
         let name = self.get_name()?;
 
         Ok(Object {

@@ -1,5 +1,4 @@
 use anyhow::anyhow;
-use diesel_ulid::DieselUlid;
 use postgres_types::{FromSql, Kind, ToSql, Type};
 use serde::{Deserialize, Serialize};
 
@@ -221,14 +220,6 @@ pub enum ReplicationStatus {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 pub enum ReplicationType {
-    FullSync(diesel_ulid::DieselUlid), // always Projects
-    PartialSync(SyncObject),
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
-pub enum SyncObject {
-    ProjectId(DieselUlid),
-    CollectionId(DieselUlid),
-    DatasetId(DieselUlid),
-    ObjectId(DieselUlid),
+    FullSync,
+    PartialSync(bool), // if true -> gets inherited by children
 }
