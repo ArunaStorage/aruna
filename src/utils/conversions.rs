@@ -21,7 +21,7 @@ use crate::database::dsls::user_dsl::{
 use crate::database::dsls::workspaces_dsl::WorkspaceTemplate;
 use crate::database::enums::{
     DbPermissionLevel, EndpointVariant, NotificationReferenceType, ObjectMapping,
-    PersistentNotificationVariant,
+    PersistentNotificationVariant, ReplicationStatus, ReplicationType,
 };
 use crate::database::{
     dsls::endpoint_dsl::{Endpoint as DBEndpoint, HostConfig, HostConfigs},
@@ -42,10 +42,12 @@ use aruna_rust_api::api::hooks::services::v2::Filter as APIFilter;
 use aruna_rust_api::api::hooks::services::v2::{
     AddHook, AddLabel, Credentials, ExternalHook, Hook as APIHook, HookInfo, InternalHook, Trigger,
 };
+use aruna_rust_api::api::storage::models::v2::data_endpoint::Variant;
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, CustomAttributes, DataClass as APIDataClass, DataEndpoint,
-    License as APILicense, OidcMapping, Permission, PermissionLevel, ResourceVariant, Status,
-    Token, User as ApiUser, UserAttributes,
+    InternalRelationVariant, License as APILicense, OidcMapping, Permission, PermissionLevel,
+    ReplicationStatus as APIReplicationStatus, ResourceVariant, Status, Token, User as ApiUser,
+    UserAttributes,
 };
 use aruna_rust_api::api::storage::models::v2::{
     permission::ResourceId, relation::Relation as RelationEnum, Collection as GRPCCollection,
@@ -604,7 +606,8 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                     .iter()
                     .map(|e| DataEndpoint {
                         id: e.key().to_string(),
-                        full_synced: *e.value(),
+                        variant: Some(e.replication.into()),
+                        status: None,
                     })
                     .collect(),
                 metadata_license_tag: object_with_relations.object.metadata_license,
@@ -629,7 +632,8 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                     .iter()
                     .map(|e| DataEndpoint {
                         id: e.key().to_string(),
-                        full_synced: *e.value(),
+                        variant: Some(e.replication.into()),
+                        status: None,
                     })
                     .collect(),
                 metadata_license_tag: object_with_relations.object.metadata_license,
@@ -654,7 +658,8 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                     .iter()
                     .map(|e| DataEndpoint {
                         id: e.key().to_string(),
-                        full_synced: *e.value(),
+                        variant: Some(e.replication.into()),
+                        status: None,
                     })
                     .collect(),
                 metadata_license_tag: object_with_relations.object.metadata_license,
@@ -680,7 +685,8 @@ impl From<ObjectWithRelations> for generic_resource::Resource {
                     .iter()
                     .map(|e| DataEndpoint {
                         id: e.key().to_string(),
-                        full_synced: *e.value(),
+                        variant: Some(e.replication.into()),
+                        status: e.status.map(|s| APIReplicationStatus::from(s) as i32),
                     })
                     .collect(),
                 metadata_license_tag: object_with_relations.object.metadata_license,
@@ -771,7 +777,8 @@ pub fn from_db_object(
                 .iter()
                 .map(|e| DataEndpoint {
                     id: e.key().to_string(),
-                    full_synced: *e.value(),
+                    variant: Some(e.replication.into()),
+                    status: None,
                 })
                 .collect(),
             metadata_license_tag: object.metadata_license,
@@ -795,7 +802,8 @@ pub fn from_db_object(
                 .iter()
                 .map(|e| DataEndpoint {
                     id: e.key().to_string(),
-                    full_synced: *e.value(),
+                    variant: Some(e.replication.into()),
+                    status: None,
                 })
                 .collect(),
             metadata_license_tag: object.metadata_license,
@@ -819,7 +827,8 @@ pub fn from_db_object(
                 .iter()
                 .map(|e| DataEndpoint {
                     id: e.key().to_string(),
-                    full_synced: *e.value(),
+                    variant: Some(e.replication.into()),
+                    status: None,
                 })
                 .collect(),
             metadata_license_tag: object.metadata_license,
@@ -844,7 +853,8 @@ pub fn from_db_object(
                 .iter()
                 .map(|e| DataEndpoint {
                     id: e.key().to_string(),
-                    full_synced: *e.value(),
+                    variant: Some(e.replication.into()),
+                    status: e.status.map(|s| APIReplicationStatus::from(s) as i32),
                 })
                 .collect(),
             metadata_license_tag: object.metadata_license,
@@ -895,6 +905,14 @@ impl InternalRelation {
                     .get_object(&DieselUlid::from_str(&api_rel.resource_id)?)
                     .ok_or_else(|| anyhow!("other_obj not found"))?;
 
+                if self_obj.object.object_type == other_obj.object.object_type
+                    && api_rel.defined_variant == InternalRelationVariant::BelongsTo as i32
+                {
+                    return Err(anyhow!(
+                        "Can not assign BelongsTo relation to same-level hierarchy object"
+                    ));
+                }
+
                 Ok(InternalRelation {
                     id: DieselUlid::generate(),
                     origin_pid: other_obj.object.id,
@@ -914,6 +932,14 @@ impl InternalRelation {
                 let self_obj = cache
                     .get_object(&DieselUlid::from_str(&api_rel.resource_id)?)
                     .ok_or_else(|| anyhow!("other_obj not found"))?;
+
+                if self_obj.object.object_type == other_obj.object.object_type
+                    && api_rel.defined_variant == InternalRelationVariant::BelongsTo as i32
+                {
+                    return Err(anyhow!(
+                        "Can not assign BelongsTo relation to same-level hierarchy object"
+                    ));
+                }
 
                 Ok(InternalRelation {
                     id: DieselUlid::generate(),
@@ -1581,6 +1607,29 @@ impl TryFrom<Vec<Relation>> for ContextContainer {
         Ok(ContextContainer(vec))
     }
 }
+
+impl From<ReplicationType> for Variant {
+    fn from(input: ReplicationType) -> Self {
+        match input {
+            ReplicationType::FullSync => {
+                Variant::FullSync(aruna_rust_api::api::storage::models::v2::FullSync {})
+            }
+            ReplicationType::PartialSync(inheritance) => Variant::PartialSync(inheritance),
+        }
+    }
+}
+
+impl From<ReplicationStatus> for APIReplicationStatus {
+    fn from(input: ReplicationStatus) -> Self {
+        match input {
+            ReplicationStatus::Waiting => APIReplicationStatus::Waiting,
+            ReplicationStatus::Running => APIReplicationStatus::Running,
+            ReplicationStatus::Finished => APIReplicationStatus::Finished,
+            ReplicationStatus::Error => APIReplicationStatus::Error,
+        }
+    }
+}
+
 impl TryFrom<DBUser> for ServiceAccount {
     type Error = tonic::Status;
     fn try_from(user: DBUser) -> Result<Self, tonic::Status> {

@@ -4,8 +4,12 @@ use crate::database::crud::CrudDb;
 use crate::database::dsls::endpoint_dsl::Endpoint;
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::license_dsl::{License, ALL_RIGHTS_RESERVED};
-use crate::database::dsls::object_dsl::{ExternalRelations, Hashes, KeyValues, Object};
-use crate::database::enums::{DbPermissionLevel, ObjectStatus, ObjectType};
+use crate::database::dsls::object_dsl::{
+    EndpointInfo, ExternalRelations, Hashes, KeyValues, Object,
+};
+use crate::database::enums::{
+    DbPermissionLevel, ObjectStatus, ObjectType, ReplicationStatus, ReplicationType,
+};
 use crate::utils::conversions::ContextContainer;
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
@@ -262,13 +266,16 @@ impl CreateRequest {
         &self,
         cache: Arc<Cache>,
         db_client: &Client,
-    ) -> Result<DashMap<DieselUlid, bool, RandomState>> {
+    ) -> Result<DashMap<DieselUlid, EndpointInfo, RandomState>> {
         match self {
             CreateRequest::Project(req, default_endpoint) => {
                 if req.preferred_endpoint.is_empty() {
                     Ok(DashMap::from_iter([(
                         DieselUlid::from_str(default_endpoint)?,
-                        true, // is true, because at least one full sync endpoint is needed for projects
+                        EndpointInfo {
+                            replication: crate::database::enums::ReplicationType::FullSync, // at least one full sync endpoint is needed for projects
+                            status: None,
+                        },
                     )]))
                 } else {
                     // Checks if endpoints exists
@@ -276,11 +283,52 @@ impl CreateRequest {
                     match Endpoint::get(endpoint_id, db_client).await? {
                         Some(_) => Ok(DashMap::from_iter([(
                             endpoint_id,
-                            true, // is true, because at least one full sync endpoint is needed for projects
+                            EndpointInfo {
+                                replication: crate::database::enums::ReplicationType::FullSync,
+                                status: None,
+                            }, // at least one full sync endpoint is needed for projects
                         )])),
                         None => Err(anyhow!("Endpoint does not exist")),
                     }
                 }
+            }
+            CreateRequest::Object(_) => {
+                let parent = self
+                    .get_parent()
+                    .ok_or_else(|| anyhow!("No parent found"))?;
+                let parent = cache
+                    .get_object(&parent.get_id()?)
+                    .ok_or_else(|| anyhow!("Parent not found"))?;
+                Ok(DashMap::from_iter(
+                    parent
+                        .object
+                        .endpoints
+                        .0
+                        .into_iter()
+                        .filter_map(|(id, info)| {
+                            if let ReplicationType::PartialSync(inheritance) = info.replication {
+                                if inheritance {
+                                    Some((
+                                        id,
+                                        EndpointInfo {
+                                            replication: info.replication, // If not cloned, this could deadlock, right?
+                                            status: Some(ReplicationStatus::Waiting),
+                                        },
+                                    ))
+                                } else {
+                                    None
+                                }
+                            } else {
+                                Some((
+                                    id,
+                                    EndpointInfo {
+                                        replication: info.replication, // If not cloned, this could deadlock, right?
+                                        status: Some(ReplicationStatus::Waiting),
+                                    },
+                                ))
+                            }
+                        }),
+                ))
             }
             _ => {
                 let parent = self
@@ -289,13 +337,36 @@ impl CreateRequest {
                 let parent = cache
                     .get_object(&parent.get_id()?)
                     .ok_or_else(|| anyhow!("Parent not found"))?;
-                Ok(parent
-                    .object
-                    .endpoints
-                    .0
-                    .into_iter()
-                    .filter(|(_, full_sync)| *full_sync)
-                    .collect())
+                let filtered_endpoints =
+                    parent
+                        .object
+                        .endpoints
+                        .0
+                        .into_iter()
+                        .filter_map(|(id, info)| {
+                            if let ReplicationType::PartialSync(inheritance) = info.replication {
+                                if inheritance {
+                                    Some((
+                                        id,
+                                        EndpointInfo {
+                                            replication: info.replication, // If not cloned, this could deadlock, right?
+                                            status: None,
+                                        },
+                                    ))
+                                } else {
+                                    None
+                                }
+                            } else {
+                                Some((
+                                    id,
+                                    EndpointInfo {
+                                        replication: info.replication, // If not cloned, this could deadlock, right?
+                                        status: None,
+                                    },
+                                ))
+                            }
+                        });
+                Ok(DashMap::from_iter(filtered_endpoints))
             }
         }
     }
@@ -303,8 +374,8 @@ impl CreateRequest {
     pub async fn as_new_db_object(
         &self,
         user_id: DieselUlid,
-        endpoint_id: DieselUlid,
         client: &Client,
+        cache: Arc<Cache>,
     ) -> Result<Object> {
         // Conversions
         let id = DieselUlid::generate();
@@ -316,6 +387,7 @@ impl CreateRequest {
             None => Hashes(Vec::new()),
         };
         let (metadata_license, data_license) = self.get_licenses(client).await?;
+        let endpoints = self.get_endpoint(cache, client).await?;
         let name = self.get_name()?;
 
         Ok(Object {
@@ -334,7 +406,7 @@ impl CreateRequest {
             external_relations: Json(external_relations),
             hashes: Json(hashes),
             dynamic: self.is_dynamic(),
-            endpoints: Json(DashMap::from_iter([(endpoint_id, true)])),
+            endpoints: Json(endpoints),
             metadata_license,
             data_license,
         })

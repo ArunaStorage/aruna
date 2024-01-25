@@ -1,7 +1,7 @@
 use crate::database::{
     dsls::{
         license_dsl::ALL_RIGHTS_RESERVED,
-        object_dsl::Object,
+        object_dsl::{EndpointInfo, Object},
         user_dsl::{User, UserAttributes},
         workspaces_dsl::WorkspaceTemplate,
         Empty,
@@ -55,7 +55,15 @@ impl CreateWorkspace {
 
     pub fn make_project(template: WorkspaceTemplate, endpoints: Vec<DieselUlid>) -> Object {
         let id = DieselUlid::generate();
-        let endpoints = Json(DashMap::from_iter(endpoints.iter().map(|id| (*id, true))));
+        let endpoints = Json(DashMap::from_iter(endpoints.iter().map(|id| {
+            (
+                *id,
+                EndpointInfo {
+                    replication: crate::database::enums::ReplicationType::FullSync,
+                    status: None,
+                },
+            )
+        })));
         Object {
             id,
             revision_number: 0,

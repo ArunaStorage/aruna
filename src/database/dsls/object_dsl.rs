@@ -1,5 +1,5 @@
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
-use crate::database::enums::ObjectMapping;
+use crate::database::enums::{ObjectMapping, ReplicationStatus, ReplicationType};
 use crate::database::{
     crud::{CrudDb, PrimaryKey},
     enums::{DataClass, ObjectStatus, ObjectType},
@@ -69,6 +69,12 @@ pub enum Algorithm {
     SHA256,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct EndpointInfo {
+    pub replication: ReplicationType,
+    pub status: Option<ReplicationStatus>, // Only Some() for ObjectType::Object
+}
+
 #[derive(FromRow, FromSql, Debug, Clone, ToSql)]
 pub struct Object {
     pub id: DieselUlid,
@@ -86,7 +92,7 @@ pub struct Object {
     pub external_relations: Json<ExternalRelations>,
     pub hashes: Json<Hashes>,
     pub dynamic: bool,
-    pub endpoints: Json<DashMap<DieselUlid, bool, RandomState>>, // <Endpoint_id, leader>
+    pub endpoints: Json<DashMap<DieselUlid, EndpointInfo, RandomState>>, // <Endpoint_id, EndpointStatus>
     pub metadata_license: String,
     pub data_license: String,
 }
@@ -234,15 +240,15 @@ impl Object {
         client: &Client,
         object_id: &DieselUlid,
         endpoint_id: &DieselUlid,
-        full_sync: bool,
+        endpoint_info: EndpointInfo,
     ) -> Result<Object> {
         let query = "UPDATE objects 
             SET endpoints = endpoints || $1::jsonb 
             WHERE id = $2
             RETURNING *;";
 
-        let insert: DashMap<DieselUlid, bool, RandomState> =
-            DashMap::from_iter([(*endpoint_id, full_sync)]);
+        let insert: DashMap<DieselUlid, EndpointInfo, RandomState> =
+            DashMap::from_iter([(*endpoint_id, endpoint_info)]);
         let prepared = client.prepare(query).await?;
         let row = client
             .query_one(&prepared, &[&Json(insert), object_id])
@@ -323,7 +329,29 @@ impl Object {
         Ok(())
     }
 
-    // ToDo: Rust Doc
+    pub async fn fetch_recursive_objects(id: &DieselUlid, client: &Client) -> Result<Vec<Object>> {
+        let query = "/*+ indexscan(ir) set(yb_bnl_batch_size 1024) */ 
+        WITH RECURSIVE paths AS (
+            SELECT ir.*
+              FROM internal_relations ir WHERE ir.origin_pid = $1 
+            UNION 
+            SELECT ir2.*
+              FROM paths, internal_relations ir2 WHERE ir2.origin_pid = paths.target_pid 
+        )
+        SELECT objects.* FROM paths
+        LEFT JOIN objects ON objects.id = paths.target_pid;";
+        let prepared = client.prepare(query).await?;
+        let objects = client
+            .query(&prepared, &[&id])
+            .await?
+            .iter()
+            .map(Object::from_row)
+            .collect::<Vec<Object>>();
+
+        Ok(objects)
+    }
+
+    ///ToDo: Rust Doc
     pub async fn fetch_subresources(&self, client: &Client) -> Result<Vec<DieselUlid>> {
         // Return the obvious case before unnecessary query
         if self.object_type == ObjectType::OBJECT {
@@ -789,6 +817,21 @@ impl Object {
             .await?
             .map(|r| ObjectWithRelations::from_row(&r));
         Ok(result)
+    }
+
+    pub async fn update_endpoints(
+        endpoint_id: DieselUlid,
+        ep_status: EndpointInfo,
+        object_ids: Vec<DieselUlid>,
+        client: &Client,
+    ) -> Result<()> {
+        let query =
+            "UPDATE objects SET endpoints = endpoints || $1::jsonb WHERE id = ANY($2::uuid[]);";
+        let endpoint: Json<DashMap<DieselUlid, EndpointInfo, RandomState>> =
+            Json(DashMap::from_iter([(endpoint_id, ep_status)]));
+        let prepared = client.prepare(query).await?;
+        client.execute(&prepared, &[&endpoint, &object_ids]).await?;
+        Ok(())
     }
 }
 

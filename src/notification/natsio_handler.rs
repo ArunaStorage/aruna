@@ -325,6 +325,48 @@ impl NatsIoHandler {
         //Ok((consumer_id, consumer_config))
     }
 
+    /// Only send event to a specific dataproxy
+    pub async fn register_dataproxy_event(
+        &self,
+        object: &ObjectWithRelations,
+        object_hierarchies: Vec<Hierarchy>,
+        event_variant: EventVariant,
+        endpoint_id: DieselUlid,
+        message_id: Option<&DieselUlid>,
+    ) -> anyhow::Result<()> {
+        // Calculate resource checksum
+        let resource_checksum = tonic_internal!(
+            checksum_resource(object.clone().into(),),
+            "Checksum calculation failed"
+        );
+
+        // Evaluate number of notifications and the corresponding subjects
+        let mut subjects = generate_resource_message_subjects(object_hierarchies);
+
+        // Add individual endpoint subjects
+        subjects.push(generate_endpoint_subject(&endpoint_id));
+
+        // Create message payload
+        let message_variant = MessageVariant::ResourceEvent(ResourceEvent {
+            resource: Some(Resource {
+                resource_id: object.object.id.to_string(),
+                persistent_resource_id: object.object.dynamic,
+                checksum: resource_checksum,
+                resource_variant: ResourceVariant::from(object.object.object_type) as i32,
+            }),
+            event_variant: event_variant as i32,
+            reply: None, // Will be filled on message fetch
+        });
+
+        // Emit resource event messages
+        for subject in subjects {
+            self.register_event(message_variant.clone(), message_id, subject)
+                .await?
+        }
+
+        Ok(())
+    }
+
     /// Convenience function to simplify the usage of NatsIoHandler::register_event(...)
     pub async fn register_resource_event(
         &self,

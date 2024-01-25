@@ -53,7 +53,7 @@ impl ObjectService for ObjectServiceImpl {
             "invalid parent"
         );
         ctxs.push(parent_ctx);
-        let (user_id, _, is_dataproxy) = tonic_auth!(
+        let (user_id, _, is_dataproxy, _) = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(&token, ctxs)
                 .await,
@@ -192,7 +192,7 @@ impl ObjectService for ObjectServiceImpl {
 
         let request = request.into_inner();
 
-        let (_, _, is_dataproxy) = tonic_auth!(
+        let (_, _, is_dataproxy, dataproxy_id) = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(
                     &token,
@@ -224,7 +224,9 @@ impl ObjectService for ObjectServiceImpl {
         }
 
         let object = tonic_internal!(
-            self.database_handler.finish_object(request).await,
+            self.database_handler
+                .finish_object(request, dataproxy_id)
+                .await,
             "Internal database error."
         );
 

@@ -241,7 +241,30 @@ impl DatabaseHandler {
             .ok_or_else(|| anyhow!("Resource not found"))?;
         let (metadata_tag, data_tag) = request.get_licenses(&old, &client).await?;
         Object::update_licenses(id, data_tag, metadata_tag, &client).await?;
-        Object::get_object_with_relations(&id, &client).await
+
+        // Fetch hierarchies and object relations for notifications
+        let object_plus = Object::get_object_with_relations(&id, &client).await?;
+        let hierarchies = object_plus.object.fetch_object_hierarchies(&client).await?;
+
+        // Try to emit object updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_resource_event(
+                &object_plus,
+                hierarchies,
+                EventVariant::Updated,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
+            .await
+        {
+            // Log error, rollback transaction and return
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            Err(anyhow::anyhow!("Notification emission failed"))
+        } else {
+            //transaction.commit().await?;
+            Ok(object_plus)
+        }
     }
 
     pub async fn update_grpc_object(
@@ -305,7 +328,7 @@ impl DatabaseHandler {
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: ObjectStatus::INITIALIZING, // New revisions must be finished
                 dynamic: false,
-                endpoints: Json(req.get_endpoints(old.clone())?),
+                endpoints: Json(req.get_endpoints(old.clone(), true)?),
                 metadata_license,
                 data_license,
             };
@@ -369,7 +392,7 @@ impl DatabaseHandler {
                 object_type: crate::database::enums::ObjectType::OBJECT,
                 object_status: old.object_status.clone(),
                 dynamic: false,
-                endpoints: Json(req.get_endpoints(old.clone())?),
+                endpoints: Json(req.get_endpoints(old.clone(), false)?),
                 metadata_license: old.metadata_license,
                 data_license: old.data_license,
             };
@@ -528,17 +551,52 @@ impl DatabaseHandler {
     pub async fn finish_object(
         &self,
         request: FinishObjectStagingRequest,
+        dataproxy_id: Option<DieselUlid>,
     ) -> Result<ObjectWithRelations> {
-        let client = self.database.get_client().await?;
+        let mut client = self.database.get_client().await?;
         let id = DieselUlid::from_str(&request.object_id)?;
+        let object = Object::get(id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("Object not found"))?;
+        let (endpoint_id, endpoint_info) = if let Some(id) = dataproxy_id {
+            let temp = object
+                .endpoints
+                .0
+                .get(&id)
+                .ok_or_else(|| anyhow!("No endpoints defined in object"))?;
+            (id, temp.clone())
+        } else {
+            return Err(anyhow!("Could not retrieve endpoint info"));
+        };
+
+        let transaction = client.transaction().await?;
+        let transaction_client = transaction.client();
         let hashes = if request.hashes.is_empty() {
             None
         } else {
             Some(request.hashes.try_into()?)
         };
         let content_len = request.content_len;
-        Object::finish_object_staging(&id, &client, hashes, content_len, ObjectStatus::AVAILABLE)
-            .await?;
+        Object::finish_object_staging(
+            &id,
+            transaction_client,
+            hashes,
+            content_len,
+            ObjectStatus::AVAILABLE,
+        )
+        .await?;
+        Object::update_endpoints(
+            endpoint_id,
+            crate::database::dsls::object_dsl::EndpointInfo {
+                replication: endpoint_info.replication,
+                status: Some(crate::database::enums::ReplicationStatus::Finished),
+            },
+            vec![id],
+            transaction_client,
+        )
+        .await?;
+
+        transaction.commit().await?;
 
         let object = Object::get_object_with_relations(&id, &client).await?;
         let db_handler = DatabaseHandler {
@@ -556,6 +614,32 @@ impl DatabaseHandler {
                 log::error!("{:?}", call);
             }
         });
-        Ok(object)
+
+        // Try to emit object updated notification(s)
+        let hierarchies = object.object.fetch_object_hierarchies(&client).await?;
+        if let Err(err) = self
+            .natsio_handler
+            .register_resource_event(
+                &object,
+                hierarchies,
+                EventVariant::Updated,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
+            .await
+        {
+            // Log error, rollback transaction and return
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            Err(anyhow::anyhow!("Notification emission failed"))
+        } else {
+            //transaction.commit().await?;
+            Ok(object)
+        }
+        // TODO
+        // - UpdateObjectEvent
+        // - Replication logic
+        //  ->  DataProxy, that calls finish, is updated to
+        //      ReplicationStatus::Finished
+        //Ok(object)
     }
 }

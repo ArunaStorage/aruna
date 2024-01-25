@@ -209,3 +209,17 @@ pub enum NotificationReferenceType {
     User,
     Resource,
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+pub enum ReplicationStatus {
+    Waiting,
+    Running,
+    Finished,
+    Error,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+pub enum ReplicationType {
+    FullSync,
+    PartialSync(bool), // if true -> gets inherited by children
+}

@@ -41,7 +41,20 @@ VALUES
     'AVAILABLE' 
 );
 
+INSERT INTO endpoints(id, name, host_config, endpoint_variant, is_public, status) VALUES (
+    '018C1164-BDFC-08B5-F0FB-9D189419E848', --01HG8P9FFW12TZ1YWX32A1KT28
+    'replication_endpoint',
+    '[
+	{"url": "http://localhost:50055", "is_primary": true, "ssl": false, "public": true, "feature": "GRPC"},
+	{"url": "http://localhost:1338", "is_primary": true, "ssl": false, "public": true, "feature": "S3"}
+    ]',
+    'PERSISTENT',
+    't',
+    'AVAILABLE' 
+);
+
 INSERT INTO pub_keys(id, proxy, pubkey) VALUES (1337, '018a03c0-7e8b-293c-eb14-e10dc4b990db', 'MCowBQYDK2VwAyEAnouQBh4GHPCD/k85VIzPyCdOijVg2qlzt2TELwTMy4c=');
+INSERT INTO pub_keys(id, proxy, pubkey) VALUES (1338, '018C1164-BDFC-08B5-F0FB-9D189419E848', 'MCowBQYDK2VwAyEAkzRsLU2UreFIVdqYfZI/OAftygbcz757wwd6Tpu16Pw=');
 
 INSERT INTO licenses(tag, name, text, url) VALUES ('AllRightsReserved', 'All rights reserved', 'All rights reserved', 'license.test.org');
 

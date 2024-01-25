@@ -2,9 +2,9 @@ use crate::common::{init, test_utils};
 use aruna_server::database::dsls::internal_relation_dsl::InternalRelation;
 use aruna_server::database::dsls::license_dsl::ALL_RIGHTS_RESERVED;
 use aruna_server::database::dsls::object_dsl::{
-    DefinedVariant, ExternalRelation, Hierarchy, KeyValue, KeyValueVariant,
+    DefinedVariant, EndpointInfo, ExternalRelation, Hierarchy, KeyValue, KeyValueVariant,
 };
-use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType};
+use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType, ReplicationStatus};
 use aruna_server::database::{
     crud::CrudDb,
     dsls::object_dsl::{ExternalRelations, KeyValues, Object, ObjectWithRelations},
@@ -739,14 +739,51 @@ async fn add_remove_endpoint_test() {
     let mut user = test_utils::new_user(object_mapping);
     user.create(client).await.unwrap();
 
+    let replication = aruna_server::database::enums::ReplicationType::FullSync;
     let mut project = test_utils::new_object(user.id, project_id, ObjectType::PROJECT);
-    project.endpoints = Json(DashMap::from_iter([(endpoint1, true)]));
+    project.endpoints = Json(DashMap::from_iter([(
+        endpoint1,
+        EndpointInfo {
+            replication,
+            status: None,
+        },
+    )]));
 
     let mut collection = test_utils::new_object(user.id, collection_id, ObjectType::COLLECTION);
-    collection.endpoints = Json(DashMap::from_iter([(endpoint1, true), (endpoint2, false)]));
+    collection.endpoints = Json(DashMap::from_iter([
+        (
+            endpoint1,
+            EndpointInfo {
+                replication,
+                status: None,
+            },
+        ),
+        (
+            endpoint2,
+            EndpointInfo {
+                replication,
+                status: None,
+            },
+        ),
+    ]));
 
     let mut object = test_utils::new_object(user.id, object_id, ObjectType::OBJECT);
-    object.endpoints = Json(DashMap::from_iter([(endpoint1, true), (endpoint2, false)]));
+    object.endpoints = Json(DashMap::from_iter([
+        (
+            endpoint1,
+            EndpointInfo {
+                replication,
+                status: Some(ReplicationStatus::Waiting),
+            },
+        ),
+        (
+            endpoint2,
+            EndpointInfo {
+                replication,
+                status: Some(ReplicationStatus::Waiting),
+            },
+        ),
+    ]));
 
     Object::batch_create(
         &vec![project.clone(), collection.clone(), object.clone()],
@@ -778,9 +815,17 @@ async fn add_remove_endpoint_test() {
     }
 
     // Add another endpoint to the Object
-    let object = Object::add_endpoint(client, &object_id, &endpoint3, false)
-        .await
-        .unwrap();
+    let object = Object::add_endpoint(
+        client,
+        &object_id,
+        &endpoint3,
+        EndpointInfo {
+            replication,
+            status: Some(ReplicationStatus::Waiting),
+        },
+    )
+    .await
+    .unwrap();
 
     assert_eq!(object.endpoints.0.len(), 3);
     assert!(object.endpoints.0.contains_key(&endpoint1));

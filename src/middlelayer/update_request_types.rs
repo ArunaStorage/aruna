@@ -4,9 +4,9 @@ use crate::database::dsls::internal_relation_dsl::{
 };
 use crate::database::dsls::license_dsl::License;
 use crate::database::dsls::object_dsl::{
-    Hashes, KeyValue as DBKeyValue, KeyValues, Object, ObjectWithRelations,
+    EndpointInfo, Hashes, KeyValue as DBKeyValue, KeyValues, Object, ObjectWithRelations,
 };
-use crate::database::enums::{DataClass, ObjectType};
+use crate::database::enums::{DataClass, ObjectType, ReplicationStatus};
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::services::v2::update_object_request::Parent as UpdateParent;
@@ -306,9 +306,26 @@ impl UpdateObject {
         // False because triggers no new revision
         Ok((new.try_into()?, false))
     }
-    pub fn get_endpoints(&self, old: Object) -> Result<DashMap<DieselUlid, bool, RandomState>> {
-        // TODO -> Currently not implemented in APICall
-        Ok(old.endpoints.0)
+    pub fn get_endpoints(
+        &self,
+        old: Object,
+        new_revision: bool,
+    ) -> Result<DashMap<DieselUlid, EndpointInfo, RandomState>> {
+        let eps = if new_revision {
+            let new = old.endpoints.0.into_iter().map(|(id, info)| {
+                (
+                    id,
+                    EndpointInfo {
+                        replication: info.replication, // If not cloned, this could deadlock, right?
+                        status: Some(ReplicationStatus::Waiting),
+                    },
+                )
+            });
+            DashMap::from_iter(new)
+        } else {
+            old.endpoints.0
+        };
+        Ok(eps)
     }
     pub fn add_parent_relation(
         object_id: DieselUlid,

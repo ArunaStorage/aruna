@@ -274,11 +274,12 @@ impl EndpointService for EndpointServiceImpl {
         };
         return_with_log!(response);
     }
-
     async fn set_endpoint_status(
         &self,
         _request: Request<SetEndpointStatusRequest>,
     ) -> Result<Response<SetEndpointStatusResponse>> {
-        Err(Status::unimplemented("Not implemented"))
+        Err(tonic::Status::unimplemented(
+            "SetEndpointStatus is currently not implemented",
+        ))
     }
 }
