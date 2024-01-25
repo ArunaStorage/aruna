@@ -73,7 +73,7 @@ async fn create_project() {
     assert!(proj.object.endpoints.0.into_iter().contains(&(
         default_endpoint,
         EndpointInfo {
-            replication: aruna_server::database::enums::ReplicationType::FullSync(proj.object.id),
+            replication: aruna_server::database::enums::ReplicationType::FullSync,
             status: None,
         }
     )));
@@ -148,7 +148,7 @@ async fn create_collection() {
     assert!(coll.object.endpoints.0.into_iter().contains(&(
         default_endpoint,
         EndpointInfo {
-            replication: aruna_server::database::enums::ReplicationType::FullSync(parent.object.id),
+            replication: aruna_server::database::enums::ReplicationType::FullSync,
             status: None,
         }
     )));
@@ -222,7 +222,7 @@ async fn create_dataset() {
     assert!(ds.object.endpoints.0.into_iter().contains(&(
         default_endpoint,
         EndpointInfo {
-            replication: aruna_server::database::enums::ReplicationType::FullSync(parent.object.id),
+            replication: aruna_server::database::enums::ReplicationType::FullSync,
             status: None,
         }
     )));
@@ -319,7 +319,7 @@ async fn create_object() {
     assert!(obj.object.endpoints.0.into_iter().contains(&(
         default_endpoint,
         EndpointInfo {
-            replication: aruna_server::database::enums::ReplicationType::FullSync(parent.object.id),
+            replication: aruna_server::database::enums::ReplicationType::FullSync,
             status: Some(ReplicationStatus::Waiting),
         }
     )));

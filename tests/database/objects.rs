@@ -739,7 +739,7 @@ async fn add_remove_endpoint_test() {
     let mut user = test_utils::new_user(object_mapping);
     user.create(client).await.unwrap();
 
-    let replication = aruna_server::database::enums::ReplicationType::FullSync(project_id);
+    let replication = aruna_server::database::enums::ReplicationType::FullSync;
     let mut project = test_utils::new_object(user.id, project_id, ObjectType::PROJECT);
     project.endpoints = Json(DashMap::from_iter([(
         endpoint1,

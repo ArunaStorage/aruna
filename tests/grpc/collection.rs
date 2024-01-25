@@ -82,9 +82,7 @@ async fn grpc_create_collection() {
             id: DEFAULT_ENDPOINT_ULID.to_string(),
             variant: Some(
                 aruna_rust_api::api::storage::models::v2::data_endpoint::Variant::FullSync(
-                    FullSync {
-                        project_id: project.id.to_string()
-                    }
+                    FullSync {}
                 )
             ),
             status: None,

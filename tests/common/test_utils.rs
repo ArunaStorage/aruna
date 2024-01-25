@@ -109,9 +109,7 @@ pub fn new_object(user_id: DieselUlid, object_id: DieselUlid, object_type: Objec
         endpoints: Json(DashMap::from_iter([(
             DieselUlid::generate(),
             EndpointInfo {
-                replication: ReplicationType::PartialSync(
-                    aruna_server::database::enums::SyncObject::ObjectId(object_id),
-                ),
+                replication: ReplicationType::FullSync,
                 status: Some(ReplicationStatus::Waiting),
             },
         )])),
