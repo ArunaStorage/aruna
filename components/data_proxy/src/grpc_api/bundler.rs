@@ -1,7 +1,7 @@
 use crate::{
     caching::{auth::get_token_from_md, cache::Cache},
     helpers::sign_download_url,
-    structs::{DbPermissionLevel, Endpoint, Object, ObjectType, Origin, ALL_RIGHTS_RESERVED},
+    structs::{DbPermissionLevel, Endpoint, Object, ObjectType, ALL_RIGHTS_RESERVED},
     trace_err,
 };
 use aruna_rust_api::api::{
@@ -104,7 +104,7 @@ impl BundlerService for BundlerServiceImpl {
         };
         let ep = Endpoint {
             id,
-            variant: crate::structs::SyncVariant::PartialSync(Origin::BundleId(bundle_id)),
+            variant: crate::structs::SyncVariant::PartialSync(false),
             status: None,
         };
         let bundler_object = Object {

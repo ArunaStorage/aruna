@@ -132,8 +132,8 @@ pub struct Endpoint {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum SyncVariant {
-    FullSync(DieselUlid),
-    PartialSync(Origin),
+    FullSync,
+    PartialSync(bool),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -142,15 +142,6 @@ pub enum SyncStatus {
     Running,
     Finished,
     Error,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum Origin {
-    ProjectId(DieselUlid),
-    BundleId(DieselUlid),
-    CollectionId(DieselUlid),
-    DatasetId(DieselUlid),
-    ObjectId(DieselUlid),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -434,19 +425,11 @@ impl TryFrom<&DataEndpoint> for Endpoint {
                 .ok_or_else(|| anyhow!("No endpoint sync variant found"))?
             {
                 aruna_rust_api::api::storage::models::v2::data_endpoint::Variant::FullSync(
-                    aruna_rust_api::api::storage::models::v2::FullSync { ref project_id },
-                ) => SyncVariant::FullSync(DieselUlid::from_str(project_id)?),
+                    aruna_rust_api::api::storage::models::v2::FullSync { .. },
+                ) => SyncVariant::FullSync,
                 aruna_rust_api::api::storage::models::v2::data_endpoint::Variant::PartialSync(
-                    map,
-                ) => {
-                    let origin = match map.origin.as_ref().ok_or_else(|| anyhow!("No origin found"))? {
-                                aruna_rust_api::api::storage::models::v2::partial_sync::Origin::ProjectId(ref id) => Origin::ProjectId(DieselUlid::from_str(id)?),
-                                aruna_rust_api::api::storage::models::v2::partial_sync::Origin::CollectionId(ref id) => Origin::CollectionId(DieselUlid::from_str(id)?),
-                                aruna_rust_api::api::storage::models::v2::partial_sync::Origin::DatasetId(ref id) => Origin::DatasetId(DieselUlid::from_str(id)?),
-                                aruna_rust_api::api::storage::models::v2::partial_sync::Origin::ObjectId(ref id) => Origin::ObjectId(DieselUlid::from_str(id)?),
-                            };
-                    SyncVariant::PartialSync(origin)
-                }
+                    inheritance,
+                ) => SyncVariant::PartialSync(*inheritance),
             },
             status: match value.status() {
                 aruna_rust_api::api::storage::models::v2::ReplicationStatus::Unspecified => None,

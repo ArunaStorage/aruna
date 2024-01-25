@@ -7,7 +7,7 @@ version = "2.0.0-rc.1"
 
 [dependencies]
 anyhow = "1.0.75"
-aruna-rust-api = "2.0.0-beta.10"
+aruna-rust-api = "2.0.0-beta.11"
 aruna-file = { git = "https://github.com/ArunaStorage/aruna-file.git", branch = "feat/replication" }
 async-channel = "2.1.0"
 async-stream = "0.3.5"

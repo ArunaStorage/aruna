@@ -355,26 +355,59 @@ impl AuthHandler {
                 ));
             }
         } else if let Some((bucket, _)) = path.as_object() {
+            // This is needed to check if a partial synced object is requested by path oder special
+            // bucket
+            let mut special_bucket = false;
             if bucket == "objects" || bucket == "bundles" {
+                special_bucket = true;
                 if let &(Method::PUT | Method::POST | Method::PATCH | Method::DELETE) = method {
                     return Err(anyhow!("Can not modify special bucket"));
                 }
             }
             let ((obj, loc), ids, missing, bundle) = self.extract_object_from_path(path, method)?;
 
-            let partial = obj.endpoints.iter().find_map(|ep| {
-                if ep.id == self.self_id {
-                    match ep.variant {
-                        SyncVariant::PartialSync(_) => Some(true),
-                        _ => None,
-                    }
-                } else {
-                    None
+            // This evaluates if any object in the specified, requested path has the partial synced
+            // status for this endpoint
+            let partial = {
+                let (proj, col, ds, obj) = ids.destructurize();
+                let mut partial = false;
+                let mut id_vec = vec![proj];
+                if let Some(col) = col {
+                    id_vec.push(col);
                 }
-            });
+                if let Some(ds) = ds {
+                    id_vec.push(ds);
+                }
+                if let Some(obj) = obj {
+                    id_vec.push(obj);
+                }
+                for id in id_vec {
+                    let (object, _) = self.cache.get_resource(&id)?;
+                    if object
+                        .endpoints
+                        .iter()
+                        .find_map(|ep| {
+                            if ep.id == self.self_id {
+                                match ep.variant {
+                                    SyncVariant::PartialSync(_) => Some(true),
+                                    _ => None,
+                                }
+                            } else {
+                                None
+                            }
+                        })
+                        .is_some()
+                    {
+                        partial = true;
+                        break;
+                    };
+                }
+                partial
+            };
 
             if let &(Method::PUT | Method::POST | Method::PATCH | Method::DELETE) = method {
-                if partial.is_some() {
+                // Modifying partial synced objects is not allowed
+                if partial {
                     return Err(anyhow!("PartialSync objects cannot be modified"));
                 }
             }
@@ -472,27 +505,23 @@ impl AuthHandler {
                 }
             }
 
-            let (headers, bucket_is_partial) = if let Some((project, _)) = self
-                .cache
-                .get_full_resource_by_name(crate::structs::ResourceString::Project(
-                    bucket.to_string(),
-                )) {
-                let partial =
-                    if let Some(ep) = project.endpoints.iter().find(|ep| ep.id == self.self_id) {
-                        matches!(ep.variant, SyncVariant::PartialSync(_))
-                    } else {
-                        false
-                    };
-                (project.project_get_headers(method, headers), partial)
+            let headers = if let Some((project, _)) =
+                self.cache
+                    .get_full_resource_by_name(crate::structs::ResourceString::Project(
+                        bucket.to_string(),
+                    )) {
+                project.project_get_headers(method, headers)
             } else {
-                (None, false)
+                None
             };
 
             match method {
                 &Method::GET | &Method::HEAD | &Method::OPTIONS | &Method::DELETE => {
-                    if missing.is_some() || bucket_is_partial {
-                        // This should work, because if bundle is already checked,
-                        // so this part is only evaluated if bucket is a name
+                    if missing.is_some() {
+                        bail!("Resource not found")
+                    } else if partial && !special_bucket {
+                        // Requesting partial synced objects is only allowed when specifying one of
+                        // the special_buckets
                         bail!("Resource not found")
                     }
                 }

@@ -913,18 +913,16 @@ impl GrpcQueryHandler {
                 // ... then find out if I have to do anything ...
                 match (ep.status(), &ep.id, &ep.variant) {
                     // ... if my id, waiting and FullSync -> I should request a FullSync
-                    (
-                        ReplicationStatus::Waiting,
-                        id,
-                        Some(Variant::FullSync(FullSync { project_id: wanted })),
-                    ) if id == &self.endpoint_id => {
+                    (ReplicationStatus::Waiting, id, Some(Variant::FullSync(FullSync { .. })))
+                        if id == &self.endpoint_id =>
+                    {
                         // Find a proxy that has a fullsync
                         let full_sync_proxy = &object.endpoints.iter().find_map(|ep| {
                             match (&ep.variant, ep.status()) {
                                 (
-                                    Some(Variant::FullSync(FullSync { project_id })),
+                                    Some(Variant::FullSync(FullSync { .. })),
                                     ReplicationStatus::Finished,
-                                ) if wanted == project_id => Some(ep.id.clone()),
+                                ) => Some(ep.id.clone()),
                                 _ => None,
                             }
                         });
