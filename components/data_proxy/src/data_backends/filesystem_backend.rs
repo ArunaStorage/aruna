@@ -105,7 +105,7 @@ impl StorageBackend for FSBackend {
         let mut reader = tokio::io::BufReader::new(file);
         let mut buf = BytesMut::with_capacity(1024 * 16);
 
-        while (reader.read_buf(&mut buf).await).is_ok() {
+        while reader.read_buf(&mut buf).await.is_ok() {
             trace_err!(sender.send(Ok(buf.split().freeze())).await)?;
         }
         Ok(())
@@ -264,14 +264,11 @@ impl StorageBackend for FSBackend {
             .collect::<String>()
             .to_ascii_lowercase();
 
-        let encryption_key: String = Alphanumeric.sample_string(&mut rand::thread_rng(), 32);
+        let encryption_key: String = Alphanumeric.sample_string(&mut thread_rng(), 32);
 
         Ok(ObjectLocation {
             id: diesel_ulid::DieselUlid::generate(),
-            bucket: match ex_bucket {
-                Some(bucket) => bucket,
-                None => bucket,
-            },
+            bucket: ex_bucket.unwrap_or_else(|| bucket),
             upload_id: None,
             key,
             encryption_key: Some(encryption_key),

@@ -1,7 +1,7 @@
 use crate::{
     caching::{auth::get_token_from_md, cache::Cache},
     helpers::sign_download_url,
-    structs::{DbPermissionLevel, Object, ObjectType, ALL_RIGHTS_RESERVED},
+    structs::{DbPermissionLevel, Endpoint, Object, ObjectType, ALL_RIGHTS_RESERVED},
     trace_err,
 };
 use aruna_rust_api::api::{
@@ -17,7 +17,7 @@ use std::{
     str::FromStr,
     sync::Arc,
 };
-use tracing::error;
+use tracing::{error, trace};
 
 pub struct BundlerServiceImpl {
     pub cache: Arc<Cache>,
@@ -42,7 +42,7 @@ impl BundlerService for BundlerServiceImpl {
     async fn create_bundle(
         &self,
         request: tonic::Request<CreateBundleRequest>,
-    ) -> std::result::Result<tonic::Response<CreateBundleResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<CreateBundleResponse>, tonic::Status> {
         let (trels, access_key, secret_key) = if let Some(a) = self.cache.auth.read().await.as_ref()
         {
             let token = trace_err!(get_token_from_md(request.metadata()))
@@ -70,7 +70,7 @@ impl BundlerService for BundlerServiceImpl {
             let secret_key = trace_err!(trace_err!(a.check_ids(
                 &check_vec,
                 &access_key,
-                crate::structs::DbPermissionLevel::Write,
+                DbPermissionLevel::Write,
                 true,
             ))
             .map_err(|_| { tonic::Status::unauthenticated("Unable to authenticate user") })?
@@ -96,6 +96,17 @@ impl BundlerService for BundlerServiceImpl {
         };
 
         let bundle_id = DieselUlid::generate();
+        let id = if let Some(auth) = self.cache.auth.read().await.as_ref() {
+            auth.self_id
+        } else {
+            trace!("AuthorizationHandler could not provide self_id");
+            return Err(tonic::Status::internal("Internal conversion error"));
+        };
+        let ep = Endpoint {
+            id,
+            variant: crate::structs::SyncVariant::PartialSync(false),
+            status: None,
+        };
         let bundler_object = Object {
             id: bundle_id,
             name: request.filename.clone(),
@@ -110,6 +121,7 @@ impl BundlerService for BundlerServiceImpl {
             children: Some(HashSet::from_iter(trels)),
             parents: None,
             synced: true,
+            endpoints: vec![ep],
             created_at: Some(chrono::Utc::now().naive_utc()), // Now for default
         };
 
@@ -143,7 +155,7 @@ impl BundlerService for BundlerServiceImpl {
     async fn delete_bundle(
         &self,
         request: tonic::Request<DeleteBundleRequest>,
-    ) -> std::result::Result<tonic::Response<DeleteBundleResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<DeleteBundleResponse>, tonic::Status> {
         if let Some(a) = self.cache.auth.read().await.as_ref() {
             let token = trace_err!(get_token_from_md(request.metadata()))
                 .map_err(|e| tonic::Status::unauthenticated(e.to_string()))?;

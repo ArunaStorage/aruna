@@ -7,6 +7,7 @@ use crate::structs::ObjectLocation;
 use crate::structs::ObjectType;
 use crate::structs::ResourceIds;
 use crate::structs::ResourceResults;
+use crate::structs::SyncVariant;
 use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -46,7 +47,7 @@ pub(crate) struct ArunaTokenClaims {
     sub: String, // User_ID / DataProxy_ID
     exp: usize,  // Expiration timestamp
     aud: String, // Valid audiences
-    // Token_ID; None if OIDC or ... ?
+    // Token_ID; None if OIDC or DataProxy-DataProxy interaction ?
     #[serde(skip_serializing_if = "Option::is_none")]
     tid: Option<String>,
     // Intent: <endpoint-ulid>_<action>
@@ -62,7 +63,7 @@ pub enum Action {
     CreateSecrets = 1,
     Impersonate = 2,
     FetchInfo = 3,
-    //DpExchange = 4,
+    DpExchange = 4,
 }
 
 impl From<u8> for Action {
@@ -73,6 +74,7 @@ impl From<u8> for Action {
             1 => Action::CreateSecrets,
             2 => Action::Impersonate,
             3 => Action::FetchInfo,
+            4 => Action::DpExchange,
             _ => panic!("Invalid action"),
         }
     }
@@ -152,6 +154,14 @@ impl AuthHandler {
                 Action::CreateSecrets => {
                     if it.target == self.self_id {
                         Ok((DieselUlid::from_str(&claims.sub)?, claims.tid))
+                    } else {
+                        error!("Token is not valid for this Dataproxy");
+                        bail!("Token is not valid for this Dataproxy")
+                    }
+                }
+                Action::DpExchange => {
+                    if it.target == self.self_id {
+                        Ok((DieselUlid::from_str(&claims.sub)?, None))
                     } else {
                         error!("Token is not valid for this Dataproxy");
                         bail!("Token is not valid for this Dataproxy")
@@ -264,6 +274,11 @@ impl AuthHandler {
                         ));
 
                 if let Some((ref project, _)) = bucket_obj {
+                    if let Some(ep) = project.endpoints.iter().find(|ep| ep.id == self.self_id) {
+                        if let SyncVariant::PartialSync(_) = ep.variant {
+                            return Err(anyhow!("Can not modify partial sync resources"));
+                        }
+                    }
                     if let Some(perm) = user.permissions.get(&project.id) {
                         if *perm >= DbPermissionLevel::Write {
                             return Ok(CheckAccessResult {
@@ -340,7 +355,63 @@ impl AuthHandler {
                 ));
             }
         } else if let Some((bucket, _)) = path.as_object() {
+            // This is needed to check if a partial synced object is requested by path oder special
+            // bucket
+            let mut special_bucket = false;
+            if bucket == "objects" || bucket == "bundles" {
+                special_bucket = true;
+                if let &(Method::PUT | Method::POST | Method::PATCH | Method::DELETE) = method {
+                    return Err(anyhow!("Can not modify special bucket"));
+                }
+            }
             let ((obj, loc), ids, missing, bundle) = self.extract_object_from_path(path, method)?;
+
+            // This evaluates if any object in the specified, requested path has the partial synced
+            // status for this endpoint
+            let partial = {
+                let (proj, col, ds, obj) = ids.destructurize();
+                let mut partial = false;
+                let mut id_vec = vec![proj];
+                if let Some(col) = col {
+                    id_vec.push(col);
+                }
+                if let Some(ds) = ds {
+                    id_vec.push(ds);
+                }
+                if let Some(obj) = obj {
+                    id_vec.push(obj);
+                }
+                for id in id_vec {
+                    let (object, _) = self.cache.get_resource(&id)?;
+                    if object
+                        .endpoints
+                        .iter()
+                        .find_map(|ep| {
+                            if ep.id == self.self_id {
+                                match ep.variant {
+                                    SyncVariant::PartialSync(_) => Some(true),
+                                    _ => None,
+                                }
+                            } else {
+                                None
+                            }
+                        })
+                        .is_some()
+                    {
+                        partial = true;
+                        break;
+                    };
+                }
+                partial
+            };
+
+            if let &(Method::PUT | Method::POST | Method::PATCH | Method::DELETE) = method {
+                // Modifying partial synced objects is not allowed
+                if partial {
+                    return Err(anyhow!("PartialSync objects cannot be modified"));
+                }
+            }
+
             if let Some(bundle) = bundle {
                 debug!(bundle, "bundle_detected");
 
@@ -353,27 +424,40 @@ impl AuthHandler {
                         )
                         .ok_or_else(|| anyhow!("Unknown user")))?;
 
-                    for (res, perm) in user.permissions {
-                        // ResourceIds only contain Bundle Id as Project
-                        if ids.check_if_in(res) && perm >= db_perm_from_method {
-                            let token_id = if user.user_id.to_string() == user.access_key {
-                                None
-                            } else {
-                                Some(user.access_key.clone())
-                            };
+                    if !user.admin {
+                        for (res, perm) in user.permissions {
+                            // ResourceIds only contain Bundle Id as Project
+                            if ids.check_if_in(res) && perm >= db_perm_from_method {
+                                let token_id = if user.user_id.to_string() == user.access_key {
+                                    None
+                                } else {
+                                    Some(user.access_key.clone())
+                                };
 
-                            trace!(resource_id = ?res, permission = ?perm, user_id = ?user.user_id, key = ?user.access_key, "permission match found");
+                                trace!(resource_id = ?res, permission = ?perm, user_id = ?user.user_id, key = ?user.access_key, "permission match found");
 
-                            return Ok(CheckAccessResult {
-                                user_id: Some(user.user_id.to_string()),
-                                token_id,
-                                resource_ids: None,
-                                missing_resources: None, // Bundles are standalone
-                                object: Some((obj, None)), // Bundles can't have a location
-                                bundle: Some(bundle),
-                                headers: None,
-                            });
+                                return Ok(CheckAccessResult {
+                                    user_id: Some(user.user_id.to_string()),
+                                    token_id,
+                                    resource_ids: None,
+                                    missing_resources: None, // Bundles are standalone
+                                    object: Some((obj, None)), // Bundles can't have a location
+                                    bundle: Some(bundle),
+                                    headers: None,
+                                });
+                            }
                         }
+                    } else {
+                        trace!("AdminUser signed bundle");
+                        return Ok(CheckAccessResult {
+                            user_id: Some(user.user_id.to_string()),
+                            token_id: None,
+                            resource_ids: Some(ids),
+                            missing_resources: None,
+                            object: Some((obj, None)),
+                            bundle: Some(bundle),
+                            headers: None,
+                        });
                     }
                 }
 
@@ -435,6 +519,10 @@ impl AuthHandler {
                 &Method::GET | &Method::HEAD | &Method::OPTIONS | &Method::DELETE => {
                     if missing.is_some() {
                         bail!("Resource not found")
+                    } else if partial && !special_bucket {
+                        // Requesting partial synced objects is only allowed when specifying one of
+                        // the special_buckets
+                        bail!("Resource not found")
                     }
                 }
                 _ => {}
@@ -458,7 +546,6 @@ impl AuthHandler {
                     .cache
                     .get_user_by_key(&creds.access_key)
                     .ok_or_else(|| anyhow!("Unknown user")))?;
-
                 for (res, perm) in user.permissions {
                     if ids.check_if_in(res) && perm >= db_perm_from_method {
                         let token_id = if user.user_id.to_string() == user.access_key {
@@ -538,6 +625,10 @@ impl AuthHandler {
             if bucket == "objects" {
                 debug!("special bucket detected");
                 path = path.trim_matches('/');
+                debug!("{path:?}");
+                // Why
+                // objects/<resource-id>/<resource-name>
+                // ?
                 if let Some((prefix, name)) = path.split_once('/') {
                     let id = trace_err!(DieselUlid::from_str(prefix))?;
                     trace!(?id, "extracted id from path");
@@ -676,6 +767,25 @@ impl AuthHandler {
         trace_err!(self.sign_token(claims))
     }
 
+    #[tracing::instrument(level = "trace", skip(self, target_endpoint))]
+    pub(crate) fn sign_dataproxy_token(&self, target_endpoint: DieselUlid) -> Result<String> {
+        let claims = ArunaTokenClaims {
+            iss: self.self_id.to_string(),
+            sub: self.self_id.to_string(),
+            aud: "proxy".to_string(),
+            exp: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .add(Duration::from_secs(15 * 60))
+                .as_secs() as usize,
+            tid: None,
+            it: Some(Intent {
+                target: target_endpoint,
+                action: Action::DpExchange,
+            }),
+        };
+
+        trace_err!(self.sign_token(claims))
+    }
     #[tracing::instrument(level = "trace", skip(self, claims))]
     pub(crate) fn sign_token(&self, claims: ArunaTokenClaims) -> Result<String> {
         let header = Header {

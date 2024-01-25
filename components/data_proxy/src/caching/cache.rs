@@ -4,6 +4,7 @@ use super::{
 };
 use crate::caching::grpc_query_handler::sort_objects;
 use crate::data_backends::storage_backend::StorageBackend;
+use crate::replication::replication_handler::ReplicationMessage;
 use crate::structs::{DbPermissionLevel, TypedRelation};
 use crate::trace_err;
 use crate::{
@@ -14,6 +15,7 @@ use ahash::RandomState;
 use anyhow::Result;
 use anyhow::{anyhow, bail};
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
+use async_channel::Sender;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
@@ -38,6 +40,7 @@ pub struct Cache {
     pub persistence: RwLock<Option<Database>>,
     pub aruna_client: RwLock<Option<Arc<GrpcQueryHandler>>>,
     pub auth: RwLock<Option<AuthHandler>>,
+    pub sender: Sender<ReplicationMessage>,
     pub backend: Option<Arc<Box<dyn StorageBackend>>>,
 }
 
@@ -59,6 +62,7 @@ impl Cache {
         self_id: DieselUlid,
         encoding_key: String,
         encoding_key_serial: i32,
+        sender: Sender<ReplicationMessage>,
         backend: Option<Arc<Box<dyn StorageBackend>>>,
     ) -> Result<Arc<Self>> {
         // Initialize cache
@@ -70,6 +74,7 @@ impl Cache {
             persistence: RwLock::new(None),
             aruna_client: RwLock::new(None),
             auth: RwLock::new(None),
+            sender,
             backend,
         });
 
@@ -168,11 +173,9 @@ impl Cache {
             let location = ObjectLocation::get_opt(&object.id, &client).await?;
             self.resources.insert(object.id, (object.clone(), location));
 
-            if object.object_type != ObjectType::Bundle {
-                let tree = self.get_name_trees(&object.id.to_string(), object.object_type)?;
-                for (e, v) in tree {
-                    self.paths.insert(e, v);
-                }
+            let tree = self.get_name_trees(&object.id.to_string(), object.object_type)?;
+            for (e, v) in tree {
+                self.paths.insert(e, v);
             }
         }
         debug!("synced objects");
@@ -210,6 +213,7 @@ impl Cache {
                                     access_key: access_key.to_string(),
                                     user_id: DieselUlid::from_str(&user.id)?,
                                     secret: "".to_string(),
+                                    admin: false,
                                     permissions: perm,
                                 })
                             }))?;
@@ -234,7 +238,7 @@ impl Cache {
 
                             trace!("update persistence");
                             if let Some(persistence) = cache.persistence.read().await.as_ref() {
-                                user.upsert(&persistence.get_client().await?.client())
+                                user.upsert(persistence.get_client().await?.client())
                                     .await?;
                             }
 
@@ -269,9 +273,9 @@ impl Cache {
     pub async fn set_pubkeys(&self, pks: Vec<PubKey>) -> Result<()> {
         trace!(num_pks = pks.len(), "overwriting pks in persistence");
         if let Some(persistence) = self.persistence.read().await.as_ref() {
-            PubKey::delete_all(&persistence.get_client().await?.client()).await?;
+            PubKey::delete_all(persistence.get_client().await?.client()).await?;
             for pk in pks.iter() {
-                pk.upsert(&persistence.get_client().await?.client()).await?;
+                pk.upsert(persistence.get_client().await?.client()).await?;
             }
         }
         trace!("clearing pks in cache");
@@ -659,6 +663,7 @@ impl Cache {
                                         access_key: key.to_string(),
                                         user_id,
                                         secret: "".to_string(),
+                                        admin: false,
                                         permissions: HashMap::default(),
                                     })
                                 }))?;
@@ -667,7 +672,7 @@ impl Cache {
                                 mut_entry.clone()
                             };
                             if let Some(persistence) = self.persistence.read().await.as_ref() {
-                                user.upsert(&persistence.get_client().await?.client())
+                                user.upsert(persistence.get_client().await?.client())
                                     .await?;
                             }
                             break;
@@ -695,7 +700,7 @@ impl Cache {
 
             if let Some(persistence) = self.persistence.read().await.as_ref() {
                 user.value()
-                    .upsert(&persistence.get_client().await?.client())
+                    .upsert(persistence.get_client().await?.client())
                     .await?;
             }
 
@@ -717,7 +722,7 @@ impl Cache {
 
             if let Some(persistence) = self.persistence.read().await.as_ref() {
                 user.value()
-                    .upsert(&persistence.get_client().await?.client())
+                    .upsert(persistence.get_client().await?.client())
                     .await?;
             }
 
@@ -750,7 +755,7 @@ impl Cache {
                 if let Some((_, user)) = user {
                     User::delete(
                         &user.user_id.to_string(),
-                        &persistence.get_client().await?.client(),
+                        persistence.get_client().await?.client(),
                     )
                     .await?;
                 }
@@ -765,8 +770,15 @@ impl Cache {
         object: Object,
         location: Option<ObjectLocation>,
     ) -> Result<()> {
-        trace!(object_id = ?object.id, with_location = location.is_some());
         if let Some(persistence) = self.persistence.read().await.as_ref() {
+            // <<<<<<< HEAD
+            //             trace!("Upsert into database");
+            //             object.upsert(&persistence.get_client().await?).await?;
+            //
+            //             if let Some(l) = &location {
+            //                 l.upsert(&persistence.get_client().await?).await?;
+            //                 trace!("Upsert location");
+            // =======
             let mut client = persistence.get_client().await?;
             let transaction = client.transaction().await?;
             let transaction_client = transaction.client();
@@ -775,8 +787,9 @@ impl Cache {
 
             if let Some(l) = &location {
                 l.upsert(transaction_client).await?;
+                //>>>>>>> dev
             }
-            
+
             transaction.commit().await?;
         }
         let object_id = object.id;
@@ -793,9 +806,12 @@ impl Cache {
         };
 
         self.resources.insert(object.id, (object.clone(), location));
+        trace!("inserted into cache");
         self.paths.retain(|_, v| v != &object_id);
+        trace!("inserted paths");
 
         if object.object_type != ObjectType::Bundle {
+            trace!("Getting name trees because full_sync");
             let tree = self.get_name_trees(&object_id.to_string(), obj_type)?;
             for (e, v) in tree {
                 self.paths.insert(e, v);

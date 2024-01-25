@@ -1,12 +1,14 @@
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::dataproxy::services::v2::bundler_service_server::BundlerServiceServer;
-use aruna_rust_api::api::dataproxy::services::v2::dataproxy_service_server::DataproxyServiceServer;
+use aruna_rust_api::api::dataproxy::services::v2::dataproxy_replication_service_server::DataproxyReplicationServiceServer;
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_server::DataproxyUserServiceServer;
 use caching::cache::Cache;
 use data_backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
 use grpc_api::bundler::BundlerServiceImpl;
-use grpc_api::{proxy_service::DataproxyServiceImpl, user_service::DataproxyUserServiceImpl};
+use grpc_api::{
+    proxy_service::DataproxyReplicationServiceImpl, user_service::DataproxyUserServiceImpl,
+};
 use std::{net::SocketAddr, str::FromStr, sync::Arc};
 use tokio::try_join;
 use tonic::transport::Server;
@@ -20,6 +22,7 @@ mod bundler;
 mod caching;
 mod data_backends;
 mod database;
+mod replication;
 mod s3_frontend;
 // mod helpers;
 mod grpc_api;
@@ -28,6 +31,8 @@ mod structs;
 mod macros;
 mod helpers;
 use futures_util::TryFutureExt;
+
+use crate::replication::replication_handler::ReplicationHandler;
 
 #[tracing::instrument(level = "trace", skip())]
 #[tokio::main]
@@ -93,23 +98,38 @@ async fn main() -> Result<()> {
         Arc::new(Box::new(S3Backend::new(endpoint_id.to_string()).await?));
 
     trace!("init cache");
+    let (sender, receiver) = async_channel::unbounded();
     let cache = Cache::new(
         aruna_host_url,
         with_persistence,
         diesel_ulid::DieselUlid::from_str(&endpoint_id)?,
         encoding_key,
         encoding_key_serial,
+        sender.clone(),
         Some(storage_backend.clone()),
     )
     .await?;
 
-    let cache_clone = cache.clone();
+    trace!("init replication handler");
+    let replication_handler = ReplicationHandler::new(
+        receiver,
+        storage_backend.clone(),
+        endpoint_id.clone(),
+        cache.clone(),
+    );
+    tokio::spawn(async move {
+        let replication = replication_handler.run().await;
+        if let Err(err) = replication {
+            trace!("{err}");
+        };
+    });
 
     trace!("init s3 server");
+    let cache_clone = cache.clone();
     let s3_server = s3_frontend::s3server::S3Server::new(
         &address,
         hostname.to_string(),
-        storage_backend,
+        storage_backend.clone(),
         cache,
     )
     .await?;
@@ -118,9 +138,14 @@ async fn main() -> Result<()> {
     let grpc_server_handle = trace_err!(tokio::spawn(
         async move {
             Server::builder()
-                .add_service(DataproxyServiceServer::new(DataproxyServiceImpl::new(
-                    cache_clone.clone(),
-                )))
+                .add_service(DataproxyReplicationServiceServer::new(
+                    DataproxyReplicationServiceImpl::new(
+                        cache_clone.clone(),
+                        sender,
+                        hostname.clone(),
+                        storage_backend,
+                    ),
+                ))
                 .add_service(DataproxyUserServiceServer::new(
                     DataproxyUserServiceImpl::new(cache_clone.clone()),
                 ))

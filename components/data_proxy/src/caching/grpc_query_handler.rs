@@ -1,3 +1,5 @@
+use crate::replication::replication_handler::Direction;
+use crate::replication::replication_handler::ReplicationMessage;
 use crate::structs::Object as DPObject;
 use crate::structs::ObjectLocation;
 use crate::structs::ObjectType;
@@ -5,6 +7,9 @@ use crate::structs::PubKey;
 use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::Result;
+use aruna_rust_api::api::dataproxy::services::v2::dataproxy_replication_service_client::DataproxyReplicationServiceClient;
+use aruna_rust_api::api::dataproxy::services::v2::PullReplicationRequest;
+use aruna_rust_api::api::dataproxy::services::v2::PullReplicationResponse;
 use aruna_rust_api::api::notification::services::v2::announcement_event;
 use aruna_rust_api::api::notification::services::v2::event_message::MessageVariant;
 use aruna_rust_api::api::notification::services::v2::AcknowledgeMessageBatchRequest;
@@ -15,9 +20,12 @@ use aruna_rust_api::api::notification::services::v2::GetEventMessageStreamReques
 use aruna_rust_api::api::notification::services::v2::Reply;
 use aruna_rust_api::api::notification::services::v2::ResourceEvent;
 use aruna_rust_api::api::notification::services::v2::UserEvent;
+use aruna_rust_api::api::storage::models::v2::data_endpoint::Variant;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
 use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
+use aruna_rust_api::api::storage::models::v2::EndpointHostVariant;
+use aruna_rust_api::api::storage::models::v2::FullSync;
 use aruna_rust_api::api::storage::models::v2::GenericResource;
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::KeyValue;
@@ -25,8 +33,11 @@ use aruna_rust_api::api::storage::models::v2::KeyValueVariant;
 use aruna_rust_api::api::storage::models::v2::Object;
 use aruna_rust_api::api::storage::models::v2::Project;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
+use aruna_rust_api::api::storage::models::v2::ReplicationStatus;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
+use aruna_rust_api::api::storage::services::v2::data_replication_service_client::DataReplicationServiceClient;
 use aruna_rust_api::api::storage::services::v2::full_sync_endpoint_response::Target;
+use aruna_rust_api::api::storage::services::v2::get_endpoint_request::Endpoint;
 use aruna_rust_api::api::storage::services::v2::CreateCollectionRequest;
 use aruna_rust_api::api::storage::services::v2::CreateDatasetRequest;
 use aruna_rust_api::api::storage::services::v2::CreateObjectRequest;
@@ -35,12 +46,14 @@ use aruna_rust_api::api::storage::services::v2::FinishObjectStagingRequest;
 use aruna_rust_api::api::storage::services::v2::FullSyncEndpointRequest;
 use aruna_rust_api::api::storage::services::v2::GetCollectionRequest;
 use aruna_rust_api::api::storage::services::v2::GetDatasetRequest;
+use aruna_rust_api::api::storage::services::v2::GetEndpointRequest;
 use aruna_rust_api::api::storage::services::v2::GetObjectRequest;
 use aruna_rust_api::api::storage::services::v2::GetProjectRequest;
 use aruna_rust_api::api::storage::services::v2::GetPubkeysRequest;
 use aruna_rust_api::api::storage::services::v2::GetUserRedactedRequest;
 use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use aruna_rust_api::api::storage::services::v2::UpdateProjectKeyValuesRequest;
+use aruna_rust_api::api::storage::services::v2::UpdateReplicationStatusRequest;
 use aruna_rust_api::api::{
     notification::services::v2::event_notification_service_client::EventNotificationServiceClient,
     storage::services::v2::{
@@ -56,11 +69,14 @@ use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
 use std::str::FromStr;
 use std::sync::Arc;
+use tokio::sync::mpsc::Sender;
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::metadata::AsciiMetadataKey;
 use tonic::metadata::AsciiMetadataValue;
 use tonic::transport::Channel;
 use tonic::transport::ClientTlsConfig;
 use tonic::Request;
+use tonic::Streaming;
 use tracing::debug;
 use tracing::error;
 use tracing::trace;
@@ -77,6 +93,7 @@ pub struct GrpcQueryHandler {
     endpoint_service: EndpointServiceClient<Channel>,
     storage_status_service: StorageStatusServiceClient<Channel>,
     event_notification_service: EventNotificationServiceClient<Channel>,
+    data_replication_service: DataReplicationServiceClient<Channel>,
     cache: Arc<Cache>,
     endpoint_id: String,
     long_lived_token: String,
@@ -115,7 +132,9 @@ impl GrpcQueryHandler {
 
         let storage_status_service = StorageStatusServiceClient::new(channel.clone());
 
-        let event_notification_service = EventNotificationServiceClient::new(channel);
+        let event_notification_service = EventNotificationServiceClient::new(channel.clone());
+
+        let data_replication_service = DataReplicationServiceClient::new(channel.clone());
 
         let long_lived_token = trace_err!(cache
             .auth
@@ -134,6 +153,7 @@ impl GrpcQueryHandler {
             endpoint_service,
             storage_status_service,
             event_notification_service,
+            data_replication_service,
             cache,
             endpoint_id,
             long_lived_token,
@@ -198,6 +218,7 @@ impl GrpcQueryHandler {
     pub async fn create_project(&self, object: DPObject, token: &str) -> Result<DPObject> {
         let mut req = Request::new(CreateProjectRequest::from(object));
 
+        req.get_mut().preferred_endpoint = self.endpoint_id.clone();
         req.metadata_mut().append(
             trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
             trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
@@ -615,9 +636,8 @@ impl GrpcQueryHandler {
 
         sort_resources(&mut resources);
         for res in resources {
-            self.cache
-                .upsert_object(trace_err!(DPObject::try_from(res))?, None)
-                .await?
+            let object = trace_err!(DPObject::try_from(res))?;
+            self.cache.upsert_object(object, None).await?
         }
 
         let (keep_alive_tx, mut keep_alive_rx) = tokio::sync::mpsc::channel::<()>(1);
@@ -665,6 +685,89 @@ impl GrpcQueryHandler {
         }
         error!("Stream was closed by sender");
         Err(anyhow!("Stream was closed by sender"))
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn pull_replication(
+        &self,
+        init_request: PullReplicationRequest,
+        endpoint_ulid: DieselUlid,
+    ) -> Result<(
+        Sender<PullReplicationRequest>,
+        Streaming<PullReplicationResponse>,
+    )> {
+        let get_ep_request = Request::new(GetEndpointRequest {
+            endpoint: Some(Endpoint::EndpointId(endpoint_ulid.to_string())),
+        });
+        let get_ep_response = trace_err!(
+            self.endpoint_service
+                .clone()
+                .get_endpoint(get_ep_request)
+                .await
+        )?
+        .into_inner();
+        let endpoint = trace_err!(get_ep_response
+            .endpoint
+            .ok_or_else(|| anyhow!("No endpoint found in GetEndpointResponse")))?;
+        let config = trace_err!(endpoint
+            .host_configs
+            .iter()
+            .find(|config| config.host_variant() == EndpointHostVariant::Grpc)
+            .ok_or_else(|| anyhow!("No grpc config found for endpoint")))?;
+        let channel = if config.ssl {
+            let proxy_channel = trace_err!(Channel::from_shared(config.url.clone()))?;
+            let tls_config = ClientTlsConfig::new();
+            trace_err!(
+                trace_err!(proxy_channel.tls_config(tls_config))?
+                    .connect()
+                    .await
+            )?
+        } else {
+            trace_err!(Channel::from_shared(config.url.clone())?.connect().await)?
+        };
+        let token = if let Some(auth) = self.cache.auth.read().await.as_ref() {
+            trace_err!(auth.sign_dataproxy_token(endpoint_ulid))?
+        } else {
+            trace_err!(Err(anyhow!("Cannot read auth handler")))?
+        };
+
+        let dataproxy_service = DataproxyReplicationServiceClient::new(channel.clone())
+            .max_decoding_message_size(1024 * 1024 * 10);
+        let (request_stream_sender, request_stream_receiver) = tokio::sync::mpsc::channel(1000);
+        let mut req = Request::new(ReceiverStream::new(request_stream_receiver));
+        req.metadata_mut().append(
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!(
+                "Bearer {}",
+                token.as_str()
+            )))?,
+        );
+        let response_stream =
+            trace_err!(dataproxy_service.clone().pull_replication(req).await)?.into_inner();
+        trace_err!(request_stream_sender.send(init_request).await)?;
+        Ok((request_stream_sender, response_stream))
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, request))]
+    pub async fn update_replication_status(
+        &self,
+        request: UpdateReplicationStatusRequest,
+    ) -> Result<()> {
+        let mut request = Request::new(request);
+        request.metadata_mut().append(
+            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
+            trace_err!(AsciiMetadataValue::try_from(format!(
+                "Bearer {}",
+                self.long_lived_token.as_str()
+            )))?,
+        );
+        trace_err!(
+            self.data_replication_service
+                .clone()
+                .update_replication_status(request)
+                .await
+        )?;
+        Ok(())
     }
 }
 
@@ -744,6 +847,7 @@ impl GrpcQueryHandler {
                                 )
                                 .await
                             )?;
+
                             self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Collection => {
@@ -774,7 +878,14 @@ impl GrpcQueryHandler {
                                 )
                                 .await
                             )?;
-                            self.cache.upsert_object(object.try_into()?, None).await?;
+                            // Update anyway
+                            trace_err!(
+                                self.cache
+                                    .upsert_object(object.clone().try_into()?, None)
+                                    .await
+                            )?;
+                            // Try pull replication
+                            trace_err!(self.handle_replication(object).await)?;
                         }
                         _ => (),
                     }
@@ -791,6 +902,117 @@ impl GrpcQueryHandler {
             _ => (),
         }
         Ok(event.reply)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, object))]
+    async fn handle_replication(&self, object: Object) -> Result<()> {
+        // if ObjectStatus::AVAILABLE ...
+        if object.status == 3 {
+            // ... object should be synced in at least one ep
+            for ep in &object.endpoints {
+                // ... then find out if I have to do anything ...
+                match (ep.status(), &ep.id, &ep.variant) {
+                    // ... if my id, waiting and FullSync -> I should request a FullSync
+                    (ReplicationStatus::Waiting, id, Some(Variant::FullSync(FullSync { .. })))
+                        if id == &self.endpoint_id =>
+                    {
+                        // Find a proxy that has a fullsync
+                        let full_sync_proxy = &object.endpoints.iter().find_map(|ep| {
+                            match (&ep.variant, ep.status()) {
+                                (
+                                    Some(Variant::FullSync(FullSync { .. })),
+                                    ReplicationStatus::Finished,
+                                ) => Some(ep.id.clone()),
+                                _ => None,
+                            }
+                        });
+                        match full_sync_proxy {
+                            Some(ep_id) => {
+                                let direction =
+                                    Direction::Pull(trace_err!(DieselUlid::from_str(&object.id))?);
+                                let endpoint_id = trace_err!(DieselUlid::from_str(ep_id))?;
+                                trace_err!(
+                                    self.cache
+                                        .sender
+                                        .send(ReplicationMessage {
+                                            direction,
+                                            endpoint_id,
+                                        })
+                                        .await
+                                )?;
+                            }
+                            None => {
+                                error!("ReplicationError: No available proxy found");
+                                trace_err!(
+                                    self.update_replication_status(
+                                        UpdateReplicationStatusRequest {
+                                            object_id: object.id.to_string(),
+                                            endpoint_id: self.endpoint_id.clone(),
+                                            status: ReplicationStatus::Error as i32,
+                                        }
+                                    )
+                                    .await
+                                )?;
+                            }
+                        }
+                    }
+                    // ... if my id, waiting and partial sync -> I should request a PartialSync
+                    (ReplicationStatus::Waiting, id, Some(Variant::PartialSync(_)))
+                        if id == &self.endpoint_id =>
+                    {
+                        // Find the full sync proxy and partial sync from there
+                        let full_sync_proxy = &object.endpoints.iter().find_map(|ep| {
+                            match (&ep.variant, ep.status()) {
+                                (Some(Variant::FullSync(_)), ReplicationStatus::Finished) => {
+                                    Some(ep.id.clone())
+                                }
+                                _ => None,
+                            }
+                        });
+                        match full_sync_proxy {
+                            Some(ep_id) => {
+                                let direction =
+                                    Direction::Pull(trace_err!(DieselUlid::from_str(&object.id))?);
+                                let endpoint_id = trace_err!(DieselUlid::from_str(ep_id))?;
+                                trace_err!(
+                                    self.cache
+                                        .sender
+                                        .send(ReplicationMessage {
+                                            direction,
+                                            endpoint_id,
+                                        })
+                                        .await
+                                )?;
+                            }
+                            None => {
+                                error!("ReplicationError: No available proxy found");
+                                trace_err!(
+                                    self.update_replication_status(
+                                        UpdateReplicationStatusRequest {
+                                            object_id: object.id.to_string(),
+                                            endpoint_id: self.endpoint_id.clone(),
+                                            status: ReplicationStatus::Error as i32,
+                                        }
+                                    )
+                                    .await
+                                )?;
+                            }
+                        }
+                    }
+                    // ... if others are waiting, and I finished -> Should I sync to other dataproxies?
+                    (ReplicationStatus::Waiting, id, _) if id != &self.endpoint_id => {
+                        // TODO
+                        // - How to find out if pushing is appropriate for a given dataproxy that is
+                        //   not this one? -> Am I the only one/main dataproxy?
+                        // - Check if object location exists here
+                        // - Create presigned url for object
+                        // - send message to replication handler
+                    }
+                    _ => (),
+                }
+            }
+        }
+        Ok(())
     }
 }
 

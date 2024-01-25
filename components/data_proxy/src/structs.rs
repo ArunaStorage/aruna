@@ -4,7 +4,6 @@ use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
-use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
@@ -12,6 +11,7 @@ use aruna_rust_api::api::storage::models::v2::{
     relation::Relation, DataClass, InternalRelationVariant, KeyValue, Object as GrpcObject,
     PermissionLevel, Project, RelationDirection, Status,
 };
+use aruna_rust_api::api::storage::models::v2::{Collection, DataEndpoint};
 use aruna_rust_api::api::storage::services::v2::create_collection_request;
 use aruna_rust_api::api::storage::services::v2::create_dataset_request;
 use aruna_rust_api::api::storage::services::v2::create_object_request;
@@ -69,6 +69,7 @@ pub struct User {
     pub access_key: String,
     pub user_id: DieselUlid,
     pub secret: String,
+    pub admin: bool, // Admin of this dataproxy instance
     pub permissions: HashMap<DieselUlid, DbPermissionLevel>,
 }
 
@@ -117,7 +118,30 @@ pub struct Object {
     pub children: Option<HashSet<TypedRelation>>,
     pub parents: Option<HashSet<TypedRelation>>,
     pub synced: bool,
+    pub endpoints: Vec<Endpoint>, // TODO
     pub created_at: Option<NaiveDateTime>,
+}
+
+// TODO! ENDPOINTS
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Endpoint {
+    pub id: DieselUlid,
+    pub variant: SyncVariant,
+    pub status: Option<SyncStatus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum SyncVariant {
+    FullSync,
+    PartialSync(bool),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum SyncStatus {
+    Waiting,
+    Running,
+    Finished,
+    Error,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -388,6 +412,44 @@ impl TryFrom<Resource> for Object {
     }
 }
 
+impl TryFrom<&DataEndpoint> for Endpoint {
+    type Error = anyhow::Error;
+
+    #[tracing::instrument(level = "trace", skip(value))]
+    fn try_from(value: &DataEndpoint) -> Result<Self> {
+        Ok(Endpoint {
+            id: DieselUlid::from_str(&value.id)?,
+            variant: match value
+                .variant
+                .as_ref()
+                .ok_or_else(|| anyhow!("No endpoint sync variant found"))?
+            {
+                aruna_rust_api::api::storage::models::v2::data_endpoint::Variant::FullSync(
+                    aruna_rust_api::api::storage::models::v2::FullSync { .. },
+                ) => SyncVariant::FullSync,
+                aruna_rust_api::api::storage::models::v2::data_endpoint::Variant::PartialSync(
+                    inheritance,
+                ) => SyncVariant::PartialSync(*inheritance),
+            },
+            status: match value.status() {
+                aruna_rust_api::api::storage::models::v2::ReplicationStatus::Unspecified => None,
+                aruna_rust_api::api::storage::models::v2::ReplicationStatus::Waiting => {
+                    Some(SyncStatus::Waiting)
+                }
+                aruna_rust_api::api::storage::models::v2::ReplicationStatus::Running => {
+                    Some(SyncStatus::Running)
+                }
+                aruna_rust_api::api::storage::models::v2::ReplicationStatus::Finished => {
+                    Some(SyncStatus::Finished)
+                }
+                aruna_rust_api::api::storage::models::v2::ReplicationStatus::Error => {
+                    Some(SyncStatus::Error)
+                }
+            },
+        })
+    }
+}
+
 impl TryFrom<Project> for Object {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(value))]
@@ -444,6 +506,11 @@ impl TryFrom<Project> for Object {
             parents: Some(inbounds),
             children: Some(outbounds),
             synced: false,
+            endpoints: value
+                .endpoints
+                .iter()
+                .map(Endpoint::try_from)
+                .collect::<Result<Vec<Endpoint>>>()?,
             created_at: NaiveDateTime::from_timestamp_opt(
                 value.created_at.unwrap_or_default().seconds,
                 0,
@@ -508,6 +575,11 @@ impl TryFrom<Collection> for Object {
             parents: Some(inbounds),
             children: Some(outbounds),
             synced: false,
+            endpoints: value
+                .endpoints
+                .iter()
+                .map(Endpoint::try_from)
+                .collect::<Result<Vec<Endpoint>>>()?,
             created_at: NaiveDateTime::from_timestamp_opt(
                 value.created_at.unwrap_or_default().seconds,
                 0,
@@ -572,6 +644,11 @@ impl TryFrom<Dataset> for Object {
             parents: Some(inbounds),
             children: Some(outbounds),
             synced: false,
+            endpoints: value
+                .endpoints
+                .iter()
+                .map(Endpoint::try_from)
+                .collect::<Result<Vec<Endpoint>>>()?,
             created_at: NaiveDateTime::from_timestamp_opt(
                 value.created_at.unwrap_or_default().seconds,
                 0,
@@ -636,6 +713,11 @@ impl TryFrom<GrpcObject> for Object {
             parents: Some(inbounds),
             children: Some(outbounds),
             synced: false,
+            endpoints: value
+                .endpoints
+                .iter()
+                .map(Endpoint::try_from)
+                .collect::<Result<Vec<Endpoint>>>()?,
             created_at: NaiveDateTime::from_timestamp_opt(
                 value.created_at.unwrap_or_default().seconds,
                 0,
@@ -665,7 +747,7 @@ impl From<Object> for CreateProjectRequest {
             key_values: vec![],
             relations: vec![],
             data_class: value.data_class.into(),
-            preferred_endpoint: "".to_string(),
+            preferred_endpoint: "".to_string(), // Gets endpoint id from grpc_query_handler::create_project()
             metadata_license_tag: value.metadata_license,
             default_data_license_tag: value.data_license,
         }
@@ -727,6 +809,7 @@ impl From<CreateBucketInput> for Object {
             parents: None,
             children: None,
             synced: false,
+            endpoints: vec![],
             created_at: Some(chrono::Utc::now().naive_utc()), // Now for default
         }
     }

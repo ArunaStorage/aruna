@@ -43,7 +43,7 @@ use url::Url;
 ///
 #[allow(clippy::too_many_arguments)]
 pub fn sign_url(
-    method: http::Method,
+    method: Method,
     access_key: &str,
     secret_key: &str,
     ssl: bool,

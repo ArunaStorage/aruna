@@ -44,10 +44,7 @@ impl BufferedS3Sink {
         tags: Option<Vec<PartETag>>,
         with_sender: bool,
     ) -> (Self, Option<Receiver<String>>) {
-        let t = match tags {
-            Some(t) => t,
-            None => Vec::new(),
-        };
+        let t = tags.unwrap_or_else(Vec::new);
 
         let (sx, tx) = if with_sender {
             let (tx, sx) = async_channel::bounded(2);
