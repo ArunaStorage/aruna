@@ -4,7 +4,7 @@ use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
-use aruna_rust_api::api::storage::models::v2::Dataset;
+use aruna_rust_api::api::storage::models::v2::{Dataset, Hashalgorithm};
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::models::v2::{
@@ -861,11 +861,11 @@ impl Object {
             .iter()
             .map(|(k, v)| {
                 let alg = if k == "MD5" {
-                    2
+                    Hashalgorithm::Md5 as i32
                 } else if k == "SHA256" {
-                    1
+                    Hashalgorithm::Sha256 as i32
                 } else {
-                    0
+                    Hashalgorithm::Unspecified as i32
                 };
 
                 Hash {
