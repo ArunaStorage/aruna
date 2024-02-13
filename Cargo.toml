@@ -61,3 +61,7 @@ postgres-types = { version = "0.2.6", features = ["derive"] }
 deadpool-postgres = "0.11.0"
 futures = "0.3.29"
 postgres-from-row = "=0.5.2"
+
+# Policies
+cel-parser = { git = "https://github.com/lfbrehm/cel-rust.git", branch = "feat/serializer"}
+cel-interpreter = { git = "https://github.com/lfbrehm/cel-rust.git", branch = "feat/serializer"}

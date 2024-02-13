@@ -1,3 +1,4 @@
+use crate::auth::permission_handler::PermissionCheck;
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::middlelayer::db_handler::DatabaseHandler;
@@ -155,7 +156,7 @@ impl DataReplicationService for DataReplicationServiceImpl {
         let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
 
         let ctx = Context::proxy();
-        let (_, _, is_dataproxy, _dataproxy_id) = tonic_auth!(
+        let PermissionCheck { is_proxy, .. } = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(&token, vec![ctx])
                 .await,
@@ -163,7 +164,7 @@ impl DataReplicationService for DataReplicationServiceImpl {
         );
 
         // TODO: Should user be able to update replication status?
-        if is_dataproxy {
+        if is_proxy {
             tonic_internal!(
                 self.database_handler
                     .update_replication_status(request)

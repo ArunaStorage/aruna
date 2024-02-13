@@ -1,4 +1,4 @@
-use crate::auth::permission_handler::PermissionHandler;
+use crate::auth::permission_handler::{PermissionCheck, PermissionHandler};
 use crate::auth::structs::Context;
 use crate::auth::token_handler::{Action, Intent, TokenHandler};
 use crate::caching::cache::Cache;
@@ -470,7 +470,11 @@ impl UserService for UserServiceImpl {
 
         // Check empty context if is registered user
         let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
-        let (user_id, maybe_token, _, _) = tonic_auth!(
+        let PermissionCheck {
+            user_id,
+            token: maybe_token,
+            ..
+        } = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(&token, vec![Context::default()])
                 .await,
@@ -599,7 +603,12 @@ impl UserService for UserServiceImpl {
 
         // Check empty context if is registered user
         let token = tonic_auth!(get_token_from_md(&metadata), "Token authentication error");
-        let (user_ulid, maybe_token, proxy_request, _) = tonic_auth!(
+        let PermissionCheck {
+            user_id: user_ulid,
+            token: maybe_token,
+            is_proxy: proxy_request,
+            ..
+        } = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(&token, vec![Context::default()])
                 .await,

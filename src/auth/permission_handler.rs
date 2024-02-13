@@ -1,6 +1,6 @@
 use super::{
     structs::{Context, ContextVariant},
-    token_handler::{Action, ArunaTokenClaims, OIDCError, TokenHandler},
+    token_handler::{Action, ArunaTokenClaims, OIDCError, ProcessedToken, TokenHandler},
 };
 use crate::{
     caching::cache::Cache,
@@ -18,6 +18,13 @@ pub struct PermissionHandler {
     pub token_handler: Arc<TokenHandler>,
 }
 
+pub struct PermissionCheck {
+    pub user_id: DieselUlid,
+    pub token: Option<DieselUlid>,
+    pub is_proxy: bool,
+    pub proxy_id: Option<DieselUlid>,
+}
+
 impl PermissionHandler {
     pub fn new(cache: Arc<Cache>, token_handler: Arc<TokenHandler>) -> Self {
         Self {
@@ -30,7 +37,8 @@ impl PermissionHandler {
         &self,
         token: &str,
         ctxs: Vec<Context>,
-    ) -> Result<(DieselUlid, Option<DieselUlid>, bool, Option<DieselUlid>), tonic::Status> {
+        //) -> Result<(DieselUlid, Option<DieselUlid>, bool, Option<DieselUlid>), tonic::Status> {
+    ) -> Result<PermissionCheck, tonic::Status> {
         // What are the cases?
         // 1. User Aruna token       --> (user_id, token_id)
         // 2. User OIDC token        --> (user_id, None)
@@ -40,17 +48,23 @@ impl PermissionHandler {
         //     self.token_handler.process_token(token).await,
         //     "Unauthorized"
         // );
-        let (main_id, token, personal, permissions, is_proxy, proxy_intent) =
-            match self.token_handler.process_token(token).await {
-                Ok(results) => results,
-                Err(err) => {
-                    error!("Error in auth: {:?}", err);
-                    return match err.downcast_ref::<OIDCError>() {
-                        Some(_) => Err(tonic::Status::unauthenticated("Not registered")),
-                        None => Err(tonic::Status::unauthenticated("Unauthorized")),
-                    };
-                }
-            };
+        let ProcessedToken {
+            main_id,
+            token,
+            is_personal: personal,
+            user_permissions: permissions,
+            is_proxy,
+            proxy_intent,
+        } = match self.token_handler.process_token(token).await {
+            Ok(results) => results,
+            Err(err) => {
+                error!("Error in auth: {:?}", err);
+                return match err.downcast_ref::<OIDCError>() {
+                    Some(_) => Err(tonic::Status::unauthenticated("Not registered")),
+                    None => Err(tonic::Status::unauthenticated("Unauthorized")),
+                };
+            }
+        };
 
         // Individual permission checking if token is signed from Dataproxy
         if is_proxy {
@@ -99,7 +113,13 @@ impl PermissionHandler {
 
                 if self.cache.check_proxy_ctxs(&intent.target, &ctxs) {
                     //dbg!(&intent.target);
-                    Ok((main_id, token, true, Some(intent.target)))
+                    //Ok((main_id, token, true, Some(intent.target)))
+                    Ok(PermissionCheck {
+                        user_id: main_id,
+                        token,
+                        is_proxy: true,
+                        proxy_id: Some(intent.target),
+                    })
                 } else {
                     Err(tonic::Status::unauthenticated(
                         "Invalid proxy authentication",
@@ -115,7 +135,13 @@ impl PermissionHandler {
             .cache
             .check_permissions_with_contexts(&ctxs, &permissions, personal, &main_id)
         {
-            Ok((main_id, token, false, None))
+            //Ok((main_id, token, false, None))
+            Ok(PermissionCheck {
+                user_id: main_id,
+                token,
+                is_proxy,
+                proxy_id: None,
+            })
         } else {
             Err(tonic::Status::unauthenticated("Invalid permissions"))
         }
@@ -127,7 +153,7 @@ impl PermissionHandler {
         token: &str,
         ctxs: Vec<Context>,
     ) -> Result<DieselUlid, tonic::Status> {
-        let (user_id, _, _, _) = self.check_permissions_verbose(token, ctxs).await?;
+        let PermissionCheck { user_id, .. } = self.check_permissions_verbose(token, ctxs).await?;
         Ok(user_id)
     }
 

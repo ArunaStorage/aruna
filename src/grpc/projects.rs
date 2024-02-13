@@ -1,4 +1,4 @@
-use crate::auth::permission_handler::PermissionHandler;
+use crate::auth::permission_handler::{PermissionCheck, PermissionHandler};
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::database::enums::DbPermissionLevel;
@@ -58,7 +58,11 @@ impl ProjectService for ProjectServiceImpl {
         ctx.allow_service_account = false;
         ctxs.push(ctx);
 
-        let (user_id, _, is_dataproxy, _) = tonic_auth!(
+        let PermissionCheck {
+            user_id,
+            is_proxy: is_dataproxy,
+            ..
+        } = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(&token, ctxs)
                 .await,

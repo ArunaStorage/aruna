@@ -551,12 +551,12 @@ impl Cache {
     pub fn check_permissions_with_contexts(
         &self,
         ctxs: &[Context],
-        permitted: &[(DieselUlid, DbPermissionLevel)],
+        permitted: &[(DieselUlid, DbPermissionLevel)], // Resources from User attributes
         personal: bool,
         user_id: &DieselUlid,
     ) -> bool {
         self.check_lock();
-        let mut resources = HashMap::default();
+        let mut resources = HashMap::default(); // Resources that are requested
 
         let user = match self.get_user(user_id) {
             Some(user) => user,
@@ -591,6 +591,7 @@ impl Cache {
         }
 
         for (id, got_perm) in permitted {
+            // Check if resource in user.attributes is in resources
             if let Some(needed_perm) = resources.get(id) {
                 if got_perm >= needed_perm {
                     resources.remove(id);
@@ -599,6 +600,7 @@ impl Cache {
                     }
                 }
             }
+            // else traverse graph down from user.attributes and look if resource in subgraph
             match self.traverse_down(id, *got_perm, &mut resources) {
                 Ok(true) => return true,
                 Ok(false) => continue,

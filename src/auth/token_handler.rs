@@ -82,7 +82,14 @@ pub enum Action {
     FetchInfo = 3,
     //DpExchange = 4,
 }
-
+pub struct ProcessedToken {
+    pub main_id: DieselUlid,       // User/Proxy Id
+    pub token: Option<DieselUlid>, // Maybe token
+    pub is_personal: bool,
+    pub user_permissions: Vec<(DieselUlid, DbPermissionLevel)>,
+    pub is_proxy: bool,
+    pub proxy_intent: Option<Intent>,
+}
 impl From<u8> for Action {
     fn from(input: u8) -> Self {
         match input {
@@ -275,17 +282,7 @@ impl TokenHandler {
         Ok(encode(&header, &claims, &signing_key.1)?)
     }
 
-    pub async fn process_token(
-        &self,
-        token: &str,
-    ) -> Result<(
-        DieselUlid,         // User Id
-        Option<DieselUlid>, // Maybe token
-        bool,
-        Vec<(DieselUlid, DbPermissionLevel)>,
-        bool,
-        Option<Intent>,
-    )> {
+    pub async fn process_token(&self, token: &str) -> Result<ProcessedToken> {
         let split = token
             .split('.')
             .nth(1)
@@ -317,17 +314,7 @@ impl TokenHandler {
     }
 
     ///ToDo: Rust Doc
-    async fn validate_server_token(
-        &self,
-        claims: &ArunaTokenClaims,
-    ) -> Result<(
-        DieselUlid,         // User_ID or Endpoint_ID
-        Option<DieselUlid>, // Maybe Token_ID
-        bool,
-        Vec<(DieselUlid, DbPermissionLevel)>, // Associated Permissions
-        bool,                                 //Option<DieselUlid> extrahiert aus Claims.sub (?)
-        Option<Intent>,
-    )> {
+    async fn validate_server_token(&self, claims: &ArunaTokenClaims) -> Result<ProcessedToken> {
         // Fetch user from cache
         let uid = DieselUlid::from_str(&claims.sub)?;
         let user = self.cache.get_user(&uid);
@@ -341,7 +328,14 @@ impl TokenHandler {
         // Fetch permissions associated with token
         if let Some(user) = user {
             let (perms, personal) = user.get_permissions(maybe_token)?;
-            return Ok((user.id, maybe_token, personal, perms, false, None));
+            return Ok(ProcessedToken {
+                main_id: user.id,
+                token: maybe_token,
+                is_personal: personal,
+                user_permissions: perms,
+                is_proxy: false,
+                proxy_intent: None,
+            });
         }
         bail!("Invalid user")
     }
@@ -351,14 +345,7 @@ impl TokenHandler {
         &self,
         claims: &ArunaTokenClaims,
         kid: &str,
-    ) -> Result<(
-        DieselUlid,
-        Option<DieselUlid>,
-        bool,
-        Vec<(DieselUlid, DbPermissionLevel)>,
-        bool,
-        Option<Intent>,
-    )> {
+    ) -> Result<ProcessedToken> {
         // Fetch pubkey from cache
         let key = self
             .cache
@@ -382,9 +369,14 @@ impl TokenHandler {
                     // Check if intent action is valid
                     match intent.action {
                         //Case 1: Dataproxy notification fetch
-                        Action::FetchInfo => {
-                            Ok((sub_id, None, false, vec![], true, Some(intent.clone())))
-                        }
+                        Action::FetchInfo => Ok(ProcessedToken {
+                            main_id: sub_id,
+                            token: None,
+                            is_personal: false,
+                            user_permissions: vec![],
+                            is_proxy: true,
+                            proxy_intent: Some(intent.clone()),
+                        }),
                         //Case 2: Dataproxy user impersonation
                         Action::Impersonate => {
                             // Fetch user from cache
@@ -399,14 +391,14 @@ impl TokenHandler {
                             // Fetch permissions associated with token
                             if let Some(user) = user {
                                 let perms = user.get_permissions(token)?;
-                                return Ok((
-                                    user.id,
+                                return Ok(ProcessedToken {
+                                    main_id: user.id,
                                     token,
-                                    false,
-                                    perms.0,
-                                    true,
-                                    Some(intent.clone()),
-                                ));
+                                    is_personal: false,
+                                    user_permissions: perms.0,
+                                    is_proxy: true,
+                                    proxy_intent: Some(intent.clone()),
+                                });
                             }
                             bail!("Invalid user provided")
                         }
@@ -421,17 +413,7 @@ impl TokenHandler {
     }
 
     ///ToDo: Rust Doc
-    async fn validate_oidc_token(
-        &self,
-        claims: &ArunaTokenClaims,
-    ) -> Result<(
-        DieselUlid,
-        Option<DieselUlid>,
-        bool,
-        Vec<(DieselUlid, DbPermissionLevel)>,
-        bool,
-        Option<Intent>,
-    )> {
+    async fn validate_oidc_token(&self, claims: &ArunaTokenClaims) -> Result<ProcessedToken> {
         let oidc_mapping = OIDCMapping {
             oidc_name: claims.iss.clone(),
             external_id: claims.sub.clone(),
@@ -444,7 +426,14 @@ impl TokenHandler {
         };
         let perms = user.get_permissions(None)?;
 
-        Ok((user.id, None, true, perms.0, false, None))
+        Ok(ProcessedToken {
+            main_id: user.id,
+            token: None,
+            is_personal: true,
+            user_permissions: perms.0,
+            is_proxy: false,
+            proxy_intent: None,
+        })
     }
 
     pub async fn sign_hook_secret(

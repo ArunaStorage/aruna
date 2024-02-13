@@ -1,4 +1,4 @@
-use crate::auth::permission_handler::PermissionHandler;
+use crate::auth::permission_handler::{PermissionCheck, PermissionHandler};
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
@@ -53,7 +53,9 @@ impl ObjectService for ObjectServiceImpl {
             "invalid parent"
         );
         ctxs.push(parent_ctx);
-        let (user_id, _, is_dataproxy, _) = tonic_auth!(
+        let PermissionCheck {
+            user_id, is_proxy, ..
+        } = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(&token, ctxs)
                 .await,
@@ -73,7 +75,7 @@ impl ObjectService for ObjectServiceImpl {
         }
         let (object_plus, _) = tonic_internal!(
             self.database_handler
-                .create_resource(request, user_id, is_dataproxy)
+                .create_resource(request, user_id, is_proxy)
                 .await,
             "Internal database error"
         );
@@ -192,7 +194,11 @@ impl ObjectService for ObjectServiceImpl {
 
         let request = request.into_inner();
 
-        let (_, _, is_dataproxy, dataproxy_id) = tonic_auth!(
+        let PermissionCheck {
+            is_proxy,
+            proxy_id: dataproxy_id,
+            ..
+        } = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(
                     &token,
@@ -208,7 +214,7 @@ impl ObjectService for ObjectServiceImpl {
                 .await,
             "Unauthorized"
         );
-        if !is_dataproxy {
+        if !is_proxy {
             let object = self
                 .cache
                 .get_object(&tonic_invalid!(

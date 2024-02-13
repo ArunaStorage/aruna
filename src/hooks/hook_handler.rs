@@ -187,11 +187,6 @@ impl HookHandler {
                             secret_key,
                         })?;
                         dbg!("[HookHandler] BasicTemplate: {:?}", &json);
-                        //let request = base_request.json(&json);
-                        //dbg!("Created request: ", &request);
-                        //let response = request.send().await?;
-                        //let response = base_request.json(&json);
-                        //dbg!("External hook response: {:?}", response);
                         base_request.json(&json)
                     }
                     TemplateVariant::Custom(template) => {
@@ -205,11 +200,6 @@ impl HookHandler {
                             pubkey_serial.into(),
                         )?;
                         dbg!("[HookHandler] Template: {:?}", &template);
-                        //let response = base_request
-                        //    .header(CONTENT_TYPE, "text/plain")
-                        //    .body(template);
-                        //dbg!("Custom template hook response: {:?}", response);
-                        //response
                         base_request
                             .header(CONTENT_TYPE, "text/plain")
                             .body(template)

@@ -1,4 +1,4 @@
-use crate::auth::permission_handler::PermissionHandler;
+use crate::auth::permission_handler::{PermissionCheck, PermissionHandler};
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
@@ -58,7 +58,9 @@ impl CollectionService for CollectionServiceImpl {
         );
         ctxs.push(parent_ctx);
 
-        let (user_id, _, is_dataproxy, _) = tonic_auth!(
+        let PermissionCheck {
+            user_id, is_proxy, ..
+        } = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(&token, ctxs)
                 .await,
@@ -80,7 +82,7 @@ impl CollectionService for CollectionServiceImpl {
 
         let (collection, _) = tonic_internal!(
             self.database_handler
-                .create_resource(request, user_id, is_dataproxy,)
+                .create_resource(request, user_id, is_proxy,)
                 .await,
             "Internal database error"
         );

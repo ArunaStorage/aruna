@@ -1,4 +1,4 @@
-use crate::auth::permission_handler::PermissionHandler;
+use crate::auth::permission_handler::{PermissionCheck, PermissionHandler};
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::database::enums::ObjectType;
@@ -296,7 +296,7 @@ impl EventNotificationService for NotificationServiceImpl {
         );
 
         // Check empty permission context just to validate registered and active user
-        let (_, _, is_proxy, _) = tonic_auth!(
+        let PermissionCheck { is_proxy, .. } = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(&token, vec![Context::registered()])
                 .await,
