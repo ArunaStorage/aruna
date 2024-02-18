@@ -1,12 +1,9 @@
 use super::cache::Cache;
 use crate::structs::CheckAccessResult;
 use crate::structs::DbPermissionLevel;
-use crate::structs::Missing;
 use crate::structs::Object;
 use crate::structs::ObjectLocation;
 use crate::structs::ObjectType;
-use crate::structs::ResourceIds;
-use crate::structs::ResourceResults;
 use crate::structs::SyncVariant;
 use crate::trace_err;
 use anyhow::anyhow;

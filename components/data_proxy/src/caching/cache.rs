@@ -9,13 +9,14 @@ use crate::structs::{DbPermissionLevel, TypedRelation};
 use crate::trace_err;
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
-    structs::{Object, ObjectLocation, ObjectType, PubKey, ResourceIds, ResourceString, User},
+    structs::{Object, ObjectLocation, ObjectType, PubKey, User},
 };
 use ahash::RandomState;
 use anyhow::Result;
 use anyhow::{anyhow, bail};
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use async_channel::Sender;
+use crossbeam_skiplist::SkipMap;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use jsonwebtoken::DecodingKey;
@@ -29,11 +30,15 @@ use tracing::{debug, error, info_span, trace, Instrument};
 
 pub struct Cache {
     // Map with AccessKey as key and User as value
-    pub users: DashMap<String, User, RandomState>,
+    pub users: DashMap<String, Arc<RwLock<User>>, RandomState>,
     // Map with ObjectId as key and Object as value
-    pub resources: DashMap<DieselUlid, (Object, Option<ObjectLocation>), RandomState>,
-    // Maps with bucket / key as key and set of all ObjectIds as value
-    pub paths: DashMap<ResourceString, ResourceIds, RandomState>,
+    pub resources: DashMap<
+        DieselUlid,
+        (Arc<RwLock<Object>>, Arc<RwLock<Option<ObjectLocation>>>),
+        RandomState,
+    >,
+    // Maps with path / key as key and set of all ObjectIds as value
+    pub paths: SkipMap<String, DieselUlid>,
     // Pubkeys
     pub pubkeys: DashMap<i32, (PubKey, DecodingKey), RandomState>,
     // Persistence layer
@@ -69,7 +74,7 @@ impl Cache {
         let cache = Arc::new(Cache {
             users: DashMap::default(),
             resources: DashMap::default(),
-            paths: DashMap::default(),
+            paths: SkipMap::new(),
             pubkeys: DashMap::default(),
             persistence: RwLock::new(None),
             aruna_client: RwLock::new(None),
@@ -138,11 +143,14 @@ impl Cache {
 
     #[tracing::instrument(level = "trace", skip(self, access_key))]
     /// Requests a secret key from the cache
-    pub fn get_secret(&self, access_key: &str) -> Result<SecretKey> {
+    pub async fn get_secret(&self, access_key: &str) -> Result<SecretKey> {
         let secret = trace_err!(self
             .users
             .get(access_key)
             .ok_or_else(|| anyhow!("User not found")))?
+        .value()
+        .read()
+        .await
         .secret
         .clone();
 
@@ -158,7 +166,8 @@ impl Cache {
     pub async fn sync_with_persistence(&self, database: Database) -> Result<Database> {
         let client = database.get_client().await?;
         for user in User::get_all(&client).await? {
-            self.users.insert(user.access_key.clone(), user);
+            self.users
+                .insert(user.access_key.clone(), Arc::new(RwLock::new(user)));
         }
         debug!("synced users");
 
@@ -169,13 +178,34 @@ impl Cache {
         let mut database_objects = Object::get_all(&client).await?;
         sort_objects(&mut database_objects);
 
+        let mut prefixes: HashMap<DieselUlid, Vec<String>> = HashMap::new();
+
         for object in database_objects {
             let location = ObjectLocation::get_opt(&object.id, &client).await?;
-            self.resources.insert(object.id, (object.clone(), location));
-
-            let tree = self.get_name_trees(&object.id.to_string(), object.object_type)?;
-            for (e, v) in tree {
-                self.paths.insert(e, v);
+            self.resources.insert(
+                object.id,
+                (
+                    Arc::new(RwLock::new(object.clone())),
+                    Arc::new(RwLock::new(location)),
+                ),
+            );
+            if let Some(parents) = object.parents {
+                for parent in parents {
+                    let new_prefix = prefixes
+                        .get(&parent.get_id())
+                        .ok_or_else(|| anyhow!("Expected parent for non root object"))?
+                        .iter()
+                        .map(|e| {
+                            let path = format!("{}/{}", e, object.name);
+                            self.paths.insert(path.clone(), object.id);
+                            path
+                        })
+                        .collect::<Vec<_>>();
+                    prefixes.insert(object.id, new_prefix);
+                }
+            } else {
+                prefixes.insert(object.id, vec![object.name.clone()]);
+                self.paths.insert(object.name.clone(), object.id);
             }
         }
         debug!("synced objects");
@@ -185,72 +215,48 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self))]
     /// Requests a secret key from the cache
     pub async fn create_or_get_secret(
-        self: Arc<Self>,
+        &self,
         user: GrpcUser,
         access_key: Option<String>,
     ) -> Result<(String, String)> {
-        let cache = self.clone();
-        tokio::spawn(
-            async move {
-                let access_key = access_key.unwrap_or_else(|| user.id.to_string());
-                trace!(access_key = ?access_key);
-                let perm = trace_err!(user
-                    .extract_access_key_permissions()?
-                    .iter()
-                    .find(|e| e.0 == access_key.as_str())
-                    .ok_or_else(|| anyhow!("Access key not found")))?
-                .1
-                .clone();
+        let access_key = access_key.unwrap_or_else(|| user.id.to_string());
+        trace!(access_key = ?access_key);
+        let perm = trace_err!(user
+            .extract_access_key_permissions()?
+            .iter()
+            .find(|e| e.0 == access_key.as_str())
+            .ok_or_else(|| anyhow!("Access key not found")))?
+        .1
+        .clone();
 
-                loop {
-                    trace!("started loop");
-                    let entry = cache.users.try_entry(access_key.to_string());
+        if let Some(k) = self.users.get(access_key.as_str()) {
+            let user = k.value().clone();
+            let user_ref = user.read().await;
+            return Ok((user_ref.access_key.clone(), user_ref.secret.clone()));
+        } else {
+            let new_secret = thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(30)
+                .map(char::from)
+                .collect::<String>();
 
-                    match entry {
-                        Some(e) => {
-                            let mut user = trace_err!(e.or_try_insert_with(|| {
-                                Ok::<_, anyhow::Error>(User {
-                                    access_key: access_key.to_string(),
-                                    user_id: DieselUlid::from_str(&user.id)?,
-                                    secret: "".to_string(),
-                                    admin: false,
-                                    permissions: perm,
-                                })
-                            }))?;
+            let user = Arc::new(User {
+                access_key: access_key.to_string(),
+                user_id: DieselUlid::from_str(&user.id)?,
+                secret: new_secret.clone(),
+                admin: false,
+                permissions: perm,
+            });
 
-                            if !user.secret.is_empty() {
-                                trace!("secret already exists");
-                                return Ok((user.access_key.clone(), user.secret.clone()));
-                            }
+            cache.users.insert(access_key.clone(), user.clone());
 
-                            trace!("generating new secret");
-                            let new_secret = thread_rng()
-                                .sample_iter(&Alphanumeric)
-                                .take(30)
-                                .map(char::from)
-                                .collect::<String>();
-
-                            trace!("update cache");
-                            let user = {
-                                user.pair_mut().1.secret = new_secret.clone();
-                                user.value().clone()
-                            };
-
-                            trace!("update persistence");
-                            if let Some(persistence) = cache.persistence.read().await.as_ref() {
-                                user.upsert(persistence.get_client().await?.client())
-                                    .await?;
-                            }
-
-                            return Ok((access_key, new_secret));
-                        }
-                        None => continue,
-                    }
-                }
+            if let Some(persistence) = cache.persistence.read().await.as_ref() {
+                user.upsert(persistence.get_client().await?.client())
+                    .await?;
             }
-            .instrument(info_span!("create_or_get_secret")),
-        )
-        .await?
+
+            return Ok((access_key, new_secret));
+        }
     }
 
     #[tracing::instrument(level = "trace", skip(self, pks))]
@@ -308,335 +314,74 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self, res))]
-    pub fn get_res_by_res_string(&self, res: ResourceString) -> Option<ResourceIds> {
-        self.paths.get(&res).map(|e| e.value().clone())
+    pub fn get_resource_by_name(&self, res: String) -> Option<DieselUlid> {
+        self.paths.get(&res)
     }
 
-    #[tracing::instrument(level = "trace", skip(self, resource_id, variant))]
-    pub fn get_name_trees(
+    #[tracing::instrument(level = "trace", skip(self, resource_id))]
+    pub async fn get_parent_names(
         &self,
-        resource_id: &str,
-        variant: ObjectType,
-    ) -> Result<Vec<(ResourceString, ResourceIds)>> {
-        //FIXME: This is really inefficient, but should work in a first iteration
-        let resource_id = trace_err!(DieselUlid::from_str(resource_id))?;
-        let (initial_res, _) = trace_err!(self
+        resource_id: &DieselUlid,
+    ) -> Option<Vec<(String, DieselUlid)>> {
+        let resource = self.resources.get(resource_id)?;
+        let resource = resource.value().0.read().await;
+        if let Some(parents) = &resource.parents {
+            let mut collected_parents = Vec::new();
+            for parent in parents {
+                match parent {
+                    TypedRelation::Project(id)
+                    | TypedRelation::Collection(id)
+                    | TypedRelation::Dataset(id)
+                    | TypedRelation::Object(id) => {
+                        let parent = self.resources.get(id)?;
+                        let parent = parent.value().0.read().await;
+                        collected_parents.push((parent.name.clone(), parent.id));
+                    }
+                }
+            }
+            return Some(collected_parents);
+        }
+        None
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, resource_id))]
+    pub async fn get_name_trees(
+        &self,
+        resource_id: DieselUlid,
+    ) -> Result<Vec<(String, DieselUlid)>> {
+        let resource = self
             .resources
             .get(&resource_id)
-            .ok_or_else(|| anyhow!("Resource not found")))?
-        .clone();
+            .ok_or_else(|| anyhow!("Resource not found"))?
+            .value()
+            .0
+            .read()
+            .await;
 
-        match variant {
-            ObjectType::Project => {
-                trace!(object_type = ?variant);
-                Ok(vec![(
-                    ResourceString::Project(initial_res.name),
-                    ResourceIds::Project(initial_res.id),
-                )])
-            }
-            ObjectType::Collection => {
-                trace!(object_type = ?variant);
-                let mut res = Vec::new();
-                for parent in trace_err!(initial_res
-                    .parents
-                    .ok_or_else(|| anyhow!("Collection has no parents")))?
-                {
-                    match parent {
-                        TypedRelation::Project(parent_id) => {
-                            trace!(parent_1 = ?parent);
-                            let parent_full = trace_err!(self
-                                .resources
-                                .get(&parent_id)
-                                .ok_or_else(|| anyhow!("Parent for collection not found")))?
-                            .0
-                            .clone();
-                            res.push((
-                                ResourceString::Collection(
-                                    parent_full.name.to_string(),
-                                    initial_res.name.clone(),
-                                ),
-                                ResourceIds::Collection(parent_id, initial_res.id),
-                            ))
-                        }
-                        _ => {
-                            error!(?parent, "Invalid parent for collection");
-                            return Err(anyhow!(
-                                "Collections cant have parents other than projects"
-                            ));
-                        }
+        // BackTrace to root projects
+        let mut queue = VecDeque::from([(resource_id, resource.name.clone())]);
+        let mut prefixes = Vec::new();
+
+        loop {
+            if let Some(front) = queue.pop_front() {
+                match self.get_parent_names(&front.0).await {
+                    Some(parents) => {
+                        parents.into_iter().for_each(|e| {
+                            let mut prefix = e.0;
+                            prefix.push_str("/");
+                            prefix.push_str(&front.1);
+                            queue.push_back((e.1, prefix));
+                        });
+                    }
+                    None => {
+                        prefixes.push((front.1, front.0));
                     }
                 }
-                Ok(res)
-            }
-            ObjectType::Dataset => {
-                trace!(object_type = ?variant);
-                let mut res = Vec::new();
-                for parent in trace_err!(initial_res
-                    .parents
-                    .ok_or_else(|| anyhow!("No parents found for dataset")))?
-                {
-                    match parent {
-                        TypedRelation::Project(parent_id) => {
-                            trace!(parent_1 = ?parent);
-                            let parent_full = self
-                                .resources
-                                .get(&parent_id)
-                                .ok_or_else(|| anyhow!("Parent for dataset not found"))?
-                                .0
-                                .clone();
-                            res.push((
-                                ResourceString::Dataset(
-                                    parent_full.name.to_string(),
-                                    None,
-                                    initial_res.name.clone(),
-                                ),
-                                ResourceIds::Dataset(parent_id, None, initial_res.id),
-                            ))
-                        }
-                        TypedRelation::Collection(parent_id) => {
-                            trace!(parent_1 = ?parent);
-                            let parent_full = trace_err!(self
-                                .resources
-                                .get(&parent_id)
-                                .ok_or_else(|| anyhow!("No parent found")))?
-                            .0
-                            .clone();
-                            for grand_parent in trace_err!(parent_full
-                                .parents
-                                .ok_or_else(|| anyhow!("No parent found")))?
-                            {
-                                match grand_parent {
-                                    TypedRelation::Project(grand_parent_id) => {
-                                        trace!(parent_2 = ?grand_parent);
-                                        let grand_parent_full = trace_err!(self
-                                            .resources
-                                            .get(&grand_parent_id)
-                                            .ok_or_else(|| {
-                                                anyhow!("Parent for collection not found")
-                                            }))?
-                                        .0
-                                        .clone();
-                                        res.push((
-                                            ResourceString::Dataset(
-                                                grand_parent_full.name.to_string(),
-                                                Some(parent_full.name.to_string()),
-                                                initial_res.name.clone(),
-                                            ),
-                                            ResourceIds::Dataset(
-                                                grand_parent_id,
-                                                Some(parent_id),
-                                                initial_res.id,
-                                            ),
-                                        ))
-                                    }
-                                    _ => {
-                                        error!(?grand_parent, "Invalid parent for collection");
-                                        return Err(anyhow!(
-                                            "Collections cant have parents other than projects"
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                        _ => {
-                            error!(?parent, "Invalid parent for dataset");
-                            return Err(anyhow!(
-                                "Datasets cannot have parents other than projects and collections"
-                            ));
-                        }
-                    }
-                }
-                Ok(res)
-            }
-            ObjectType::Object => {
-                trace!(object_type = ?variant);
-                let mut res = Vec::new();
-                for parent in trace_err!(initial_res
-                    .parents
-                    .ok_or_else(|| anyhow!("No parents found for object")))?
-                {
-                    match parent {
-                        TypedRelation::Project(parent_id) => {
-                            trace!(parent_1 = ?parent);
-                            let full_parent = trace_err!(self
-                                .resources
-                                .get(&parent_id)
-                                .ok_or_else(|| anyhow!("Parent not found")))?
-                            .0
-                            .clone();
-                            res.push((
-                                ResourceString::Object(
-                                    full_parent.name.to_string(),
-                                    None,
-                                    None,
-                                    initial_res.name.clone(),
-                                ),
-                                ResourceIds::Object(parent_id, None, None, initial_res.id),
-                            ))
-                        }
-                        TypedRelation::Collection(parent_id) => {
-                            trace!(parent_1 = ?parent);
-                            let parent_full = trace_err!(self
-                                .resources
-                                .get(&parent_id)
-                                .ok_or_else(|| anyhow!("No parent found")))?
-                            .0
-                            .clone();
-                            for grand_parent in trace_err!(parent_full
-                                .parents
-                                .ok_or_else(|| anyhow!("No parent found")))?
-                            {
-                                match grand_parent {
-                                    TypedRelation::Project(grand_parent_id) => {
-                                        trace!(parent_2 = ?grand_parent);
-                                        let grand_parent_full = trace_err!(self
-                                            .resources
-                                            .get(&grand_parent_id)
-                                            .ok_or_else(|| {
-                                                anyhow!("Parent for collection not found")
-                                            }))?
-                                        .0
-                                        .clone();
-                                        res.push((
-                                            ResourceString::Object(
-                                                grand_parent_full.name.to_string(),
-                                                Some(parent_full.name.to_string()),
-                                                None,
-                                                initial_res.name.clone(),
-                                            ),
-                                            ResourceIds::Object(
-                                                grand_parent_id,
-                                                Some(parent_id),
-                                                None,
-                                                initial_res.id,
-                                            ),
-                                        ))
-                                    }
-                                    _ => {
-                                        error!(?grand_parent, "Invalid parent for collection");
-                                        return Err(anyhow!(
-                                            "Collections cant have parents other than projects"
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                        TypedRelation::Dataset(parent_id) => {
-                            trace!(parent_1 = ?parent);
-                            let parent_full = trace_err!(self
-                                .resources
-                                .get(&parent_id)
-                                .ok_or_else(|| anyhow!("No parent found")))?
-                            .0
-                            .clone();
-                            for grand_parent in trace_err!(parent_full
-                                .parents
-                                .ok_or_else(|| anyhow!("Parent not found")))?
-                            {
-                                match grand_parent {
-                                    TypedRelation::Project(project_parent_id) => {
-                                        trace!(parent_2 = ?grand_parent);
-                                        let project_parent_full = trace_err!(self
-                                            .resources
-                                            .get(&project_parent_id)
-                                            .ok_or_else(|| anyhow!(
-                                                "Parent for dataset not found"
-                                            )))?
-                                        .0
-                                        .clone();
-                                        res.push((
-                                            ResourceString::Object(
-                                                project_parent_full.name.to_string(),
-                                                None,
-                                                Some(parent_full.name.to_string()),
-                                                initial_res.name.clone(),
-                                            ),
-                                            ResourceIds::Object(
-                                                project_parent_id,
-                                                None,
-                                                Some(parent_id),
-                                                initial_res.id,
-                                            ),
-                                        ))
-                                    }
-                                    TypedRelation::Collection(collection_parent_id) => {
-                                        trace!(parent_2 = ?grand_parent);
-                                        let collection_parent_full = trace_err!(self
-                                            .resources
-                                            .get(&collection_parent_id)
-                                            .ok_or_else(|| anyhow!(
-                                                "Parent for dataset not found"
-                                            )))?
-                                        .0
-                                        .clone();
-                                        for project_parent in
-                                            trace_err!(collection_parent_full.parents.ok_or_else(
-                                                || { anyhow!("No parents found for collection") }
-                                            ))?
-                                        {
-                                            match project_parent {
-                                                TypedRelation::Project(project_parent_id) => {
-                                                    trace!(parent_3 = ?project_parent);
-                                                    let project_parent_full = trace_err!(self
-                                                        .resources
-                                                        .get(&project_parent_id)
-                                                        .ok_or_else(|| anyhow!(
-                                                            "Parent for dataset not found"
-                                                        )))?
-                                                    .0
-                                                    .clone();
-                                                    res.push((
-                                                        ResourceString::Object(
-                                                            project_parent_full.name.to_string(),
-                                                            Some(
-                                                                collection_parent_full
-                                                                    .name
-                                                                    .to_string(),
-                                                            ),
-                                                            Some(parent_full.name.to_string()),
-                                                            initial_res.name.clone(),
-                                                        ),
-                                                        ResourceIds::Object(
-                                                            project_parent_id,
-                                                            Some(collection_parent_id),
-                                                            Some(parent_id),
-                                                            initial_res.id,
-                                                        ),
-                                                    ))
-                                                }
-                                                _ => {
-                                                    error!(
-                                                        ?project_parent,
-                                                        "Invalid parent for collection"
-                                                    );
-                                                    return Err(anyhow!("Collections cannot have parents other than projects"));
-                                                }
-                                            }
-                                        }
-                                    }
-                                    _ => {
-                                        error!(?grand_parent, "Invalid parent for dataset");
-                                        return Err(anyhow!(
-                                            "Datasets can only have collection or project children"
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                        _ => {
-                            error!(?parent, "Invalid parent for object");
-                            return Err(anyhow!("Objects cannot have object parents"));
-                        }
-                    }
-                }
-                trace!(?res);
-                Ok(res)
-            }
-            ObjectType::Bundle => {
-                error!(?variant, "Bundles do not have paths / trees");
-                Err(anyhow!("Bundles do not have paths / trees"))
+            } else {
+                break;
             }
         }
+        // Backtrace down to leafs
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -771,14 +516,6 @@ impl Cache {
         location: Option<ObjectLocation>,
     ) -> Result<()> {
         if let Some(persistence) = self.persistence.read().await.as_ref() {
-            // <<<<<<< HEAD
-            //             trace!("Upsert into database");
-            //             object.upsert(&persistence.get_client().await?).await?;
-            //
-            //             if let Some(l) = &location {
-            //                 l.upsert(&persistence.get_client().await?).await?;
-            //                 trace!("Upsert location");
-            // =======
             let mut client = persistence.get_client().await?;
             let transaction = client.transaction().await?;
             let transaction_client = transaction.client();
@@ -787,7 +524,6 @@ impl Cache {
 
             if let Some(l) = &location {
                 l.upsert(transaction_client).await?;
-                //>>>>>>> dev
             }
 
             transaction.commit().await?;
