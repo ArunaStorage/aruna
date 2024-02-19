@@ -24,7 +24,6 @@ use diesel_ulid::DieselUlid;
 use http::{HeaderValue, Method};
 use s3s::dto::CreateBucketInput;
 use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
-use s3s::path::S3Path;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -64,7 +63,6 @@ impl From<&Method> for DbPermissionLevel {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ObjectType {
-    Bundle, // Bundles are proxy specific objects that group together all lower level objects into a single bundle
     Project,
     Collection,
     Dataset,
@@ -1021,6 +1019,7 @@ pub enum ResourceStates {
         name: String,
         variant: ResourceVariant,
     },
+    None,
 }
 
 impl ResourceStates {
@@ -1055,6 +1054,12 @@ impl ResourceState {
         Ok(Self([project, collection, dataset, object]))
     }
 }
+
+// pub enum  {
+//     Regular(Object, Option<ObjectLocation>),
+//     ObjectBucket(Object, ObjectLocation),
+//     Bundle(String),
+// }
 
 #[derive(Clone, Default)]
 pub struct CheckAccessResult {

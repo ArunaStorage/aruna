@@ -37,7 +37,7 @@ pub struct Cache {
         (Arc<RwLock<Object>>, Arc<RwLock<Option<ObjectLocation>>>),
         RandomState,
     >,
-    bundles: DashMap<DieselUlid, Vec<DieselUlid>>,
+    bundles: DashMap<DieselUlid, (String, Vec<DieselUlid>)>,
     // Maps with path / key as key and set of all ObjectIds as value
     paths: SkipMap<String, DieselUlid>,
     // Pubkeys
@@ -664,5 +664,24 @@ impl Cache {
                 )
             })
             .collect()
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn add_bundle(&self, bundle_id: DieselUlid, object_ids: Vec<DieselUlid>, access_key: &str) {
+        self.bundles
+            .insert(bundle_id, (access_key.to_string(), object_ids));
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn get_bundle(&self, bundle_id: &DieselUlid) -> Option<(String, Vec<DieselUlid>)> {
+        self.bundles.get(bundle_id).map(|e| {
+            let (a, b) = e.value();
+            (a.clone(), b.clone())
+        })
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn delete_bundle(&self, bundle_id: &DieselUlid) {
+        self.bundles.remove(bundle_id);
     }
 }

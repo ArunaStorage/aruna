@@ -896,9 +896,7 @@ impl S3 for ArunaS3Service {
             (Some(_), Some(ct)) => ct,
             (None, Some(ct)) => ct,
             (Some(s), None) => s,
-            _ => {
-                "".to_string()
-            }
+            _ => "".to_string(),
         };
 
         let max_keys = match req.input.max_keys {
