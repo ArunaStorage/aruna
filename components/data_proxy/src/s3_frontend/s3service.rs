@@ -5,7 +5,6 @@ use super::utils::ranges::calculate_ranges;
 use crate::bundler::bundle_helper::get_bundle;
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
-use crate::s3_frontend::utils::list_objects::filter_list_objects;
 use crate::s3_frontend::utils::list_objects::list_response;
 use crate::s3_frontend::utils::ranges::aruna_range_from_s3range;
 use crate::structs::CheckAccessResult;
@@ -893,16 +892,12 @@ impl S3 for ArunaS3Service {
         };
 
         // Filter all objects from cache which have the project as root
-        let sorted = filter_list_objects(&self.cache.paths, project_name);
         let start_after = match (req.input.start_after, continuation_token.clone()) {
             (Some(_), Some(ct)) => ct,
             (None, Some(ct)) => ct,
             (Some(s), None) => s,
             _ => {
-                let (path, _) = sorted
-                    .first_key_value()
-                    .ok_or_else(|| s3_error!(NoSuchKey, "No project in tree"))?;
-                path.clone()
+                "".to_string()
             }
         };
 
@@ -912,7 +907,6 @@ impl S3 for ArunaS3Service {
         };
 
         let (keys, common_prefixes, new_continuation_token) = trace_err!(list_response(
-            sorted,
             &self.cache,
             &delimiter,
             &prefix,
