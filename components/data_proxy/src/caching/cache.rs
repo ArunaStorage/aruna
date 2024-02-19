@@ -5,16 +5,15 @@ use super::{
 use crate::caching::grpc_query_handler::sort_objects;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::replication::replication_handler::ReplicationMessage;
-use crate::structs::{DbPermissionLevel, TypedRelation};
+use crate::structs::{AccessKeyPermissions, DbPermissionLevel, TypedRelation, User};
 use crate::trace_err;
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
-    structs::{Object, ObjectLocation, ObjectType, PubKey, User},
+    structs::{Object, ObjectLocation, ObjectType, PubKey},
 };
 use ahash::RandomState;
 use anyhow::Result;
 use anyhow::{anyhow, bail};
-use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use async_channel::Sender;
 use crossbeam_skiplist::SkipMap;
 use dashmap::DashMap;
@@ -29,24 +28,26 @@ use tokio_postgres::GenericClient;
 use tracing::{debug, error, info_span, trace, Instrument};
 
 pub struct Cache {
-    // Map with AccessKey as key and User as value
-    pub users: DashMap<String, Arc<RwLock<User>>, RandomState>,
+    // Map DieselUlid as key and User attributes as value
+    users: DashMap<DieselUlid, Arc<RwLock<User>>, RandomState>,
+    // Permissions
+    access_keys: DashMap<String, AccessKeyPermissions, RandomState>,
     // Map with ObjectId as key and Object as value
-    pub resources: DashMap<
+    resources: DashMap<
         DieselUlid,
         (Arc<RwLock<Object>>, Arc<RwLock<Option<ObjectLocation>>>),
         RandomState,
     >,
     // Maps with path / key as key and set of all ObjectIds as value
-    pub paths: SkipMap<String, DieselUlid>,
+    paths: SkipMap<String, DieselUlid>,
     // Pubkeys
-    pub pubkeys: DashMap<i32, (PubKey, DecodingKey), RandomState>,
+    pubkeys: DashMap<i32, (PubKey, DecodingKey), RandomState>,
     // Persistence layer
-    pub persistence: RwLock<Option<Database>>,
-    pub aruna_client: RwLock<Option<Arc<GrpcQueryHandler>>>,
-    pub auth: RwLock<Option<AuthHandler>>,
-    pub sender: Sender<ReplicationMessage>,
-    pub backend: Option<Arc<Box<dyn StorageBackend>>>,
+    persistence: RwLock<Option<Database>>,
+    aruna_client: RwLock<Option<Arc<GrpcQueryHandler>>>,
+    auth: RwLock<Option<AuthHandler>>,
+    sender: Sender<ReplicationMessage>,
+    backend: Option<Arc<Box<dyn StorageBackend>>>,
 }
 
 impl Cache {
@@ -73,6 +74,7 @@ impl Cache {
         // Initialize cache
         let cache = Arc::new(Cache {
             users: DashMap::default(),
+            access_keys: DashMap::default(),
             resources: DashMap::default(),
             paths: SkipMap::new(),
             pubkeys: DashMap::default(),
@@ -122,19 +124,19 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self, notifications))]
-    pub async fn set_notifications(&self, notifications: Arc<GrpcQueryHandler>) {
+    async fn set_notifications(&self, notifications: Arc<GrpcQueryHandler>) {
         let mut guard = self.aruna_client.write().await;
         *guard = Some(notifications);
     }
 
     #[tracing::instrument(level = "trace", skip(self, auth))]
-    pub async fn set_auth(&self, auth: AuthHandler) {
+    async fn set_auth(&self, auth: AuthHandler) {
         let mut guard = self.auth.write().await;
         *guard = Some(auth);
     }
 
     #[tracing::instrument(level = "trace", skip(self, persistence))]
-    pub async fn set_persistence(&self, persistence: Database) -> Result<()> {
+    async fn set_persistence(&self, persistence: Database) -> Result<()> {
         let persistence = self.sync_with_persistence(persistence).await?;
         let mut guard = self.persistence.write().await;
         *guard = Some(persistence);
@@ -144,16 +146,13 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self, access_key))]
     /// Requests a secret key from the cache
     pub async fn get_secret(&self, access_key: &str) -> Result<SecretKey> {
-        let secret = trace_err!(self
-            .users
+        let secret = self
+            .access_keys
             .get(access_key)
-            .ok_or_else(|| anyhow!("User not found")))?
+            .ok_or_else(|| anyhow!("User not found"))?
         .value()
-        .read()
-        .await
         .secret
         .clone();
-
         if secret.is_empty() {
             error!("secret is empty");
             Err(anyhow!("Secret is empty"))
@@ -167,7 +166,7 @@ impl Cache {
         let client = database.get_client().await?;
         for user in User::get_all(&client).await? {
             self.users
-                .insert(user.access_key.clone(), Arc::new(RwLock::new(user)));
+                .insert(user.user_id.clone(), Arc::new(RwLock::new(user)));
         }
         debug!("synced users");
 
@@ -240,18 +239,20 @@ impl Cache {
                 .map(char::from)
                 .collect::<String>();
 
-            let user = Arc::new(User {
+            let user = Arc::new(RwLock::new(User {
                 access_key: access_key.to_string(),
                 user_id: DieselUlid::from_str(&user.id)?,
                 secret: new_secret.clone(),
                 admin: false,
                 permissions: perm,
-            });
+            }));
 
-            cache.users.insert(access_key.clone(), user.clone());
+            self.users.insert(access_key.clone(), user.clone());
 
-            if let Some(persistence) = cache.persistence.read().await.as_ref() {
-                user.upsert(persistence.get_client().await?.client())
+            if let Some(persistence) = self.persistence.read().await.as_ref() {
+                user.read()
+                    .await
+                    .upsert(persistence.get_client().await?.client())
                     .await?;
             }
 
@@ -299,19 +300,6 @@ impl Cache {
         trace!("updated pks in cache");
         Ok(())
     }
-    #[tracing::instrument(level = "trace", skip(self, res))]
-    pub fn get_full_resource_by_name(
-        &self,
-        res: ResourceString,
-    ) -> Option<(Object, Option<ObjectLocation>)> {
-        self.paths
-            .get(&res)
-            .and_then(|e| {
-                let id = e.value().clone();
-                self.resources.get(&id.get_id()).map(|e| e.value().clone())
-            })
-            .clone()
-    }
 
     #[tracing::instrument(level = "trace", skip(self, res))]
     pub fn get_resource_by_name(&self, res: String) -> Option<DieselUlid> {
@@ -344,46 +332,6 @@ impl Cache {
         None
     }
 
-    #[tracing::instrument(level = "trace", skip(self, resource_id))]
-    pub async fn get_name_trees(
-        &self,
-        resource_id: DieselUlid,
-    ) -> Result<Vec<(String, DieselUlid)>> {
-        let resource = self
-            .resources
-            .get(&resource_id)
-            .ok_or_else(|| anyhow!("Resource not found"))?
-            .value()
-            .0
-            .read()
-            .await;
-
-        // BackTrace to root projects
-        let mut queue = VecDeque::from([(resource_id, resource.name.clone())]);
-        let mut prefixes = Vec::new();
-
-        loop {
-            if let Some(front) = queue.pop_front() {
-                match self.get_parent_names(&front.0).await {
-                    Some(parents) => {
-                        parents.into_iter().for_each(|e| {
-                            let mut prefix = e.0;
-                            prefix.push_str("/");
-                            prefix.push_str(&front.1);
-                            queue.push_back((e.1, prefix));
-                        });
-                    }
-                    None => {
-                        prefixes.push((front.1, front.0));
-                    }
-                }
-            } else {
-                break;
-            }
-        }
-        // Backtrace down to leafs
-    }
-
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_pubkey(&self, kid: i32) -> Result<(PubKey, DecodingKey)> {
         Ok(trace_err!(self
@@ -396,39 +344,30 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn upsert_user(self: Arc<Cache>, user: GrpcUser) -> Result<()> {
         let user_id = trace_err!(DieselUlid::from_str(&user.id))?;
+        for (key, perm) in user.extract_access_key_permissions()?.into_iter() {
 
-        tokio::spawn(
-            async move {
-                for (key, perm) in user.extract_access_key_permissions()?.into_iter() {
-                    loop {
-                        if let Some(e) = self.users.try_entry(key.to_string()) {
-                            let user = {
-                                let mut mut_entry = trace_err!(e.or_try_insert_with(|| {
-                                    Ok::<_, anyhow::Error>(User {
-                                        access_key: key.to_string(),
-                                        user_id,
-                                        secret: "".to_string(),
-                                        admin: false,
-                                        permissions: HashMap::default(),
-                                    })
-                                }))?;
-                                mut_entry.value_mut().permissions = perm.clone();
+                if let Some(e) = self.users.try_entry(key.to_string()) {
+                    let user = {
+                        let mut mut_entry = trace_err!(e.or_try_insert_with(|| {
+                            Ok::<_, anyhow::Error>(User {
+                                access_key: key.to_string(),
+                                user_id,
+                                secret: "".to_string(),
+                                admin: false,
+                                permissions: HashMap::default(),
+                            })
+                        }))?;
+                        mut_entry.value_mut().permissions = perm.clone();
 
-                                mut_entry.clone()
-                            };
-                            if let Some(persistence) = self.persistence.read().await.as_ref() {
-                                user.upsert(persistence.get_client().await?.client())
-                                    .await?;
-                            }
-                            break;
-                        }
+                        mut_entry.clone()
+                    };
+                    if let Some(persistence) = self.persistence.read().await.as_ref() {
+                        user.upsert(persistence.get_client().await?.client())
+                            .await?;
                     }
+                    break;
                 }
-                Ok::<(), anyhow::Error>(())
-            }
-            .instrument(info_span!("upsert_user")),
-        )
-        .await??;
+        }
         Ok(())
     }
 
@@ -484,7 +423,7 @@ impl Cache {
             .users
             .iter()
             .filter_map(|k| {
-                if k.value().user_id == user_id {
+                if k.value().blocking_read().user_id == user_id {
                     Some(k.key().clone())
                 } else {
                     None
@@ -499,7 +438,7 @@ impl Cache {
             if let Some(persistence) = self.persistence.read().await.as_ref() {
                 if let Some((_, user)) = user {
                     User::delete(
-                        &user.user_id.to_string(),
+                        &user.read().await.user_id.to_string(),
                         persistence.get_client().await?.client(),
                     )
                     .await?;

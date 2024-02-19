@@ -1,21 +1,16 @@
-use crate::caching::cache::Cache;
 use crate::database::persistence::{GenericBytes, Table, WithGenericBytes};
 use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
-<<<<<<< HEAD
-=======
 use aruna_rust_api::api::storage::models::v2::Dataset;
->>>>>>> parent of c423938 (fix: Incorrect hash algorithm index mapping)
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation, DataClass, InternalRelationVariant, KeyValue, Object as GrpcObject,
-    PermissionLevel, Project, RelationDirection, Status,
+    PermissionLevel, Project, RelationDirection, Status, User as GrpcUser,
 };
 use aruna_rust_api::api::storage::models::v2::{Collection, DataEndpoint};
-use aruna_rust_api::api::storage::models::v2::{Dataset, Hashalgorithm};
 use aruna_rust_api::api::storage::services::v2::create_collection_request;
 use aruna_rust_api::api::storage::services::v2::create_dataset_request;
 use aruna_rust_api::api::storage::services::v2::create_object_request;
@@ -29,9 +24,7 @@ use diesel_ulid::DieselUlid;
 use http::{HeaderValue, Method};
 use s3s::dto::CreateBucketInput;
 use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
-use s3s::path::S3Path;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
@@ -66,15 +59,6 @@ impl From<&Method> for DbPermissionLevel {
             _ => DbPermissionLevel::Admin,
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct User {
-    pub access_key: String,
-    pub user_id: DieselUlid,
-    pub secret: String,
-    pub admin: bool, // Admin of this dataproxy instance
-    pub permissions: HashMap<DieselUlid, DbPermissionLevel>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -124,6 +108,61 @@ pub struct Object {
     pub synced: bool,
     pub endpoints: Vec<Endpoint>, // TODO
     pub created_at: Option<NaiveDateTime>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct User {
+    pub user_id: DieselUlid,
+    pub personal_permissions: HashMap<DieselUlid, DbPermissionLevel>,
+    pub tokens: HashMap<DieselUlid, HashMap<DieselUlid, DbPermissionLevel>>,
+    pub custom_attributes: HashMap<String, String>,
+}
+
+// TODO: FIX this
+impl TryFrom<GrpcUser> for User {
+    type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(value))]
+    fn try_from(value: GrpcUser) -> Result<Self> {
+        Ok(User {
+            user_id: DieselUlid::from_str(&value.id)?,
+            personal_permissions: value
+                .personal_permissions
+                .iter()
+                .map(|(k, v)| {
+                    Ok((
+                        DieselUlid::from_str(k)?,
+                        DbPermissionLevel::from_str(v)?,
+                    ))
+                })
+                .collect::<Result<HashMap<DieselUlid, DbPermissionLevel>>>()?,
+            tokens: value
+                .tokens
+                .iter()
+                .map(|(k, v)| {
+                    Ok((
+                        DieselUlid::from_str(k)?,
+                        v.iter()
+                            .map(|(k, v)| {
+                                Ok((
+                                    DieselUlid::from_str(k)?,
+                                    DbPermissionLevel::from_str(v)?,
+                                ))
+                            })
+                            .collect::<Result<HashMap<DieselUlid, DbPermissionLevel>>>()?,
+                    ))
+                })
+                .collect::<Result<HashMap<DieselUlid, HashMap<DieselUlid, DbPermissionLevel>>>>()?,
+            custom_attributes: value.custom_attributes,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AccessKeyPermissions {
+    pub access_key: String,
+    pub user_id: DieselUlid,
+    pub secret: String,
+    pub permissions: HashMap<DieselUlid, DbPermissionLevel>,
 }
 
 // TODO! ENDPOINTS
@@ -359,33 +398,63 @@ impl WithGenericBytes<DieselUlid> for ObjectLocation {
     }
 }
 
-impl TryFrom<GenericBytes<String>> for User {
+impl WithGenericBytes<DieselUlid> for User {
+    #[tracing::instrument(level = "trace", skip())]
+    fn get_table() -> Table {
+        Table::Users
+    }
+}
+
+impl TryFrom<GenericBytes<DieselUlid>> for User {
     type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
     #[tracing::instrument(level = "trace", skip(value))]
-    fn try_from(value: GenericBytes<String>) -> Result<Self, Self::Error> {
+    fn try_from(value: GenericBytes<DieselUlid>) -> Result<Self, Self::Error> {
         let user: User = trace_err!(bincode::deserialize(&value.data))?;
         Ok(user)
     }
 }
 
-impl TryInto<GenericBytes<String>> for User {
+impl TryInto<GenericBytes<DieselUlid>> for User {
     type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
     #[tracing::instrument(level = "trace", skip(self))]
-    fn try_into(self) -> Result<GenericBytes<String>, Self::Error> {
+    fn try_into(self) -> Result<GenericBytes<DieselUlid>, Self::Error> {
         let user = self;
         let data = trace_err!(bincode::serialize(&user))?;
         Ok(GenericBytes {
-            id: user.access_key,
+            id: user.user_id,
             data,
             table: Self::get_table(),
         })
     }
 }
 
-impl WithGenericBytes<String> for User {
+impl WithGenericBytes<String> for AccessKeyPermissions {
     #[tracing::instrument(level = "trace", skip())]
     fn get_table() -> Table {
-        Table::Users
+        Table::Permissions
+    }
+}
+
+impl TryFrom<GenericBytes<String>> for AccessKeyPermissions {
+    type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
+    #[tracing::instrument(level = "trace", skip(value))]
+    fn try_from(value: GenericBytes<String>) -> Result<Self, Self::Error> {
+        let access_key_perm: User = trace_err!(bincode::deserialize(&value.data))?;
+        Ok(access_key_perm)
+    }
+}
+
+impl TryInto<GenericBytes<String>> for AccessKeyPermissions {
+    type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
+    #[tracing::instrument(level = "trace", skip(self))]
+    fn try_into(self) -> Result<GenericBytes<String>, Self::Error> {
+        let access_key_perm = self;
+        let data = trace_err!(bincode::serialize(&access_key_perm))?;
+        Ok(GenericBytes {
+            id: access_key_perm.access_key,
+            data,
+            table: Self::get_table(),
+        })
     }
 }
 
