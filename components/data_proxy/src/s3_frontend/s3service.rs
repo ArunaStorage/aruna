@@ -870,8 +870,7 @@ impl S3 for ArunaS3Service {
         let prefix = req.input.prefix.filter(|prefix| !prefix.is_empty());
 
         // Check if bucket exists as root in cache of paths
-        match self.cache.get_path(project_name.as_str())
-        {
+        match self.cache.get_path(project_name.as_str()) {
             Some(_) => {}
             None => {
                 error!("No bucket found");

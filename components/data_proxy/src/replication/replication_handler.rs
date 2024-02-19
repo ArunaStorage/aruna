@@ -404,13 +404,7 @@ impl ReplicationHandler {
                                 let object_id = DieselUlid::from_str(&id)?;
 
                                 // The object gets queried
-                                let (object, location) = {
-                                    let entry = trace_err!(cache
-                                        .resources
-                                        .get(&object_id)
-                                        .ok_or_else(|| anyhow!("Object not found")))?;
-                                    entry.clone()
-                                };
+                                let (object, location) = cache.get_resource(&object_id)?;
                                 trace!(?object);
                                 // If no location is found, a new one is created
                                 let mut location = if location.is_some() {

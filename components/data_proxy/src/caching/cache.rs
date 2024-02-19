@@ -1,6 +1,4 @@
-use super::{
-    auth::AuthHandler, grpc_query_handler::GrpcQueryHandler,
-};
+use super::{auth::AuthHandler, grpc_query_handler::GrpcQueryHandler};
 use crate::caching::grpc_query_handler::sort_objects;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::replication::replication_handler::ReplicationMessage;
@@ -11,11 +9,10 @@ use crate::{
     structs::{Object, ObjectLocation, ObjectType, PubKey},
 };
 use ahash::RandomState;
-use anyhow::Result;
 use anyhow::anyhow;
+use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use async_channel::Sender;
-use axum::extract::path;
 use crossbeam_skiplist::SkipMap;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -610,9 +607,12 @@ impl Cache {
             }
         }
         // Remove object and location from cache
-        let old = self.resources.remove(&id).ok_or_else(|| anyhow!("Resource not found"))?;
+        let old = self
+            .resources
+            .remove(&id)
+            .ok_or_else(|| anyhow!("Resource not found"))?;
         for p in self
-            .get_name_trees(&id, old.1.0.read().await.name.clone(), None)
+            .get_name_trees(&id, old.1 .0.read().await.name.clone(), None)
             .await
             .0
         {
@@ -649,8 +649,12 @@ impl Cache {
     pub fn get_stripped_path_range(&self, prefix: &str, skip: &str) -> Vec<(String, DieselUlid)> {
         self.paths
             .range(format!("{prefix}/{skip}")..=format!("{prefix}~"))
-            .map(|e| 
-                (e.key().strip_prefix(prefix).unwrap_or_default().to_string(), e.value().clone()))
+            .map(|e| {
+                (
+                    e.key().strip_prefix(prefix).unwrap_or_default().to_string(),
+                    e.value().clone(),
+                )
+            })
             .collect()
     }
 }

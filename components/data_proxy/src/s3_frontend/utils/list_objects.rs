@@ -35,10 +35,7 @@ impl From<(&String, &(Object, Option<ObjectLocation>))> for Contents {
     }
 }
 
-#[tracing::instrument(
-    level = "trace",
-    skip(cache, delimiter, prefix, start_at, max_keys)
-)]
+#[tracing::instrument(level = "trace", skip(cache, delimiter, prefix, start_at, max_keys))]
 pub fn list_response(
     cache: &Arc<Cache>,
     delimiter: &Option<String>,
