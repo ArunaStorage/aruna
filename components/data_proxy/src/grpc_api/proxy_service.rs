@@ -425,8 +425,7 @@ impl DataproxyReplicationServiceImpl {
         let mut objects = Vec::new();
         let object_endpoint_map = DashMap::new();
         for id in ids {
-            if let Some(o) = self.cache.resources.get(&id) {
-                let (_, (object, location)) = o.pair();
+            if let Ok((object, location)) = self.cache.get_resource(&id) {
                 let location = location
                     .as_ref()
                     .ok_or_else(|| tonic::Status::not_found("No location found for object"))?;

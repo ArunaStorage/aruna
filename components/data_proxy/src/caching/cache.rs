@@ -1,11 +1,10 @@
 use super::{
     auth::AuthHandler, grpc_query_handler::GrpcQueryHandler,
-    transforms::ExtractAccessKeyPermissions,
 };
 use crate::caching::grpc_query_handler::sort_objects;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::replication::replication_handler::ReplicationMessage;
-use crate::structs::{AccessKeyPermissions, DbPermissionLevel, TypedRelation, User};
+use crate::structs::{AccessKeyPermissions, TypedRelation, User};
 use crate::trace_err;
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
@@ -13,10 +12,10 @@ use crate::{
 };
 use ahash::RandomState;
 use anyhow::Result;
-use anyhow::{anyhow, bail};
-use aruna_rust_api::api::notification::services::v2::NewPubkey;
+use anyhow::anyhow;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use async_channel::Sender;
+use axum::extract::path;
 use crossbeam_skiplist::SkipMap;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -28,7 +27,7 @@ use std::collections::{HashMap, VecDeque};
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::RwLock;
 use tokio_postgres::GenericClient;
-use tracing::{debug, error, info_span, subscriber, trace, Instrument};
+use tracing::{debug, error, info_span, trace, Instrument};
 
 pub struct Cache {
     // Map DieselUlid as key and (User, Vec<String>) as value -> Vec<String> is a list of registered access keys -> access_keys
@@ -47,9 +46,9 @@ pub struct Cache {
     pubkeys: DashMap<i32, (PubKey, DecodingKey), RandomState>,
     // Persistence layer
     persistence: RwLock<Option<Database>>,
-    aruna_client: RwLock<Option<Arc<GrpcQueryHandler>>>,
-    auth: RwLock<Option<AuthHandler>>,
-    sender: Sender<ReplicationMessage>,
+    pub(crate) aruna_client: RwLock<Option<Arc<GrpcQueryHandler>>>,
+    pub(crate) auth: RwLock<Option<AuthHandler>>,
+    pub(crate) sender: Sender<ReplicationMessage>,
     backend: Option<Arc<Box<dyn StorageBackend>>>,
 }
 
@@ -317,6 +316,22 @@ impl Cache {
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn add_pubkey(&self, pk: PubKey) -> Result<()> {
+        if let Some(persistence) = self.persistence.read().await.as_ref() {
+            pk.upsert(persistence.get_client().await?.client()).await?;
+        }
+        let dec_key = DecodingKey::from_ed_pem(
+            format!(
+                "-----BEGIN PUBLIC KEY-----{}-----END PUBLIC KEY-----",
+                pk.key
+            )
+            .as_bytes(),
+        )?;
+        self.pubkeys.insert(pk.id.into(), (pk, dec_key));
+        Ok(())
+    }
+
     #[tracing::instrument(level = "trace", skip(self, res))]
     pub fn get_resource_by_name(&self, res: String) -> Option<DieselUlid> {
         self.paths.get(&res)
@@ -351,7 +366,12 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self, resource_id))]
-    pub async fn get_name_trees(&self, resource_id: &DieselUlid, resource_name: String, new_name: Option<String>) -> (Vec<String>, Option<Vec<String>>) {
+    pub async fn get_name_trees(
+        &self,
+        resource_id: &DieselUlid,
+        resource_name: String,
+        new_name: Option<String>,
+    ) -> (Vec<String>, Option<Vec<String>>) {
         let prefixes = self.get_prefixes(resource_id).await;
         let suffixes = self.get_suffixes(resource_id).await;
         let mut final_paths = Vec::new();
@@ -364,14 +384,18 @@ impl Cache {
                 }
             }
         }
-        (final_paths, if new_name.is_some() { Some(new_paths) } else { None })
+        (
+            final_paths,
+            if new_name.is_some() {
+                Some(new_paths)
+            } else {
+                None
+            },
+        )
     }
 
     #[tracing::instrument(level = "trace", skip(self, resource_id))]
-    pub async fn get_parents(
-        &self,
-        resource_id: &DieselUlid,
-    ) -> Option<Vec<(String, DieselUlid)>> {
+    pub async fn get_parents(&self, resource_id: &DieselUlid) -> Option<Vec<(String, DieselUlid)>> {
         let resource = self.resources.get(resource_id)?;
         let resource = resource.value().0.read().await;
         if let Some(parents) = &resource.parents {
@@ -481,29 +505,6 @@ impl Cache {
         Ok(())
     }
 
-    // #[tracing::instrument(level = "trace", skip(self))]
-    // pub async fn add_permission_to_access_key(
-    //     &self,
-    //     access_key: &str,
-    //     permission: (DieselUlid, DbPermissionLevel),
-    // ) -> Result<()> {
-    //     if let Some(mut key) = self.access_keys.get_mut(access_key) {
-    //         key.value_mut()
-    //             .permissions
-    //             .insert(permission.0, permission.1);
-
-    //         if let Some(persistence) = self.persistence.read().await.as_ref() {
-    //             key.value()
-    //                 .upsert(persistence.get_client().await?.client())
-    //                 .await?;
-    //         }
-    //         Ok(())
-    //     } else {
-    //         error!("user not found");
-    //         Err(anyhow!("User not found"))
-    //     }
-    // }
-
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn remove_user(&self, user_id: DieselUlid) -> Result<()> {
         if let Some((u, v)) = self.users.remove(&user_id) {
@@ -537,50 +538,52 @@ impl Cache {
             if let Some(l) = &location {
                 l.upsert(transaction_client).await?;
             }
-
             transaction.commit().await?;
         }
-        let object_id = object.id;
-        let obj_type = object.object_type.clone();
-
-
-
-        if let Some(o) = self.resources.get(&object.id) {
-
-            if location.is_none() {
-                o.value().1.read().await.clone()
-            } else {
-                location
+        let old_name = if let Some(o) = self.resources.get(&object.id) {
+            let (obj, loc) = o.value();
+            let mut object = obj.write().await;
+            let old_name = object.name.clone();
+            *object = object.clone();
+            if let Some(location) = location {
+                *loc.write().await = Some(location);
             }
+            old_name
         } else {
-            location
+            self.resources.insert(
+                object.id,
+                (
+                    Arc::new(RwLock::new(object.clone())),
+                    Arc::new(RwLock::new(location)),
+                ),
+            );
+            object.name.to_string()
         };
 
-        self.resources.insert(object.id, (Arc::new(RwLock::new(object.clone())), Arc::new(RwLock::new(location))));
-        trace!("inserted into cache");
-        self.paths.retain(|_, v| v != &object_id);
-        trace!("inserted paths");
-
-        if object.object_type != ObjectType::Bundle {
-            trace!("Getting name trees because full_sync");
-            let tree = self.get_name_trees(&object_id.to_string(), obj_type)?;
-            for (e, v) in tree {
-                self.paths.insert(e, v);
-            }
+        if old_name != object.name && object.object_type != ObjectType::Bundle {
+            self.update_object_name(object.id, old_name, object.name)
+                .await?;
         }
         Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip(self, object_id, new_name))]
-    pub async fn update_object_name(&self, object_id: DieselUlid, old_name: String, new_name: String) -> Result<()> { 
-        let (old_paths, new_paths) = self.get_name_trees(&object_id, old_name, Some(new_name)).await;
+    pub async fn update_object_name(
+        &self,
+        object_id: DieselUlid,
+        old_name: String,
+        new_name: String,
+    ) -> Result<()> {
+        let (old_paths, new_paths) = self
+            .get_name_trees(&object_id, old_name, Some(new_name))
+            .await;
         for (old, new) in old_paths.into_iter().zip(new_paths.unwrap_or_default()) {
             let old_opt_entry = self.paths.remove(&old);
             if let Some(old_entry) = old_opt_entry {
                 self.paths.insert(new, old_entry.value().clone());
             }
         }
-        Ok(()) 
+        Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -601,15 +604,20 @@ impl Cache {
         if let Some(s3_backend) = &self.backend {
             if let Some(resource) = self.resources.get(&id) {
                 let (_, loc) = resource.value();
-                if let Some(location) = loc {
+                if let Some(location) = loc.read().await.as_ref() {
                     s3_backend.delete_object(location.clone()).await?;
                 }
             }
         }
-
         // Remove object and location from cache
-        self.resources.remove(&id);
-        self.paths.retain(|_, v| v != &id);
+        let old = self.resources.remove(&id).ok_or_else(|| anyhow!("Resource not found"))?;
+        for p in self
+            .get_name_trees(&id, old.1.0.read().await.name.clone(), None)
+            .await
+            .0
+        {
+            self.paths.remove(&p);
+        }
         Ok(())
     }
 
@@ -618,275 +626,6 @@ impl Cache {
         let result = self.users.get(access_key).map(|e| e.value().clone());
         trace!(?result);
         result
-    }
-
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_resource_ids_from_id(
-        &self,
-        id: DieselUlid,
-    ) -> Result<(Vec<ResourceIds>, TypedRelation)> {
-        let mut result = Vec::new();
-        let rel;
-
-        if let Some(resource) = self.resources.get(&id) {
-            let (object, _) = resource.value();
-
-            match object.object_type {
-                ObjectType::Bundle => {
-                    error!("Bundles are not allowed in this context");
-                    bail!("Bundles are not allowed in this context")
-                }
-                ObjectType::Project => {
-                    rel = TypedRelation::Project(object.id);
-                    result.push(ResourceIds::Project(object.id))
-                }
-                ObjectType::Collection => {
-                    rel = TypedRelation::Collection(object.id);
-                    for parent in trace_err!(object
-                        .parents
-                        .as_ref()
-                        .ok_or_else(|| anyhow!("Invalid collection, missing parent")))?
-                    {
-                        match parent {
-                            TypedRelation::Project(parent_id) => {
-                                result.push(ResourceIds::Collection(*parent_id, object.id))
-                            }
-                            _ => {
-                                error!("Invalid collection, parent is not a project");
-                                bail!("Invalid collection, parent is not a project")
-                            }
-                        }
-                    }
-                }
-                ObjectType::Dataset => {
-                    rel = TypedRelation::Dataset(object.id);
-                    for parent in trace_err!(object
-                        .parents
-                        .as_ref()
-                        .ok_or_else(|| anyhow!("Invalid dataset, missing parent")))?
-                    {
-                        match parent {
-                            TypedRelation::Project(parent_id) => {
-                                result.push(ResourceIds::Dataset(*parent_id, None, object.id))
-                            }
-                            TypedRelation::Collection(parent_id) => {
-                                if let Some(resource) = self.resources.get(parent_id) {
-                                    let (collection_object, _) = resource.value();
-
-                                    for parent_parent in trace_err!(collection_object
-                                        .parents
-                                        .as_ref()
-                                        .ok_or_else(|| anyhow!("Invalid dataset, missing parent")))?
-                                    {
-                                        match parent_parent {
-                                            TypedRelation::Project(project_id) => {
-                                                result.push(ResourceIds::Dataset(
-                                                    *project_id,
-                                                    Some(*parent_id),
-                                                    object.id,
-                                                ))
-                                            }
-                                            _ => {
-                                                error!(
-                                                    "Invalid dataset, parent is not a collection"
-                                                );
-                                                bail!("Invalid dataset, parent is not a collection")
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    error!("Invalid dataset, parent is not a project");
-                                    bail!("Invalid dataset, parent is not a project")
-                                }
-                            }
-                            _ => {
-                                error!("Invalid dataset, parent is not a project");
-                                bail!("Invalid dataset, parent is not a project")
-                            }
-                        }
-                    }
-                }
-                ObjectType::Object => {
-                    rel = TypedRelation::Object(object.id);
-                    for parent in trace_err!(object
-                        .parents
-                        .as_ref()
-                        .ok_or_else(|| anyhow!("Invalid dataset, missing parent")))?
-                    {
-                        match parent {
-                            TypedRelation::Project(parent_id) => {
-                                result.push(ResourceIds::Object(*parent_id, None, None, object.id))
-                            }
-                            TypedRelation::Collection(parent_id) => {
-                                if let Some(resource) = self.resources.get(parent_id) {
-                                    let (collection_object, _) = resource.value();
-
-                                    for parent_parent in trace_err!(collection_object
-                                        .parents
-                                        .as_ref()
-                                        .ok_or_else(|| anyhow!("Invalid dataset, missing parent")))?
-                                    {
-                                        match parent_parent {
-                                            TypedRelation::Project(project_id) => {
-                                                result.push(ResourceIds::Object(
-                                                    *project_id,
-                                                    Some(*parent_id),
-                                                    None,
-                                                    object.id,
-                                                ))
-                                            }
-                                            _ => {
-                                                error!(
-                                                    "Invalid dataset, parent is not a collection"
-                                                );
-                                                bail!("Invalid dataset, parent is not a collection")
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    error!("Invalid dataset, parent is not a project");
-                                    bail!("Invalid dataset, parent is not a project")
-                                }
-                            }
-                            TypedRelation::Dataset(parent_id) => {
-                                if let Some(resource) = self.resources.get(parent_id) {
-                                    let (dataset_object, _) = resource.value();
-
-                                    for parent_parent in trace_err!(dataset_object
-                                        .parents
-                                        .as_ref()
-                                        .ok_or_else(|| anyhow!("Invalid dataset, missing parent")))?
-                                    {
-                                        match parent_parent {
-                                            TypedRelation::Project(project_id) => {
-                                                result.push(ResourceIds::Object(
-                                                    *project_id,
-                                                    None,
-                                                    Some(*parent_id),
-                                                    object.id,
-                                                ))
-                                            }
-
-                                            TypedRelation::Collection(collection_id) => {
-                                                if let Some(resource) =
-                                                    self.resources.get(collection_id)
-                                                {
-                                                    let (collection_object, _) = resource.value();
-
-                                                    for parent_parent in
-                                                        trace_err!(collection_object
-                                                            .parents
-                                                            .as_ref()
-                                                            .ok_or_else(|| {
-                                                                anyhow!(
-                                                                "Invalid dataset, missing parent"
-                                                            )
-                                                            }))?
-                                                    {
-                                                        match parent_parent {
-                                                            TypedRelation::Project(project_id) => {
-                                                                result.push(ResourceIds::Object(
-                                                                    *project_id,
-                                                                    Some(*collection_id),
-                                                                    Some(*parent_id),
-                                                                    object.id,
-                                                                ))
-                                                            }
-                                                            _ => {
-                                                                error!("Invalid dataset, parent is not a collection");
-                                                                bail!("Invalid dataset, parent is not a collection")
-                                                            }
-                                                        }
-                                                    }
-                                                } else {
-                                                    error!(
-                                                        "Invalid dataset, parent is not a project"
-                                                    );
-                                                    bail!("Invalid dataset, parent is not a collection")
-                                                }
-                                            }
-                                            _ => {
-                                                error!("Invalid dataset, parent is not a project");
-                                                bail!("Invalid dataset, parent is not a collection")
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    error!("Invalid dataset, parent is not a project");
-                                    bail!("Invalid dataset, parent is not a project")
-                                }
-                            }
-                            _ => {
-                                error!("Invalid dataset, parent is not a project");
-                                bail!("Invalid dataset, parent is not a project")
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            return Err(anyhow!("Resource not found"));
-        }
-        trace!(?result, ?rel);
-        Ok((result, rel))
-    }
-
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_path_levels(
-        &self,
-        resource_id: DieselUlid,
-    ) -> Result<Vec<(String, Option<ObjectLocation>)>> {
-        let init = trace_err!(self
-            .resources
-            .get(&resource_id)
-            .ok_or_else(|| anyhow!("Resource not found")))?;
-
-        let mut queue = VecDeque::with_capacity(10_000);
-
-        if init.0.object_type == ObjectType::Bundle {
-            for x in trace_err!(init
-                .0
-                .children
-                .as_ref()
-                .ok_or_else(|| anyhow!("No children found")))?
-            {
-                queue.push_back(("".to_string(), x.get_id()));
-            }
-        } else {
-            queue.push_back(("".to_string(), init.0.id));
-        };
-
-        let mut finished = Vec::with_capacity(10_000);
-
-        while let Some((mut name, id)) = queue.pop_front() {
-            let resource = self
-                .resources
-                .get(&id)
-                .ok_or_else(|| anyhow!("Resource not found"))?;
-
-            if resource.0.object_type == ObjectType::Object {
-                name = format!("{}/{}", name, resource.0.name);
-                name = name.trim_matches('/').to_string();
-                finished.push((name, resource.1.clone()));
-            } else if let Some(child) = resource.0.children.as_ref() {
-                if child.is_empty() {
-                    name = format!("{}/{}", name, resource.0.name);
-                    name = name.trim_matches('/').to_string();
-                    finished.push((name, resource.1.clone()));
-                } else {
-                    for x in child {
-                        name = name.trim_matches('/').to_string();
-                        queue.push_back((format!("{}/{}", name, resource.0.name), x.get_id()));
-                    }
-                }
-            } else {
-                name = format!("{}/{}", name, resource.0.name);
-                name = name.trim_matches('/').to_string();
-                finished.push((name, resource.1.clone()));
-            }
-        }
-        trace!(?finished);
-        Ok(finished)
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -899,5 +638,19 @@ impl Cache {
             .get(resource_id)
             .ok_or_else(|| anyhow!("Resource not found")))?;
         Ok(resource.clone())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn get_path(&self, path: &str) -> Option<DieselUlid> {
+        self.paths.get(path).map(|e| e.value().clone())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn get_stripped_path_range(&self, prefix: &str, skip: &str) -> Vec<(String, DieselUlid)> {
+        self.paths
+            .range(format!("{prefix}/{skip}")..=format!("{prefix}~"))
+            .map(|e| 
+                (e.key().strip_prefix(prefix).unwrap_or_default().to_string(), e.value().clone()))
+            .collect()
     }
 }

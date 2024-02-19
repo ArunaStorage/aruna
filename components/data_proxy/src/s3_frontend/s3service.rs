@@ -12,7 +12,6 @@ use crate::structs::CheckAccessResult;
 use crate::structs::Object as ProxyObject;
 use crate::structs::ObjectType;
 use crate::structs::PartETag;
-use crate::structs::ResourceString;
 use crate::structs::TypedRelation;
 use crate::structs::ALL_RIGHTS_RESERVED;
 use crate::trace_err;
@@ -563,17 +562,10 @@ impl S3 for ArunaS3Service {
             }
         };
 
-        let cache_result = trace_err!(self
+        let (_, location) = trace_err!(self
             .cache
-            .resources
-            .get(&id)
+            .get_resource(&id)
             .ok_or_else(|| s3_error!(NoSuchKey, "Object not found")))?;
-
-        let (_, location) = cache_result.value();
-        let location = trace_err!(location
-            .as_ref()
-            .ok_or_else(|| s3_error!(InternalError, "Object location not found")))?
-        .clone();
         let content_length = location.raw_content_len;
         let encryption_key = location
             .clone()
@@ -878,10 +870,7 @@ impl S3 for ArunaS3Service {
         let prefix = req.input.prefix.filter(|prefix| !prefix.is_empty());
 
         // Check if bucket exists as root in cache of paths
-        match self
-            .cache
-            .paths
-            .get(&ResourceString::Project(project_name.to_string()))
+        match self.cache.get_path(project_name.as_str())
         {
             Some(_) => {}
             None => {

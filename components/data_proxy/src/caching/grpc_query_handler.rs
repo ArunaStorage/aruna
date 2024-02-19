@@ -66,7 +66,6 @@ use aruna_rust_api::api::{
     },
 };
 use diesel_ulid::DieselUlid;
-use jsonwebtoken::DecodingKey;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
@@ -619,16 +618,7 @@ impl GrpcQueryHandler {
                 }
                 Target::User(u) => self.cache.clone().upsert_user(u).await?,
                 Target::Pubkey(pk) => {
-                    let dec_key = DecodingKey::from_ed_pem(
-                        format!(
-                            "-----BEGIN PUBLIC KEY-----{}-----END PUBLIC KEY-----",
-                            pk.key
-                        )
-                        .as_bytes(),
-                    )?;
-                    self.cache
-                        .pubkeys
-                        .insert(pk.id, (pk.clone().into(), dec_key));
+                    self.cache.add_pubkey(pk.clone().into()).await?;
                 }
                 _ => (),
             }
