@@ -1,4 +1,6 @@
 use super::cache::Cache;
+use crate::helpers::is_method_get_style;
+use crate::structs::AccessKeyPermissions;
 use crate::structs::CheckAccessResult;
 use crate::structs::DbPermissionLevel;
 use crate::structs::Object;
@@ -200,372 +202,434 @@ impl AuthHandler {
         path: &S3Path,
         headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult> {
-        let db_perm_from_method = DbPermissionLevel::from(method);
-        trace!(extracted_perm = ?db_perm_from_method);
-
-        if path.is_root() {
-            trace!("detected root");
-            if let Some(creds) = creds {
-                let user = trace_err!(self
-                    .cache
-                    .get_user_by_key(&creds.access_key)
-                    .ok_or_else(|| anyhow!("Unknown user")))?;
-
-                let token_id = if user.user_id.to_string() == user.access_key {
-                    None
+        match path {
+            S3Path::Root => return Ok(self.handle_root(creds)),
+            S3Path::Bucket { bucket } => {
+                if is_method_get_style(method) {
+                    // "GET" style methods
+                    // &Method::GET | &Method::HEAD | &Method::OPTIONS
                 } else {
-                    Some(user.access_key.clone())
-                };
-
-                return Ok(CheckAccessResult {
-                    user_id: Some(user.user_id.to_string()),
-                    token_id,
-                    resource_ids: None,
-                    missing_resources: None,
-                    object: None,
-                    bundle: None,
-                    headers: None,
-                });
-            } else {
-                return Ok(CheckAccessResult {
-                    user_id: None,
-                    token_id: None,
-                    resource_ids: None,
-                    missing_resources: None,
-                    object: None,
-                    bundle: None,
-                    headers: None,
-                });
+                    // "POST" style = modifying methods
+                    // &Method::POST | &Method::PUT | &Method::DELETE | &Method::CONNECT | &Method::PATCH | &Method::TRACE
+                }
             }
-        } else if let Some(b) = path.as_bucket() {
-            trace!("detected as_bucket");
-
-            let headers = if let Some((project, _)) = self
-                .cache
-                .get_full_resource_by_name(crate::structs::ResourceString::Project(b.to_string()))
-            {
-                project.project_get_headers(method, headers)
-            } else {
-                None
-            };
-
-            if method == Method::POST || method == Method::PUT {
-                trace!("detected POST/PUT");
-                let user = trace_err!(self
-                    .cache
-                    .get_user_by_key(
-                        &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
-                    )
-                    .ok_or_else(|| anyhow!("Unknown user")))?;
-
-                let token_id = if user.user_id.to_string() == user.access_key {
-                    None
+            S3Path::Object { bucket, key } => {
+                if is_method_get_style(method) {
+                    // "GET" style methods
+                    // &Method::GET | &Method::HEAD | &Method::OPTIONS
                 } else {
-                    Some(user.access_key.clone())
-                };
-
-                let bucket_obj =
-                    self.cache
-                        .get_full_resource_by_name(crate::structs::ResourceString::Project(
-                            b.to_string(),
-                        ));
-
-                if let Some((ref project, _)) = bucket_obj {
-                    if let Some(ep) = project.endpoints.iter().find(|ep| ep.id == self.self_id) {
-                        if let SyncVariant::PartialSync(_) = ep.variant {
-                            return Err(anyhow!("Can not modify partial sync resources"));
-                        }
-                    }
-                    if let Some(perm) = user.permissions.get(&project.id) {
-                        if *perm >= DbPermissionLevel::Write {
-                            return Ok(CheckAccessResult {
-                                user_id: Some(user.user_id.to_string()),
-                                token_id: token_id.clone(),
-                                resource_ids: Some(ResourceIds::Project(project.id)),
-                                missing_resources: None,
-                                object: bucket_obj,
-                                bundle: None,
-                                headers,
-                            });
-                        }
-                    }
-                }
-
-                return Ok(CheckAccessResult {
-                    user_id: Some(user.user_id.to_string()),
-                    token_id,
-                    resource_ids: None,
-                    missing_resources: Some(Missing {
-                        p: Some(b.to_string()),
-                        c: None,
-                        d: None,
-                        o: None,
-                    }),
-                    object: None,
-                    bundle: None,
-                    headers,
-                });
-            } else {
-                trace!("detected not POST/PUT");
-                let user = trace_err!(self
-                    .cache
-                    .get_user_by_key(
-                        &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
-                    )
-                    .ok_or_else(|| anyhow!("Unknown user")))?;
-
-                let bucket_obj =
-                    self.cache
-                        .get_full_resource_by_name(crate::structs::ResourceString::Project(
-                            b.to_string(),
-                        ));
-
-                if let Some((ref project, _)) = bucket_obj {
-                    if let Some(perm) = user.permissions.get(&project.id) {
-                        if *perm >= DbPermissionLevel::Read {
-                            return Ok(CheckAccessResult {
-                                user_id: Some(user.user_id.to_string()),
-                                token_id: Some(user.access_key.clone()),
-                                resource_ids: Some(ResourceIds::Project(project.id)),
-                                missing_resources: None,
-                                object: bucket_obj,
-                                bundle: None,
-                                headers,
-                            });
-                        }
-                    }
-                }
-
-                return Ok(CheckAccessResult::new(
-                    Some(user.user_id.to_string()),
-                    Some(user.access_key),
-                    None,
-                    Some(Missing {
-                        p: Some(b.to_string()),
-                        c: None,
-                        d: None,
-                        o: None,
-                    }),
-                    None,
-                    None,
-                    headers,
-                ));
-            }
-        } else if let Some((bucket, _)) = path.as_object() {
-            // This is needed to check if a partial synced object is requested by path oder special
-            // bucket
-            let mut special_bucket = false;
-            if bucket == "objects" || bucket == "bundles" {
-                special_bucket = true;
-                if let &(Method::PUT | Method::POST | Method::PATCH | Method::DELETE) = method {
-                    return Err(anyhow!("Can not modify special bucket"));
-                }
-            }
-            let ((obj, loc), ids, missing, bundle) = self.extract_object_from_path(path, method)?;
-
-            // This evaluates if any object in the specified, requested path has the partial synced
-            // status for this endpoint
-            let partial = {
-                let (proj, col, ds, obj) = ids.destructurize();
-                let mut partial = false;
-                let mut id_vec = vec![proj];
-                if let Some(col) = col {
-                    id_vec.push(col);
-                }
-                if let Some(ds) = ds {
-                    id_vec.push(ds);
-                }
-                if let Some(obj) = obj {
-                    id_vec.push(obj);
-                }
-                for id in id_vec {
-                    let (object, _) = self.cache.get_resource(&id)?;
-                    if object
-                        .endpoints
-                        .iter()
-                        .find_map(|ep| {
-                            if ep.id == self.self_id {
-                                match ep.variant {
-                                    SyncVariant::PartialSync(_) => Some(true),
-                                    _ => None,
-                                }
-                            } else {
-                                None
-                            }
-                        })
-                        .is_some()
-                    {
-                        partial = true;
-                        break;
-                    };
-                }
-                partial
-            };
-
-            if let &(Method::PUT | Method::POST | Method::PATCH | Method::DELETE) = method {
-                // Modifying partial synced objects is not allowed
-                if partial {
-                    return Err(anyhow!("PartialSync objects cannot be modified"));
-                }
-            }
-
-            if let Some(bundle) = bundle {
-                debug!(bundle, "bundle_detected");
-
-                if obj.object_type == ObjectType::Bundle {
-                    // Check if user has access to Bundle Object
-                    let user = trace_err!(self
-                        .cache
-                        .get_user_by_key(
-                            &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
-                        )
-                        .ok_or_else(|| anyhow!("Unknown user")))?;
-
-                    if !user.admin {
-                        for (res, perm) in user.permissions {
-                            // ResourceIds only contain Bundle Id as Project
-                            if ids.check_if_in(res) && perm >= db_perm_from_method {
-                                let token_id = if user.user_id.to_string() == user.access_key {
-                                    None
-                                } else {
-                                    Some(user.access_key.clone())
-                                };
-
-                                trace!(resource_id = ?res, permission = ?perm, user_id = ?user.user_id, key = ?user.access_key, "permission match found");
-
-                                return Ok(CheckAccessResult {
-                                    user_id: Some(user.user_id.to_string()),
-                                    token_id,
-                                    resource_ids: None,
-                                    missing_resources: None, // Bundles are standalone
-                                    object: Some((obj, None)), // Bundles can't have a location
-                                    bundle: Some(bundle),
-                                    headers: None,
-                                });
-                            }
-                        }
-                    } else {
-                        trace!("AdminUser signed bundle");
-                        return Ok(CheckAccessResult {
-                            user_id: Some(user.user_id.to_string()),
-                            token_id: None,
-                            resource_ids: Some(ids),
-                            missing_resources: None,
-                            object: Some((obj, None)),
-                            bundle: Some(bundle),
-                            headers: None,
-                        });
-                    }
-                }
-
-                if db_perm_from_method == DbPermissionLevel::Read
-                    && obj.data_class == DataClass::Public
-                {
-                    debug!("public_bundle");
-                    return Ok(CheckAccessResult {
-                        user_id: None,
-                        token_id: None,
-                        resource_ids: None,
-                        missing_resources: None,
-                        object: Some((obj, loc)),
-                        bundle: Some(bundle),
-                        headers: None,
-                    });
-                } else {
-                    debug!("bundle_not_public");
-                    let user = trace_err!(self
-                        .cache
-                        .get_user_by_key(
-                            &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
-                        )
-                        .ok_or_else(|| anyhow!("Unknown user")))?;
-
-                    for (res, perm) in user.permissions {
-                        if ids.check_if_in(res) && perm >= db_perm_from_method {
-                            let token_id = if user.user_id.to_string() == user.access_key {
-                                None
-                            } else {
-                                Some(user.access_key.clone())
-                            };
-                            trace!(resource_id = ?res, permission = ?perm, "permission match found");
-                            return Ok(CheckAccessResult::new(
-                                Some(user.user_id.to_string()),
-                                token_id,
-                                Some(ids),
-                                missing,
-                                Some((obj, loc)),
-                                Some(bundle),
-                                None,
-                            ));
-                        }
-                    }
-                }
-            }
-
-            let headers = if let Some((project, _)) =
-                self.cache
-                    .get_full_resource_by_name(crate::structs::ResourceString::Project(
-                        bucket.to_string(),
-                    )) {
-                project.project_get_headers(method, headers)
-            } else {
-                None
-            };
-
-            match method {
-                &Method::GET | &Method::HEAD | &Method::OPTIONS | &Method::DELETE => {
-                    if missing.is_some() {
-                        bail!("Resource not found")
-                    } else if partial && !special_bucket {
-                        // Requesting partial synced objects is only allowed when specifying one of
-                        // the special_buckets
-                        bail!("Resource not found")
-                    }
-                }
-                _ => {}
-            };
-
-            if db_perm_from_method == DbPermissionLevel::Read && obj.data_class == DataClass::Public
-            {
-                debug!("public_object");
-                return Ok(CheckAccessResult::new(
-                    None,
-                    None,
-                    Some(ids),
-                    missing,
-                    Some((obj, loc)),
-                    None,
-                    headers,
-                ));
-            } else if let Some(creds) = creds {
-                debug!("private object");
-                let user = trace_err!(self
-                    .cache
-                    .get_user_by_key(&creds.access_key)
-                    .ok_or_else(|| anyhow!("Unknown user")))?;
-                for (res, perm) in user.permissions {
-                    if ids.check_if_in(res) && perm >= db_perm_from_method {
-                        let token_id = if user.user_id.to_string() == user.access_key {
-                            None
-                        } else {
-                            Some(user.access_key.clone())
-                        };
-                        trace!(resource_id = ?res, permission = ?perm, "permission match found");
-                        return Ok(CheckAccessResult::new(
-                            Some(user.user_id.to_string()),
-                            token_id,
-                            Some(ids),
-                            missing,
-                            Some((obj, loc)),
-                            None,
-                            headers,
-                        ));
-                    }
+                    // "POST" style = modifying methods
+                    // &Method::POST | &Method::PUT | &Method::DELETE | &Method::CONNECT | &Method::PATCH | &Method::TRACE
                 }
             }
         }
 
         Err(anyhow!("Invalid permissions"))
+
+        // let db_perm_from_method = DbPermissionLevel::from(method);
+        // trace!(extracted_perm = ?db_perm_from_method);
+
+        // if path.is_root() {
+        //     trace!("detected root");
+        //     if let Some(creds) = creds {
+        //         let user = trace_err!(self
+        //             .cache
+        //             .get_user_by_key(&creds.access_key)
+        //             .ok_or_else(|| anyhow!("Unknown user")))?;
+
+        //         let token_id = if user.user_id.to_string() == user.access_key {
+        //             None
+        //         } else {
+        //             Some(user.access_key.clone())
+        //         };
+
+        //         return Ok(CheckAccessResult {
+        //             user_id: Some(user.user_id.to_string()),
+        //             token_id,
+        //             resource_ids: None,
+        //             missing_resources: None,
+        //             object: None,
+        //             bundle: None,
+        //             headers: None,
+        //         });
+        //     } else {
+        //         return Ok(CheckAccessResult {
+        //             user_id: None,
+        //             token_id: None,
+        //             resource_ids: None,
+        //             missing_resources: None,
+        //             object: None,
+        //             bundle: None,
+        //             headers: None,
+        //         });
+        //     }
+        // } else if let Some(b) = path.as_bucket() {
+        //     trace!("detected as_bucket");
+
+        //     let headers = if let Some((project, _)) = self
+        //         .cache
+        //         .get_full_resource_by_name(crate::structs::ResourceString::Project(b.to_string()))
+        //     {
+        //         project.project_get_headers(method, headers)
+        //     } else {
+        //         None
+        //     };
+
+        //     if method == Method::POST || method == Method::PUT {
+        //         trace!("detected POST/PUT");
+        //         let user = trace_err!(self
+        //             .cache
+        //             .get_user_by_key(
+        //                 &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
+        //             )
+        //             .ok_or_else(|| anyhow!("Unknown user")))?;
+
+        //         let token_id = if user.user_id.to_string() == user.access_key {
+        //             None
+        //         } else {
+        //             Some(user.access_key.clone())
+        //         };
+
+        //         let bucket_obj =
+        //             self.cache
+        //                 .get_full_resource_by_name(crate::structs::ResourceString::Project(
+        //                     b.to_string(),
+        //                 ));
+
+        //         if let Some((ref project, _)) = bucket_obj {
+        //             if let Some(ep) = project.endpoints.iter().find(|ep| ep.id == self.self_id) {
+        //                 if let SyncVariant::PartialSync(_) = ep.variant {
+        //                     return Err(anyhow!("Can not modify partial sync resources"));
+        //                 }
+        //             }
+        //             if let Some(perm) = user.permissions.get(&project.id) {
+        //                 if *perm >= DbPermissionLevel::Write {
+        //                     return Ok(CheckAccessResult {
+        //                         user_id: Some(user.user_id.to_string()),
+        //                         token_id: token_id.clone(),
+        //                         resource_ids: Some(ResourceIds::Project(project.id)),
+        //                         missing_resources: None,
+        //                         object: bucket_obj,
+        //                         bundle: None,
+        //                         headers,
+        //                     });
+        //                 }
+        //             }
+        //         }
+
+        //         return Ok(CheckAccessResult {
+        //             user_id: Some(user.user_id.to_string()),
+        //             token_id,
+        //             resource_ids: None,
+        //             missing_resources: Some(Missing {
+        //                 p: Some(b.to_string()),
+        //                 c: None,
+        //                 d: None,
+        //                 o: None,
+        //             }),
+        //             object: None,
+        //             bundle: None,
+        //             headers,
+        //         });
+        //     } else {
+        //         trace!("detected not POST/PUT");
+        //         let user = trace_err!(self
+        //             .cache
+        //             .get_user_by_key(
+        //                 &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
+        //             )
+        //             .ok_or_else(|| anyhow!("Unknown user")))?;
+
+        //         let bucket_obj =
+        //             self.cache
+        //                 .get_full_resource_by_name(crate::structs::ResourceString::Project(
+        //                     b.to_string(),
+        //                 ));
+
+        //         if let Some((ref project, _)) = bucket_obj {
+        //             if let Some(perm) = user.permissions.get(&project.id) {
+        //                 if *perm >= DbPermissionLevel::Read {
+        //                     return Ok(CheckAccessResult {
+        //                         user_id: Some(user.user_id.to_string()),
+        //                         token_id: Some(user.access_key.clone()),
+        //                         resource_ids: Some(ResourceIds::Project(project.id)),
+        //                         missing_resources: None,
+        //                         object: bucket_obj,
+        //                         bundle: None,
+        //                         headers,
+        //                     });
+        //                 }
+        //             }
+        //         }
+
+        //         return Ok(CheckAccessResult::new(
+        //             Some(user.user_id.to_string()),
+        //             Some(user.access_key),
+        //             None,
+        //             Some(Missing {
+        //                 p: Some(b.to_string()),
+        //                 c: None,
+        //                 d: None,
+        //                 o: None,
+        //             }),
+        //             None,
+        //             None,
+        //             headers,
+        //         ));
+        //     }
+        // } else if let Some((bucket, _)) = path.as_object() {
+        //     // This is needed to check if a partial synced object is requested by path oder special
+        //     // bucket
+        //     let mut special_bucket = false;
+        //     if bucket == "objects" || bucket == "bundles" {
+        //         special_bucket = true;
+        //         if let &(Method::PUT | Method::POST | Method::PATCH | Method::DELETE) = method {
+        //             return Err(anyhow!("Can not modify special bucket"));
+        //         }
+        //     }
+        //     let ((obj, loc), ids, missing, bundle) = self.extract_object_from_path(path, method)?;
+
+        //     // This evaluates if any object in the specified, requested path has the partial synced
+        //     // status for this endpoint
+        //     let partial = {
+        //         let (proj, col, ds, obj) = ids.destructurize();
+        //         let mut partial = false;
+        //         let mut id_vec = vec![proj];
+        //         if let Some(col) = col {
+        //             id_vec.push(col);
+        //         }
+        //         if let Some(ds) = ds {
+        //             id_vec.push(ds);
+        //         }
+        //         if let Some(obj) = obj {
+        //             id_vec.push(obj);
+        //         }
+        //         for id in id_vec {
+        //             let (object, _) = self.cache.get_resource(&id)?;
+        //             if object
+        //                 .endpoints
+        //                 .iter()
+        //                 .find_map(|ep| {
+        //                     if ep.id == self.self_id {
+        //                         match ep.variant {
+        //                             SyncVariant::PartialSync(_) => Some(true),
+        //                             _ => None,
+        //                         }
+        //                     } else {
+        //                         None
+        //                     }
+        //                 })
+        //                 .is_some()
+        //             {
+        //                 partial = true;
+        //                 break;
+        //             };
+        //         }
+        //         partial
+        //     };
+
+        //     if let &(Method::PUT | Method::POST | Method::PATCH | Method::DELETE) = method {
+        //         // Modifying partial synced objects is not allowed
+        //         if partial {
+        //             return Err(anyhow!("PartialSync objects cannot be modified"));
+        //         }
+        //     }
+
+        //     if let Some(bundle) = bundle {
+        //         debug!(bundle, "bundle_detected");
+
+        //         if obj.object_type == ObjectType::Bundle {
+        //             // Check if user has access to Bundle Object
+        //             let user = trace_err!(self
+        //                 .cache
+        //                 .get_user_by_key(
+        //                     &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
+        //                 )
+        //                 .ok_or_else(|| anyhow!("Unknown user")))?;
+
+        //             if !user.admin {
+        //                 for (res, perm) in user.permissions {
+        //                     // ResourceIds only contain Bundle Id as Project
+        //                     if ids.check_if_in(res) && perm >= db_perm_from_method {
+        //                         let token_id = if user.user_id.to_string() == user.access_key {
+        //                             None
+        //                         } else {
+        //                             Some(user.access_key.clone())
+        //                         };
+
+        //                         trace!(resource_id = ?res, permission = ?perm, user_id = ?user.user_id, key = ?user.access_key, "permission match found");
+
+        //                         return Ok(CheckAccessResult {
+        //                             user_id: Some(user.user_id.to_string()),
+        //                             token_id,
+        //                             resource_ids: None,
+        //                             missing_resources: None, // Bundles are standalone
+        //                             object: Some((obj, None)), // Bundles can't have a location
+        //                             bundle: Some(bundle),
+        //                             headers: None,
+        //                         });
+        //                     }
+        //                 }
+        //             } else {
+        //                 trace!("AdminUser signed bundle");
+        //                 return Ok(CheckAccessResult {
+        //                     user_id: Some(user.user_id.to_string()),
+        //                     token_id: None,
+        //                     resource_ids: Some(ids),
+        //                     missing_resources: None,
+        //                     object: Some((obj, None)),
+        //                     bundle: Some(bundle),
+        //                     headers: None,
+        //                 });
+        //             }
+        //         }
+
+        //         if db_perm_from_method == DbPermissionLevel::Read
+        //             && obj.data_class == DataClass::Public
+        //         {
+        //             debug!("public_bundle");
+        //             return Ok(CheckAccessResult {
+        //                 user_id: None,
+        //                 token_id: None,
+        //                 resource_ids: None,
+        //                 missing_resources: None,
+        //                 object: Some((obj, loc)),
+        //                 bundle: Some(bundle),
+        //                 headers: None,
+        //             });
+        //         } else {
+        //             debug!("bundle_not_public");
+        //             let user = trace_err!(self
+        //                 .cache
+        //                 .get_user_by_key(
+        //                     &trace_err!(creds.ok_or_else(|| anyhow!("Unknown user")))?.access_key
+        //                 )
+        //                 .ok_or_else(|| anyhow!("Unknown user")))?;
+
+        //             for (res, perm) in user.permissions {
+        //                 if ids.check_if_in(res) && perm >= db_perm_from_method {
+        //                     let token_id = if user.user_id.to_string() == user.access_key {
+        //                         None
+        //                     } else {
+        //                         Some(user.access_key.clone())
+        //                     };
+        //                     trace!(resource_id = ?res, permission = ?perm, "permission match found");
+        //                     return Ok(CheckAccessResult::new(
+        //                         Some(user.user_id.to_string()),
+        //                         token_id,
+        //                         Some(ids),
+        //                         missing,
+        //                         Some((obj, loc)),
+        //                         Some(bundle),
+        //                         None,
+        //                     ));
+        //                 }
+        //             }
+        //         }
+        //     }
+
+        //     let headers = if let Some((project, _)) =
+        //         self.cache
+        //             .get_full_resource_by_name(crate::structs::ResourceString::Project(
+        //                 bucket.to_string(),
+        //             )) {
+        //         project.project_get_headers(method, headers)
+        //     } else {
+        //         None
+        //     };
+
+        //     match method {
+        //         &Method::GET | &Method::HEAD | &Method::OPTIONS | &Method::DELETE => {
+        //             if missing.is_some() {
+        //                 bail!("Resource not found")
+        //             } else if partial && !special_bucket {
+        //                 // Requesting partial synced objects is only allowed when specifying one of
+        //                 // the special_buckets
+        //                 bail!("Resource not found")
+        //             }
+        //         }
+        //         _ => {}
+        //     };
+
+        //     if db_perm_from_method == DbPermissionLevel::Read && obj.data_class == DataClass::Public
+        //     {
+        //         debug!("public_object");
+        //         return Ok(CheckAccessResult::new(
+        //             None,
+        //             None,
+        //             Some(ids),
+        //             missing,
+        //             Some((obj, loc)),
+        //             None,
+        //             headers,
+        //         ));
+        //     } else if let Some(creds) = creds {
+        //         debug!("private object");
+        //         let user = trace_err!(self
+        //             .cache
+        //             .get_user_by_key(&creds.access_key)
+        //             .ok_or_else(|| anyhow!("Unknown user")))?;
+        //         for (res, perm) in user.permissions {
+        //             if ids.check_if_in(res) && perm >= db_perm_from_method {
+        //                 let token_id = if user.user_id.to_string() == user.access_key {
+        //                     None
+        //                 } else {
+        //                     Some(user.access_key.clone())
+        //                 };
+        //                 trace!(resource_id = ?res, permission = ?perm, "permission match found");
+        //                 return Ok(CheckAccessResult::new(
+        //                     Some(user.user_id.to_string()),
+        //                     token_id,
+        //                     Some(ids),
+        //                     missing,
+        //                     Some((obj, loc)),
+        //                     None,
+        //                     headers,
+        //                 ));
+        //             }
+        //         }
+        //     }
+        // }
+
+        // Err(anyhow!("Invalid permissions"))
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, creds))]
+    pub fn extract_access_key_perms(
+        &self,
+        creds: Option<&Credentials>,
+    ) -> Option<AccessKeyPermissions> {
+        if let Some(creds) = creds {
+            if let Some(creds) = creds {
+                return self.cache.get_key_perms(&creds.access_key);
+            }
+        }
+        None
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, creds))]
+    pub fn handle_root(&self, creds: Option<&Credentials>) -> CheckAccessResult {
+        if let Some(AccessKeyPermissions {
+            user_id,
+            access_key,
+            ..
+        }) = self.extract_access_key_perms(creds)
+        {
+            return Ok(CheckAccessResult {
+                user_id: Some(user_id.to_string()),
+                token_id: Some(access_key.to_string()),
+                ..Default::default()
+            });
+        }
+        CheckAccessResult::default()
+    }
+
+    pub async fn handle_bucket_get(
+        &self,
+        bucket_name: &str,
+        creds: Option<Credentials>,
+        headers: HeaderMap<HeaderValue>,
+    ) -> Result<CheckAccessResult> {
     }
 
     #[tracing::instrument(

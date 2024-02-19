@@ -37,6 +37,7 @@ pub struct Cache {
         (Arc<RwLock<Object>>, Arc<RwLock<Option<ObjectLocation>>>),
         RandomState,
     >,
+    bundles: DashMap<DieselUlid, Vec<DieselUlid>>,
     // Maps with path / key as key and set of all ObjectIds as value
     paths: SkipMap<String, DieselUlid>,
     // Pubkeys
@@ -75,6 +76,7 @@ impl Cache {
             users: DashMap::default(),
             access_keys: DashMap::default(),
             resources: DashMap::default(),
+            bundles: DashMap::default(),
             paths: SkipMap::new(),
             pubkeys: DashMap::default(),
             persistence: RwLock::new(None),
@@ -330,8 +332,14 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self, res))]
-    pub fn get_resource_by_name(&self, res: String) -> Option<DieselUlid> {
-        self.paths.get(&res)
+    pub fn get_resource_by_name(&self, res: &str) -> Option<DieselUlid> {
+        self.paths.get(res)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, res))]
+    pub fn get_full_resource_by_name(&self, res: &str) -> Option<Object> {
+        let id = self.paths.get(&res).value().clone();
+        self.resources.get(&id).map(|e| e.value().0.read().clone())
     }
 
     #[tracing::instrument(level = "trace", skip(self, resource_id))]
@@ -622,8 +630,8 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_user_by_key(&self, access_key: &str) -> Option<User> {
-        let result = self.users.get(access_key).map(|e| e.value().clone());
+    pub fn get_key_perms(&self, access_key: &str) -> Option<AccessKeyPermissions> {
+        let result = self.access_keys.get(access_key).map(|e| e.value().clone());
         trace!(?result);
         result
     }

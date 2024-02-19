@@ -1,9 +1,8 @@
 use crate::database::persistence::{GenericBytes, Table, WithGenericBytes};
 use crate::trace_err;
-use anyhow::anyhow;
 use anyhow::Result;
+use anyhow::{anyhow, bail};
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
-use aruna_rust_api::api::storage::models::v2::Dataset;
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::models::v2::{
@@ -11,6 +10,7 @@ use aruna_rust_api::api::storage::models::v2::{
     PermissionLevel, Project, RelationDirection, Status, User as GrpcUser,
 };
 use aruna_rust_api::api::storage::models::v2::{Collection, DataEndpoint};
+use aruna_rust_api::api::storage::models::v2::{Dataset, ResourceVariant};
 use aruna_rust_api::api::storage::services::v2::create_collection_request;
 use aruna_rust_api::api::storage::services::v2::create_dataset_request;
 use aruna_rust_api::api::storage::services::v2::create_object_request;
@@ -24,6 +24,7 @@ use diesel_ulid::DieselUlid;
 use http::{HeaderValue, Method};
 use s3s::dto::CreateBucketInput;
 use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
+use s3s::path::S3Path;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -1009,12 +1010,57 @@ impl Object {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
+pub enum ResourceStates {
+    Found {
+        id: DieselUlid,
+        name: String,
+        variant: ResourceVariant,
+    },
+    Missing {
+        name: String,
+        variant: ResourceVariant,
+    },
+}
+
+impl ResourceStates {
+    pub fn is_missing(&self) -> bool {
+        matches!(self, ResourceStates::Missing { .. })
+    }
+}
+
+pub struct ResourceState([ResourceStates; 4]);
+
+impl ResourceState {
+    pub fn new(
+        project: ResourceStates,
+        collection: ResourceStates,
+        dataset: ResourceStates,
+        object: ResourceStates,
+    ) -> Result<Self> {
+        match (
+            project.is_missing(),
+            collection.is_missing(),
+            dataset.is_missing(),
+            object.is_missing(),
+        ) {
+            (false, true, true, true)
+            | (false, false, true, true)
+            | (false, false, false, true)
+            | (false, false, false, false) => {}
+            _ => {
+                bail!("Invalid resource state")
+            }
+        }
+        Ok(Self([project, collection, dataset, object]))
+    }
+}
+
+#[derive(Clone, Default)]
 pub struct CheckAccessResult {
     pub user_id: Option<String>,
     pub token_id: Option<String>,
-    pub resource_ids: Option<ResourceIds>,
-    pub missing_resources: Option<Missing>,
+    pub resource_state: Option<ResourceState>,
     pub object: Option<(Object, Option<ObjectLocation>)>,
     pub bundle: Option<String>,
     pub headers: Option<HashMap<String, String>>,
@@ -1023,20 +1069,18 @@ pub struct CheckAccessResult {
 impl CheckAccessResult {
     #[tracing::instrument(
         level = "trace",
-        skip(user_id, token_id, resource_ids, missing_resources, object, bundle)
+        skip(user_id, token_id, resource_state, object, bundle)
     )]
     pub fn new(
         user_id: Option<String>,
         token_id: Option<String>,
-        resource_ids: Option<ResourceIds>,
-        missing_resources: Option<Missing>,
+        resource_state: Option<ResourceState>,
         object: Option<(Object, Option<ObjectLocation>)>,
         bundle: Option<String>,
         headers: Option<HashMap<String, String>>,
     ) -> Self {
         Self {
-            resource_ids,
-            missing_resources,
+            resource_state,
             user_id,
             token_id,
             object,

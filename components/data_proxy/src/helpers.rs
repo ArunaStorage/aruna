@@ -125,3 +125,10 @@ pub fn sign_download_url(
         604800, //Note: Default 1 week until requests allow custom duration
     )
 }
+
+pub fn is_method_get_style(method: &Method) -> bool {
+    match method {
+        Method::GET | Method::HEAD | Method::OPTIONS => true,
+        _ => false,
+    }
+}
