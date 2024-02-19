@@ -118,6 +118,36 @@ pub struct User {
     pub custom_attributes: HashMap<String, String>,
 }
 
+impl User {
+    pub fn compare_permissions(
+        &self,
+        other: &User,
+    ) -> (
+        Vec<(String, HashMap<DieselUlid, DbPermissionLevel>)>,
+        Vec<String>,
+    ) {
+        let mut to_update = vec![];
+        let mut to_delete = vec![];
+        for (k, v) in &self.personal_permissions {
+            if let Some(ov) = other.personal_permissions.get(k) {
+                if v != ov {
+                    to_update.push((self.user_id.to_string(), self.personal_permissions.clone()));
+                }
+            }
+        }
+        for (k, v) in &self.tokens {
+            if let Some(ov) = other.tokens.get(k) {
+                if v != ov {
+                    to_update.push((k.to_string(), v.clone()));
+                }
+            } else {
+                to_delete.push(k.to_string())
+            }
+        }
+        (to_update, to_delete)
+    }
+}
+
 // TODO: FIX this
 impl TryFrom<GrpcUser> for User {
     type Error = anyhow::Error;
@@ -128,12 +158,7 @@ impl TryFrom<GrpcUser> for User {
             personal_permissions: value
                 .personal_permissions
                 .iter()
-                .map(|(k, v)| {
-                    Ok((
-                        DieselUlid::from_str(k)?,
-                        DbPermissionLevel::from_str(v)?,
-                    ))
-                })
+                .map(|(k, v)| Ok((DieselUlid::from_str(k)?, DbPermissionLevel::from_str(v)?)))
                 .collect::<Result<HashMap<DieselUlid, DbPermissionLevel>>>()?,
             tokens: value
                 .tokens
@@ -143,10 +168,7 @@ impl TryFrom<GrpcUser> for User {
                         DieselUlid::from_str(k)?,
                         v.iter()
                             .map(|(k, v)| {
-                                Ok((
-                                    DieselUlid::from_str(k)?,
-                                    DbPermissionLevel::from_str(v)?,
-                                ))
+                                Ok((DieselUlid::from_str(k)?, DbPermissionLevel::from_str(v)?))
                             })
                             .collect::<Result<HashMap<DieselUlid, DbPermissionLevel>>>()?,
                     ))

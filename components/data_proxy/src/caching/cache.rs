@@ -14,10 +14,13 @@ use crate::{
 use ahash::RandomState;
 use anyhow::Result;
 use anyhow::{anyhow, bail};
+use aruna_rust_api::api::notification::services::v2::NewPubkey;
+use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use async_channel::Sender;
 use crossbeam_skiplist::SkipMap;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
+use digest::KeyInit;
 use jsonwebtoken::DecodingKey;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use s3s::auth::SecretKey;
@@ -25,11 +28,11 @@ use std::collections::{HashMap, VecDeque};
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::RwLock;
 use tokio_postgres::GenericClient;
-use tracing::{debug, error, info_span, trace, Instrument};
+use tracing::{debug, error, info_span, subscriber, trace, Instrument};
 
 pub struct Cache {
-    // Map DieselUlid as key and User attributes as value
-    users: DashMap<DieselUlid, Arc<RwLock<User>>, RandomState>,
+    // Map DieselUlid as key and (User, Vec<String>) as value -> Vec<String> is a list of registered access keys -> access_keys
+    users: DashMap<DieselUlid, Arc<RwLock<(User, Vec<String>)>>, RandomState>,
     // Permissions
     access_keys: DashMap<String, AccessKeyPermissions, RandomState>,
     // Map with ObjectId as key and Object as value
@@ -150,9 +153,9 @@ impl Cache {
             .access_keys
             .get(access_key)
             .ok_or_else(|| anyhow!("User not found"))?
-        .value()
-        .secret
-        .clone();
+            .value()
+            .secret
+            .clone();
         if secret.is_empty() {
             error!("secret is empty");
             Err(anyhow!("Secret is empty"))
@@ -164,9 +167,21 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self, database))]
     pub async fn sync_with_persistence(&self, database: Database) -> Result<Database> {
         let client = database.get_client().await?;
+
+        let access_keys = AccessKeyPermissions::get_all(&client).await?;
+        let user_keys = access_keys.iter().fold(HashMap::new(), |mut map, elem| {
+            map.entry(elem.user_id)
+                .or_insert(Vec::new())
+                .push(elem.access_key.clone());
+            map
+        });
+        for key in access_keys.into_iter() {
+            self.access_keys.insert(key.access_key.to_string(), key);
+        }
         for user in User::get_all(&client).await? {
+            let keys = user_keys.get(&user.user_id).cloned().unwrap_or_default();
             self.users
-                .insert(user.user_id.clone(), Arc::new(RwLock::new(user)));
+                .insert(user.user_id.clone(), Arc::new(RwLock::new((user, keys))));
         }
         debug!("synced users");
 
@@ -213,51 +228,52 @@ impl Cache {
 
     #[tracing::instrument(level = "trace", skip(self))]
     /// Requests a secret key from the cache
-    pub async fn create_or_get_secret(
+    pub async fn create_or_update_secret(
         &self,
-        user: GrpcUser,
-        access_key: Option<String>,
+        access_key: &str,
+        user_id: &DieselUlid,
     ) -> Result<(String, String)> {
-        let access_key = access_key.unwrap_or_else(|| user.id.to_string());
-        trace!(access_key = ?access_key);
-        let perm = trace_err!(user
-            .extract_access_key_permissions()?
-            .iter()
-            .find(|e| e.0 == access_key.as_str())
-            .ok_or_else(|| anyhow!("Access key not found")))?
-        .1
-        .clone();
-
-        if let Some(k) = self.users.get(access_key.as_str()) {
-            let user = k.value().clone();
-            let user_ref = user.read().await;
-            return Ok((user_ref.access_key.clone(), user_ref.secret.clone()));
+        let user = self
+            .users
+            .get(&user_id)
+            .ok_or_else(|| anyhow!("User not found"))?
+            .clone();
+        let permissions = if user_id.to_string().as_str() == access_key {
+            let mut user_info = user.write().await;
+            user_info.1.push(access_key.to_string());
+            user_info.0.personal_permissions.clone()
         } else {
-            let new_secret = thread_rng()
-                .sample_iter(&Alphanumeric)
-                .take(30)
-                .map(char::from)
-                .collect::<String>();
+            let mut user_info = user.write().await;
+            let token = user_info
+                .0
+                .tokens
+                .get(&DieselUlid::from_str(access_key)?)
+                .cloned()
+                .ok_or_else(|| anyhow!("Access key not found"))?;
+            user_info.1.push(access_key.to_string());
+            token
+        };
+        let new_secret = thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(30)
+            .map(char::from)
+            .collect::<String>();
 
-            let user = Arc::new(RwLock::new(User {
-                access_key: access_key.to_string(),
-                user_id: DieselUlid::from_str(&user.id)?,
-                secret: new_secret.clone(),
-                admin: false,
-                permissions: perm,
-            }));
+        let new_access_key = AccessKeyPermissions {
+            access_key: access_key.to_string(),
+            user_id: *user_id,
+            secret: new_secret.clone(),
+            permissions: permissions,
+        };
 
-            self.users.insert(access_key.clone(), user.clone());
-
-            if let Some(persistence) = self.persistence.read().await.as_ref() {
-                user.read()
-                    .await
-                    .upsert(persistence.get_client().await?.client())
-                    .await?;
-            }
-
-            return Ok((access_key, new_secret));
+        if let Some(pers) = self.persistence.read().await.as_ref() {
+            new_access_key
+                .upsert(pers.get_client().await?.client())
+                .await?;
         }
+        self.access_keys
+            .insert(access_key.to_string(), new_access_key);
+        Ok((access_key.to_string(), new_secret))
     }
 
     #[tracing::instrument(level = "trace", skip(self, pks))]
@@ -307,7 +323,52 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self, resource_id))]
-    pub async fn get_parent_names(
+    pub async fn get_prefixes(&self, resource_id: &DieselUlid) -> Vec<(DieselUlid, String)> {
+        let mut prefixes = VecDeque::from([(resource_id.clone(), "".to_string())]);
+        let final_result = Vec::new();
+        while let Some((id, name)) = prefixes.pop_front() {
+            if let Some(parents) = self.get_parents(&id).await {
+                for (parent_name, parent_id) in parents {
+                    prefixes.push_back((parent_id, format!("{}/{}", parent_name, name)));
+                }
+            }
+        }
+        final_result
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, resource_id))]
+    pub async fn get_suffixes(&self, resource_id: &DieselUlid) -> Vec<(DieselUlid, String)> {
+        let mut prefixes = VecDeque::from([(resource_id.clone(), "".to_string())]);
+        let final_result = Vec::new();
+        while let Some((id, name)) = prefixes.pop_front() {
+            if let Some(children) = self.get_children(&id).await {
+                for (child_name, child_id) in children {
+                    prefixes.push_back((child_id, format!("{}/{}", name, child_name)));
+                }
+            }
+        }
+        final_result
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, resource_id))]
+    pub async fn get_name_trees(&self, resource_id: &DieselUlid, resource_name: String, new_name: Option<String>) -> (Vec<String>, Option<Vec<String>>) {
+        let prefixes = self.get_prefixes(resource_id).await;
+        let suffixes = self.get_suffixes(resource_id).await;
+        let mut final_paths = Vec::new();
+        let mut new_paths = Vec::new();
+        for pre in prefixes.iter() {
+            for suf in suffixes.iter() {
+                final_paths.push(format!("{}/{}/{}", pre.1, resource_name, suf.1));
+                if let Some(new_name) = &new_name {
+                    new_paths.push(format!("{}/{}/{}", pre.1, new_name, suf.1));
+                }
+            }
+        }
+        (final_paths, if new_name.is_some() { Some(new_paths) } else { None })
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, resource_id))]
+    pub async fn get_parents(
         &self,
         resource_id: &DieselUlid,
     ) -> Option<Vec<(String, DieselUlid)>> {
@@ -332,6 +393,32 @@ impl Cache {
         None
     }
 
+    #[tracing::instrument(level = "trace", skip(self, resource_id))]
+    pub async fn get_children(
+        &self,
+        resource_id: &DieselUlid,
+    ) -> Option<Vec<(String, DieselUlid)>> {
+        let resource = self.resources.get(resource_id)?;
+        let resource = resource.value().0.read().await;
+        if let Some(children) = &resource.children {
+            let mut collected_children = Vec::new();
+            for child in children {
+                match child {
+                    TypedRelation::Project(id)
+                    | TypedRelation::Collection(id)
+                    | TypedRelation::Dataset(id)
+                    | TypedRelation::Object(id) => {
+                        let child = self.resources.get(id)?;
+                        let child = child.value().0.read().await;
+                        collected_children.push((child.name.clone(), child.id));
+                    }
+                }
+            }
+            return Some(collected_children);
+        }
+        None
+    }
+
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_pubkey(&self, kid: i32) -> Result<(PubKey, DecodingKey)> {
         Ok(trace_err!(self
@@ -344,105 +431,91 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn upsert_user(self: Arc<Cache>, user: GrpcUser) -> Result<()> {
         let user_id = trace_err!(DieselUlid::from_str(&user.id))?;
-        for (key, perm) in user.extract_access_key_permissions()?.into_iter() {
+        let proxy_user = User::try_from(user)?;
 
-                if let Some(e) = self.users.try_entry(key.to_string()) {
-                    let user = {
-                        let mut mut_entry = trace_err!(e.or_try_insert_with(|| {
-                            Ok::<_, anyhow::Error>(User {
-                                access_key: key.to_string(),
-                                user_id,
-                                secret: "".to_string(),
-                                admin: false,
-                                permissions: HashMap::default(),
-                            })
-                        }))?;
-                        mut_entry.value_mut().permissions = perm.clone();
-
-                        mut_entry.clone()
-                    };
-                    if let Some(persistence) = self.persistence.read().await.as_ref() {
-                        user.upsert(persistence.get_client().await?.client())
-                            .await?;
-                    }
-                    break;
-                }
+        let (to_update, to_delete) = if let Some(user) = self.users.get(&user_id) {
+            let mut user = user.value().write().await;
+            let comparison = proxy_user.compare_permissions(&user.0);
+            let new_keys = user
+                .1
+                .iter()
+                .filter(|k| !comparison.1.contains(k))
+                .cloned()
+                .collect::<Vec<_>>();
+            *user = (proxy_user.clone(), new_keys);
+            comparison
+        } else {
+            self.users.insert(
+                user_id,
+                Arc::new(RwLock::new((proxy_user.clone(), Vec::new()))),
+            );
+            (vec![], vec![])
+        };
+        for key in to_delete {
+            self.access_keys.remove(&key);
+            if let Some(persistence) = self.persistence.read().await.as_ref() {
+                AccessKeyPermissions::delete(&key, persistence.get_client().await?.client())
+                    .await?;
+            }
+        }
+        for key in to_update {
+            let mut access_key = self
+                .access_keys
+                .get(&key.0)
+                .ok_or_else(|| anyhow!("Access key not found"))?
+                .value()
+                .clone();
+            access_key.permissions = key.1;
+            self.access_keys.insert(key.0, access_key.clone());
+            if let Some(persistence) = self.persistence.read().await.as_ref() {
+                access_key
+                    .upsert(persistence.get_client().await?.client())
+                    .await?;
+            }
+        }
+        if let Some(persistence) = self.persistence.read().await.as_ref() {
+            proxy_user
+                .upsert(persistence.get_client().await?.client())
+                .await?;
         }
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn add_permission_to_access_key(
-        &self,
-        access_key: &str,
-        permission: (DieselUlid, DbPermissionLevel),
-    ) -> Result<()> {
-        if let Some(mut user) = self.users.get_mut(access_key) {
-            user.value_mut()
-                .permissions
-                .insert(permission.0, permission.1);
+    // #[tracing::instrument(level = "trace", skip(self))]
+    // pub async fn add_permission_to_access_key(
+    //     &self,
+    //     access_key: &str,
+    //     permission: (DieselUlid, DbPermissionLevel),
+    // ) -> Result<()> {
+    //     if let Some(mut key) = self.access_keys.get_mut(access_key) {
+    //         key.value_mut()
+    //             .permissions
+    //             .insert(permission.0, permission.1);
 
-            if let Some(persistence) = self.persistence.read().await.as_ref() {
-                user.value()
-                    .upsert(persistence.get_client().await?.client())
-                    .await?;
-            }
-
-            Ok(())
-        } else {
-            error!("user not found");
-            Err(anyhow!("User not found"))
-        }
-    }
-
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn _remove_permission_from_access_key(
-        &self,
-        access_key: &str,
-        permission: &DieselUlid,
-    ) -> Result<()> {
-        if let Some(mut user) = self.users.get_mut(access_key) {
-            user.value_mut().permissions.remove(permission);
-
-            if let Some(persistence) = self.persistence.read().await.as_ref() {
-                user.value()
-                    .upsert(persistence.get_client().await?.client())
-                    .await?;
-            }
-
-            Ok(())
-        } else {
-            error!("user not found");
-            Err(anyhow!("User not found"))
-        }
-    }
+    //         if let Some(persistence) = self.persistence.read().await.as_ref() {
+    //             key.value()
+    //                 .upsert(persistence.get_client().await?.client())
+    //                 .await?;
+    //         }
+    //         Ok(())
+    //     } else {
+    //         error!("user not found");
+    //         Err(anyhow!("User not found"))
+    //     }
+    // }
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn remove_user(&self, user_id: DieselUlid) -> Result<()> {
-        let keys = self
-            .users
-            .iter()
-            .filter_map(|k| {
-                if k.value().blocking_read().user_id == user_id {
-                    Some(k.key().clone())
-                } else {
-                    None
+        if let Some((u, v)) = self.users.remove(&user_id) {
+            for key in v.read().await.1.iter() {
+                self.access_keys.remove(key.as_str());
+                if let Some(persistence) = self.persistence.read().await.as_ref() {
+                    AccessKeyPermissions::delete(key, persistence.get_client().await?.client())
+                        .await?;
                 }
-            })
-            .collect::<Vec<_>>();
-
-        trace!("gathered user keys");
-
-        for key in keys {
-            let user = self.users.remove(&key);
+            }
             if let Some(persistence) = self.persistence.read().await.as_ref() {
-                if let Some((_, user)) = user {
-                    User::delete(
-                        &user.read().await.user_id.to_string(),
-                        persistence.get_client().await?.client(),
-                    )
-                    .await?;
-                }
+                User::delete(&u, persistence.get_client().await?.client()).await?;
             }
         }
         Ok(())
@@ -470,9 +543,12 @@ impl Cache {
         let object_id = object.id;
         let obj_type = object.object_type.clone();
 
-        let location = if let Some(o) = self.resources.get(&object.id) {
+
+
+        if let Some(o) = self.resources.get(&object.id) {
+
             if location.is_none() {
-                o.value().1.clone()
+                o.value().1.read().await.clone()
             } else {
                 location
             }
@@ -480,7 +556,7 @@ impl Cache {
             location
         };
 
-        self.resources.insert(object.id, (object.clone(), location));
+        self.resources.insert(object.id, (Arc::new(RwLock::new(object.clone())), Arc::new(RwLock::new(location))));
         trace!("inserted into cache");
         self.paths.retain(|_, v| v != &object_id);
         trace!("inserted paths");
@@ -493,6 +569,18 @@ impl Cache {
             }
         }
         Ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, object_id, new_name))]
+    pub async fn update_object_name(&self, object_id: DieselUlid, old_name: String, new_name: String) -> Result<()> { 
+        let (old_paths, new_paths) = self.get_name_trees(&object_id, old_name, Some(new_name)).await;
+        for (old, new) in old_paths.into_iter().zip(new_paths.unwrap_or_default()) {
+            let old_opt_entry = self.paths.remove(&old);
+            if let Some(old_entry) = old_opt_entry {
+                self.paths.insert(new, old_entry.value().clone());
+            }
+        }
+        Ok(()) 
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
