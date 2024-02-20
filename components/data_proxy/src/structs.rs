@@ -515,11 +515,10 @@ impl TryFrom<&DataEndpoint> for Endpoint {
     fn try_from(value: &DataEndpoint) -> Result<Self> {
         Ok(Endpoint {
             id: DieselUlid::from_str(&value.id)?,
-            variant: match value
-                .variant
-                .as_ref()
-                .ok_or_else(|| anyhow!("No endpoint sync variant found"))?
-            {
+            variant: match value.variant.as_ref().ok_or_else(|| {
+                tracing::error!(error = "No endpoint sync variant found");
+                anyhow!("No endpoint sync variant found")
+            })? {
                 aruna_rust_api::api::storage::models::v2::data_endpoint::Variant::FullSync(
                     aruna_rust_api::api::storage::models::v2::FullSync { .. },
                 ) => SyncVariant::FullSync,
@@ -589,7 +588,10 @@ impl TryFrom<Project> for Object {
             .collect::<HashSet<TypedRelation>>();
 
         Ok(Object {
-            id: DieselUlid::from_str(&value.id)?,
+            id: DieselUlid::from_str(&value.id).map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?,
             name: value.name.to_string(),
             key_values: value.key_values.clone(),
             object_status: value.status(),
@@ -658,7 +660,7 @@ impl TryFrom<Collection> for Object {
             .collect::<HashSet<TypedRelation>>();
 
         Ok(Object {
-            id: DieselUlid::from_str(&value.id)?,
+            id: DieselUlid::from_str(&value.id).map_err(|e| e)?,
             name: value.name.to_string(),
             key_values: value.key_values.clone(),
             object_status: value.status(),

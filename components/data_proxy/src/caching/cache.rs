@@ -115,11 +115,13 @@ impl Cache {
         // Fully sync cache (and database if persistent DataProxy)
         if let Some(url) = notifications_url {
             let notication_handler: Arc<GrpcQueryHandler> = Arc::new(
-                GrpcQueryHandler::new(url, cache.clone(), self_id.to_string()).await
-                .map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
-                    e
-                })?);
+                GrpcQueryHandler::new(url, cache.clone(), self_id.to_string())
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(error = ?e, msg = e.to_string());
+                        e
+                    })?,
+            );
 
             let notifications_handler_clone = notication_handler.clone();
             tokio::spawn(
@@ -532,7 +534,7 @@ impl Cache {
                 tracing::error!(error = "Pubkey not found");
                 anyhow!("Pubkey not found")
             })?
-        .clone())
+            .clone())
     }
 
     #[tracing::instrument(level = "trace", skip(self))]

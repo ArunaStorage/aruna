@@ -1,5 +1,4 @@
 use crate::replication::replication_handler::Direction;
-use crate::replication::replication_handler::ReplicationMessage;
 use crate::structs::Object as DPObject;
 use crate::structs::ObjectLocation;
 use crate::structs::ObjectType;
@@ -23,7 +22,6 @@ use aruna_rust_api::api::storage::models::v2::data_endpoint::Variant;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
 use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
-use aruna_rust_api::api::storage::models::v2::EndpointHostVariant;
 use aruna_rust_api::api::storage::models::v2::FullSync;
 use aruna_rust_api::api::storage::models::v2::GenericResource;
 use aruna_rust_api::api::storage::models::v2::Hash;
@@ -65,13 +63,13 @@ use aruna_rust_api::api::{
     },
 };
 use diesel_ulid::DieselUlid;
-use tonic::metadata::MetadataMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::metadata::AsciiMetadataKey;
 use tonic::metadata::AsciiMetadataValue;
+use tonic::metadata::MetadataMap;
 use tonic::transport::Channel;
 use tonic::transport::ClientTlsConfig;
 use tonic::Request;
@@ -109,15 +107,16 @@ impl GrpcQueryHandler {
         // Check if server host url is tls
         let server_url: String = server.into();
         let endpoint = if server_url.starts_with("https") {
-            
-            Channel::from_shared(server_url).map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
-                e
-            })?.tls_config(ClientTlsConfig::new())
-            .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
-                e
-            })?
+            Channel::from_shared(server_url)
+                .map_err(|e| {
+                    tracing::error!(error = ?e, msg = e.to_string());
+                    e
+                })?
+                .tls_config(ClientTlsConfig::new())
+                .map_err(|e| {
+                    tracing::error!(error = ?e, msg = e.to_string());
+                    e
+                })?
         } else {
             Channel::from_shared(server_url).map_err(|e| {
                 tracing::error!(error = ?e, msg = e.to_string());
@@ -153,10 +152,10 @@ impl GrpcQueryHandler {
             .await
             .as_ref()
             .ok_or_else(|| {
-                tracing::error!(error = "No auth found"); 
+                tracing::error!(error = "No auth found");
                 anyhow!("No auth found")
             })?
-        .sign_notification_token()?;
+            .sign_notification_token()?;
 
         let handler = GrpcQueryHandler {
             project_service,
@@ -187,7 +186,6 @@ impl GrpcQueryHandler {
 
 // Aruna grpc request section
 impl GrpcQueryHandler {
-
     pub fn add_token_to_md(md: &mut MetadataMap, token: &str) -> Result<()> {
         let key = AsciiMetadataKey::from_bytes("authorization".as_bytes()).map_err(|e| {
             tracing::error!(error = ?e, msg = e.to_string());
@@ -201,7 +199,6 @@ impl GrpcQueryHandler {
         Ok(())
     }
 
-
     #[tracing::instrument(level = "trace", skip(self, _checksum))]
     pub async fn get_user(&self, id: DieselUlid, _checksum: String) -> Result<GrpcUser> {
         let mut req = Request::new(GetUserRedactedRequest {
@@ -210,16 +207,21 @@ impl GrpcQueryHandler {
 
         Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
 
-        let user = 
-            self.user_service.clone().get_user_redacted(req).await.map_err(|e| {
+        let user = self
+            .user_service
+            .clone()
+            .get_user_redacted(req)
+            .await
+            .map_err(|e| {
                 tracing::error!(error = ?e, msg = e.to_string());
                 e
-            })?.into_inner()
-                .user
-                .ok_or_else(|| {
-                    tracing::error!(error = "Unknown user");
-                    anyhow!("Unknown user")
-                })?;
+            })?
+            .into_inner()
+            .user
+            .ok_or_else(|| {
+                tracing::error!(error = "Unknown user");
+                anyhow!("Unknown user")
+            })?;
         Ok(user)
     }
     #[tracing::instrument(level = "trace", skip(self))]
@@ -228,14 +230,17 @@ impl GrpcQueryHandler {
 
         Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
 
-        Ok(
-            self.storage_status_service.clone().get_pubkeys(req).await.map_err(|e| {
+        Ok(self
+            .storage_status_service
+            .clone()
+            .get_pubkeys(req)
+            .await
+            .map_err(|e| {
                 tracing::error!(error = ?e, msg = e.to_string());
                 e
             })?
-                .into_inner()
-                .pubkeys,
-        )
+            .into_inner()
+            .pubkeys)
     }
 
     #[tracing::instrument(level = "trace", skip(self, object, token))]
@@ -245,14 +250,23 @@ impl GrpcQueryHandler {
         req.get_mut().preferred_endpoint = self.endpoint_id.clone();
         Self::add_token_to_md(req.metadata_mut(), token)?;
 
-        let response = trace_err!(trace_err!(
-            self.project_service.clone().create_project(req).await
-        )?
-        .into_inner()
-        .project
-        .ok_or(anyhow!("unknown project")))?;
+        let response = self
+            .project_service
+            .clone()
+            .create_project(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner()
+            .project
+            .ok_or_else(|| {
+                tracing::error!(error = "unknown project");
+                anyhow!("unknown project")
+            })?;
 
-        let object = trace_err!(DPObject::try_from(response))?;
+        let object = DPObject::try_from(response)?;
 
         self.cache.upsert_object(object.clone(), None).await?;
 
@@ -267,12 +281,20 @@ impl GrpcQueryHandler {
 
         Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
 
-        trace_err!(
-            trace_err!(self.project_service.clone().get_project(req).await)?
-                .into_inner()
-                .project
-                .ok_or(anyhow!("unknown project"))
-        )
+        self.project_service
+            .clone()
+            .get_project(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner()
+            .project
+            .ok_or_else(|| {
+                tracing::error!(error = "unknown project");
+                anyhow!("unknown project")
+            })
     }
 
     #[tracing::instrument(level = "trace", skip(self, _checksum))]
@@ -283,28 +305,45 @@ impl GrpcQueryHandler {
 
         Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
 
-        trace_err!(
-            trace_err!(self.collection_service.clone().get_collection(req).await)?
-                .into_inner()
-                .collection
-                .ok_or(anyhow!("unknown collection"))
-        )
+        self.collection_service
+            .clone()
+            .get_collection(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner()
+            .collection
+            .ok_or_else(|| {
+                tracing::error!(error = "unknown collection");
+                anyhow!("unknown collection")
+            })
     }
 
     #[tracing::instrument(level = "trace", skip(self, object, token))]
     pub async fn create_collection(&self, object: DPObject, token: &str) -> Result<DPObject> {
         let mut req = Request::new(CreateCollectionRequest::from(object));
 
-        Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
+        Self::add_token_to_md(req.metadata_mut(), token)?;
 
-        let response = trace_err!(trace_err!(
-            self.collection_service.clone().create_collection(req).await
-        )?
-        .into_inner()
-        .collection
-        .ok_or(anyhow!("unknown project")))?;
+        let response = self
+            .collection_service
+            .clone()
+            .create_collection(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner()
+            .collection
+            .ok_or_else(|| {
+                tracing::error!(error = "unknown collection");
+                anyhow!("unknown collection")
+            })?;
 
-        let object = trace_err!(DPObject::try_from(response))?;
+        let object = DPObject::try_from(response)?;
 
         self.cache.upsert_object(object.clone(), None).await?;
 
@@ -319,12 +358,20 @@ impl GrpcQueryHandler {
 
         Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
 
-        trace_err!(
-            trace_err!(self.dataset_service.clone().get_dataset(req).await)?
-                .into_inner()
-                .dataset
-                .ok_or(anyhow!("unknown dataset"))
-        )
+        self.dataset_service
+            .clone()
+            .get_dataset(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner()
+            .dataset
+            .ok_or_else(|| {
+                tracing::error!(error = "unknown dataset");
+                anyhow!("unknown dataset")
+            })
     }
 
     #[tracing::instrument(level = "trace", skip(self, object, token))]
@@ -333,14 +380,23 @@ impl GrpcQueryHandler {
 
         Self::add_token_to_md(req.metadata_mut(), token)?;
 
-        let response = trace_err!(trace_err!(
-            self.dataset_service.clone().create_dataset(req).await
-        )?
-        .into_inner()
-        .dataset
-        .ok_or(anyhow!("unknown project")))?;
+        let response = self
+            .dataset_service
+            .clone()
+            .create_dataset(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner()
+            .dataset
+            .ok_or_else(|| {
+                tracing::error!(error = "unknown dataset");
+                anyhow!("unknown dataset")
+            })?;
 
-        let object = trace_err!(DPObject::try_from(response))?;
+        let object = DPObject::try_from(response)?;
 
         self.cache.upsert_object(object.clone(), None).await?;
 
@@ -355,13 +411,16 @@ impl GrpcQueryHandler {
 
         Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
 
-
-        trace_err!(
-            trace_err!(self.object_service.clone().get_object(req).await)?
+        self.object_service.clone().get_object(req).await.map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?
                 .into_inner()
                 .object
-                .ok_or(anyhow!("unknown object"))
-        )
+                .ok_or_else(|| {
+                    tracing::error!(error = "unknown object");
+                    anyhow!("unknown object")
+                })?;
     }
 
     #[tracing::instrument(level = "trace", skip(self, object, loc, token))]
@@ -375,14 +434,20 @@ impl GrpcQueryHandler {
 
         Self::add_token_to_md(req.metadata_mut(), token)?;
 
-        let response = trace_err!(trace_err!(
+        let response = 
             self.object_service.clone().create_object(req).await
-        )?
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
         .into_inner()
         .object
-        .ok_or(anyhow!("unknown project")))?;
+        .ok_or_else(|| {
+            tracing::error!(error = "unknown object");
+            anyhow!("unknown object")
+        })?;
 
-        let object = trace_err!(DPObject::try_from(response))?;
+        let object = DPObject::try_from(response)?;
 
         if let Some(ref mut loc) = loc {
             loc.id = object.id;
@@ -451,9 +516,10 @@ impl GrpcQueryHandler {
         let response =
             trace_err!(self.object_service.clone().update_object(req).await)?.into_inner();
 
-        let object = trace_err!(DPObject::try_from(trace_err!(response
-            .object
-            .ok_or(anyhow!("response does not contain object")))?,))?;
+        let object = DPObject::try_from(response.object.ok_or_else(|| {
+            error!(error = "response does not contain object");
+            anyhow!("response does not contain object")
+        })?)?;
 
         self.cache.upsert_object(object.clone(), None).await?;
 
@@ -485,7 +551,7 @@ impl GrpcQueryHandler {
         .object
         .ok_or(anyhow!("unknown project")))?;
 
-        let object = trace_err!(DPObject::try_from(response))?;
+        let object = DPObject::try_from(response)?;
 
         // Persist Object and Location in cache/database
         if let Some(mut location) = location {
@@ -537,7 +603,7 @@ impl GrpcQueryHandler {
         .ok_or(anyhow!("Object missing in FinishObjectResponse")))?;
 
         // Id of location record should be set to Dataproxy Object id but is set to Server Object id... the fuck?
-        let object = trace_err!(DPObject::try_from(response))?;
+        let object = DPObject::try_from(response)?;
         loc.id = object.id;
 
         // Persist Object and Location in cache/database
@@ -589,7 +655,7 @@ impl GrpcQueryHandler {
 
         sort_resources(&mut resources);
         for res in resources {
-            let object = trace_err!(DPObject::try_from(res))?;
+            let object = DPObject::try_from(res)?;
             self.cache.upsert_object(object, None).await?
         }
 
@@ -981,7 +1047,7 @@ pub fn sort_objects(res: &mut [DPObject]) {
         | (ObjectType::Project, ObjectType::Dataset)
         | (ObjectType::Project, ObjectType::Object) => std::cmp::Ordering::Less,
 
-         (ObjectType::Collection, ObjectType::Project) => std::cmp::Ordering::Greater,
+        (ObjectType::Collection, ObjectType::Project) => std::cmp::Ordering::Greater,
         (ObjectType::Collection, ObjectType::Collection) => std::cmp::Ordering::Equal,
         (ObjectType::Collection, ObjectType::Dataset)
         | (ObjectType::Collection, ObjectType::Object) => std::cmp::Ordering::Less,
@@ -990,7 +1056,7 @@ pub fn sort_objects(res: &mut [DPObject]) {
         | (ObjectType::Dataset, ObjectType::Collection) => std::cmp::Ordering::Greater,
         (ObjectType::Dataset, ObjectType::Dataset) => std::cmp::Ordering::Equal,
         (ObjectType::Dataset, ObjectType::Object) => std::cmp::Ordering::Less,
-        
+
         (ObjectType::Object, ObjectType::Project)
         | (ObjectType::Object, ObjectType::Collection)
         | (ObjectType::Object, ObjectType::Dataset) => std::cmp::Ordering::Greater,
