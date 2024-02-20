@@ -1,4 +1,5 @@
 use crate::replication::replication_handler::Direction;
+use crate::replication::replication_handler::ReplicationMessage;
 use crate::structs::Object as DPObject;
 use crate::structs::ObjectLocation;
 use crate::structs::ObjectType;
@@ -22,6 +23,7 @@ use aruna_rust_api::api::storage::models::v2::data_endpoint::Variant;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
 use aruna_rust_api::api::storage::models::v2::Collection;
 use aruna_rust_api::api::storage::models::v2::Dataset;
+use aruna_rust_api::api::storage::models::v2::EndpointHostVariant;
 use aruna_rust_api::api::storage::models::v2::FullSync;
 use aruna_rust_api::api::storage::models::v2::GenericResource;
 use aruna_rust_api::api::storage::models::v2::Hash;
@@ -411,16 +413,20 @@ impl GrpcQueryHandler {
 
         Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
 
-        self.object_service.clone().get_object(req).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?
-                .into_inner()
-                .object
-                .ok_or_else(|| {
-                    tracing::error!(error = "unknown object");
-                    anyhow!("unknown object")
-                })?;
+        self.object_service
+            .clone()
+            .get_object(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner()
+            .object
+            .ok_or_else(|| {
+                tracing::error!(error = "unknown object");
+                anyhow!("unknown object")
+            })
     }
 
     #[tracing::instrument(level = "trace", skip(self, object, loc, token))]
@@ -434,18 +440,21 @@ impl GrpcQueryHandler {
 
         Self::add_token_to_md(req.metadata_mut(), token)?;
 
-        let response = 
-            self.object_service.clone().create_object(req).await
+        let response = self
+            .object_service
+            .clone()
+            .create_object(req)
+            .await
             .map_err(|e| {
                 tracing::error!(error = ?e, msg = e.to_string());
                 e
             })?
-        .into_inner()
-        .object
-        .ok_or_else(|| {
-            tracing::error!(error = "unknown object");
-            anyhow!("unknown object")
-        })?;
+            .into_inner()
+            .object
+            .ok_or_else(|| {
+                tracing::error!(error = "unknown object");
+                anyhow!("unknown object")
+            })?;
 
         let object = DPObject::try_from(response)?;
 
@@ -487,12 +496,14 @@ impl GrpcQueryHandler {
 
         Self::add_token_to_md(req.metadata_mut(), token)?;
 
-        trace_err!(
-            self.project_service
-                .clone()
-                .update_project_key_values(req)
-                .await
-        )?;
+        self.project_service
+            .clone()
+            .update_project_key_values(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
         Ok(())
     }
 
@@ -513,8 +524,16 @@ impl GrpcQueryHandler {
         Self::add_token_to_md(req.metadata_mut(), token)?;
 
         // Update Object in ArunaServer and validate response
-        let response =
-            trace_err!(self.object_service.clone().update_object(req).await)?.into_inner();
+        let response = self
+            .object_service
+            .clone()
+            .update_object(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner();
 
         let object = DPObject::try_from(response.object.ok_or_else(|| {
             error!(error = "response does not contain object");
@@ -544,12 +563,21 @@ impl GrpcQueryHandler {
 
         Self::add_token_to_md(req.metadata_mut(), token)?;
 
-        let response = trace_err!(trace_err!(
-            self.object_service.clone().finish_object_staging(req).await
-        )?
-        .into_inner()
-        .object
-        .ok_or(anyhow!("unknown project")))?;
+        let response = self
+            .object_service
+            .clone()
+            .finish_object_staging(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner()
+            .object
+            .ok_or_else(|| {
+                tracing::error!(error = "unknown object");
+                anyhow!("unknown object")
+            })?;
 
         let object = DPObject::try_from(response)?;
 
@@ -578,13 +606,22 @@ impl GrpcQueryHandler {
 
         Self::add_token_to_md(req.metadata_mut(), token)?;
 
-        let server_object: DPObject = trace_err!(trace_err!(
-            self.object_service.clone().create_object(req).await
-        )?
-        .into_inner()
-        .object
-        .ok_or(anyhow!("Object missing in CreateObjectResponse")))?
-        .try_into()?;
+        let server_object: DPObject = self
+            .object_service
+            .clone()
+            .create_object(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner()
+            .object
+            .ok_or_else(|| {
+                error!(error = "Object missing in CreateObjectResponse");
+                anyhow!("Object missing in CreateObjectResponse")
+            })?
+            .try_into()?;
 
         let mut req = Request::new(FinishObjectStagingRequest {
             object_id: server_object.id.to_string(),
@@ -595,12 +632,21 @@ impl GrpcQueryHandler {
 
         Self::add_token_to_md(req.metadata_mut(), token)?;
 
-        let response = trace_err!(trace_err!(
-            self.object_service.clone().finish_object_staging(req).await
-        )?
-        .into_inner()
-        .object
-        .ok_or(anyhow!("Object missing in FinishObjectResponse")))?;
+        let response = self
+            .object_service
+            .clone()
+            .finish_object_staging(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner()
+            .object
+            .ok_or_else(|| {
+                error!(error = "Object missing in FinishObjectResponse");
+                anyhow!("Object missing in FinishObjectResponse")
+            })?;
 
         // Id of location record should be set to Dataproxy Object id but is set to Server Object id... the fuck?
         let object = DPObject::try_from(response)?;
@@ -620,28 +666,42 @@ impl GrpcQueryHandler {
 
         Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
 
-        let stream = trace_err!(
-            self.event_notification_service
-                .clone()
-                .get_event_message_stream(req)
-                .await
-        )?;
+        let stream = self
+            .event_notification_service
+            .clone()
+            .get_event_message_stream(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
 
         let mut inner_stream = stream.into_inner();
 
         // Fullsync
         let mut req = Request::new(FullSyncEndpointRequest {});
         Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
-        let mut full_sync_stream =
-            trace_err!(self.endpoint_service.clone().full_sync_endpoint(req).await)?.into_inner();
+        let mut full_sync_stream = self
+            .endpoint_service
+            .clone()
+            .full_sync_endpoint(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner();
         let mut resources = Vec::new();
-        while let Some(full_sync_message) = trace_err!(full_sync_stream.message().await)? {
+        while let Some(full_sync_message) = full_sync_stream.message().await.map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })? {
             debug!("received full_sync_message");
             trace!(?full_sync_message);
-            match trace_err!(full_sync_message
-                .target
-                .ok_or_else(|| anyhow!("Missing target in full_sync")))?
-            {
+            match full_sync_message.target.ok_or_else(|| {
+                error!(error = "Missing target in full_sync");
+                anyhow!("Missing target in full_sync")
+            })? {
                 Target::GenericResource(GenericResource { resource: Some(r) }) => {
                     resources.push(r);
                 }
@@ -678,17 +738,18 @@ impl GrpcQueryHandler {
                 debug!(?message, "received event message");
 
                 if let Ok(Some(r)) = self.process_message(message).await {
-                    let mut resp =
-                        Request::new(AcknowledgeMessageBatchRequest { replies: vec![r] });
+                    let mut req = Request::new(AcknowledgeMessageBatchRequest { replies: vec![r] });
 
                     Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
 
-                    trace_err!(
-                        self.event_notification_service
-                            .clone()
-                            .acknowledge_message_batch(resp)
-                            .await
-                    )?;
+                    self.event_notification_service
+                        .clone()
+                        .acknowledge_message_batch(req)
+                        .await
+                        .map_err(|e| {
+                            tracing::error!(error = ?e, msg = e.to_string());
+                            e
+                        })?;
                     debug!("acknowledged message");
                 }
             } else {
@@ -712,46 +773,87 @@ impl GrpcQueryHandler {
         let get_ep_request = Request::new(GetEndpointRequest {
             endpoint: Some(Endpoint::EndpointId(endpoint_ulid.to_string())),
         });
-        let get_ep_response = trace_err!(
-            self.endpoint_service
-                .clone()
-                .get_endpoint(get_ep_request)
-                .await
-        )?
-        .into_inner();
-        let endpoint = trace_err!(get_ep_response
-            .endpoint
-            .ok_or_else(|| anyhow!("No endpoint found in GetEndpointResponse")))?;
-        let config = trace_err!(endpoint
+        let get_ep_response = self
+            .endpoint_service
+            .clone()
+            .get_endpoint(get_ep_request)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner();
+        let endpoint = get_ep_response.endpoint.ok_or_else(|| {
+            error!(error = "No endpoint found in GetEndpointResponse");
+            anyhow!("No endpoint found in GetEndpointResponse")
+        })?;
+        let config = endpoint
             .host_configs
             .iter()
             .find(|config| config.host_variant() == EndpointHostVariant::Grpc)
-            .ok_or_else(|| anyhow!("No grpc config found for endpoint")))?;
+            .ok_or_else(|| {
+                error!(error = "No grpc config found for endpoint");
+                anyhow!("No grpc config found for endpoint")
+            })?;
         let channel = if config.ssl {
-            let proxy_channel = trace_err!(Channel::from_shared(config.url.clone()))?;
+            let proxy_channel = Channel::from_shared(config.url.clone()).map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
             let tls_config = ClientTlsConfig::new();
-            trace_err!(
-                trace_err!(proxy_channel.tls_config(tls_config))?
-                    .connect()
-                    .await
-            )?
+            proxy_channel
+                .tls_config(tls_config)
+                .map_err(|e| {
+                    tracing::error!(error = ?e, msg = e.to_string());
+                    e
+                })?
+                .connect()
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = ?e, msg = e.to_string());
+                    e
+                })?
         } else {
-            trace_err!(Channel::from_shared(config.url.clone())?.connect().await)?
+            Channel::from_shared(config.url.clone())
+                .map_err(|e| {
+                    tracing::error!(error = ?e, msg = e.to_string());
+                    e
+                })?
+                .connect()
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = ?e, msg = e.to_string());
+                    e
+                })?
         };
         let token = if let Some(auth) = self.cache.auth.read().await.as_ref() {
-            trace_err!(auth.sign_dataproxy_token(endpoint_ulid))?
+            auth.sign_dataproxy_token(endpoint_ulid)?
         } else {
-            trace_err!(Err(anyhow!("Cannot read auth handler")))?
+            error!(error = "Cannot read auth handler");
+            Err(anyhow!("Cannot read auth handler"))?
         };
 
         let dataproxy_service = DataproxyReplicationServiceClient::new(channel.clone())
             .max_decoding_message_size(1024 * 1024 * 10);
         let (request_stream_sender, request_stream_receiver) = tokio::sync::mpsc::channel(1000);
         let mut req = Request::new(ReceiverStream::new(request_stream_receiver));
-        Self::add_token_to_md(req.metadata_mut(), token)?;
-        let response_stream =
-            trace_err!(dataproxy_service.clone().pull_replication(req).await)?.into_inner();
-        trace_err!(request_stream_sender.send(init_request).await)?;
+        Self::add_token_to_md(req.metadata_mut(), &token)?;
+        let response_stream = dataproxy_service
+            .clone()
+            .pull_replication(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner();
+        request_stream_sender
+            .send(init_request)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
         Ok((request_stream_sender, response_stream))
     }
 
@@ -761,13 +863,15 @@ impl GrpcQueryHandler {
         request: UpdateReplicationStatusRequest,
     ) -> Result<()> {
         let mut request = Request::new(request);
-        Self::add_token_to_md(req.metadata_mut(), token)?;
-        trace_err!(
-            self.data_replication_service
-                .clone()
-                .update_replication_status(request)
-                .await
-        )?;
+        Self::add_token_to_md(request.metadata_mut(), &self.long_lived_token)?;
+        self.data_replication_service
+            .clone()
+            .update_replication_status(request)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
         Ok(())
     }
 }
@@ -791,20 +895,22 @@ impl GrpcQueryHandler {
         message: AnnouncementEvent,
     ) -> Result<Option<Reply>> {
         debug!("processing announcement event");
-        match trace_err!(message
-            .event_variant
-            .ok_or_else(|| anyhow!("No event variant")))?
-        {
+        match message.event_variant.ok_or_else(|| {
+            error!(error = "No event variant");
+            anyhow!("No event variant")
+        })? {
             announcement_event::EventVariant::NewPubkey(_)
             | announcement_event::EventVariant::RemovePubkey(_)
             | announcement_event::EventVariant::NewDataProxyId(_)
             | announcement_event::EventVariant::RemoveDataProxyId(_)
             | announcement_event::EventVariant::UpdateDataProxyId(_) => {
-                let pks = trace_err!(self.get_pubkeys().await)?
+                let pks = self
+                    .get_pubkeys()
+                    .await?
                     .into_iter()
                     .map(PubKey::from)
                     .collect();
-                trace_err!(self.cache.set_pubkeys(pks).await)?;
+                self.cache.set_pubkeys(pks).await?;
             }
             announcement_event::EventVariant::Downtime(_) => (),
             announcement_event::EventVariant::Version(_) => (),
@@ -841,52 +947,58 @@ impl GrpcQueryHandler {
                 if let Some(r) = event.resource {
                     match r.resource_variant() {
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Project => {
-                            let object = trace_err!(
-                                self.get_project(
-                                    &trace_err!(DieselUlid::from_str(&r.resource_id))?,
-                                    r.checksum
+                            let object = self
+                                .get_project(
+                                    &DieselUlid::from_str(&r.resource_id).map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?,
+                                    r.checksum,
                                 )
-                                .await
-                            )?;
+                                .await?;
 
                             self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Collection => {
-                            let object = trace_err!(
-                                self.get_collection(
-                                    &trace_err!(DieselUlid::from_str(&r.resource_id))?,
-                                    r.checksum
+                            let object = self
+                                .get_collection(
+                                    &DieselUlid::from_str(&r.resource_id).map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?,
+                                    r.checksum,
                                 )
-                                .await
-                            )?;
+                                .await?;
                             self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Dataset => {
-                            let object = trace_err!(
-                                self.get_dataset(
-                                    &trace_err!(DieselUlid::from_str(&r.resource_id))?,
-                                    r.checksum
+                            let object = self
+                                .get_dataset(
+                                    &DieselUlid::from_str(&r.resource_id).map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?,
+                                    r.checksum,
                                 )
-                                .await
-                            )?;
+                                .await?;
                             self.cache.upsert_object(object.try_into()?, None).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Object => {
-                            let object = trace_err!(
-                                self.get_object(
-                                    &trace_err!(DieselUlid::from_str(&r.resource_id))?,
-                                    r.checksum
+                            let object = self
+                                .get_object(
+                                    &DieselUlid::from_str(&r.resource_id).map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?,
+                                    r.checksum,
                                 )
-                                .await
-                            )?;
+                                .await?;
                             // Update anyway
-                            trace_err!(
-                                self.cache
-                                    .upsert_object(object.clone().try_into()?, None)
-                                    .await
-                            )?;
+                            self.cache
+                                .upsert_object(object.clone().try_into()?, None)
+                                .await?;
                             // Try pull replication
-                            trace_err!(self.handle_replication(object).await)?;
+                            self.handle_replication(object).await?;
                         }
                         _ => (),
                     }
@@ -929,31 +1041,41 @@ impl GrpcQueryHandler {
                         });
                         match full_sync_proxy {
                             Some(ep_id) => {
-                                let direction =
-                                    Direction::Pull(trace_err!(DieselUlid::from_str(&object.id))?);
-                                let endpoint_id = trace_err!(DieselUlid::from_str(ep_id))?;
-                                trace_err!(
-                                    self.cache
-                                        .sender
-                                        .send(ReplicationMessage {
-                                            direction,
-                                            endpoint_id,
-                                        })
-                                        .await
-                                )?;
+                                let direction = Direction::Pull(
+                                    DieselUlid::from_str(&object.id).map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?,
+                                );
+                                let endpoint_id = DieselUlid::from_str(ep_id).map_err(|e| {
+                                    tracing::error!(error = ?e, msg = e.to_string());
+                                    e
+                                })?;
+
+                                self.cache
+                                    .sender
+                                    .send(ReplicationMessage {
+                                        direction,
+                                        endpoint_id,
+                                    })
+                                    .await
+                                    .map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?;
                             }
                             None => {
                                 error!("ReplicationError: No available proxy found");
-                                trace_err!(
-                                    self.update_replication_status(
-                                        UpdateReplicationStatusRequest {
-                                            object_id: object.id.to_string(),
-                                            endpoint_id: self.endpoint_id.clone(),
-                                            status: ReplicationStatus::Error as i32,
-                                        }
-                                    )
-                                    .await
-                                )?;
+                                self.update_replication_status(UpdateReplicationStatusRequest {
+                                    object_id: object.id.to_string(),
+                                    endpoint_id: self.endpoint_id.clone(),
+                                    status: ReplicationStatus::Error as i32,
+                                })
+                                .await
+                                .map_err(|e| {
+                                    tracing::error!(error = ?e, msg = e.to_string());
+                                    e
+                                })?;
                             }
                         }
                     }
@@ -972,31 +1094,40 @@ impl GrpcQueryHandler {
                         });
                         match full_sync_proxy {
                             Some(ep_id) => {
-                                let direction =
-                                    Direction::Pull(trace_err!(DieselUlid::from_str(&object.id))?);
-                                let endpoint_id = trace_err!(DieselUlid::from_str(ep_id))?;
-                                trace_err!(
-                                    self.cache
-                                        .sender
-                                        .send(ReplicationMessage {
-                                            direction,
-                                            endpoint_id,
-                                        })
-                                        .await
-                                )?;
+                                let direction = Direction::Pull(
+                                    DieselUlid::from_str(&object.id).map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?,
+                                );
+                                let endpoint_id = DieselUlid::from_str(ep_id).map_err(|e| {
+                                    tracing::error!(error = ?e, msg = e.to_string());
+                                    e
+                                })?;
+                                self.cache
+                                    .sender
+                                    .send(ReplicationMessage {
+                                        direction,
+                                        endpoint_id,
+                                    })
+                                    .await
+                                    .map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?;
                             }
                             None => {
                                 error!("ReplicationError: No available proxy found");
-                                trace_err!(
-                                    self.update_replication_status(
-                                        UpdateReplicationStatusRequest {
-                                            object_id: object.id.to_string(),
-                                            endpoint_id: self.endpoint_id.clone(),
-                                            status: ReplicationStatus::Error as i32,
-                                        }
-                                    )
-                                    .await
-                                )?;
+                                self.update_replication_status(UpdateReplicationStatusRequest {
+                                    object_id: object.id.to_string(),
+                                    endpoint_id: self.endpoint_id.clone(),
+                                    status: ReplicationStatus::Error as i32,
+                                })
+                                .await
+                                .map_err(|e| {
+                                    tracing::error!(error = ?e, msg = e.to_string());
+                                    e
+                                })?;
                             }
                         }
                     }
