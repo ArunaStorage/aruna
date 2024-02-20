@@ -2,7 +2,6 @@ use super::storage_backend::StorageBackend;
 use crate::structs::Object;
 use crate::structs::ObjectLocation;
 use crate::structs::PartETag;
-use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::Result;
 use async_channel::{Receiver, Sender};
@@ -29,7 +28,10 @@ pub struct S3Backend {
 impl S3Backend {
     #[tracing::instrument]
     pub async fn new(endpoint_id: String) -> Result<Self> {
-        let s3_endpoint = trace_err!(dotenvy::var("AWS_S3_HOST"))?;
+        let s3_endpoint = dotenvy::var("AWS_S3_HOST").map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
         tracing::debug!("S3 Endpoint: {}", s3_endpoint);
 
         let config = aws_config::load_from_env().await;
@@ -61,23 +63,25 @@ impl StorageBackend for S3Backend {
         location: ObjectLocation,
         content_len: i64,
     ) -> Result<()> {
-        trace_err!(self.check_and_create_bucket(location.bucket.clone()).await)?;
+        self.check_and_create_bucket(location.bucket.clone())
+            .await?;
 
         let hyper_body = hyper::Body::wrap_stream(recv);
         let bytestream = ByteStream::from(hyper_body);
 
-        match trace_err!(
-            self.s3_client
-                .put_object()
-                .set_bucket(Some(location.bucket))
-                .set_key(Some(location.key))
-                .set_content_length(Some(content_len))
-                .body(bytestream)
-                .send()
-                .await
-        ) {
+        match self
+            .s3_client
+            .put_object()
+            .set_bucket(Some(location.bucket))
+            .set_key(Some(location.key))
+            .set_content_length(Some(content_len))
+            .body(bytestream)
+            .send()
+            .await
+        {
             Ok(_) => {}
             Err(err) => {
+                error!(error = ?err, "Error putting object");
                 return Err(err.into());
             }
         }
@@ -102,46 +106,62 @@ impl StorageBackend for S3Backend {
             .set_key(Some(location.key))
             .set_range(range);
 
-        let mut object_request = match trace_err!(object.send().await) {
+        let mut object_request = match object.send().await {
             Ok(value) => value,
             Err(err) => {
+                error!(error = ?err, "Error getting object");
                 return Err(err.into());
             }
         };
 
         while let Some(bytes) = object_request.body.next().await {
-            trace_err!(sender.send(Ok(trace_err!(bytes)?)).await)?;
+            sender
+                .send(Ok(bytes.map_err(|e| {
+                    tracing::error!(error = ?e, msg = e.to_string());
+                    e
+                })?))
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = ?e, msg = e.to_string());
+                    e
+                })?;
         }
         return Ok(());
     }
 
     #[tracing::instrument(level = "trace", skip(self, location))]
     async fn head_object(&self, location: ObjectLocation) -> Result<i64> {
-        let object = trace_err!(
-            self.s3_client
-                .head_object()
-                .set_bucket(Some(location.bucket))
-                .set_key(Some(location.key))
-                .send()
-                .await
-        );
-
-        Ok(object?.content_length())
+        let object = self
+            .s3_client
+            .head_object()
+            .set_bucket(Some(location.bucket))
+            .set_key(Some(location.key))
+            .send()
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
+        Ok(object.content_length())
     }
 
     // Initiates a multipart upload in s3 and returns the associated upload id.
     #[tracing::instrument(level = "trace", skip(self, location))]
     async fn init_multipart_upload(&self, location: ObjectLocation) -> Result<String> {
-        trace_err!(self.check_and_create_bucket(location.bucket.clone()).await)?;
+        self.check_and_create_bucket(location.bucket.clone())
+            .await?;
 
-        let multipart = trace_err!(
-            self.s3_client
-                .create_multipart_upload()
-                .set_bucket(Some(location.bucket))
-                .set_key(Some(location.key))
-                .send()
-                .await
-        )?;
+        let multipart = self
+            .s3_client
+            .create_multipart_upload()
+            .set_bucket(Some(location.bucket))
+            .set_key(Some(location.key))
+            .send()
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
 
         return Ok(multipart.upload_id().unwrap().to_string());
     }
@@ -158,22 +178,28 @@ impl StorageBackend for S3Backend {
         let hyper_body = hyper::Body::wrap_stream(recv);
         let bytestream = ByteStream::from(hyper_body);
 
-        let upload = trace_err!(
-            self.s3_client
-                .upload_part()
-                .set_bucket(Some(location.bucket))
-                .set_key(Some(location.key))
-                .set_part_number(Some(part_number))
-                .set_content_length(Some(content_len))
-                .set_upload_id(Some(upload_id))
-                .body(bytestream)
-                .send()
-                .await
-        )?;
+        let upload = self
+            .s3_client
+            .upload_part()
+            .set_bucket(Some(location.bucket))
+            .set_key(Some(location.key))
+            .set_part_number(Some(part_number))
+            .set_content_length(Some(content_len))
+            .set_upload_id(Some(upload_id))
+            .body(bytestream)
+            .send()
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
 
         return Ok(PartETag {
             part_number,
-            etag: trace_err!(upload.e_tag.ok_or_else(|| anyhow!("Missing etag")))?,
+            etag: upload.e_tag.ok_or_else(|| {
+                error!(error = "Missing etag");
+                anyhow!("Missing etag")
+            })?,
         });
     }
 
@@ -196,28 +222,31 @@ impl StorageBackend for S3Backend {
             completed_parts.push(completed_part);
         }
 
-        match trace_err!(
-            self.s3_client
-                .complete_multipart_upload()
-                .bucket(location.bucket)
-                .key(location.key)
-                .upload_id(upload_id)
-                .multipart_upload(
-                    CompletedMultipartUpload::builder()
-                        .set_parts(Some(completed_parts))
-                        .build(),
-                )
-                .send()
-                .await
-        ) {
+        match self
+            .s3_client
+            .complete_multipart_upload()
+            .bucket(location.bucket)
+            .key(location.key)
+            .upload_id(upload_id)
+            .multipart_upload(
+                CompletedMultipartUpload::builder()
+                    .set_parts(Some(completed_parts))
+                    .build(),
+            )
+            .send()
+            .await
+        {
             Ok(_) => Ok(()),
-            Err(e) => Err(e.into()),
+            Err(e) => {
+                error!(error = ?e, "Error completing multipart upload");
+                Err(e.into())
+            }
         }
     }
 
     #[tracing::instrument(level = "trace", skip(self, bucket))]
     async fn create_bucket(&self, bucket: String) -> Result<()> {
-        trace_err!(self.check_and_create_bucket(bucket).await)
+        self.check_and_create_bucket(bucket).await
     }
 
     #[tracing::instrument(level = "trace", skip(self, location))]
@@ -225,14 +254,16 @@ impl StorageBackend for S3Backend {
     /// # Arguments
     /// * `location` - The location of the object
     async fn delete_object(&self, location: ObjectLocation) -> Result<()> {
-        trace_err!(
-            self.s3_client
-                .delete_object()
-                .bucket(location.bucket)
-                .key(location.key)
-                .send()
-                .await
-        )?;
+        self.s3_client
+            .delete_object()
+            .bucket(location.bucket)
+            .key(location.key)
+            .send()
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
         Ok(())
     }
 

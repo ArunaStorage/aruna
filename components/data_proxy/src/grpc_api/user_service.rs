@@ -1,7 +1,4 @@
-use crate::{
-    caching::{auth::get_token_from_md, cache::Cache},
-    trace_err,
-};
+use crate::caching::{auth::get_token_from_md, cache::Cache};
 use aruna_rust_api::api::dataproxy::services::v2::{
     dataproxy_user_service_server::DataproxyUserService, GetCredentialsRequest,
     GetCredentialsResponse, PullReplicaRequest, PullReplicaResponse, PushReplicaRequest,
@@ -30,25 +27,38 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
     ///
     /// Authorized method that needs a aruna-token to exchange for dataproxy
     /// specific S3AccessKey and S3SecretKey
+
+    // TODO: UPDATE to two requests one for get and one for create
     async fn get_credentials(
         &self,
         request: tonic::Request<GetCredentialsRequest>,
     ) -> Result<tonic::Response<GetCredentialsResponse>, tonic::Status> {
         return if let Some(a) = self.cache.auth.read().await.as_ref() {
-            let token = trace_err!(get_token_from_md(request.metadata()))
-                .map_err(|e| tonic::Status::unauthenticated(e.to_string()))?;
+            let token = get_token_from_md(request.metadata()).map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                tonic::Status::unauthenticated(e.to_string())
+            })?;
 
-            let (u, tid) = trace_err!(a.check_permissions(&token))
-                .map_err(|_| tonic::Status::unauthenticated("Unable to authenticate user"))?;
+            let (u, tid) = a.check_permissions(&token).map_err(|_| {
+                error!(error = "Unable to authenticate user");
+                tonic::Status::unauthenticated("Unable to authenticate user")
+            })?;
 
             if let Some(q_handler) = self.cache.aruna_client.read().await.as_ref() {
-                let user = trace_err!(q_handler.get_user(u, "".to_string()).await)
-                    .map_err(|_| tonic::Status::unauthenticated("Unable to authenticate user"))?;
+                let user = q_handler.get_user(u, "".to_string()).await.map_err(|_| {
+                    error!(error = "Unable to authenticate user");
+                    tonic::Status::unauthenticated("Unable to authenticate user")
+                })?;
 
-                let (access_key, secret_key) = trace_err!(
-                    self.cache.clone().create_or_get_secret(user, tid).await
-                )
-                .map_err(|_| tonic::Status::unauthenticated("Unable to authenticate user"))?;
+                let (access_key, secret_key) = self
+                    .cache
+                    .clone()
+                    .create_or_get_secret(user, tid)
+                    .await
+                    .map_err(|_| {
+                        error!(error = "Unable to authenticate user");
+                        tonic::Status::unauthenticated("Unable to authenticate user")
+                    })?;
 
                 Ok(tonic::Response::new(GetCredentialsResponse {
                     access_key,

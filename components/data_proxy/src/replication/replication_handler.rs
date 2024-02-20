@@ -1,6 +1,6 @@
 use crate::{
     caching::cache::Cache, data_backends::storage_backend::StorageBackend,
-    s3_frontend::utils::buffered_s3_sink::BufferedS3Sink, structs::ObjectLocation, trace_err,
+    s3_frontend::utils::buffered_s3_sink::BufferedS3Sink, structs::ObjectLocation,
 };
 use ahash::{HashSet, RandomState};
 use anyhow::{anyhow, Result};
@@ -404,7 +404,8 @@ impl ReplicationHandler {
                                 let object_id = DieselUlid::from_str(&id)?;
 
                                 // The object gets queried
-                                let (object, location) = cache.get_resource(&object_id)?;
+                                let (object, location) =
+                                    cache.get_resource_cloned(&object_id, true).await?;
                                 trace!(?object);
                                 // If no location is found, a new one is created
                                 let mut location = if location.is_some() {

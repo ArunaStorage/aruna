@@ -2,7 +2,6 @@ use crate::{
     caching::{auth::get_token_from_md, cache::Cache},
     helpers::sign_download_url,
     structs::{DbPermissionLevel, Endpoint, Object, ObjectType, ALL_RIGHTS_RESERVED},
-    trace_err,
 };
 use aruna_rust_api::api::{
     dataproxy::services::v2::{
@@ -45,10 +44,13 @@ impl BundlerService for BundlerServiceImpl {
     ) -> Result<tonic::Response<CreateBundleResponse>, tonic::Status> {
         let (trels, access_key, secret_key) = if let Some(a) = self.cache.auth.read().await.as_ref()
         {
-            let token = trace_err!(get_token_from_md(request.metadata()))
-                .map_err(|e| tonic::Status::unauthenticated(e.to_string()))?;
+            let token = get_token_from_md(request.metadata()).map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                tonic::Status::unauthenticated(e.to_string())
+            })?;
 
-            let (u, tid) = trace_err!(a.check_permissions(&token)).map_err(|e| {
+            let (u, tid) = a.check_permissions(&token).map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
                 tonic::Status::unauthenticated(format!("Unable to authenticate user: {}", e))
             })?;
             let access_key = if let Some(t_id) = tid {
@@ -59,25 +61,32 @@ impl BundlerService for BundlerServiceImpl {
             let mut check_vec = Vec::new();
             let mut trels = Vec::new();
             for id in request.get_ref().resource_ids.iter() {
-                let ulid = trace_err!(DieselUlid::from_str(id.as_str()))
-                    .map_err(|_| tonic::Status::invalid_argument("Unable to parse ULID"))?;
+                let ulid = DieselUlid::from_str(id.as_str()).map_err(|_| {
+                    error!(id = id.as_str(), msg = "Unable to parse ULID");
+                    tonic::Status::invalid_argument("Unable to parse ULID")
+                })?;
 
-                let (ids, trel) = trace_err!(self.cache.get_resource_ids_from_id(ulid))
-                    .map_err(|_| tonic::Status::invalid_argument("Unable to parse ULID"))?;
+                let (ids, trel) = self.cache.get_resource_ids_from_id(ulid).map_err(|_| {
+                    error!(id = id.as_str(), msg = "Unable to parse ULID");
+                    tonic::Status::invalid_argument("Unable to parse ULID")
+                })?;
                 check_vec.push(ids);
                 trels.push(trel);
             }
-            let secret_key = trace_err!(trace_err!(a.check_ids(
-                &check_vec,
-                &access_key,
-                DbPermissionLevel::Write,
-                true,
-            ))
-            .map_err(|_| { tonic::Status::unauthenticated("Unable to authenticate user") })?
-            .ok_or_else(|| tonic::Status::unauthenticated("Unable to authenticate user")))?;
+            let secret_key = a
+                .check_ids(&check_vec, &access_key, DbPermissionLevel::Write, true)
+                .map_err(|_| {
+                    error!(id = ?check_vec, msg = "Unable to authenticate user");
+                    tonic::Status::unauthenticated("Unable to authenticate user")
+                })?
+                .ok_or_else(|| {
+                    error!(id = ?check_vec, msg = "Unable to authenticate user");
+                    tonic::Status::unauthenticated("Unable to authenticate user")
+                })?;
 
             (trels, access_key, secret_key)
         } else {
+            error!("Unable to authenticate user");
             return Err(tonic::Status::unauthenticated(
                 "Unable to authenticate user",
             ));
@@ -125,26 +134,27 @@ impl BundlerService for BundlerServiceImpl {
             created_at: Some(chrono::Utc::now().naive_utc()), // Now for default
         };
 
-        trace_err!(self.cache.upsert_object(bundler_object, None).await)
-            .map_err(|_| tonic::Status::internal("Bundle object upsert failed"))?;
-
-        trace_err!(
-            self.cache
-                .add_permission_to_access_key(&access_key, (bundle_id, DbPermissionLevel::Admin))
-                .await
-        )
-        .map_err(|_| tonic::Status::internal("User permission modification failed"))?;
+        self.cache
+            .upsert_object(bundler_object, None)
+            .await
+            .map_err(|_| {
+                error!(error = "Bundle object upsert failed");
+                tonic::Status::internal("Bundle object upsert failed")
+            })?;
 
         let response = CreateBundleResponse {
-            bundle_url: trace_err!(sign_download_url(
+            bundle_url: sign_download_url(
                 &access_key,
                 &secret_key,
                 self.ssl,
                 "bundles",
                 &format!("{}/{}", &bundle_id.to_string(), request.filename),
                 self.endpoint_url.as_str(),
-            ))
-            .map_err(|_| tonic::Status::internal("Failed to presign bundle download url"))?,
+            )
+            .map_err(|_| {
+                error!(error = "Failed to presign bundle download url");
+                tonic::Status::internal("Failed to presign bundle download url")
+            })?,
             bundle_id: bundle_id.to_string(),
         };
 
@@ -157,11 +167,15 @@ impl BundlerService for BundlerServiceImpl {
         request: tonic::Request<DeleteBundleRequest>,
     ) -> Result<tonic::Response<DeleteBundleResponse>, tonic::Status> {
         if let Some(a) = self.cache.auth.read().await.as_ref() {
-            let token = trace_err!(get_token_from_md(request.metadata()))
-                .map_err(|e| tonic::Status::unauthenticated(e.to_string()))?;
+            let token = get_token_from_md(request.metadata()).map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                tonic::Status::unauthenticated(e.to_string())
+            })?;
 
-            let (u, tid) = trace_err!(a.check_permissions(&token))
-                .map_err(|_| tonic::Status::unauthenticated("Unable to authenticate user"))?;
+            let (u, tid) = a.check_permissions(&token).map_err(|_| {
+                error!(error = "Unable to authenticate user");
+                tonic::Status::unauthenticated("Unable to authenticate user")
+            })?;
 
             let access_key = if let Some(t_id) = tid {
                 t_id
@@ -174,14 +188,18 @@ impl BundlerService for BundlerServiceImpl {
                 .get_access_key(&access_key)
                 .ok_or_else(|| tonic::Status::unauthenticated("Unable to authenticate user"))?;
 
-            let bundle_id = trace_err!(DieselUlid::from_str(request.get_ref().bundle_id.as_str()))
-                .map_err(|_| tonic::Status::invalid_argument("Unable to parse BundleID"))?;
+            let bundle_id =
+                DieselUlid::from_str(request.get_ref().bundle_id.as_str()).map_err(|_| {
+                    error!(error = "Unable to parse BundleID");
+                    tonic::Status::invalid_argument("Unable to parse BundleID")
+                })?;
 
             if let Some(perm) = user.value().permissions.get(&bundle_id) {
                 if *perm == DbPermissionLevel::Admin {
-                    trace_err!(self.cache.delete_object(bundle_id).await)
-                        .map_err(|_| tonic::Status::internal("Bundle deletion failed"))?;
-
+                    self.cache.delete_object(bundle_id).await.map_err(|_| {
+                        error!(error = "Bundle deletion failed");
+                        tonic::Status::internal("Bundle deletion failed")
+                    })?;
                     return Ok(tonic::Response::new(DeleteBundleResponse {}));
                 }
             }

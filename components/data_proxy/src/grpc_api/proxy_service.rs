@@ -4,7 +4,6 @@ use crate::{
     replication::replication_handler::ReplicationMessage,
     s3_frontend::utils::replication_sink::ReplicationSink,
     structs::{Object, ObjectLocation},
-    trace_err,
 };
 use anyhow::{anyhow, Result};
 use aruna_file::{
@@ -81,8 +80,10 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
     ) -> Result<tonic::Response<Self::PullReplicationStream>, tonic::Status> {
         trace!("Received request: {request:?}");
         let (metadata, _, mut request) = request.into_parts();
-        let token = trace_err!(get_token_from_md(&metadata))
-            .map_err(|_| tonic::Status::unauthenticated("Token not found"))?;
+        let token = get_token_from_md(&metadata).map_err(|_| {
+            error!(error = "Token not found");
+            tonic::Status::unauthenticated("Token not found")
+        })?;
 
         // Sends initial Vec<(object, location)> to sync/ack/stream handlers
         let (object_input_send, object_input_rcv) = async_channel::bounded(5);
@@ -111,20 +112,30 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                             Some(message) => match message {
                                 Message::InitMessage(init) => {
                                     trace!(?init);
-                                    let msg = trace_err!(
-                                        proxy_replication_service
-                                            .check_permissions(init, token.clone())
-                                            .await
-                                    );
+                                    let msg = proxy_replication_service
+                                        .check_permissions(init, token.clone())
+                                        .await
+                                        .map_err(|e| {
+                                            tracing::error!(error = ?e, msg = e.to_string());
+                                            e
+                                        });
                                     // trace_err!(finished_send.send(false).await)?;
-                                    trace_err!(object_input_send.send(msg).await)?;
+                                    object_input_send.send(msg).await.map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?;
                                 }
                                 Message::InfoAckMessage(InfoAckMessage { object_id }) => {
                                     let object_id = DieselUlid::from_str(&object_id)?;
                                     // Send object init into acknowledgement sync handler
-                                    trace_err!(
-                                        object_ack_send.send(AckSync::ObjectInit(object_id)).await
-                                    )?;
+
+                                    object_ack_send
+                                        .send(AckSync::ObjectInit(object_id))
+                                        .await
+                                        .map_err(|e| {
+                                            tracing::error!(error = ?e, msg = e.to_string());
+                                            e
+                                        })?;
                                 }
                                 Message::ChunkAckMessage(ChunkAckMessage {
                                     object_id,
@@ -132,12 +143,17 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                 }) => {
                                     let object_id = DieselUlid::from_str(&object_id)?;
                                     // Send object init into acknowledgement sync handler
-                                    trace_err!(
-                                        object_ack_send
-                                            .send(AckSync::ObjectChunk(object_id, chunk_idx))
-                                            .await
-                                    )?;
-                                    trace_err!(retry_send.send(None).await)?;
+                                    object_ack_send
+                                        .send(AckSync::ObjectChunk(object_id, chunk_idx))
+                                        .await
+                                        .map_err(|e| {
+                                            tracing::error!(error = ?e, msg = e.to_string());
+                                            e
+                                        })?;
+                                    retry_send.send(None).await.map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?;
                                 }
                                 Message::ErrorMessage(ErrorMessage { error }) => {
                                     if let Some(err) = error {
@@ -147,16 +163,25 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                                 chunk_idx,
                                             }) => {
                                                 let msg = Some((chunk_idx, object_id));
-                                                trace_err!(retry_send.send(msg).await)?;
+                                                retry_send.send(msg).await.map_err(|e| {
+                                                    tracing::error!(error = ?e, msg = e.to_string());
+                                                    e
+                                                })?;
                                             }
-                                            Error::Abort(_) => return Err(anyhow!("Aborted sync")),
+                                            Error::Abort(_) => {
+                                                error!(error = "Aborted sync");
+                                                return Err(anyhow!("Aborted sync"));
+                                            }
                                             Error::RetryObjectId(object_id) => {
                                                 let ulid =
-                                                    trace_err!(DieselUlid::from_str(&object_id))?;
-                                                let (object, location) =
-                                                    trace_err!(proxy_replication_service
-                                                        .cache
-                                                        .get_resource(&ulid))?;
+                                                    DieselUlid::from_str(&object_id).map_err(|e| {
+                                                        tracing::error!(error = ?e, msg = e.to_string());
+                                                        e
+                                                    })?;
+                                                let (object, location) = proxy_replication_service
+                                                    .cache
+                                                    .get_resource_cloned(&ulid, true)
+                                                    .await?;
                                                 if let Some(auth) = proxy_replication_service
                                                     .cache
                                                     .auth
@@ -166,40 +191,50 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                                 {
                                                     // Returns claims.sub as id -> Can return UserIds or DataproxyIds
                                                     // -> UserIds cannot be found in object.endpoints, so this should be safe
-                                                    let (dataproxy_id, _) =
-                                                        trace_err!(auth.check_permissions(&token))
-                                                            .map_err(|_| {
-                                                                tonic::Status::unauthenticated(
-                                                                    "DataProxy not authenticated",
-                                                                )
-                                                            })?;
+                                                    let (dataproxy_id, _) = auth
+                                                        .check_permissions(&token)
+                                                        .map_err(|_| {
+                                                            error!(
+                                                                error =
+                                                                    "DataProxy not authenticated"
+                                                            );
+                                                            tonic::Status::unauthenticated(
+                                                                "DataProxy not authenticated",
+                                                            )
+                                                        })?;
                                                     if !object
                                                         .endpoints
                                                         .iter()
                                                         .any(|ep| ep.id == dataproxy_id)
                                                     {
                                                         trace!("Endpoint has no permission to replicate object");
-                                                        trace_err!(
-                                                            output_sender
+                                                        output_sender
                                                                 .send(Err(
                                                                     tonic::Status::unauthenticated(
                                                                         "Access denied",
                                                                     )
                                                                 ))
                                                                 .await
-                                                        )?;
+                                                                .map_err(|e| {
+                                                                    tracing::error!(error = ?e, msg = e.to_string());
+                                                                    e
+                                                                })?;
                                                     } else {
-                                                        trace_err!(
-                                                            object_input_send
+                                                        object_input_send
                                                                 .send(Ok(vec![(
                                                                     object,
-                                                                    trace_err!(location
-                                                                        .ok_or_else(|| anyhow!(
+                                                                    location
+                                                                        .ok_or_else(|| {
+                                                                            error!("No object location found");
+                                                                            anyhow!(
                                                                     "No object location found"
-                                                                )))?
+                                                                )})?
                                                                 )]))
                                                                 .await
-                                                        )?;
+                                                                .map_err(|e| {
+                                                                    tracing::error!(error = ?e, msg = e.to_string());
+                                                                    e
+                                                                })?;
                                                     };
                                                 }
                                             }
@@ -212,11 +247,15 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                         *lock = true;
                                     }
                                     // trace_err!(finished_send.send(true).await)?;
-                                    trace_err!(object_ack_send.send(AckSync::Finish).await)?;
+                                    object_ack_send.send(AckSync::Finish).await.map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?;
                                     return Ok(());
                                 }
                             },
                             _ => {
+                                error!(error = "No message provided in PullReplicationRequest");
                                 return Err(anyhow!(
                                     "No message provided in PullReplicationRequest"
                                 ));
@@ -224,6 +263,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                         }
                     }
                     None => {
+                        error!(error = "No message provided in PullReplicationRequest");
                         return Err(anyhow!("No message provided in PullReplicationRequest"));
                     }
                 };
@@ -243,7 +283,10 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                         sync_map.insert(chunk.clone());
                     }
                     AckSync::Finish => {
-                        trace_err!(object_sync_send.send(sync_map.clone()).await)?;
+                        object_sync_send.send(sync_map.clone()).await.map_err(|e| {
+                            tracing::error!(error = ?e, msg = e.to_string());
+                            e
+                        })?;
                     }
                 }
             }
@@ -269,13 +312,15 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                         error!("{err}");
                         // Here probably proper error matching is needed to
                         // separate unauthorized from other errors
-                        trace_err!(
-                            object_output_send
-                                .send(Err(tonic::Status::unauthenticated(
-                                    "Unauthorized to pull objects",
-                                )))
-                                .await
-                        )?;
+                        object_output_send
+                            .send(Err(tonic::Status::unauthenticated(
+                                "Unauthorized to pull objects",
+                            )))
+                            .await
+                            .map_err(|e| {
+                                tracing::error!(error = ?e, msg = e.to_string());
+                                e
+                            })?;
                     }
 
                     // Objects
@@ -296,19 +341,17 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                             {
                                 Ok(mut footer) => {
                                     if let Some(ref mut footer) = footer {
-                                        trace_err!(footer.parse())?;
+                                        footer.parse()?;
                                     };
                                     footer
                                 }
                                 Err(err) => {
-                                    error!("{err}");
-                                    trace_err!(
-                                        object_output_send
-                                            .send(Err(tonic::Status::internal(
-                                                "Could not parse footer",
-                                            )))
-                                            .await
-                                    )?;
+                                    error!(error = ?err);
+                                    object_output_send
+                                        .send(Err(tonic::Status::internal(
+                                            "Could not parse footer",
+                                        )))
+                                        .await?;
                                     break 'outer;
                                 }
                             };
@@ -319,57 +362,75 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                             let max_blocks = blocklist.as_ref().map(|l| l.len()).unwrap_or(1);
                             stored_objects.insert(object.id, max_blocks);
                             // Send ObjectInfo into stream
-                            trace_err!(object_output_send
+                            object_output_send
                                 .send(Ok(PullReplicationResponse {
                                     message: Some(pull_replication_response::Message::ObjectInfo(
                                         aruna_rust_api::api::dataproxy::services::v2::ObjectInfo {
                                             object_id: object.id.to_string(),
                                             chunks: max_blocks as i64,
-                                            block_list: blocklist.clone().map(|block_list| block_list.iter().map(|block| *block as u32).collect()).unwrap_or(Vec::new()),
+                                            block_list: blocklist
+                                                .clone()
+                                                .map(|block_list| {
+                                                    block_list
+                                                        .iter()
+                                                        .map(|block| *block as u32)
+                                                        .collect()
+                                                })
+                                                .unwrap_or(Vec::new()),
                                             raw_size: location.raw_content_len,
                                             extra: None,
                                         },
                                     )),
                                 }))
-                                .await)?;
+                                .await
+                                .map_err(|e| {
+                                    tracing::error!(error = ?e, msg = e.to_string());
+                                    e
+                                })?;
                             trace!("Send object info into stream");
 
                             // Send data into stream
-                            trace_err!(
-                                proxy_replication_service
-                                    .send_object(
-                                        object.id.to_string(),
-                                        location,
-                                        blocklist.unwrap_or(Vec::default()),
-                                        object_output_send.clone(),
-                                        retry_rcv.clone(),
-                                    )
-                                    .await
-                            )?;
+                            proxy_replication_service
+                                .send_object(
+                                    object.id.to_string(),
+                                    location,
+                                    blocklist.unwrap_or(Vec::default()),
+                                    object_output_send.clone(),
+                                    retry_rcv.clone(),
+                                )
+                                .await
+                                .map_err(|e| {
+                                    tracing::error!(error = ?e, msg = e.to_string());
+                                    e
+                                })?;
                             trace!("Send data into stream");
                         }
                         // Check if any message was unacknowledged
                         if let Ok(ack_msgs) = object_sync_rcv.recv().await {
                             for (id, max_blocks) in stored_objects.iter() {
                                 if ack_msgs.get(&AckSync::ObjectInit(*id)).is_none() {
-                                    trace_err!(
-                                        object_output_send
-                                            .send(Err(tonic::Status::not_found(
-                                                "Unacknowledged ObjectInit found",
-                                            )))
-                                            .await
-                                    )?;
+                                    object_output_send
+                                        .send(Err(tonic::Status::not_found(
+                                            "Unacknowledged ObjectInit found",
+                                        )))
+                                        .await
+                                        .map_err(|e| {
+                                            tracing::error!(error = ?e, msg = e.to_string());
+                                            e
+                                        })?;
                                 }
                                 let max_blocks = *max_blocks as i64;
                                 for chunk in 0..max_blocks {
                                     if ack_msgs.get(&AckSync::ObjectChunk(*id, chunk)).is_none() {
-                                        trace_err!(
-                                            object_output_send
-                                                .send(Err(tonic::Status::not_found(
-                                                    "Unacknowledged ObjectChunk found",
-                                                )))
-                                                .await
-                                        )?;
+                                        object_output_send
+                                            .send(Err(tonic::Status::not_found(
+                                                "Unacknowledged ObjectChunk found",
+                                            )))
+                                            .await
+                                            .map_err(|e| {
+                                                tracing::error!(error = ?e, msg = e.to_string());
+                                                e
+                                            })?;
                                     }
                                 }
                             }
@@ -412,23 +473,26 @@ impl DataproxyReplicationServiceImpl {
         init: InitMessage,
         token: String,
     ) -> Result<Vec<(Object, ObjectLocation)>, tonic::Status> {
-        let ids = trace_err!(init
+        let ids = init
             .object_ids
             .iter()
-            .map(|id| DieselUlid::from_str(id).map_err(|e| {
-                trace!("{e}: Invalid id");
-                tonic::Status::invalid_argument("Invalid id provided")
-            }))
-            .collect::<tonic::Result<Vec<DieselUlid>, tonic::Status>>())?;
+            .map(|id| {
+                DieselUlid::from_str(id).map_err(|e| {
+                    error!(error = ?e, msg = e.to_string());
+                    tonic::Status::invalid_argument("Invalid id provided")
+                })
+            })
+            .collect::<tonic::Result<Vec<DieselUlid>, tonic::Status>>()?;
 
         // 1. get all objects & endpoints from server
         let mut objects = Vec::new();
         let object_endpoint_map = DashMap::new();
         for id in ids {
-            if let Ok((object, location)) = self.cache.get_resource(&id) {
-                let location = location
-                    .as_ref()
-                    .ok_or_else(|| tonic::Status::not_found("No location found for object"))?;
+            if let Ok((object, location)) = self.cache.get_resource_cloned(&id, true).await {
+                let location = location.as_ref().ok_or_else(|| {
+                    error!("No location found for object");
+                    tonic::Status::not_found("No location found for object")
+                })?;
                 objects.push((object.clone(), location.clone()));
                 object_endpoint_map.insert(object.id, object.endpoints.clone());
             }
@@ -439,8 +503,10 @@ impl DataproxyReplicationServiceImpl {
         if let Some(auth) = self.cache.auth.read().await.as_ref() {
             // Returns claims.sub as id -> Can return UserIds or DataproxyIds
             // -> UserIds cannot be found in object.endpoints, so this should be safe
-            let (dataproxy_id, _) = trace_err!(auth.check_permissions(&token))
-                .map_err(|_| tonic::Status::unauthenticated("DataProxy not authenticated"))?;
+            let (dataproxy_id, _) = auth.check_permissions(&token).map_err(|_| {
+                error!(error = "DataProxy not authenticated");
+                tonic::Status::unauthenticated("DataProxy not authenticated")
+            })?;
             if !object_endpoint_map.iter().all(|map| {
                 let (_, eps) = map.pair();
                 eps.iter().any(|ep| ep.id == dataproxy_id)
@@ -475,27 +541,30 @@ impl DataproxyReplicationServiceImpl {
 
             let parser = match encryption_key.clone() {
                 Some(key) => {
-                    trace_err!(
-                        self.backend
-                            .get_object(
-                                location.clone(),
-                                Some(format!("bytes=-{}", (65536 + 28) * 2)),
-                                // "-" means last (2) chunks
-                                // when encrypted + 28 for encryption information (16 bytes nonce, 12 bytes checksum)
-                                // Encrypted chunk = | 16 b nonce | 65536 b data | 12 b checksum |
-                                footer_sender,
-                            )
-                            .await
-                    )
-                    .map_err(|_| tonic::Status::internal("Unable to get encryption_footer"))?;
+                    self.backend
+                        .get_object(
+                            location.clone(),
+                            Some(format!("bytes=-{}", (65536 + 28) * 2)),
+                            // "-" means last (2) chunks
+                            // when encrypted + 28 for encryption information (16 bytes nonce, 12 bytes checksum)
+                            // Encrypted chunk = | 16 b nonce | 65536 b data | 12 b checksum |
+                            footer_sender,
+                        )
+                        .await
+                        .map_err(|_| {
+                            error!(error = "Unable to get encryption_footer");
+                            tonic::Status::internal("Unable to get encryption_footer")
+                        })?;
                     let mut output = Vec::with_capacity(131_128);
                     // Stream takes receiver chunks und them into vec
                     let mut arsw =
                         ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
 
                     // processes chunks and puts them into output
-                    trace_err!(arsw.process().await)
-                        .map_err(|_| anyhow!("Unable to get footer"))?;
+                    arsw.process().await.map_err(|_| {
+                        error!(error = "Unable to get footer");
+                        anyhow!("Unable to get footer")
+                    })?;
                     drop(arsw);
 
                     match output.try_into() {
@@ -513,23 +582,26 @@ impl DataproxyReplicationServiceImpl {
                     }
                 }
                 None => {
-                    trace_err!(
-                        self.backend
-                            .get_object(
-                                location.clone(),
-                                Some(format!("bytes=-{}", 65536 * 2)),
-                                // when not encrypted without 28
-                                footer_sender,
-                            )
-                            .await
-                    )
-                    .map_err(|_| anyhow!("Unable to get compression footer"))?;
+                    self.backend
+                        .get_object(
+                            location.clone(),
+                            Some(format!("bytes=-{}", 65536 * 2)),
+                            // when not encrypted without 28
+                            footer_sender,
+                        )
+                        .await
+                        .map_err(|_| {
+                            error!(error = "Unable to get compression_footer");
+                            anyhow!("Unable to get compression footer")
+                        })?;
                     let mut output = Vec::with_capacity(131_128);
                     let mut arsw =
                         ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
 
-                    trace_err!(arsw.process().await)
-                        .map_err(|_| anyhow!("Unable to get footer"))?;
+                    arsw.process().await.map_err(|_| {
+                        error!(error = "Unable to get footer");
+                        anyhow!("Unable to get footer")
+                    })?;
                     drop(arsw);
 
                     match output.try_into() {
@@ -567,40 +639,50 @@ impl DataproxyReplicationServiceImpl {
         let backend = self.backend.clone();
         tokio::spawn(
             async move {
-                trace_err!(
-                    backend
-                        .get_object(location.clone(), None, object_sender)
-                        .await
-                )
+                backend
+                    .get_object(location.clone(), None, object_sender)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(error = ?e, msg = e.to_string());
+                        e
+                    })
             }
             .instrument(info_span!("get_object")),
         );
 
         // Spawn final part
-        let _ = trace_err!(
-            tokio::spawn(
-                async move {
-                    pin!(object_receiver);
-                    let asrw = ArunaStreamReadWriter::new_with_sink(
-                        // Receive get_object
-                        object_receiver,
-                        // ReplicationSink sends into stream via sender
-                        ReplicationSink::new(object_id, blocklist, sender.clone(), error_rcv),
-                    );
+        let _ = tokio::spawn(
+            async move {
+                pin!(object_receiver);
+                let asrw = ArunaStreamReadWriter::new_with_sink(
+                    // Receive get_object
+                    object_receiver,
+                    // ReplicationSink sends into stream via sender
+                    ReplicationSink::new(object_id, blocklist, sender.clone(), error_rcv),
+                );
 
-                    // Add decryption transformer
-                    trace_err!(
-                        asrw.add_transformer(trace_err!(ChaCha20Dec::new(key))?)
-                            .process()
-                            .await
-                    )?;
+                // Add decryption transformer
 
-                    Ok::<(), anyhow::Error>(())
-                }
-                .instrument(info_span!("query_data")),
-            )
-            .await
-        )?;
+                asrw.add_transformer(ChaCha20Dec::new(key).map_err(|e| {
+                    tracing::error!(error = ?e, msg = e.to_string());
+                    e
+                })?)
+                .process()
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = ?e, msg = e.to_string());
+                    e
+                })?;
+
+                Ok::<(), anyhow::Error>(())
+            }
+            .instrument(info_span!("query_data")),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
 
         Ok(())
     }
