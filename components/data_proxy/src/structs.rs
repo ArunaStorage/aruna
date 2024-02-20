@@ -155,6 +155,8 @@ impl TryFrom<GrpcUser> for User {
         Ok(User {
             user_id: DieselUlid::from_str(&value.id)?,
             personal_permissions: value
+                .attributes
+                .unwrap_or_default()
                 .personal_permissions
                 .iter()
                 .map(|(k, v)| Ok((DieselUlid::from_str(k)?, DbPermissionLevel::from_str(v)?)))
@@ -1061,7 +1063,7 @@ impl ResourceState {
 //     Bundle(String),
 // }
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct CheckAccessResult {
     pub user_id: Option<String>,
     pub token_id: Option<String>,
@@ -1211,13 +1213,13 @@ impl CORSConfiguration {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserPolicyInfo {
     pub user_id: String,
     pub attributes: HashMap<String, String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectHierarchyPolicyInfo {
     pub object: Option<Object>,
     pub dataset: Option<Object>,
@@ -1225,20 +1227,20 @@ pub struct ObjectHierarchyPolicyInfo {
     pub project: Object,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestInfo {
     pub method: Method,
     pub header: HeaderMap<HeaderValue>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PolicyInput {
     pub user: UserPolicyInfo,
     pub object_hierarchy: ObjectHierarchyPolicyInfo,
     pub request: RequestInfo,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectsPolicyInput {
     pub user: UserPolicyInfo,
     pub object: Object,

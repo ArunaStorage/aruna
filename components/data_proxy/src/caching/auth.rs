@@ -2,7 +2,6 @@ use super::cache::Cache;
 use crate::helpers::is_method_read;
 use crate::structs::AccessKeyPermissions;
 use crate::structs::CheckAccessResult;
-use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
@@ -122,7 +121,12 @@ impl AuthHandler {
             "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
             encode_secret
         );
-        let encoding_key = trace_err!(EncodingKey::from_ed_pem(private_pem.as_bytes())).unwrap();
+        let encoding_key = EncodingKey::from_ed_pem(private_pem.as_bytes())
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })
+            .unwrap();
 
         Self {
             cache,
@@ -133,10 +137,23 @@ impl AuthHandler {
 
     #[tracing::instrument(level = "trace", skip(self, token))]
     pub fn check_permissions(&self, token: &str) -> Result<(DieselUlid, Option<String>)> {
-        let kid = trace_err!(decode_header(token)?
+        let kid = decode_header(token)?
             .kid
-            .ok_or_else(|| anyhow!("Unspecified kid")))?;
-        let (_, dec_key) = trace_err!(self.cache.get_pubkey(trace_err!(i32::from_str(&kid))?))?;
+            .ok_or_else(|| anyhow!("Unspecified kid"))
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
+        let (_, dec_key) = self
+            .cache
+            .get_pubkey(i32::from_str(&kid).map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?)
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
         let claims = self.extract_claims(token, &dec_key)?;
 
         if let Some(it) = claims.it {
@@ -165,7 +182,13 @@ impl AuthHandler {
             }
         } else {
             // No intent, no Dataproxy/Action check
-            Ok((trace_err!(DieselUlid::from_str(&claims.sub))?, claims.tid))
+            Ok((
+                DieselUlid::from_str(&claims.sub).map_err(|e| {
+                    tracing::error!(error = ?e, msg = e.to_string());
+                    e
+                })?,
+                claims.tid,
+            ))
         }
     }
 
@@ -178,11 +201,15 @@ impl AuthHandler {
         let mut validation = Validation::new(Algorithm::EdDSA);
         validation.set_audience(&["proxy"]);
 
-        let token = trace_err!(decode::<ArunaTokenClaims>(
+        let token = decode::<ArunaTokenClaims>(
             token,
             dec_key,
-            &validation //&Validation::new(Algorithm::EdDSA)
-        ))?;
+            &validation, //&Validation::new(Algorithm::EdDSA)
+        )
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
         Ok(token.claims)
     }
 
@@ -260,7 +287,6 @@ impl AuthHandler {
         todo!()
     }
 
-
     #[tracing::instrument(level = "trace", skip(self, bucket_name, creds, headers))]
     pub async fn handle_bucket_post(
         &self,
@@ -270,7 +296,6 @@ impl AuthHandler {
     ) -> Result<CheckAccessResult> {
         todo!()
     }
-
 
     #[tracing::instrument(level = "trace", skip(self, bucket_name, key_name, creds, headers))]
     pub async fn handle_object_get(
@@ -344,7 +369,10 @@ impl AuthHandler {
             }),
         };
 
-        trace_err!(self.sign_token(claims))
+        self.sign_token(claims).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -364,7 +392,10 @@ impl AuthHandler {
             }),
         };
 
-        trace_err!(self.sign_token(claims))
+        self.sign_token(claims).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })
     }
 
     #[tracing::instrument(level = "trace", skip(self, target_endpoint))]
@@ -384,7 +415,10 @@ impl AuthHandler {
             }),
         };
 
-        trace_err!(self.sign_token(claims))
+        self.sign_token(claims).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })
     }
     #[tracing::instrument(level = "trace", skip(self, claims))]
     pub(crate) fn sign_token(&self, claims: ArunaTokenClaims) -> Result<String> {
@@ -394,7 +428,10 @@ impl AuthHandler {
             ..Default::default()
         };
 
-        let token = trace_err!(jsonwebtoken::encode(&header, &claims, &self.encoding_key.1))?;
+        let token = jsonwebtoken::encode(&header, &claims, &self.encoding_key.1).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
 
         Ok(token)
     }
@@ -402,10 +439,14 @@ impl AuthHandler {
 
 #[tracing::instrument(level = "trace", skip(md))]
 pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
-    let token_string = trace_err!(md
+    let token_string = md
         .get("Authorization")
-        .ok_or(anyhow!("Metadata token not found")))?
-    .to_str()?;
+        .ok_or(anyhow!("Metadata token not found"))
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?
+        .to_str()?;
 
     let split = token_string.split(' ').collect::<Vec<_>>();
 

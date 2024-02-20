@@ -4,7 +4,6 @@ use crate::structs::Object as DPObject;
 use crate::structs::ObjectLocation;
 use crate::structs::ObjectType;
 use crate::structs::PubKey;
-use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_replication_service_client::DataproxyReplicationServiceClient;
@@ -66,6 +65,7 @@ use aruna_rust_api::api::{
     },
 };
 use diesel_ulid::DieselUlid;
+use tonic::metadata::MetadataMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
@@ -109,13 +109,25 @@ impl GrpcQueryHandler {
         // Check if server host url is tls
         let server_url: String = server.into();
         let endpoint = if server_url.starts_with("https") {
-            trace_err!(
-                trace_err!(Channel::from_shared(server_url))?.tls_config(ClientTlsConfig::new())
-            )?
+            
+            Channel::from_shared(server_url).map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?.tls_config(ClientTlsConfig::new())
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
         } else {
-            trace_err!(Channel::from_shared(server_url))?
+            Channel::from_shared(server_url).map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
         };
-        let channel = trace_err!(endpoint.connect().await)?;
+        let channel = endpoint.connect().await.map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
 
         let project_service = ProjectServiceClient::new(channel.clone());
 
@@ -135,12 +147,15 @@ impl GrpcQueryHandler {
 
         let data_replication_service = DataReplicationServiceClient::new(channel.clone());
 
-        let long_lived_token = trace_err!(cache
+        let long_lived_token = cache
             .auth
             .read()
             .await
             .as_ref()
-            .ok_or_else(|| anyhow!("No auth found")))?
+            .ok_or_else(|| {
+                tracing::error!(error = "No auth found"); 
+                anyhow!("No auth found")
+            })?
         .sign_notification_token()?;
 
         let handler = GrpcQueryHandler {
@@ -172,42 +187,52 @@ impl GrpcQueryHandler {
 
 // Aruna grpc request section
 impl GrpcQueryHandler {
+
+    pub fn add_token_to_md(md: &mut MetadataMap, token: &str) -> Result<()> {
+        let key = AsciiMetadataKey::from_bytes("authorization".as_bytes()).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
+        let value = AsciiMetadataValue::try_from(format!("Bearer {}", token)).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
+        md.append(key, value);
+        Ok(())
+    }
+
+
     #[tracing::instrument(level = "trace", skip(self, _checksum))]
     pub async fn get_user(&self, id: DieselUlid, _checksum: String) -> Result<GrpcUser> {
         let mut req = Request::new(GetUserRedactedRequest {
             user_id: id.to_string(),
         });
 
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!(
-                "Bearer {}",
-                self.long_lived_token
-            )))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
 
-        let user = trace_err!(
-            trace_err!(self.user_service.clone().get_user_redacted(req).await)?
-                .into_inner()
+        let user = 
+            self.user_service.clone().get_user_redacted(req).await.map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?.into_inner()
                 .user
-                .ok_or(anyhow!("Unknown user"))
-        )?;
+                .ok_or_else(|| {
+                    tracing::error!(error = "Unknown user");
+                    anyhow!("Unknown user")
+                })?;
         Ok(user)
     }
     #[tracing::instrument(level = "trace", skip(self))]
     async fn get_pubkeys(&self) -> Result<Vec<Pubkey>> {
         let mut req = Request::new(GetPubkeysRequest {});
 
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!(
-                "Bearer {}",
-                self.long_lived_token.as_str()
-            )))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
 
         Ok(
-            trace_err!(self.storage_status_service.clone().get_pubkeys(req).await)?
+            self.storage_status_service.clone().get_pubkeys(req).await.map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
                 .into_inner()
                 .pubkeys,
         )
@@ -218,10 +243,7 @@ impl GrpcQueryHandler {
         let mut req = Request::new(CreateProjectRequest::from(object));
 
         req.get_mut().preferred_endpoint = self.endpoint_id.clone();
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), token)?;
 
         let response = trace_err!(trace_err!(
             self.project_service.clone().create_project(req).await
@@ -243,13 +265,7 @@ impl GrpcQueryHandler {
             project_id: id.to_string(),
         });
 
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!(
-                "Bearer {}",
-                self.long_lived_token.as_str()
-            )))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
 
         trace_err!(
             trace_err!(self.project_service.clone().get_project(req).await)?
@@ -265,13 +281,7 @@ impl GrpcQueryHandler {
             collection_id: id.to_string(),
         });
 
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!(
-                "Bearer {}",
-                self.long_lived_token.as_str()
-            )))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
 
         trace_err!(
             trace_err!(self.collection_service.clone().get_collection(req).await)?
@@ -285,10 +295,7 @@ impl GrpcQueryHandler {
     pub async fn create_collection(&self, object: DPObject, token: &str) -> Result<DPObject> {
         let mut req = Request::new(CreateCollectionRequest::from(object));
 
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
 
         let response = trace_err!(trace_err!(
             self.collection_service.clone().create_collection(req).await
@@ -310,13 +317,7 @@ impl GrpcQueryHandler {
             dataset_id: id.to_string(),
         });
 
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!(
-                "Bearer {}",
-                self.long_lived_token.as_str()
-            )))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
 
         trace_err!(
             trace_err!(self.dataset_service.clone().get_dataset(req).await)?
@@ -330,10 +331,7 @@ impl GrpcQueryHandler {
     pub async fn create_dataset(&self, object: DPObject, token: &str) -> Result<DPObject> {
         let mut req = Request::new(CreateDatasetRequest::from(object));
 
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), token)?;
 
         let response = trace_err!(trace_err!(
             self.dataset_service.clone().create_dataset(req).await
@@ -355,13 +353,8 @@ impl GrpcQueryHandler {
             object_id: id.to_string(),
         });
 
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!(
-                "Bearer {}",
-                self.long_lived_token.as_str()
-            )))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
+
 
         trace_err!(
             trace_err!(self.object_service.clone().get_object(req).await)?
@@ -380,10 +373,7 @@ impl GrpcQueryHandler {
     ) -> Result<DPObject> {
         let mut req = Request::new(CreateObjectRequest::from(object));
 
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), token)?;
 
         let response = trace_err!(trace_err!(
             self.object_service.clone().create_object(req).await
@@ -430,10 +420,7 @@ impl GrpcQueryHandler {
             remove_key_values: remove_cors,
         });
 
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), token)?;
 
         trace_err!(
             self.project_service
@@ -458,10 +445,7 @@ impl GrpcQueryHandler {
         // Crate gRPC request with provided token in header
         let mut req = Request::new(inner_request);
 
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), token)?;
 
         // Update Object in ArunaServer and validate response
         let response =
@@ -492,10 +476,7 @@ impl GrpcQueryHandler {
             completed_parts: vec![],
         });
 
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), token)?;
 
         let response = trace_err!(trace_err!(
             self.object_service.clone().finish_object_staging(req).await
@@ -529,10 +510,7 @@ impl GrpcQueryHandler {
         // Create Object in Aruna Server
         let mut req = Request::new(CreateObjectRequest::from(proxy_object.clone()));
 
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), token)?;
 
         let server_object: DPObject = trace_err!(trace_err!(
             self.object_service.clone().create_object(req).await
@@ -549,10 +527,7 @@ impl GrpcQueryHandler {
             completed_parts: vec![],
         });
 
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!("Bearer {}", token)))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), token)?;
 
         let response = trace_err!(trace_err!(
             self.object_service.clone().finish_object_staging(req).await
@@ -577,13 +552,7 @@ impl GrpcQueryHandler {
             stream_consumer: self.endpoint_id.to_string(),
         });
 
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!(
-                "Bearer {}",
-                self.long_lived_token.as_str()
-            )))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
 
         let stream = trace_err!(
             self.event_notification_service
@@ -596,13 +565,7 @@ impl GrpcQueryHandler {
 
         // Fullsync
         let mut req = Request::new(FullSyncEndpointRequest {});
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!(
-                "Bearer {}",
-                self.long_lived_token.as_str()
-            )))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
         let mut full_sync_stream =
             trace_err!(self.endpoint_service.clone().full_sync_endpoint(req).await)?.into_inner();
         let mut resources = Vec::new();
@@ -652,13 +615,7 @@ impl GrpcQueryHandler {
                     let mut resp =
                         Request::new(AcknowledgeMessageBatchRequest { replies: vec![r] });
 
-                    resp.metadata_mut().append(
-                        trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-                        trace_err!(AsciiMetadataValue::try_from(format!(
-                            "Bearer {}",
-                            self.long_lived_token.as_str()
-                        )))?,
-                    );
+                    Self::add_token_to_md(req.metadata_mut(), &self.long_lived_token)?;
 
                     trace_err!(
                         self.event_notification_service
@@ -725,13 +682,7 @@ impl GrpcQueryHandler {
             .max_decoding_message_size(1024 * 1024 * 10);
         let (request_stream_sender, request_stream_receiver) = tokio::sync::mpsc::channel(1000);
         let mut req = Request::new(ReceiverStream::new(request_stream_receiver));
-        req.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!(
-                "Bearer {}",
-                token.as_str()
-            )))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), token)?;
         let response_stream =
             trace_err!(dataproxy_service.clone().pull_replication(req).await)?.into_inner();
         trace_err!(request_stream_sender.send(init_request).await)?;
@@ -744,13 +695,7 @@ impl GrpcQueryHandler {
         request: UpdateReplicationStatusRequest,
     ) -> Result<()> {
         let mut request = Request::new(request);
-        request.metadata_mut().append(
-            trace_err!(AsciiMetadataKey::from_bytes("authorization".as_bytes()))?,
-            trace_err!(AsciiMetadataValue::try_from(format!(
-                "Bearer {}",
-                self.long_lived_token.as_str()
-            )))?,
-        );
+        Self::add_token_to_md(req.metadata_mut(), token)?;
         trace_err!(
             self.data_replication_service
                 .clone()
@@ -1045,6 +990,7 @@ pub fn sort_objects(res: &mut [DPObject]) {
         | (ObjectType::Dataset, ObjectType::Collection) => std::cmp::Ordering::Greater,
         (ObjectType::Dataset, ObjectType::Dataset) => std::cmp::Ordering::Equal,
         (ObjectType::Dataset, ObjectType::Object) => std::cmp::Ordering::Less,
+        
         (ObjectType::Object, ObjectType::Project)
         | (ObjectType::Object, ObjectType::Collection)
         | (ObjectType::Object, ObjectType::Dataset) => std::cmp::Ordering::Greater,

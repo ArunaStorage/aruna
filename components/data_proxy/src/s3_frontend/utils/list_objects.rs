@@ -69,7 +69,7 @@ pub fn list_response(
                             (
                                 path,
                                 cache
-                                    .get_resource(&id)
+                                    .get_resource_cloned(&id, true)
                                     .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?,
                             )
                                 .into(),
@@ -98,7 +98,7 @@ pub fn list_response(
                         (
                             path,
                             cache
-                                .get_resource(&id)
+                                .get_resource_cloned(&id, true)
                                 .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?,
                         )
                             .into(),
@@ -120,7 +120,7 @@ pub fn list_response(
                         (
                             path,
                             trace_err!(cache
-                                .get_resource(&id)
+                                .get_resource_cloned(&id, true)
                                 .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path")))?,
                         )
                             .into(),
@@ -143,7 +143,7 @@ pub fn list_response(
                     (
                         path,
                         trace_err!(cache
-                            .get_resource(&id)
+                            .get_resource_cloned(&id, true)
                             .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path")))?
                         .value(),
                     )

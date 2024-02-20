@@ -3,7 +3,6 @@ use crate::caching::grpc_query_handler::sort_objects;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::replication::replication_handler::ReplicationMessage;
 use crate::structs::{AccessKeyPermissions, TypedRelation, User};
-use crate::trace_err;
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
     structs::{Object, ObjectLocation, PubKey},
@@ -115,9 +114,12 @@ impl Cache {
 
         // Fully sync cache (and database if persistent DataProxy)
         if let Some(url) = notifications_url {
-            let notication_handler: Arc<GrpcQueryHandler> = Arc::new(trace_err!(
+            let notication_handler: Arc<GrpcQueryHandler> = Arc::new(
                 GrpcQueryHandler::new(url, cache.clone(), self_id.to_string()).await
-            )?);
+                .map_err(|e| {
+                    tracing::error!(error = ?e, msg = e.to_string());
+                    e
+                })?);
 
             let notifications_handler_clone = notication_handler.clone();
             tokio::spawn(
@@ -353,7 +355,9 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self, res))]
     pub fn get_full_resource_by_name(&self, res: &str) -> Option<Object> {
         let id = self.get_resource_by_name(res)?;
-        self.resources.get(&id).map(|e| e.value().0.blocking_read().clone())
+        self.resources
+            .get(&id)
+            .map(|e| e.value().0.blocking_read().clone())
     }
 
     #[tracing::instrument(level = "trace", skip(self, resource_id, with_intermediates))]
@@ -372,7 +376,8 @@ impl Cache {
         // /foo/bar: id-foo/bar
 
         // VecDeque<(id, [Option<(String, DieselUlid)>; 4])>
-        const ARRAY_REPEAT_VALUE: std::option::Option<(std::string::String, DieselUlid)> = None::<(String, DieselUlid)>;
+        const ARRAY_REPEAT_VALUE: std::option::Option<(std::string::String, DieselUlid)> =
+            None::<(String, DieselUlid)>;
         let mut prefixes = VecDeque::from([(resource_id.clone(), [ARRAY_REPEAT_VALUE; 4])]);
         let mut final_result = Vec::new();
         while let Some((id, visited)) = prefixes.pop_front() {
@@ -385,36 +390,35 @@ impl Cache {
                             break;
                         }
                     }
-                    prefixes.push_back((
-                        parent_id,
-                        visited_here,
-                    ));
+                    prefixes.push_back((parent_id, visited_here));
                 }
             } else {
-                    let mut current_path = String::new();
-                    for x in 0..4 {
-                        match &visited[x] {
-                            Some((name, id)) => {
-                                current_path.push('/');
-                                current_path.push_str(&name);
-                                if with_intermediates {
-                                    final_result.push((id.clone(), current_path.clone()));
-                                }else if x == 3{
-                                    final_result.push((id.clone(), current_path.clone()));
-                                }
-                            }
-                            None => {
-                                continue
+                let mut current_path = String::new();
+                for x in 0..4 {
+                    match &visited[x] {
+                        Some((name, id)) => {
+                            current_path.push('/');
+                            current_path.push_str(&name);
+                            if with_intermediates {
+                                final_result.push((id.clone(), current_path.clone()));
+                            } else if x == 3 {
+                                final_result.push((id.clone(), current_path.clone()));
                             }
                         }
+                        None => continue,
                     }
+                }
             }
         }
         final_result
     }
 
     #[tracing::instrument(level = "trace", skip(self, resource_id))]
-    pub async fn get_suffixes(&self, resource_id: &DieselUlid, with_intermediates: bool) -> Vec<(DieselUlid, String)> {
+    pub async fn get_suffixes(
+        &self,
+        resource_id: &DieselUlid,
+        with_intermediates: bool,
+    ) -> Vec<(DieselUlid, String)> {
         let mut prefixes = VecDeque::from([(resource_id.clone(), "".to_string())]);
         let mut final_result = Vec::new();
         while let Some((id, name)) = prefixes.pop_front() {
@@ -425,7 +429,7 @@ impl Cache {
                         final_result.push((child_id, format!("{}/{}", name, child_name)));
                     }
                 }
-            }else{
+            } else {
                 final_result.push((id, name));
             }
         }
@@ -521,16 +525,22 @@ impl Cache {
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_pubkey(&self, kid: i32) -> Result<(PubKey, DecodingKey)> {
-        Ok(trace_err!(self
+        Ok(self
             .pubkeys
             .get(&kid)
-            .ok_or_else(|| anyhow!("Pubkey not found")))?
+            .ok_or_else(|| {
+                tracing::error!(error = "Pubkey not found");
+                anyhow!("Pubkey not found")
+            })?
         .clone())
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn upsert_user(self: Arc<Cache>, user: GrpcUser) -> Result<()> {
-        let user_id = trace_err!(DieselUlid::from_str(&user.id))?;
+        let user_id = DieselUlid::from_str(&user.id).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
         let proxy_user = User::try_from(user)?;
 
         let (to_update, to_delete) = if let Some(user) = self.users.get(&user_id) {
@@ -729,9 +739,9 @@ impl Cache {
         let obj = obj.read().await.clone();
         let loc = if !skip_location {
             loc.read().await.clone()
-        }else{
+        } else {
             None
-        }
+        };
         Ok((obj, loc))
     }
 
@@ -754,7 +764,13 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn add_bundle(&self, bundle_id: DieselUlid, object_ids: Vec<DieselUlid>, access_key: &str, timestamp: DateTime<Utc>) {
+    pub fn add_bundle(
+        &self,
+        bundle_id: DieselUlid,
+        object_ids: Vec<DieselUlid>,
+        access_key: &str,
+        timestamp: DateTime<Utc>,
+    ) {
         self.bundles
             .insert(bundle_id, (access_key.to_string(), object_ids, timestamp));
     }

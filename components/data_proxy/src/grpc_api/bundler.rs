@@ -171,8 +171,7 @@ impl BundlerService for BundlerServiceImpl {
 
             let user = self
                 .cache
-                .users
-                .get(&access_key)
+                .get_access_key(&access_key)
                 .ok_or_else(|| tonic::Status::unauthenticated("Unable to authenticate user"))?;
 
             let bundle_id = trace_err!(DieselUlid::from_str(request.get_ref().bundle_id.as_str()))

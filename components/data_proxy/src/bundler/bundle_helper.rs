@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{data_backends::storage_backend::StorageBackend, structs::ObjectLocation, trace_err};
+use crate::{data_backends::storage_backend::StorageBackend, structs::ObjectLocation};
 use aruna_file::{
     streamreadwrite::ArunaStreamReadWriter,
     transformer::{FileContext, ReadWriter},
@@ -34,46 +34,52 @@ pub async fn get_bundle(
                 let data_tx_clone = data_tx.clone();
                 let file_info_sender_clone = file_info_sender.clone();
                 if let Some(location) = loc {
-                    trace_err!(
-                        file_info_sender_clone
-                            .clone()
-                            .send((
-                                FileContext {
-                                    file_name: name.to_string(),
-                                    input_size: location.disk_content_len as u64,
-                                    file_size: location.raw_content_len as u64,
-                                    skip_decompression: !location.compressed,
-                                    skip_decryption: location.encryption_key.is_none(),
-                                    encryption_key: location
-                                        .encryption_key
-                                        .as_ref()
-                                        .map(|e| e.to_string().into_bytes()),
-                                    ..Default::default()
-                                },
-                                counter >= len,
-                            ))
-                            .await
-                    )?;
+                    file_info_sender_clone
+                        .clone()
+                        .send((
+                            FileContext {
+                                file_name: name.to_string(),
+                                input_size: location.disk_content_len as u64,
+                                file_size: location.raw_content_len as u64,
+                                skip_decompression: !location.compressed,
+                                skip_decryption: location.encryption_key.is_none(),
+                                encryption_key: location
+                                    .encryption_key
+                                    .as_ref()
+                                    .map(|e| e.to_string().into_bytes()),
+                                ..Default::default()
+                            },
+                            counter >= len,
+                        ))
+                        .await
+                        .map_err(|e| {
+                            tracing::error!(error = ?e, msg = e.to_string());
+                            e
+                        })?;
 
-                    trace_err!(
-                        backend
-                            .get_object(location.clone(), None, data_tx_clone)
-                            .await
-                    )?;
+                    backend
+                        .get_object(location.clone(), None, data_tx_clone)
+                        .await
+                        .map_err(|e| {
+                            tracing::error!(error = ?e, msg = e.to_string());
+                            e
+                        })?;
                 } else {
-                    trace_err!(
-                        file_info_sender_clone
-                            .clone()
-                            .send((
-                                FileContext {
-                                    file_name: name.to_string(),
-                                    is_dir: true,
-                                    ..Default::default()
-                                },
-                                counter >= len,
-                            ))
-                            .await
-                    )?;
+                    file_info_sender_clone
+                        .clone()
+                        .send((
+                            FileContext {
+                                file_name: name.to_string(),
+                                is_dir: true,
+                                ..Default::default()
+                            },
+                            counter >= len,
+                        ))
+                        .await
+                        .map_err(|e| {
+                            tracing::error!(error = ?e, msg = e.to_string());
+                            e
+                        })?;
                 }
                 counter += 1;
                 trace!("finished file {}/{}", counter, len)
@@ -95,18 +101,27 @@ pub async fn get_bundle(
                 data_clone,
                 AsyncSenderSink::new(final_sender_clone.clone()),
             )
-            .add_transformer(trace_err!(ChaCha20Dec::new(None))?)
+            .add_transformer(ChaCha20Dec::new(None).map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?)
             .add_transformer(ZstdDec::new())
             .add_transformer(TarEnc::new())
             .add_transformer(GzipEnc::new());
-
-            trace_err!(
-                aruna_stream_writer
-                    .add_file_context_receiver(file_info_receiver.clone())
-                    .await
-            )?;
+            aruna_stream_writer
+                .add_file_context_receiver(file_info_receiver.clone())
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = ?e, msg = e.to_string());
+                    e
+                })?;
             trace!("Starting read_writer process");
-            trace_err!(aruna_stream_writer.process().await)
+            aruna_stream_writer.process().await.map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
+
+            Ok::<(), anyhow::Error>(())
         }
         .instrument(info_span!("get_bundle_writer")),
     );

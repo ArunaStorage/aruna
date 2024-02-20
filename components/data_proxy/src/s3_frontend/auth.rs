@@ -23,7 +23,10 @@ impl S3Auth for AuthProvider {
     #[tracing::instrument(level = "trace", skip(self, access_key))]
     async fn get_secret_key(&self, access_key: &str) -> S3Result<SecretKey> {
         debug!(access_key);
-        let secret = trace_err!(self.cache.get_secret(access_key))
+        let secret = self
+            .cache
+            .get_secret(access_key)
+            .await
             .map_err(|_| s3_error!(AccessDenied, "Invalid access key"))?;
         Ok(secret)
     }
