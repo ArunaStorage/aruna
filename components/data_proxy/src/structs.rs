@@ -21,7 +21,7 @@ use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
 use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
-use http::{HeaderValue, Method};
+use http::{HeaderMap, HeaderValue, Method};
 use s3s::dto::CreateBucketInput;
 use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
 use serde::{Deserialize, Serialize};
@@ -1209,6 +1209,41 @@ impl CORSConfiguration {
         }
         None
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct UserPolicyInfo {
+    pub user_id: String,
+    pub attributes: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct ObjectHierarchyPolicyInfo {
+    pub object: Option<Object>,
+    pub dataset: Option<Object>,
+    pub collection: Option<Object>,
+    pub project: Object,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct RequestInfo {
+    pub method: Method,
+    pub header: HeaderMap<HeaderValue>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct PolicyInput {
+    pub user: UserPolicyInfo,
+    pub object_hierarchy: ObjectHierarchyPolicyInfo,
+    pub request: RequestInfo,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct ObjectsPolicyInput {
+    pub user: UserPolicyInfo,
+    pub object: Object,
+    pub parents: Vec<Object>,
+    pub request: RequestInfo,
 }
 
 #[cfg(test)]

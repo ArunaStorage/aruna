@@ -126,7 +126,7 @@ pub fn sign_download_url(
     )
 }
 
-pub fn is_method_get_style(method: &Method) -> bool {
+pub fn is_method_read(method: &Method) -> bool {
     match method {
         Method::GET | Method::HEAD | Method::OPTIONS => true,
         _ => false,

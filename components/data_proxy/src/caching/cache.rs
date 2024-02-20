@@ -6,13 +6,14 @@ use crate::structs::{AccessKeyPermissions, TypedRelation, User};
 use crate::trace_err;
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
-    structs::{Object, ObjectLocation, ObjectType, PubKey},
+    structs::{Object, ObjectLocation, PubKey},
 };
 use ahash::RandomState;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use async_channel::Sender;
+use chrono::{DateTime, Utc};
 use crossbeam_skiplist::SkipMap;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -29,7 +30,7 @@ use tracing::{debug, error, info_span, trace, Instrument};
 pub struct Cache {
     // Map DieselUlid as key and (User, Vec<String>) as value -> Vec<String> is a list of registered access keys -> access_keys
     users: DashMap<DieselUlid, Arc<RwLock<(User, Vec<String>)>>, RandomState>,
-    // Permissions
+    // Permissions Maybe TODO: Arc<RwLock<AccessKeyPermissions>>?
     access_keys: DashMap<String, AccessKeyPermissions, RandomState>,
     // Map with ObjectId as key and Object as value
     resources: DashMap<
@@ -37,10 +38,24 @@ pub struct Cache {
         (Arc<RwLock<Object>>, Arc<RwLock<Option<ObjectLocation>>>),
         RandomState,
     >,
-    bundles: DashMap<DieselUlid, (String, Vec<DieselUlid>)>,
+    // Map with bundle id as key and (access_key, Vec<ObjectId>, Timestamp<u64>) as value
+    bundles: DashMap<DieselUlid, (String, Vec<DieselUlid>, DateTime<Utc>)>,
     // Maps with path / key as key and set of all ObjectIds as value
+    // /project1/collection1/dataset1 -> ObjectID
+    // /project1/collection1/exaset1/object1 -> ObjectID
+    // /project1/collection1/dataset1/0
+    // /project1/collection1/data/a/a/a/aset1/object1 -> None
+    // -> /project1
+    // -> /project1/collection1
+    // -> /project1/collection1/dataset1
+    // -> /project1/collection1/dataset1/object1
     paths: SkipMap<String, DieselUlid>,
-    // Pubkeys
+
+    // enum {
+    // Server {},
+    // Proxy {}
+    //}
+    // Pubkeys; TODO: Expand to endpoint ?
     pubkeys: DashMap<i32, (PubKey, DecodingKey), RandomState>,
     // Persistence layer
     persistence: RwLock<Option<Database>>,
@@ -342,29 +357,77 @@ impl Cache {
         self.resources.get(&id).map(|e| e.value().0.read().clone())
     }
 
-    #[tracing::instrument(level = "trace", skip(self, resource_id))]
-    pub async fn get_prefixes(&self, resource_id: &DieselUlid) -> Vec<(DieselUlid, String)> {
-        let mut prefixes = VecDeque::from([(resource_id.clone(), "".to_string())]);
-        let final_result = Vec::new();
-        while let Some((id, name)) = prefixes.pop_front() {
+    #[tracing::instrument(level = "trace", skip(self, resource_id, with_intermediates))]
+    pub async fn get_prefixes(
+        &self,
+        resource_id: &DieselUlid,
+        with_intermediates: bool,
+    ) -> Vec<(DieselUlid, String)> {
+        // /foo/bar/baz
+        // /foo/bar/ <baz: resource_id>
+        // /bar/baz/ <baz: resource_id>
+        // -> /foo/bar (~id /foo)
+        // -> /bar/baz (~id /bar)
+
+        // /foo: id-foo
+        // /foo/bar: id-foo/bar
+
+        // VecDeque<(id, [Option<(String, DieselUlid)>; 4])>
+        const ARRAY_REPEAT_VALUE: std::option::Option<(std::string::String, DieselUlid)> = None::<(String, DieselUlid)>;
+        let mut prefixes = VecDeque::from([(resource_id.clone(), [ARRAY_REPEAT_VALUE; 4])]);
+        let mut final_result = Vec::new();
+        while let Some((id, visited)) = prefixes.pop_front() {
             if let Some(parents) = self.get_parents(&id).await {
                 for (parent_name, parent_id) in parents {
-                    prefixes.push_back((parent_id, format!("{}/{}", parent_name, name)));
+                    let mut visited_here = visited.clone();
+                    for x in 3..=0 {
+                        if visited_here[x].is_none() {
+                            visited_here[x] = Some((parent_name.clone(), parent_id));
+                            break;
+                        }
+                    }
+                    prefixes.push_back((
+                        parent_id,
+                        visited_here,
+                    ));
                 }
+            } else {
+                    let mut current_path = String::new();
+                    for x in 0..4 {
+                        match &visited[x] {
+                            Some((name, id)) => {
+                                current_path.push('/');
+                                current_path.push_str(&name);
+                                if with_intermediates {
+                                    final_result.push((id.clone(), current_path.clone()));
+                                }else if x == 3{
+                                    final_result.push((id.clone(), current_path.clone()));
+                                }
+                            }
+                            None => {
+                                continue
+                            }
+                        }
+                    }
             }
         }
         final_result
     }
 
     #[tracing::instrument(level = "trace", skip(self, resource_id))]
-    pub async fn get_suffixes(&self, resource_id: &DieselUlid) -> Vec<(DieselUlid, String)> {
+    pub async fn get_suffixes(&self, resource_id: &DieselUlid, with_intermediates: bool) -> Vec<(DieselUlid, String)> {
         let mut prefixes = VecDeque::from([(resource_id.clone(), "".to_string())]);
-        let final_result = Vec::new();
+        let mut final_result = Vec::new();
         while let Some((id, name)) = prefixes.pop_front() {
             if let Some(children) = self.get_children(&id).await {
                 for (child_name, child_id) in children {
                     prefixes.push_back((child_id, format!("{}/{}", name, child_name)));
+                    if with_intermediates {
+                        final_result.push((child_id, format!("{}/{}", name, child_name)));
+                    }
                 }
+            }else{
+                final_result.push((id, name));
             }
         }
         final_result
@@ -377,15 +440,24 @@ impl Cache {
         resource_name: String,
         new_name: Option<String>,
     ) -> (Vec<String>, Option<Vec<String>>) {
-        let prefixes = self.get_prefixes(resource_id).await;
-        let suffixes = self.get_suffixes(resource_id).await;
+        // /project1/collection1/<dataset1>/object1
+        // /project2/collection2/<dataset1>/object2
+        // Prefix
+        // -> /project1/collection1: ID
+        // -> /project2/collection2: ID
+        // Suffix
+        // -> /object1: ID
+        // -> /object2: ID
+
+        let prefixes = self.get_prefixes(resource_id, false).await;
+        let suffixes = self.get_suffixes(resource_id, false).await;
         let mut final_paths = Vec::new();
         let mut new_paths = Vec::new();
-        for pre in prefixes.iter() {
-            for suf in suffixes.iter() {
-                final_paths.push(format!("{}/{}/{}", pre.1, resource_name, suf.1));
+        for (_, pre) in prefixes.iter() {
+            for (_, suf) in suffixes.iter() {
+                final_paths.push(format!("{}/{}{}", pre, resource_name, suf));
                 if let Some(new_name) = &new_name {
-                    new_paths.push(format!("{}/{}/{}", pre.1, new_name, suf.1));
+                    new_paths.push(format!("{}/{}{}", pre, new_name, suf));
                 }
             }
         }
@@ -565,7 +637,7 @@ impl Cache {
             object.name.to_string()
         };
 
-        if old_name != object.name && object.object_type != ObjectType::Bundle {
+        if old_name != object.name {
             self.update_object_name(object.id, old_name, object.name)
                 .await?;
         }
