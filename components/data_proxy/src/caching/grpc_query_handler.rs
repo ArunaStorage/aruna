@@ -1031,32 +1031,21 @@ pub fn sort_resources(res: &mut [Resource]) {
 #[tracing::instrument(level = "trace", skip(res))]
 pub fn sort_objects(res: &mut [DPObject]) {
     res.sort_by(|x, y| match (&x.object_type, &y.object_type) {
-        (ObjectType::Bundle, ObjectType::Bundle) => std::cmp::Ordering::Equal,
-        (ObjectType::Bundle, ObjectType::Project)
-        | (ObjectType::Bundle, ObjectType::Collection)
-        | (ObjectType::Bundle, ObjectType::Dataset)
-        | (ObjectType::Bundle, ObjectType::Object) => std::cmp::Ordering::Less,
-
-        (ObjectType::Project, ObjectType::Bundle) => std::cmp::Ordering::Greater,
         (ObjectType::Project, ObjectType::Project) => std::cmp::Ordering::Equal,
         (ObjectType::Project, ObjectType::Collection)
         | (ObjectType::Project, ObjectType::Dataset)
         | (ObjectType::Project, ObjectType::Object) => std::cmp::Ordering::Less,
 
-        (ObjectType::Collection, ObjectType::Bundle)
-        | (ObjectType::Collection, ObjectType::Project) => std::cmp::Ordering::Greater,
+         (ObjectType::Collection, ObjectType::Project) => std::cmp::Ordering::Greater,
         (ObjectType::Collection, ObjectType::Collection) => std::cmp::Ordering::Equal,
         (ObjectType::Collection, ObjectType::Dataset)
         | (ObjectType::Collection, ObjectType::Object) => std::cmp::Ordering::Less,
 
-        (ObjectType::Dataset, ObjectType::Bundle)
-        | (ObjectType::Dataset, ObjectType::Project)
+        (ObjectType::Dataset, ObjectType::Project)
         | (ObjectType::Dataset, ObjectType::Collection) => std::cmp::Ordering::Greater,
         (ObjectType::Dataset, ObjectType::Dataset) => std::cmp::Ordering::Equal,
         (ObjectType::Dataset, ObjectType::Object) => std::cmp::Ordering::Less,
-
-        (ObjectType::Object, ObjectType::Bundle)
-        | (ObjectType::Object, ObjectType::Project)
+        (ObjectType::Object, ObjectType::Project)
         | (ObjectType::Object, ObjectType::Collection)
         | (ObjectType::Object, ObjectType::Dataset) => std::cmp::Ordering::Greater,
         (ObjectType::Object, ObjectType::Object) => std::cmp::Ordering::Equal,

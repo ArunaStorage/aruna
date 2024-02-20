@@ -2,9 +2,6 @@ use super::cache::Cache;
 use crate::helpers::is_method_read;
 use crate::structs::AccessKeyPermissions;
 use crate::structs::CheckAccessResult;
-use crate::structs::DbPermissionLevel;
-use crate::structs::Object;
-use crate::structs::ObjectLocation;
 use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -27,9 +24,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
 use tonic::metadata::MetadataMap;
-use tracing::debug;
 use tracing::error;
-use tracing::trace;
 
 pub struct AuthHandler {
     pub cache: Arc<Cache>,
@@ -205,11 +200,11 @@ impl AuthHandler {
                 if is_method_read(method) {
                     // "GET" style methods
                     // &Method::GET | &Method::HEAD | &Method::OPTIONS
-                    handle_bucket_get(self, bucket, creds, headers).await
+                    self.handle_bucket_get(bucket, creds, headers).await
                 } else {
                     // "POST" style = modifying methods
                     // &Method::POST | &Method::PUT | &Method::DELETE | &Method::PATCH | (&Method::CONNECT | &Method::TRACE)
-                    handle_bucket_post(self, bucket, creds, headers).await
+                    self.handle_bucket_post(bucket, creds, headers).await
                 }
             }
             S3Path::Object { bucket, key } => {
@@ -217,11 +212,11 @@ impl AuthHandler {
                     // "GET" style methods
                     // &Method::GET | &Method::HEAD | &Method::OPTIONS
                     // 2 special cases: objects, bundles
-                    handle_object_get(self, bucket, key, creds, headers).await
+                    self.handle_object_get(bucket, key, creds, headers).await
                 } else {
                     // "POST" style = modifying methods
                     // &Method::POST | &Method::PUT | &Method::DELETE | &Method::PATCH | (&Method::CONNECT | &Method::TRACE)
-                    handle_object_post(self, bucket, key, creds, headers).await
+                    self.handle_object_post(bucket, key, creds, headers).await
                 }
             }
         }
@@ -233,9 +228,7 @@ impl AuthHandler {
         creds: Option<&Credentials>,
     ) -> Option<AccessKeyPermissions> {
         if let Some(creds) = creds {
-            if let Some(creds) = creds {
-                return self.cache.get_key_perms(&creds.access_key);
-            }
+            return self.cache.get_key_perms(&creds.access_key);
         }
         None
     }
@@ -248,11 +241,11 @@ impl AuthHandler {
             ..
         }) = self.extract_access_key_perms(creds)
         {
-            return Ok(CheckAccessResult {
+            return CheckAccessResult {
                 user_id: Some(user_id.to_string()),
                 token_id: Some(access_key.to_string()),
                 ..Default::default()
-            });
+            };
         }
         CheckAccessResult::default()
     }
@@ -261,8 +254,8 @@ impl AuthHandler {
     pub async fn handle_bucket_get(
         &self,
         bucket_name: &str,
-        creds: Option<Credentials>,
-        headers: HeaderMap<HeaderValue>,
+        creds: Option<&Credentials>,
+        headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult> {
         todo!()
     }
@@ -272,8 +265,8 @@ impl AuthHandler {
     pub async fn handle_bucket_post(
         &self,
         bucket_name: &str,
-        creds: Option<Credentials>,
-        headers: HeaderMap<HeaderValue>,
+        creds: Option<&Credentials>,
+        headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult> {
         todo!()
     }
@@ -284,15 +277,15 @@ impl AuthHandler {
         &self,
         bucket_name: &str,
         key_name: &str,
-        creds: Option<Credentials>,
-        headers: HeaderMap<HeaderValue>,
+        creds: Option<&Credentials>,
+        headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult> {
         match bucket_name {
             "objects" => {
-                return handle_objects(self, key_name, creds, headers).await;
+                return self.handle_objects(key_name, creds, headers).await;
             }
             "bundles" => {
-                return handle_bundles(self, key_name, creds, headers).await;
+                return self.handle_bundles(key_name, creds, headers).await;
             }
             _ => {}
         }
@@ -304,30 +297,28 @@ impl AuthHandler {
         &self,
         bucket_name: &str,
         key_name: &str,
-        creds: Option<Credentials>,
-        headers: HeaderMap<HeaderValue>,
+        creds: Option<&Credentials>,
+        headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult> {
         todo!()
     }
 
-    #[tracing::instrument(level = "trace", skip(self, bucket_name, key_name, creds, headers))]
+    #[tracing::instrument(level = "trace", skip(self, key_name, creds, headers))]
     pub async fn handle_objects(
         &self,
-        bucket_name: &str,
         key_name: &str,
-        creds: Option<Credentials>,
-        headers: HeaderMap<HeaderValue>,
+        creds: Option<&Credentials>,
+        headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult> {
         todo!()
     }
 
-    #[tracing::instrument(level = "trace", skip(self, bucket_name, key_name, creds, headers))]
+    #[tracing::instrument(level = "trace", skip(self, key_name, creds, headers))]
     pub async fn handle_bundles(
         &self,
-        bucket_name: &str,
         key_name: &str,
-        creds: Option<Credentials>,
-        headers: HeaderMap<HeaderValue>,
+        creds: Option<&Credentials>,
+        headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult> {
         todo!()
     }

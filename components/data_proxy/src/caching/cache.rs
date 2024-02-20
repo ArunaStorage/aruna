@@ -17,7 +17,6 @@ use chrono::{DateTime, Utc};
 use crossbeam_skiplist::SkipMap;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
-use digest::KeyInit;
 use jsonwebtoken::DecodingKey;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use s3s::auth::SecretKey;
@@ -348,13 +347,13 @@ impl Cache {
 
     #[tracing::instrument(level = "trace", skip(self, res))]
     pub fn get_resource_by_name(&self, res: &str) -> Option<DieselUlid> {
-        self.paths.get(res)
+        self.paths.get(res).map(|e| e.value().clone())
     }
 
     #[tracing::instrument(level = "trace", skip(self, res))]
     pub fn get_full_resource_by_name(&self, res: &str) -> Option<Object> {
-        let id = self.paths.get(&res).value().clone();
-        self.resources.get(&id).map(|e| e.value().0.read().clone())
+        let id = self.get_resource_by_name(res)?;
+        self.resources.get(&id).map(|e| e.value().0.blocking_read().clone())
     }
 
     #[tracing::instrument(level = "trace", skip(self, resource_id, with_intermediates))]
@@ -709,15 +708,31 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_resource(
+    pub async fn get_resource(
         &self,
         resource_id: &DieselUlid,
-    ) -> Result<(Object, Option<ObjectLocation>)> {
-        let resource = trace_err!(self
+    ) -> Result<(Arc<RwLock<Object>>, Arc<RwLock<Option<ObjectLocation>>>)> {
+        let resource = self
             .resources
             .get(resource_id)
-            .ok_or_else(|| anyhow!("Resource not found")))?;
-        Ok(resource.clone())
+            .ok_or_else(|| anyhow!("Resource not found"))?;
+        Ok(resource.value().clone())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn get_resource_cloned(
+        &self,
+        resource_id: &DieselUlid,
+        skip_location: bool,
+    ) -> Result<(Object, Option<ObjectLocation>)> {
+        let (obj, loc) = self.get_resource(resource_id).await?;
+        let obj = obj.read().await.clone();
+        let loc = if !skip_location {
+            loc.read().await.clone()
+        }else{
+            None
+        }
+        Ok((obj, loc))
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -739,15 +754,15 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn add_bundle(&self, bundle_id: DieselUlid, object_ids: Vec<DieselUlid>, access_key: &str) {
+    pub fn add_bundle(&self, bundle_id: DieselUlid, object_ids: Vec<DieselUlid>, access_key: &str, timestamp: DateTime<Utc>) {
         self.bundles
-            .insert(bundle_id, (access_key.to_string(), object_ids));
+            .insert(bundle_id, (access_key.to_string(), object_ids, timestamp));
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_bundle(&self, bundle_id: &DieselUlid) -> Option<(String, Vec<DieselUlid>)> {
         self.bundles.get(bundle_id).map(|e| {
-            let (a, b) = e.value();
+            let (a, b, _) = e.value();
             (a.clone(), b.clone())
         })
     }
