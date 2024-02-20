@@ -13,10 +13,7 @@ use std::path::Path;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::pin;
 
-use crate::{
-    structs::{Object, ObjectLocation, PartETag},
-    trace_err,
-};
+use crate::structs::{Object, ObjectLocation, PartETag};
 
 use super::storage_backend::StorageBackend;
 
@@ -30,7 +27,12 @@ impl FSBackend {
     #[tracing::instrument(level = "debug")]
     #[allow(dead_code)]
     pub async fn new(_endpoint_id: String) -> Result<Self> {
-        let base_path = trace_err!(dotenvy::var("FS_BASEPATH")).unwrap();
+        let base_path = dotenvy::var("FS_BASEPATH")
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })
+            .unwrap();
 
         let handler = FSBackend {
             _endpoint_id,
@@ -43,7 +45,10 @@ impl FSBackend {
     pub async fn check_and_create_bucket(&self, bucket: String) -> Result<()> {
         let path = Path::new(&self.base_path).join(bucket);
         if !path.exists() {
-            trace_err!(std::fs::create_dir_all(path))?;
+            std::fs::create_dir_all(path).map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
         }
         Ok(())
     }
@@ -61,24 +66,34 @@ impl StorageBackend for FSBackend {
         location: ObjectLocation,
         _content_len: i64,
     ) -> Result<()> {
-        trace_err!(
-            self.check_and_create_bucket(location.bucket.to_string())
-                .await
-        )?;
-
-        let mut file = trace_err!(
-            tokio::fs::File::create(
-                Path::new(&self.base_path)
-                    .join(&location.bucket)
-                    .join(&location.key),
-            )
+        self.check_and_create_bucket(location.bucket.to_string())
             .await
-        )?;
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
+
+        let mut file = tokio::fs::File::create(
+            Path::new(&self.base_path)
+                .join(&location.bucket)
+                .join(&location.key),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
 
         pin!(recv);
         while let Some(data) = recv.next().await {
-            let data = trace_err!(data)?;
-            trace_err!(file.write_all(&data).await)?;
+            let data = data.map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
+            file.write_all(&data).await.map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
         }
         Ok(())
     }
@@ -93,38 +108,47 @@ impl StorageBackend for FSBackend {
         _range: Option<String>,
         sender: Sender<Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>,
     ) -> Result<()> {
-        let file = trace_err!(
-            tokio::fs::File::open(
-                Path::new(&self.base_path)
-                    .join(&location.bucket)
-                    .join(&location.key),
-            )
-            .await
-        )?;
+        let file = tokio::fs::File::open(
+            Path::new(&self.base_path)
+                .join(&location.bucket)
+                .join(&location.key),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
 
         let mut reader = tokio::io::BufReader::new(file);
         let mut buf = BytesMut::with_capacity(1024 * 16);
 
         while reader.read_buf(&mut buf).await.is_ok() {
-            trace_err!(sender.send(Ok(buf.split().freeze())).await)?;
+            sender.send(Ok(buf.split().freeze())).await.map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
         }
         Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip(self, location))]
     async fn head_object(&self, location: ObjectLocation) -> Result<i64> {
-        let len = trace_err!(
-            trace_err!(
-                tokio::fs::File::open(
-                    Path::new(&self.base_path)
-                        .join(&location.bucket)
-                        .join(&location.key),
-                )
-                .await
-            )?
-            .metadata()
-            .await
-        )?
+        let len = tokio::fs::File::open(
+            Path::new(&self.base_path)
+                .join(&location.bucket)
+                .join(&location.key),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?
+        .metadata()
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?
         .len() as i64;
         Ok(len)
     }
@@ -132,7 +156,12 @@ impl StorageBackend for FSBackend {
     // Initiates a multipart upload in s3 and returns the associated upload id.
     #[tracing::instrument(level = "trace", skip(self, location))]
     async fn init_multipart_upload(&self, location: ObjectLocation) -> Result<String> {
-        trace_err!(self.check_and_create_bucket(location.bucket.clone()).await)?;
+        self.check_and_create_bucket(location.bucket.clone())
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
 
         let up_id: String = thread_rng()
             .sample_iter(&Alphanumeric)
@@ -141,7 +170,10 @@ impl StorageBackend for FSBackend {
             .collect();
 
         let path = Path::new(&self.base_path).join(&up_id);
-        trace_err!(std::fs::create_dir_all(path))?;
+        std::fs::create_dir_all(path).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
 
         return Ok(up_id);
     }
@@ -158,21 +190,29 @@ impl StorageBackend for FSBackend {
         _content_len: i64,
         part_number: i32,
     ) -> Result<PartETag> {
-        let mut file = trace_err!(
-            tokio::fs::File::create(
-                Path::new(&self.base_path)
-                    .join(&upload_id)
-                    .join(format!(".{}.part", part_number)),
-            )
-            .await
-        )?;
+        let mut file = tokio::fs::File::create(
+            Path::new(&self.base_path)
+                .join(&upload_id)
+                .join(format!(".{}.part", part_number)),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
         let mut md5 = Md5::new();
 
         pin!(recv);
         while let Some(data) = recv.next().await {
-            let data = trace_err!(data)?;
+            let data = data.map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
             md5.update(&data);
-            trace_err!(file.write_all(&data).await)?;
+            file.write_all(&data).await.map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
         }
         return Ok(PartETag {
             part_number,
@@ -187,41 +227,57 @@ impl StorageBackend for FSBackend {
         parts: Vec<PartETag>,
         upload_id: String,
     ) -> Result<()> {
-        trace_err!(
-            self.check_and_create_bucket(location.bucket.to_string())
-                .await
-        )?;
-
-        let mut final_file = trace_err!(
-            tokio::fs::File::create(
-                Path::new(&self.base_path)
-                    .join(&location.bucket)
-                    .join(&location.key),
-            )
+        self.check_and_create_bucket(location.bucket.to_string())
             .await
-        )?;
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
+
+        let mut final_file = tokio::fs::File::create(
+            Path::new(&self.base_path)
+                .join(&location.bucket)
+                .join(&location.key),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
 
         for part in parts {
-            let mut file = trace_err!(
-                tokio::fs::File::open(
-                    Path::new(&self.base_path)
-                        .join(&upload_id)
-                        .join(format!(".{}.part", part.part_number)),
-                )
+            let mut file = tokio::fs::File::open(
+                Path::new(&self.base_path)
+                    .join(&upload_id)
+                    .join(format!(".{}.part", part.part_number)),
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
+            tokio::io::copy(&mut file, &mut final_file)
                 .await
-            )?;
-            trace_err!(tokio::io::copy(&mut file, &mut final_file).await)?;
+                .map_err(|e| {
+                    tracing::error!(error = ?e, msg = e.to_string());
+                    e
+                })?;
         }
 
         // Remove the temp dir
-        trace_err!(tokio::fs::remove_dir_all(Path::new(&self.base_path).join(&upload_id)).await)?;
+        tokio::fs::remove_dir_all(Path::new(&self.base_path).join(&upload_id))
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
 
         Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip(self, bucket))]
     async fn create_bucket(&self, bucket: String) -> Result<()> {
-        trace_err!(self.check_and_create_bucket(bucket).await)
+        self.check_and_create_bucket(bucket).await
     }
 
     #[tracing::instrument(level = "trace", skip(self, location))]
@@ -229,14 +285,16 @@ impl StorageBackend for FSBackend {
     /// # Arguments
     /// * `location` - The location of the object
     async fn delete_object(&self, location: ObjectLocation) -> Result<()> {
-        trace_err!(
-            tokio::fs::remove_file(
-                Path::new(&self.base_path)
-                    .join(&location.bucket)
-                    .join(&location.key),
-            )
-            .await
-        )?;
+        tokio::fs::remove_file(
+            Path::new(&self.base_path)
+                .join(&location.bucket)
+                .join(&location.key),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
         Ok(())
     }
 
