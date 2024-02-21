@@ -2,9 +2,13 @@ use super::cache::Cache;
 use crate::helpers::is_method_read;
 use crate::structs::AccessKeyPermissions;
 use crate::structs::CheckAccessResult;
+use crate::structs::DbPermissionLevel;
+use crate::structs::ResourceState;
+use crate::structs::ResourceStates;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
+use aruna_rust_api::api::storage::models::v2::ResourceVariant;
 use diesel_ulid::DieselUlid;
 use http::HeaderMap;
 use http::HeaderValue;
@@ -15,6 +19,8 @@ use jsonwebtoken::Header;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
 use s3s::auth::Credentials;
 use s3s::path::S3Path;
+use s3s::s3_error;
+use s3s::S3Error;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::ops::Add;
@@ -220,19 +226,12 @@ impl AuthHandler {
         method: &Method,
         path: &S3Path,
         headers: &HeaderMap<HeaderValue>,
-    ) -> Result<CheckAccessResult> {
+    ) -> Result<CheckAccessResult, S3Error> {
         match path {
             S3Path::Root => Ok(self.handle_root(creds)),
             S3Path::Bucket { bucket } => {
-                if is_method_read(method) {
-                    // "GET" style methods
-                    // &Method::GET | &Method::HEAD | &Method::OPTIONS
-                    self.handle_bucket_get(bucket, creds, headers).await
-                } else {
-                    // "POST" style = modifying methods
-                    // &Method::POST | &Method::PUT | &Method::DELETE | &Method::PATCH | (&Method::CONNECT | &Method::TRACE)
-                    self.handle_bucket_post(bucket, creds, headers).await
-                }
+                // Buckets are handled the same for GET and POST
+                self.handle_bucket(bucket, method, creds, headers).await
             }
             S3Path::Object { bucket, key } => {
                 if is_method_read(method) {
@@ -278,23 +277,68 @@ impl AuthHandler {
     }
 
     #[tracing::instrument(level = "trace", skip(self, bucket_name, creds, headers))]
-    pub async fn handle_bucket_get(
+    pub async fn handle_bucket(
         &self,
         bucket_name: &str,
+        method: &Method,
         creds: Option<&Credentials>,
         headers: &HeaderMap<HeaderValue>,
-    ) -> Result<CheckAccessResult> {
-        todo!()
-    }
+    ) -> Result<CheckAccessResult, S3Error> {
+        // TODO: Decide how to handle public bucket access
+        // Query the User -> Must exist
+        let user = self.extract_access_key_perms(creds).ok_or_else(|| {
+            error!("No such user");
+            s3_error!(AccessDenied, "Access Denied")
+        })?;
 
-    #[tracing::instrument(level = "trace", skip(self, bucket_name, creds, headers))]
-    pub async fn handle_bucket_post(
-        &self,
-        bucket_name: &str,
-        creds: Option<&Credentials>,
-        headers: &HeaderMap<HeaderValue>,
-    ) -> Result<CheckAccessResult> {
-        todo!()
+        // Query the project and extract the headers
+        let (headers, project) =
+            if let Some(project) = self.cache.get_full_resource_by_name(bucket_name) {
+                // Check if the project is partially synced -> FAIL
+                if project.is_partial_sync(self.self_id) {
+                    error!("Invalid Bucket Name (partial synced)");
+                    return Err(s3_error!(
+                        InvalidBucketName,
+                        "Invalid Bucket Name (partial synced)"
+                    ));
+                }
+                (project.project_get_headers(method, headers), project)
+            } else {
+                error!("No such bucket");
+                return Err(s3_error!(NoSuchBucket, "No such bucket"));
+            };
+
+        // Extract the permission level from the method READ == "GET" and friends, WRITE == "POST" and friends
+        let db_perm_from_method = DbPermissionLevel::from(method);
+
+        if user.permissions.get(&project.id).ok_or_else(|| {
+            error!("No permissions found");
+            s3_error!(AccessDenied, "Access Denied")
+        })? < &db_perm_from_method
+        {
+            error!("Insufficient permissions");
+            return Err(s3_error!(AccessDenied, "Access Denied"));
+        }
+
+        // Create a "resource_state" struct that tracks what is missing, what is found and what is not set
+        let resource_state = Some(
+            ResourceState::new(
+                ResourceStates::new_found(project.id, project.name, ResourceVariant::Project),
+                ResourceStates::None,
+                ResourceStates::None,
+                ResourceStates::None,
+            )
+            .map_err(|_| s3_error!(InternalError, "Internal Error"))?,
+        );
+
+        Ok(CheckAccessResult::new(
+            Some(user.user_id.to_string()),
+            Some(user.access_key),
+            resource_state,
+            None,
+            None,
+            headers,
+        ))
     }
 
     #[tracing::instrument(level = "trace", skip(self, bucket_name, key_name, creds, headers))]
@@ -304,7 +348,7 @@ impl AuthHandler {
         key_name: &str,
         creds: Option<&Credentials>,
         headers: &HeaderMap<HeaderValue>,
-    ) -> Result<CheckAccessResult> {
+    ) -> Result<CheckAccessResult, S3Error> {
         match bucket_name {
             "objects" => {
                 return self.handle_objects(key_name, creds, headers).await;
@@ -324,7 +368,7 @@ impl AuthHandler {
         key_name: &str,
         creds: Option<&Credentials>,
         headers: &HeaderMap<HeaderValue>,
-    ) -> Result<CheckAccessResult> {
+    ) -> Result<CheckAccessResult, S3Error> {
         todo!()
     }
 
@@ -334,7 +378,7 @@ impl AuthHandler {
         key_name: &str,
         creds: Option<&Credentials>,
         headers: &HeaderMap<HeaderValue>,
-    ) -> Result<CheckAccessResult> {
+    ) -> Result<CheckAccessResult, S3Error> {
         todo!()
     }
 
@@ -344,7 +388,7 @@ impl AuthHandler {
         key_name: &str,
         creds: Option<&Credentials>,
         headers: &HeaderMap<HeaderValue>,
-    ) -> Result<CheckAccessResult> {
+    ) -> Result<CheckAccessResult, S3Error> {
         todo!()
     }
 

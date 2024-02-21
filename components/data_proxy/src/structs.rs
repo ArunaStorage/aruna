@@ -996,6 +996,18 @@ impl Object {
             .collect()
     }
 
+    #[tracing::instrument(level = "trace", skip(self, ep_id))]
+    pub fn is_partial_sync(&self, ep_id: DieselUlid) -> bool {
+        self.endpoints
+            .iter()
+            .find(|ep| ep.id == ep_id)
+            .map(|ep| match ep.variant {
+                SyncVariant::PartialSync(_) => true,
+                _ => false,
+            })
+            .unwrap_or(false)
+    }
+
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn project_get_headers(
         &self,
@@ -1046,7 +1058,7 @@ impl Object {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum ResourceStates {
     Found {
         id: DieselUlid,
@@ -1057,6 +1069,7 @@ pub enum ResourceStates {
         name: String,
         variant: ResourceVariant,
     },
+    #[default]
     None,
 }
 
@@ -1064,9 +1077,28 @@ impl ResourceStates {
     pub fn is_missing(&self) -> bool {
         matches!(self, ResourceStates::Missing { .. })
     }
+
+    pub fn new_found(id: DieselUlid, name: String, variant: ResourceVariant) -> Self {
+        Self::Found { id, name, variant }
+    }
+
+    pub fn new_missing(name: String, variant: ResourceVariant) -> Self {
+        Self::Missing { name, variant }
+    }
 }
 
 pub struct ResourceState([ResourceStates; 4]);
+
+impl Default for ResourceState {
+    fn default() -> Self {
+        Self([
+            ResourceStates::None,
+            ResourceStates::None,
+            ResourceStates::None,
+            ResourceStates::None,
+        ])
+    }
+}
 
 impl ResourceState {
     pub fn new(
@@ -1092,12 +1124,6 @@ impl ResourceState {
         Ok(Self([project, collection, dataset, object]))
     }
 }
-
-// pub enum  {
-//     Regular(Object, Option<ObjectLocation>),
-//     ObjectBucket(Object, ObjectLocation),
-//     Bundle(String),
-// }
 
 #[derive(Default)]
 pub struct CheckAccessResult {
@@ -1265,8 +1291,8 @@ pub struct ObjectHierarchyPolicyInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestInfo {
-    pub method: Method,
-    pub header: HeaderMap<HeaderValue>,
+    pub method: String,
+    pub header: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

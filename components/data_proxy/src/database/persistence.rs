@@ -29,6 +29,7 @@ impl Display for Table {
             Table::Users => write!(f, "users"),
             Table::PubKeys => write!(f, "pub_keys"),
             Table::ObjectLocations => write!(f, "object_locations"),
+            Table::Permissions => write!(f, "permissions"),
         }
     }
 }
