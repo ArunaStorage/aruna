@@ -3,6 +3,7 @@ use crate::helpers::is_method_read;
 use crate::structs::AccessKeyPermissions;
 use crate::structs::CheckAccessResult;
 use crate::structs::DbPermissionLevel;
+use crate::structs::ObjectType;
 use crate::structs::ResourceState;
 use crate::structs::ResourceStates;
 use anyhow::anyhow;
@@ -238,7 +239,7 @@ impl AuthHandler {
                     // "GET" style methods
                     // &Method::GET | &Method::HEAD | &Method::OPTIONS
                     // 2 special cases: objects, bundles
-                    self.handle_object_get(bucket, key, creds, headers).await
+                    self.handle_object_get(bucket, key, method, creds, headers).await
                 } else {
                     // "POST" style = modifying methods
                     // &Method::POST | &Method::PUT | &Method::DELETE | &Method::PATCH | (&Method::CONNECT | &Method::TRACE)
@@ -293,7 +294,7 @@ impl AuthHandler {
 
         // Query the project and extract the headers
         let (headers, project) =
-            if let Some(project) = self.cache.get_full_resource_by_name(bucket_name) {
+            if let Some(project) = self.cache.get_full_resource_by_path(bucket_name) {
                 // Check if the project is partially synced -> FAIL
                 if project.is_partial_sync(self.self_id) {
                     error!("Invalid Bucket Name (partial synced)");
@@ -346,18 +347,42 @@ impl AuthHandler {
         &self,
         bucket_name: &str,
         key_name: &str,
+        method: &Method,
         creds: Option<&Credentials>,
         headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult, S3Error> {
+        // Cache objects special cases
         match bucket_name {
             "objects" => {
-                return self.handle_objects(key_name, creds, headers).await;
+                return self.handle_special_objects(key_name, creds, headers).await;
             }
             "bundles" => {
                 return self.handle_bundles(key_name, creds, headers).await;
             }
             _ => {}
         }
+
+        // Query the Object -> Might be public
+        let object = self
+            .cache
+            .get_full_resource_by_path(&format!("{bucket_name}/{key_name}"))
+            .ok_or_else(|| {
+                error!("No such object");
+                s3_error!(NoSuchKey, "No such object")
+            })?;
+
+        // Fail if the object is not a regular object
+        if object.object_type != ObjectType::Object {
+            error!("Invalid object type");
+            return Err(s3_error!(NoSuchKey, "No such object"));
+        }
+
+        let (project, headers) = self.get_project_and_headers(bucket_name, method, headers)
+            .ok_or_else(|| {
+                error!("No such project");
+                s3_error!(NoSuchBucket, "No such bucket")
+            })?;
+
         todo!()
     }
 
@@ -373,7 +398,7 @@ impl AuthHandler {
     }
 
     #[tracing::instrument(level = "trace", skip(self, key_name, creds, headers))]
-    pub async fn handle_objects(
+    pub async fn handle_special_objects(
         &self,
         key_name: &str,
         creds: Option<&Credentials>,
@@ -390,6 +415,18 @@ impl AuthHandler {
         headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult, S3Error> {
         todo!()
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, bucket, method, headers))]
+    fn get_project_and_headers(
+        &self,
+        bucket: &str,
+        method: &Method,
+        headers: &HeaderMap<HeaderValue>,
+    ) -> Option<(Object, HashMap<String, String>)> {
+        let project = self.cache.get_full_resource_by_path(bucket)?;
+        let headers = project.project_get_headers(method, headers)?;
+        Some((project, headers))
     }
 
     #[tracing::instrument(level = "trace", skip(self, user_id, tid))]

@@ -350,13 +350,13 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self, res))]
-    pub fn get_resource_by_name(&self, res: &str) -> Option<DieselUlid> {
+    pub fn get_resource_by_path(&self, res: &str) -> Option<DieselUlid> {
         self.paths.get(res).map(|e| e.value().clone())
     }
 
     #[tracing::instrument(level = "trace", skip(self, res))]
-    pub fn get_full_resource_by_name(&self, res: &str) -> Option<Object> {
-        let id = self.get_resource_by_name(res)?;
+    pub fn get_full_resource_by_path(&self, res: &str) -> Option<Object> {
+        let id = self.get_resource_by_path(res)?;
         self.resources
             .get(&id)
             .map(|e| e.value().0.blocking_read().clone())
