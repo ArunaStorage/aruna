@@ -2,7 +2,6 @@ use super::auth::AuthProvider;
 use super::s3service::ArunaS3Service;
 use crate::caching::cache;
 use crate::data_backends::storage_backend::StorageBackend;
-use crate::trace_err;
 use anyhow::Result;
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
@@ -19,6 +18,7 @@ use std::future::ready;
 use std::future::Ready;
 use std::task::{Context, Poll};
 use std::{net::TcpListener, sync::Arc};
+use tracing::error;
 use tracing::info;
 use tracing::info_span;
 use tracing::Instrument;
@@ -39,7 +39,12 @@ impl S3Server {
         backend: Arc<Box<dyn StorageBackend>>,
         cache: Arc<cache::Cache>,
     ) -> Result<Self> {
-        let s3service = trace_err!(ArunaS3Service::new(backend, cache.clone()).await)?;
+        let s3service = ArunaS3Service::new(backend, cache.clone())
+            .await
+            .map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                tonic::Status::unauthenticated(e.to_string())
+            })?;
 
         let service = {
             let mut b = S3ServiceBuilder::new(s3service);
@@ -56,15 +61,28 @@ impl S3Server {
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn run(self) -> Result<()> {
         // Run server
-        let listener = trace_err!(TcpListener::bind(&self.address))?;
-        let server = trace_err!(Server::from_tcp(listener))?
+        let listener = TcpListener::bind(&self.address).map_err(|e| {
+            error!(error = ?e, msg = e.to_string());
+            tonic::Status::unauthenticated(e.to_string())
+        })?;
+        let server = Server::from_tcp(listener)
+            .map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                tonic::Status::unauthenticated(e.to_string())
+            })?
             .serve(WrappingService(self.s3service.into_shared()).into_make_service());
         info!("server is running at http(s)://{}/", self.address);
-        Ok(trace_err!(trace_err!(
-            tokio::spawn(server)
-                .instrument(info_span!("s3_server_run"))
-                .await
-        )?)?)
+        Ok(tokio::spawn(server)
+            .instrument(info_span!("s3_server_run"))
+            .await
+            .map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                tonic::Status::unauthenticated(e.to_string())
+            })?
+            .map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                tonic::Status::unauthenticated(e.to_string())
+            })?)
     }
 }
 

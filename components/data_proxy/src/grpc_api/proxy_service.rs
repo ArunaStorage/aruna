@@ -119,7 +119,6 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                             tracing::error!(error = ?e, msg = e.to_string());
                                             e
                                         });
-                                    // trace_err!(finished_send.send(false).await)?;
                                     object_input_send.send(msg).await.map_err(|e| {
                                         tracing::error!(error = ?e, msg = e.to_string());
                                         e
@@ -246,7 +245,6 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                         let mut lock = finished_state_clone.lock().await;
                                         *lock = true;
                                     }
-                                    // trace_err!(finished_send.send(true).await)?;
                                     object_ack_send.send(AckSync::Finish).await.map_err(|e| {
                                         tracing::error!(error = ?e, msg = e.to_string());
                                         e

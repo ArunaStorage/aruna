@@ -1,5 +1,4 @@
 use crate::database::persistence::{GenericBytes, Table, WithGenericBytes};
-use crate::trace_err;
 use anyhow::Result;
 use anyhow::{anyhow, bail};
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
@@ -341,7 +340,10 @@ impl TryFrom<GenericBytes<i16>> for PubKey {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: GenericBytes<i16>) -> Result<Self, Self::Error> {
-        Ok(trace_err!(bincode::deserialize(&value.data))?)
+        Ok(bincode::deserialize(&value.data).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?)
     }
 }
 
@@ -349,7 +351,10 @@ impl TryInto<GenericBytes<i16>> for PubKey {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(self))]
     fn try_into(self) -> Result<GenericBytes<i16>, Self::Error> {
-        let data = trace_err!(bincode::serialize(&self))?;
+        let data = bincode::serialize(&self).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
         Ok(GenericBytes {
             id: self.id,
             data,
@@ -369,7 +374,10 @@ impl TryFrom<GenericBytes<DieselUlid>> for Object {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: GenericBytes<DieselUlid>) -> Result<Self, Self::Error> {
-        Ok(trace_err!(bincode::deserialize(&value.data))?)
+        Ok(bincode::deserialize(&value.data).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?)
     }
 }
 
@@ -377,7 +385,10 @@ impl TryInto<GenericBytes<DieselUlid>> for Object {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(self))]
     fn try_into(self) -> Result<GenericBytes<DieselUlid>, Self::Error> {
-        let data = trace_err!(bincode::serialize(&self))?;
+        let data = bincode::serialize(&self).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
         Ok(GenericBytes {
             id: self.id,
             data,
@@ -397,7 +408,10 @@ impl TryFrom<GenericBytes<DieselUlid>> for ObjectLocation {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: GenericBytes<DieselUlid>) -> Result<Self, Self::Error> {
-        Ok(trace_err!(bincode::deserialize(&value.data))?)
+        Ok(bincode::deserialize(&value.data).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?)
     }
 }
 
@@ -405,7 +419,10 @@ impl TryInto<GenericBytes<DieselUlid>> for ObjectLocation {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(self))]
     fn try_into(self) -> Result<GenericBytes<DieselUlid>, Self::Error> {
-        let data = trace_err!(bincode::serialize(&self))?;
+        let data = bincode::serialize(&self).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
         Ok(GenericBytes {
             id: self.id,
             data,
@@ -432,7 +449,10 @@ impl TryFrom<GenericBytes<DieselUlid>> for User {
     type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: GenericBytes<DieselUlid>) -> Result<Self, Self::Error> {
-        let user: User = trace_err!(bincode::deserialize(&value.data))?;
+        let user: User = bincode::deserialize(&value.data).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
         Ok(user)
     }
 }
@@ -442,7 +462,10 @@ impl TryInto<GenericBytes<DieselUlid>> for User {
     #[tracing::instrument(level = "trace", skip(self))]
     fn try_into(self) -> Result<GenericBytes<DieselUlid>, Self::Error> {
         let user = self;
-        let data = trace_err!(bincode::serialize(&user))?;
+        let data = bincode::serialize(&user).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
         Ok(GenericBytes {
             id: user.user_id,
             data,
@@ -462,7 +485,11 @@ impl TryFrom<GenericBytes<String>> for AccessKeyPermissions {
     type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: GenericBytes<String>) -> Result<Self, Self::Error> {
-        let access_key_perm: User = trace_err!(bincode::deserialize(&value.data))?;
+        let access_key_perm: AccessKeyPermissions =
+            bincode::deserialize(&value.data).map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
         Ok(access_key_perm)
     }
 }
@@ -472,7 +499,10 @@ impl TryInto<GenericBytes<String>> for AccessKeyPermissions {
     #[tracing::instrument(level = "trace", skip(self))]
     fn try_into(self) -> Result<GenericBytes<String>, Self::Error> {
         let access_key_perm = self;
-        let data = trace_err!(bincode::serialize(&access_key_perm))?;
+        let data = bincode::serialize(&access_key_perm).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
         Ok(GenericBytes {
             id: access_key_perm.access_key,
             data,
@@ -500,11 +530,15 @@ impl TryFrom<Resource> for Object {
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: Resource) -> std::result::Result<Self, Self::Error> {
         match value {
-            Resource::Project(p) => trace_err!(Object::try_from(p)),
-            Resource::Collection(c) => trace_err!(Object::try_from(c)),
-            Resource::Dataset(d) => trace_err!(Object::try_from(d)),
-            Resource::Object(o) => trace_err!(Object::try_from(o)),
+            Resource::Project(p) => Object::try_from(p),
+            Resource::Collection(c) => Object::try_from(c),
+            Resource::Dataset(d) => Object::try_from(d),
+            Resource::Object(o) => Object::try_from(o),
         }
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })
     }
 }
 

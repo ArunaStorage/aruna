@@ -7,8 +7,7 @@ use aruna_rust_api::api::dataproxy::services::v2::{
 use bytes::{BufMut, BytesMut};
 use md5::{Digest, Md5};
 use tokio::sync::mpsc::Sender as TokioSender;
-
-use crate::trace_err;
+use tracing::error;
 
 pub struct ReplicationSink {
     object_id: String,
@@ -75,13 +74,22 @@ impl ReplicationSink {
             })),
         };
 
-        trace_err!(self.sender.send(Ok(message.clone())).await)?;
+        self.sender.send(Ok(message.clone())).await.map_err(|e| {
+            error!(error = ?e, msg = e.to_string());
+            tonic::Status::unauthenticated(e.to_string())
+        })?;
 
         // Send chunk again if lost,
         // else abort (TODO: Retry object)
-        if let Some((idx, id)) = trace_err!(self.error_recv.recv().await)? {
+        if let Some((idx, id)) = self.error_recv.recv().await.map_err(|e| {
+            error!(error = ?e, msg = e.to_string());
+            tonic::Status::unauthenticated(e.to_string())
+        })? {
             if self.object_id == id && self.chunk_counter as i64 == idx {
-                trace_err!(self.sender.send(Ok(message)).await)?;
+                self.sender.send(Ok(message)).await.map_err(|e| {
+                    error!(error = ?e, msg = e.to_string());
+                    tonic::Status::unauthenticated(e.to_string())
+                })?;
             } else {
                 return Err(anyhow!("Can not retry chunk"));
             }
@@ -103,13 +111,19 @@ impl Transformer for ReplicationSink {
         self.buffer.put(buf.split());
 
         if finished && !self.buffer.is_empty() {
-            trace_err!(self.create_and_send_message().await)?;
+            self.create_and_send_message().await.map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                tonic::Status::unauthenticated(e.to_string())
+            })?;
             self.is_finished = true;
             return Ok(self.is_finished);
         }
 
         if self.blocklist.is_empty() && finished && !&self.is_finished {
-            trace_err!(self.create_and_send_message().await)?;
+            self.create_and_send_message().await.map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                tonic::Status::unauthenticated(e.to_string())
+            })?;
             self.is_finished = true;
             return Ok(self.is_finished);
         }
@@ -117,7 +131,10 @@ impl Transformer for ReplicationSink {
             while (self.bytes_counter - self.bytes_start)
                 > 65536 * (self.blocklist[self.chunk_counter] as u64)
             {
-                trace_err!(self.create_and_send_message().await)?;
+                self.create_and_send_message().await.map_err(|e| {
+                    error!(error = ?e, msg = e.to_string());
+                    tonic::Status::unauthenticated(e.to_string())
+                })?;
             }
         }
 

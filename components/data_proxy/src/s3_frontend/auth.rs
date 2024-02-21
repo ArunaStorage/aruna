@@ -1,4 +1,4 @@
-use crate::{caching::cache::Cache, trace_err};
+use crate::caching::cache::Cache;
 use s3s::{
     auth::{S3Auth, S3AuthContext, SecretKey},
     s3_error, S3Result,
@@ -41,17 +41,16 @@ impl S3Auth for AuthProvider {
 
         match self.cache.auth.read().await.as_ref() {
             Some(auth) => {
-                let result = trace_err!(
-                    auth.check_access(cx.credentials(), cx.method(), cx.s3_path(), cx.headers())
-                        .await
-                )
-                .map_err(|err| {
-                    if err.to_string().contains("not found") {
-                        s3_error!(NoSuchKey, "{}", err)
-                    } else {
-                        s3_error!(AccessDenied, "Access denied")
-                    }
-                })?;
+                let result = auth
+                    .check_access(cx.credentials(), cx.method(), cx.s3_path(), cx.headers())
+                    .await
+                    .map_err(|err| {
+                        if err.to_string().contains("not found") {
+                            s3_error!(NoSuchKey, "{}", err)
+                        } else {
+                            s3_error!(AccessDenied, "Access denied")
+                        }
+                    })?;
 
                 cx.extensions_mut().insert(result);
                 Ok(())

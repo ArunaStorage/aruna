@@ -1,7 +1,6 @@
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::s3_frontend::utils::buffered_s3_sink::BufferedS3Sink;
 use crate::structs::ObjectLocation;
-use crate::trace_err;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_file::streamreadwrite::ArunaStreamReadWriter;
@@ -21,6 +20,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use tokio::pin;
 use tracing::debug;
+use tracing::error;
 use tracing::info_span;
 use tracing::Instrument;
 
@@ -71,7 +71,10 @@ impl DataHandler {
                 asr = asr.add_transformer(orig_probe);
 
                 if let Some(key) = clone_key.clone() {
-                    asr = asr.add_transformer(trace_err!(ChaCha20Dec::new(Some(key)))?);
+                    asr = asr.add_transformer(ChaCha20Dec::new(Some(key)).map_err(|e| {
+                        error!(error = ?e, msg = e.to_string());
+                        tonic::Status::unauthenticated(e.to_string())
+                    })?);
                 }
 
                 if before_location.compressed {
@@ -97,29 +100,57 @@ impl DataHandler {
                 let (final_sha, final_sha_recv) = HashingTransformer::new(Sha256::new());
 
                 asr = asr.add_transformer(final_sha);
-                trace_err!(asr.process().await)?;
+                asr.process().await.map_err(|e| {
+                    error!(error = ?e, msg = e.to_string());
+                    tonic::Status::unauthenticated(e.to_string())
+                })?;
 
                 Ok::<(u64, u64, String, String, String), anyhow::Error>((
-                    trace_err!(orig_size_stream.try_recv())?,
-                    trace_err!(uncompressed_stream.try_recv())?,
-                    trace_err!(sha_recv.try_recv())?,
-                    trace_err!(md5_recv.try_recv())?,
-                    trace_err!(final_sha_recv.try_recv())?,
+                    orig_size_stream.try_recv().map_err(|e| {
+                        error!(error = ?e, msg = e.to_string());
+                        tonic::Status::unauthenticated(e.to_string())
+                    })?,
+                    uncompressed_stream.try_recv().map_err(|e| {
+                        error!(error = ?e, msg = e.to_string());
+                        tonic::Status::unauthenticated(e.to_string())
+                    })?,
+                    sha_recv.try_recv().map_err(|e| {
+                        error!(error = ?e, msg = e.to_string());
+                        tonic::Status::unauthenticated(e.to_string())
+                    })?,
+                    md5_recv.try_recv().map_err(|e| {
+                        error!(error = ?e, msg = e.to_string());
+                        tonic::Status::unauthenticated(e.to_string())
+                    })?,
+                    final_sha_recv.try_recv().map_err(|e| {
+                        error!(error = ?e, msg = e.to_string());
+                        tonic::Status::unauthenticated(e.to_string())
+                    })?,
                 ))
             }
             .instrument(info_span!("finalize_location")),
         );
 
-        trace_err!(
-            backend
-                .get_object(before_location.clone(), None, tx_send)
-                .await
-        )?;
+        backend
+            .get_object(before_location.clone(), None, tx_send)
+            .await
+            .map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                tonic::Status::unauthenticated(e.to_string())
+            })?;
 
         //
 
-        let (before_size, after_size, sha, md5, final_sha) =
-            trace_err!(trace_err!(aswr_handle.await)?)?;
+        let (before_size, after_size, sha, md5, final_sha) = aswr_handle
+            .await
+            .map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                tonic::Status::unauthenticated(e.to_string())
+            })?
+            .map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                tonic::Status::unauthenticated(e.to_string())
+            })?;
 
         debug!(new_location = ?new_location, "Finished finalizing location");
 

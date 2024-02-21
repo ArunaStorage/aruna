@@ -61,35 +61,82 @@ async fn main() -> Result<()> {
     let span = info_span!("INIT ENV");
     let guard = span.enter();
 
-    let remote_synced =
-        trace_err!(trace_err!(dotenvy::var("DATA_PROXY_REMOTE_SYNCED"))?.parse::<bool>())?;
+    let remote_synced = dotenvy::var("DATA_PROXY_REMOTE_SYNCED")
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?
+        .parse::<bool>()
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
     debug!(target = "DATA_PROXY_REMOTE_SYNCED", value = remote_synced);
     let aruna_host_url = if let true = remote_synced {
-        Some(trace_err!(dotenvy::var("ARUNA_HOST_URL"))?)
+        Some(dotenvy::var("ARUNA_HOST_URL").map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?)
     } else {
         None
     };
     debug!(target = "ARUNA_HOST_URL", value = aruna_host_url);
-    let with_persistence =
-        trace_err!(trace_err!(dotenvy::var("DATA_PROXY_PERSISTENCE"))?.parse::<bool>())?;
+    let with_persistence = dotenvy::var("DATA_PROXY_PERSISTENCE")
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?
+        .parse::<bool>()
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
     debug!(target = "DATA_PROXY_PERSISTENCE", value = with_persistence);
-    let address = trace_err!(dotenvy::var("DATA_PROXY_DATA_SERVER"))?;
+    let address = dotenvy::var("DATA_PROXY_DATA_SERVER").map_err(|e| {
+        tracing::error!(error = ?e, msg = e.to_string());
+        e
+    })?;
     debug!(target = "DATA_PROXY_DATA_SERVER", value = address);
-    let hostname = trace_err!(dotenvy::var("DATA_PROXY_DATA_HOSTNAME"))?;
+    let hostname = dotenvy::var("DATA_PROXY_DATA_HOSTNAME").map_err(|e| {
+        tracing::error!(error = ?e, msg = e.to_string());
+        e
+    })?;
     debug!(target = "DATA_PROXY_DATA_HOSTNAME", value = hostname);
     // ULID of the endpoint
-    let endpoint_id = trace_err!(dotenvy::var("DATA_PROXY_ENDPOINT_ID"))?;
+    let endpoint_id = dotenvy::var("DATA_PROXY_ENDPOINT_ID").map_err(|e| {
+        tracing::error!(error = ?e, msg = e.to_string());
+        e
+    })?;
     debug!(target = "DATA_PROXY_ENDPOINT_ID", value = endpoint_id);
-    let data_proxy_grpc_addr =
-        trace_err!(trace_err!(dotenvy::var("DATA_PROXY_GRPC_SERVER"))?.parse::<SocketAddr>())?;
+    let data_proxy_grpc_addr = dotenvy::var("DATA_PROXY_GRPC_SERVER")
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?
+        .parse::<SocketAddr>()
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
     debug!(
         target = "DATA_PROXY_GRPC_SERVER",
         value = ?data_proxy_grpc_addr
     );
 
-    let encoding_key = trace_err!(dotenvy::var("DATA_PROXY_ENCODING_KEY"))?;
-    let encoding_key_serial =
-        trace_err!(trace_err!(dotenvy::var("DATA_PROXY_PUBKEY_SERIAL"))?.parse::<i32>())?;
+    let encoding_key = dotenvy::var("DATA_PROXY_ENCODING_KEY").map_err(|e| {
+        tracing::error!(error = ?e, msg = e.to_string());
+        e
+    })?;
+    let encoding_key_serial = dotenvy::var("DATA_PROXY_PUBKEY_SERIAL")
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?
+        .parse::<i32>()
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
 
     drop(guard);
 
@@ -135,7 +182,7 @@ async fn main() -> Result<()> {
     .await?;
 
     trace!("init grpc server");
-    let grpc_server_handle = trace_err!(tokio::spawn(
+    let grpc_server_handle = tokio::spawn(
         async move {
             Server::builder()
                 .add_service(DataproxyReplicationServiceServer::new(
@@ -157,9 +204,12 @@ async fn main() -> Result<()> {
                 .serve(data_proxy_grpc_addr)
                 .await
         }
-        .instrument(info_span!("grpc_server_run"))
-    ))
-    .map_err(|e| anyhow!("an error occured {e}"));
+        .instrument(info_span!("grpc_server_run")),
+    )
+    .map_err(|e| {
+        error!(error = ?e, msg = e.to_string());
+        anyhow!("an error occured {e}")
+    });
 
     match try_join!(s3_server.run(), grpc_server_handle) {
         Ok(_) => Ok(()),

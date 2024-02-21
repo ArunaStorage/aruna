@@ -18,6 +18,7 @@ pub enum Table {
     Users,
     PubKeys,
     ObjectLocations,
+    Permissions,
 }
 
 impl Display for Table {

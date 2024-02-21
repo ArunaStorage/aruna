@@ -1,4 +1,3 @@
-use crate::trace_err;
 use anyhow::Result;
 use http::Method;
 use reqsign::{AwsCredential, AwsV4Signer};
@@ -71,30 +70,43 @@ pub fn sign_url(
 
     // Construct request
     let url = if multipart {
-        trace_err!(Url::parse(&format!(
+        Url::parse(&format!(
             "{}{}.{}/{}?partNumber={}&uploadId={}",
             protocol, bucket, endpoint_sanitized, key, part_number, upload_id
-        )))?
+        ))
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?
     } else {
-        trace_err!(Url::parse(&format!(
+        Url::parse(&format!(
             "{}{}.{}/{}",
             protocol, bucket, endpoint_sanitized, key
-        )))?
+        ))
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?
     };
 
     let mut req = reqwest::Request::new(method, url);
 
     // Signing request with Signer
-    trace_err!(signer.sign_query(
-        &mut req,
-        std::time::Duration::new(duration as u64, 0), // Sec, nano
-        &AwsCredential {
-            access_key_id: access_key.to_string(),
-            secret_access_key: secret_key.to_string(),
-            session_token: None,
-            expires_in: None,
-        },
-    ))?;
+    signer
+        .sign_query(
+            &mut req,
+            std::time::Duration::new(duration as u64, 0), // Sec, nano
+            &AwsCredential {
+                access_key_id: access_key.to_string(),
+                secret_access_key: secret_key.to_string(),
+                session_token: None,
+                expires_in: None,
+            },
+        )
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
     Ok(req.url().to_string())
 }
 
@@ -128,7 +140,7 @@ pub fn sign_download_url(
 
 pub fn is_method_read(method: &Method) -> bool {
     match method {
-        Method::GET | Method::HEAD | Method::OPTIONS => true,
+        &Method::GET | &Method::HEAD | &Method::OPTIONS => true,
         _ => false,
     }
 }

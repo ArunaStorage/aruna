@@ -125,7 +125,10 @@ impl ReplicationHandler {
                 tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                 let batch = queue.clone();
 
-                let result = trace_err!(self.process(batch).await)?;
+                let result = self.process(batch).await.map_err(|e| {
+                    tracing::error!(error = ?e, msg = e.to_string());
+                    e
+                })?;
                 // Remove processed entries from shared map
                 for (id, objects) in result {
                     queue.alter(&id, |_, directions| {
@@ -148,7 +151,10 @@ impl ReplicationHandler {
             }
         });
         // Run both tasks simultaneously
-        let (_, result) = trace_err!(tokio::try_join!(recieve, process))?;
+        let (_, result) = tokio::try_join!(recieve, process).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
         result?;
         Ok(())
     }
@@ -193,11 +199,13 @@ impl ReplicationHandler {
                 let endpoint_id = *endpoint.key();
                 // This query handler returns a channel for sending messages into the input stream
                 // and the response stream
-                let (request_sender, mut response_stream) = trace_err!(
-                    query_handler
-                        .pull_replication(init_request, endpoint_id)
-                        .await
-                )?;
+                let (request_sender, mut response_stream) = query_handler
+                    .pull_replication(init_request, endpoint_id)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(error = ?e, msg = e.to_string());
+                        e
+                    })?;
 
                 // This is the init message for object proccessing
                 let (start_sender, start_receiver) = async_channel::bounded(1);
@@ -211,15 +219,17 @@ impl ReplicationHandler {
                 // TODO: This could be used to make parallel requests later
                 let object_handler_map: ObjectHandler = Arc::new(DashMap::default());
                 for object in pull {
-                    trace_err!(
-                        query_handler
-                            .update_replication_status(UpdateReplicationStatusRequest {
-                                object_id: object.to_string(),
-                                endpoint_id: self_id.clone(),
-                                status: ReplicationStatus::Running as i32,
-                            })
-                            .await
-                    )?;
+                    query_handler
+                        .update_replication_status(UpdateReplicationStatusRequest {
+                            object_id: object.to_string(),
+                            endpoint_id: self_id.clone(),
+                            status: ReplicationStatus::Running as i32,
+                        })
+                        .await
+                        .map_err(|e| {
+                            tracing::error!(error = ?e, msg = e.to_string());
+                            e
+                        })?;
                     let (object_sdx, object_rcv) = async_channel::bounded(100);
                     object_handler_map.insert(
                         object.to_string(),
@@ -255,17 +265,32 @@ impl ReplicationHandler {
                                 counter += 1;
 
                                 // If ObjectInfo is send, a init msg is collected in sync ...
-                                let id = trace_err!(DieselUlid::from_str(&object_id))?;
-                                trace_err!(
-                                    sync_sender_clone.send(RcvSync::Info(id, chunks)).await
-                                )?;
+                                let id = DieselUlid::from_str(&object_id).map_err(|e| {
+                                    tracing::error!(error = ?e, msg = e.to_string());
+                                    e
+                                })?;
+
+                                sync_sender_clone
+                                    .send(RcvSync::Info(id, chunks))
+                                    .await
+                                    .map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?;
                                 // .. and a datachannel is created
-                                let block_list = trace_err!(block_list
+                                let block_list = block_list
                                     .iter()
-                                    .map(|block| u8::try_from(*block)
-                                        .map_err(|_| anyhow!("Could not convert blocklist to u8")))
-                                    .collect::<Result<Vec<u8>>>())?
-                                .clone();
+                                    .map(|block| {
+                                        u8::try_from(*block).map_err(|_| {
+                                            anyhow!("Could not convert blocklist to u8")
+                                        })
+                                    })
+                                    .collect::<Result<Vec<u8>>>()
+                                    .map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?
+                                    .clone();
                                 // and stored in object_handler_map ...
                                 {
                                     data_map.alter(&object_id, |_, (sdx, rcv, ..)| {
@@ -273,18 +298,23 @@ impl ReplicationHandler {
                                     });
                                 }
                                 // ... and then ObjectInfo gets acknowledged
-                                trace_err!(
-                                    request_sender_clone
-                                        .send(PullReplicationRequest {
-                                            message: Some(Message::InfoAckMessage(
-                                                InfoAckMessage { object_id }
-                                            )),
-                                        })
-                                        .await
-                                )?;
+                                request_sender_clone
+                                    .send(PullReplicationRequest {
+                                        message: Some(Message::InfoAckMessage(InfoAckMessage {
+                                            object_id,
+                                        })),
+                                    })
+                                    .await
+                                    .map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?;
                                 // This is needed to keep backend task in sync
                                 if counter == 1 {
-                                    trace_err!(start_sender.send(true).await)?;
+                                    start_sender.send(true).await.map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?;
                                 }
                             }
                             Some(ResponseMessage::Chunk(Chunk {
@@ -306,25 +336,31 @@ impl ReplicationHandler {
                                     entry.0.send(chunk).await?;
                                     let id = DieselUlid::from_str(&object_id)?;
                                     // Message is send to sync
-                                    trace_err!(
-                                        sync_sender_clone.send(RcvSync::Chunk(id, chunk_idx)).await
-                                    )?;
+                                    sync_sender_clone
+                                        .send(RcvSync::Chunk(id, chunk_idx))
+                                        .await
+                                        .map_err(|e| {
+                                            tracing::error!(error = ?e, msg = e.to_string());
+                                            e
+                                        })?;
                                     // Message is acknowledged
-                                    trace_err!(
-                                        request_sender_clone
-                                            .send(PullReplicationRequest {
-                                                message: Some(Message::ChunkAckMessage(
-                                                    ChunkAckMessage {
-                                                        object_id,
-                                                        chunk_idx,
-                                                    },
-                                                )),
-                                            })
-                                            .await
-                                    )?;
+                                    request_sender_clone
+                                        .send(PullReplicationRequest {
+                                            message: Some(Message::ChunkAckMessage(
+                                                ChunkAckMessage {
+                                                    object_id,
+                                                    chunk_idx,
+                                                },
+                                            )),
+                                        })
+                                        .await
+                                        .map_err(|e| {
+                                            tracing::error!(error = ?e, msg = e.to_string());
+                                            e
+                                        })?;
                                 } else {
                                     // If no entry is found, ObjectInfo was not send
-                                    trace_err!(request_sender_clone
+                                    request_sender_clone
                                         .send(
                                             PullReplicationRequest {
                                                 message: Some(
@@ -340,7 +376,10 @@ impl ReplicationHandler {
                                                 )
                                             }
                                         )
-                                        .await)?;
+                                        .await.map_err(|e| {
+                                            tracing::error!(error = ?e, msg = e.to_string());
+                                            e
+                                        })?;
                                 }
                             }
                             Some(ResponseMessage::FinishMessage(..)) => return Ok(()),
@@ -368,7 +407,10 @@ impl ReplicationHandler {
                             }
                             // If finish is called, all stored messages will be returned
                             RcvSync::Finish => {
-                                trace_err!(finish_sender.send(sync.clone()).await)?;
+                                finish_sender.send(sync.clone()).await.map_err(|e| {
+                                    tracing::error!(error = ?e, msg = e.to_string());
+                                    e
+                                })?;
                             }
                         }
                     }
@@ -417,51 +459,52 @@ impl ReplicationHandler {
                                 } else if !synced {
                                     continue;
                                 } else {
-                                    trace_err!(
-                                        backend
-                                            .initialize_location(
-                                                &object,
-                                                Some(raw_size),
-                                                None,
-                                                false
-                                            )
-                                            .await
-                                    )?
+                                    backend
+                                        .initialize_location(&object, Some(raw_size), None, false)
+                                        .await
+                                        .map_err(|e| {
+                                            tracing::error!(error = ?e, msg = e.to_string());
+                                            e
+                                        })?
                                 };
                                 trace!("Load into backend");
                                 // Send Chunks get processed
-                                trace_err!(
-                                    ReplicationHandler::load_into_backend(
-                                        rcv.clone(),
-                                        request_sdx.clone(),
-                                        sync_sender.clone(),
-                                        &mut location,
-                                        backend.clone(),
-                                        chunks,
-                                        blocklist.clone(),
-                                    )
-                                    .await
-                                )?;
+                                ReplicationHandler::load_into_backend(
+                                    rcv.clone(),
+                                    request_sdx.clone(),
+                                    sync_sender.clone(),
+                                    &mut location,
+                                    backend.clone(),
+                                    chunks,
+                                    blocklist.clone(),
+                                )
+                                .await
+                                .map_err(|e| {
+                                    tracing::error!(error = ?e, msg = e.to_string());
+                                    e
+                                })?;
 
                                 trace!("Upsert object");
                                 // TODO: This should probably happen after checking if all chunks were processed
                                 // Sync with cache and db
                                 let location: Option<ObjectLocation> = Some(location.clone());
-                                trace_err!(
-                                    cache.upsert_object(object.clone(), location.clone()).await
-                                )?;
+                                cache
+                                    .upsert_object(object.clone(), location.clone())
+                                    .await?;
 
                                 trace!("Update status");
                                 // Send UpdateStatus to server
-                                trace_err!(
-                                    query_handler
-                                        .update_replication_status(UpdateReplicationStatusRequest {
-                                            object_id: object.id.to_string(),
-                                            endpoint_id: self_id.clone(),
-                                            status: ReplicationStatus::Finished as i32,
-                                        })
-                                        .await
-                                )?;
+                                query_handler
+                                    .update_replication_status(UpdateReplicationStatusRequest {
+                                        object_id: object.id.to_string(),
+                                        endpoint_id: self_id.clone(),
+                                        status: ReplicationStatus::Finished as i32,
+                                    })
+                                    .await
+                                    .map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?;
                                 {
                                     object_handler_map.remove(&id);
                                 }
@@ -470,11 +513,14 @@ impl ReplicationHandler {
                             if object_handler_map.is_empty() {
                                 trace!("Object handler map is empty, finishing replication... ");
                                 // Check if all chunks found in object infos are also processed
-                                trace_err!(sync_sender.send(RcvSync::Finish).await)?;
+                                sync_sender.send(RcvSync::Finish).await.map_err(|e| {
+                                    tracing::error!(error = ?e, msg = e.to_string());
+                                    e
+                                })?;
                                 break;
                             } else if batch_counter > 20 {
                                 // Exit after arbitrary number of tries
-                                trace_err!(request_sdx.send(
+                                request_sdx.send(
                                     PullReplicationRequest {
                                                     message: Some(
                                                         Message::ErrorMessage(
@@ -486,8 +532,14 @@ impl ReplicationHandler {
                                                         )
                                                     )
                                                 }
-                                        ).await)?;
-                                trace_err!(sync_sender.send(RcvSync::Finish).await)?;
+                                        ).await.map_err(|e| {
+                                            tracing::error!(error = ?e, msg = e.to_string());
+                                            e
+                                        })?;
+                                sync_sender.send(RcvSync::Finish).await.map_err(|e| {
+                                    tracing::error!(error = ?e, msg = e.to_string());
+                                    e
+                                })?;
                                 break;
                             }
                         }
@@ -527,7 +579,7 @@ impl ReplicationHandler {
                                 } else {
                                     trace!("Not all chunks received, aborting ...");
                                     // Send abort message if not all chunks were processed
-                                    trace_err!(request_sender
+                                    request_sender
                                             .send(
                                                 PullReplicationRequest {
                                                     message: Some(
@@ -541,13 +593,16 @@ impl ReplicationHandler {
                                                     )
                                                 }
                                             )
-                                            .await)?;
+                                            .await.map_err(|e| {
+                                                tracing::error!(error = ?e, msg = e.to_string());
+                                                e
+                                            })?;
                                     return Err(anyhow!("Not all chunks recieved, aborting sync"));
                                 }
                             } else {
                                 trace!("Not all chunks received, aborting ...");
                                 // Send abort message if not all chunks were processed
-                                trace_err!(request_sender
+                                request_sender
                                             .send(
                                                 PullReplicationRequest {
                                                     message: Some(
@@ -561,22 +616,27 @@ impl ReplicationHandler {
                                                     )
                                                 }
                                             )
-                                            .await)?;
+                                            .await.map_err(|e| {
+                                                tracing::error!(error = ?e, msg = e.to_string());
+                                                e
+                                            })?;
                                 return Err(anyhow!("Not all chunks recieved, aborting sync"));
                             }
                         }
                         finished_objects.insert(Direction::Pull(*object_id), false);
                     }
                     // Send finish message if everything was processed
-                    trace_err!(
-                        request_sender
-                            .send(PullReplicationRequest {
-                                message: Some(Message::FinishMessage(
-                                    aruna_rust_api::api::dataproxy::services::v2::Empty {}
-                                ))
-                            })
-                            .await
-                    )?;
+                    request_sender
+                        .send(PullReplicationRequest {
+                            message: Some(Message::FinishMessage(
+                                aruna_rust_api::api::dataproxy::services::v2::Empty {},
+                            )),
+                        })
+                        .await
+                        .map_err(|e| {
+                            tracing::error!(error = ?e, msg = e.to_string());
+                            e
+                        })?;
                 }
                 trace!("Writing results");
                 if let Some(map) = Arc::into_inner(finished_objects) {
@@ -633,7 +693,7 @@ impl ReplicationHandler {
                         // TODO:
                         // RetryChunk message
                         trace!("MissingChunk: Retry chunk {}", expected);
-                        trace_err!(stream_sender
+                        stream_sender
                             .send(PullReplicationRequest {
                                 message: Some(Message::ErrorMessage(
                                     aruna_rust_api::api::dataproxy::services::v2::ErrorMessage {
@@ -646,7 +706,11 @@ impl ReplicationHandler {
                                     },
                                 )),
                             })
-                            .await)?;
+                            .await
+                            .map_err(|e| {
+                                tracing::error!(error = ?e, msg = e.to_string());
+                                e
+                            })?;
                         retry_counter += 1;
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                         continue;
@@ -675,7 +739,7 @@ impl ReplicationHandler {
                         // TODO:
                         // RetryChunk message
                         trace!("HashError: Retry chunk {}", expected);
-                        trace_err!(stream_sender
+                        stream_sender
                             .send(PullReplicationRequest {
                                 message: Some(Message::ErrorMessage(
                                     aruna_rust_api::api::dataproxy::services::v2::ErrorMessage {
@@ -688,24 +752,36 @@ impl ReplicationHandler {
                                     },
                                 )),
                             })
-                            .await)?;
+                            .await
+                            .map_err(|e| {
+                                tracing::error!(error = ?e, msg = e.to_string());
+                                e
+                            })?;
                         retry_counter += 1;
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                         continue;
                     }
                 }
 
-                trace_err!(data_sender.send(Ok(chunk)).await)?;
+                data_sender.send(Ok(chunk)).await.map_err(|e| {
+                    tracing::error!(error = ?e, msg = e.to_string());
+                    e
+                })?;
 
                 // Message is send to sync
-                trace_err!(
-                    sync_sender
-                        .send(RcvSync::Chunk(
-                            trace_err!(DieselUlid::from_str(&data.object_id))?,
-                            data.chunk_idx
-                        ))
-                        .await
-                )?;
+                sync_sender
+                    .send(RcvSync::Chunk(
+                        DieselUlid::from_str(&data.object_id).map_err(|e| {
+                            tracing::error!(error = ?e, msg = e.to_string());
+                            e
+                        })?,
+                        data.chunk_idx,
+                    ))
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(error = ?e, msg = e.to_string());
+                        e
+                    })?;
                 if (idx + 1) == max_chunks {
                     return Ok(());
                 }
@@ -719,53 +795,66 @@ impl ReplicationHandler {
 
         trace!("Starting ArunaStreamReadWriter taks");
         let location_clone = location.clone();
-        let _ = trace_err!(
-            tokio::spawn(async move {
-                pin!(data_stream);
+        let _ = tokio::spawn(async move {
+            pin!(data_stream);
 
-                trace!(?max_chunks);
-                let mut awr = ArunaStreamReadWriter::new_with_sink(
-                    data_stream,
-                    BufferedS3Sink::new(
-                        backend.clone(),
-                        location_clone.clone(),
-                        None,
-                        None,
-                        false,
-                        None,
-                        false,
-                    )
-                    .0,
+            trace!(?max_chunks);
+            let mut awr = ArunaStreamReadWriter::new_with_sink(
+                data_stream,
+                BufferedS3Sink::new(
+                    backend.clone(),
+                    location_clone.clone(),
+                    None,
+                    None,
+                    false,
+                    None,
+                    false,
+                )
+                .0,
+            );
+
+            if location_clone.raw_content_len > 5242880 + 80 * 28 {
+                trace!("adding footer generator");
+                awr = awr.add_transformer(FooterGenerator::new(Some(blocklist.clone())));
+            }
+
+            if let Some(enc_key) = &location_clone.encryption_key {
+                trace!("adding encryption transformer");
+                awr = awr.add_transformer(
+                    ChaCha20Enc::new(true, enc_key.to_string().into_bytes()).map_err(|e| {
+                        tracing::error!(error = ?e, msg = e.to_string());
+                        e
+                    })?,
                 );
+            }
 
-                if location_clone.raw_content_len > 5242880 + 80 * 28 {
-                    trace!("adding footer generator");
-                    awr = awr.add_transformer(FooterGenerator::new(Some(blocklist.clone())));
-                }
+            trace!("Adding size and hash transformer");
+            awr = awr.add_transformer(final_sha_trans);
+            awr = awr.add_transformer(final_size_trans);
+            awr.process().await.map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
 
-                if let Some(enc_key) = &location_clone.encryption_key {
-                    trace!("adding encryption transformer");
-                    awr = awr.add_transformer(trace_err!(ChaCha20Enc::new(
-                        true,
-                        enc_key.to_string().into_bytes()
-                    ))?);
-                }
-
-                trace!("Adding size and hash transformer");
-                awr = awr.add_transformer(final_sha_trans);
-                awr = awr.add_transformer(final_size_trans);
-                trace_err!(awr.process().await)?;
-
-                Ok::<(), anyhow::Error>(())
-            })
-            .await
-        )?;
+            Ok::<(), anyhow::Error>(())
+        })
+        .await
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
 
         // Fetch calculated hashes
         trace!("fetching hashes");
-        let sha_final: String = trace_err!(final_sha_recv.try_recv())?;
+        let sha_final: String = final_sha_recv.try_recv().map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
         //let initial_size: u64 = trace_err!(initial_size_recv.try_recv())?;
-        let final_size: u64 = trace_err!(final_size_recv.try_recv())?;
+        let final_size: u64 = final_size_recv.try_recv().map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
 
         // Put infos into location
         location.disk_content_len = final_size as i64;

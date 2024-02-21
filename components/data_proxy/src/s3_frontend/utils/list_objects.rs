@@ -1,6 +1,5 @@
 use crate::caching::cache::Cache;
 use crate::structs::{Object, ObjectLocation};
-use crate::trace_err;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::DataClass;
 use base64::engine::general_purpose;
@@ -36,7 +35,7 @@ impl From<(&String, &(Object, Option<ObjectLocation>))> for Contents {
 }
 
 #[tracing::instrument(level = "trace", skip(cache, delimiter, prefix, start_at, max_keys))]
-pub fn list_response(
+pub async fn list_response(
     cache: &Arc<Cache>,
     delimiter: &Option<String>,
     prefix: &Option<String>,
@@ -67,10 +66,11 @@ pub fn list_response(
                     } else {
                         keys.insert(
                             (
-                                path,
-                                cache
+                                &path,
+                                &cache
                                     .get_resource_cloned(&id, true)
-                                    .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?,
+                                    .await
+                                    .map_err(|_| s3_error!(NoSuchKey, "No key found for path"))?,
                             )
                                 .into(),
                         );
@@ -96,9 +96,10 @@ pub fn list_response(
                     // If None split -> Entry
                     keys.insert(
                         (
-                            path,
-                            cache
+                            &path,
+                            &cache
                                 .get_resource_cloned(&id, true)
+                                .await
                                 .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?,
                         )
                             .into(),
@@ -118,10 +119,11 @@ pub fn list_response(
                 if path.strip_prefix(&prefix).is_some() {
                     keys.insert(
                         (
-                            path,
-                            trace_err!(cache
+                            &path,
+                            &cache
                                 .get_resource_cloned(&id, true)
-                                .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path")))?,
+                                .await
+                                .map_err(|_| s3_error!(NoSuchKey, "No key found for path"))?,
                         )
                             .into(),
                     );
@@ -141,11 +143,11 @@ pub fn list_response(
 
                 keys.insert(
                     (
-                        path,
-                        trace_err!(cache
+                        &path,
+                        &cache
                             .get_resource_cloned(&id, true)
-                            .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path")))?
-                        .value(),
+                            .await
+                            .map_err(|_| s3_error!(NoSuchKey, "No key found for path"))?,
                     )
                         .into(),
                 );
