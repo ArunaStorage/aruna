@@ -66,10 +66,8 @@ impl Proxy {
             *private_key = Some(env_var);
         }
 
-        if let Some(serial) = serial {
-            if *serial < 1 {
-                return Err(anyhow::anyhow!("serial must be at least 1"));
-            }
+        if *serial < 1 {
+            return Err(anyhow::anyhow!("serial must be at least 1"));
         }
 
         Ok(())
@@ -151,7 +149,7 @@ pub enum Backend {
         compression: bool,
         deduplication: bool,
         dropbox_bucket: Option<String>,
-         backend_scheme: String,
+        backend_scheme: String,
     },
     FileSystem {
         root_path: String,
@@ -206,8 +204,10 @@ impl Backend {
 pub enum RuleTarget {
     ALL,
     OBJECT,
+    OBJECTPACKAGE,
     BUNDLE,
-    REPLICATION,
+    REPLICATIONIN,
+    REPLICATIONOUT,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

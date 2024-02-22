@@ -77,15 +77,15 @@ async fn main() -> Result<()> {
     trace!("init storage backend");
 
     let backend: Box<dyn StorageBackend> = match CONFIG.backend {
-        config::Backend::S3 {..} => Box::new(S3Backend::new(CONFIG.proxy.endpoint_id.to_string()).await?),
-        config::Backend::FileSystem {
-            root_path,
-            ..
-        } => Box::new(FSBackend::new(CONFIG.proxy.endpoint_id.to_string(), root_path.as_str()).await?),
+        config::Backend::S3 { .. } => {
+            Box::new(S3Backend::new(CONFIG.proxy.endpoint_id.to_string()).await?)
+        }
+        config::Backend::FileSystem { root_path, .. } => Box::new(
+            FSBackend::new(CONFIG.proxy.endpoint_id.to_string(), root_path.as_str()).await?,
+        ),
     };
 
-    let storage_backend: Arc<Box<dyn StorageBackend>> =
-        Arc::new(backend);
+    let storage_backend: Arc<Box<dyn StorageBackend>> = Arc::new(backend);
 
     trace!("init cache");
     let (sender, receiver) = async_channel::unbounded();
@@ -93,7 +93,10 @@ async fn main() -> Result<()> {
         CONFIG.proxy.aruna_url,
         CONFIG.persistence.is_some(),
         CONFIG.proxy.endpoint_id,
-        CONFIG.proxy.private_key.ok_or_else(|| anyhow!("Private key not set"))?,
+        CONFIG
+            .proxy
+            .private_key
+            .ok_or_else(|| anyhow!("Private key not set"))?,
         CONFIG.proxy.serial,
         sender.clone(),
         Some(storage_backend.clone()),
@@ -117,53 +120,51 @@ async fn main() -> Result<()> {
     trace!("init s3 server");
     let cache_clone = cache.clone();
     let s3_server = if let Some(frontend) = CONFIG.frontend {
-        Some(s3_frontend::s3server::S3Server::new(
-            &frontend.server,
-            frontend.hostname,
-            storage_backend.clone(),
-            cache,
+        Some(
+            s3_frontend::s3server::S3Server::new(
+                &frontend.server,
+                frontend.hostname,
+                storage_backend.clone(),
+                cache,
+            )
+            .await?,
         )
-        .await?)    
-    }else{
+    } else {
         None
     };
     trace!("init grpc server");
 
     let proxy_grpc_addr = CONFIG.proxy.grpc_server.parse::<SocketAddr>()?;
 
-    let grpc_server_handle = tokio::spawn(
-        async move {
-            let mut builder = Server::builder()
-                .add_service(DataproxyReplicationServiceServer::new(
-                    DataproxyReplicationServiceImpl::new(
-                        cache_clone.clone(),
-                        sender,
-                        storage_backend,
-                    ),
-                ))
-                .add_service(DataproxyUserServiceServer::new(
-                    DataproxyUserServiceImpl::new(cache_clone.clone()),
-                ));
+    let grpc_server_handle =
+        tokio::spawn(
+            async move {
+                let mut builder = Server::builder()
+                    .add_service(DataproxyReplicationServiceServer::new(
+                        DataproxyReplicationServiceImpl::new(
+                            cache_clone.clone(),
+                            sender,
+                            storage_backend,
+                        ),
+                    ))
+                    .add_service(DataproxyUserServiceServer::new(
+                        DataproxyUserServiceImpl::new(cache_clone.clone()),
+                    ));
 
                 if let Some(frontend) = CONFIG.frontend {
-                    builder = builder
-                        .add_service(BundlerServiceServer::new(BundlerServiceImpl::new(
-                            cache_clone.clone(),
-                            frontend.hostname,
-                            true,
-                        )));
+                    builder = builder.add_service(BundlerServiceServer::new(
+                        BundlerServiceImpl::new(cache_clone.clone(), frontend.hostname, true),
+                    ));
                 };
-                
-                builder
-                .serve(proxy_grpc_addr)
-                .await
-        }
-        .instrument(info_span!("grpc_server_run")),
-    )
-    .map_err(|e| {
-        error!(error = ?e, msg = e.to_string());
-        anyhow!("an error occured {e}")
-    });
+
+                builder.serve(proxy_grpc_addr).await
+            }
+            .instrument(info_span!("grpc_server_run")),
+        )
+        .map_err(|e| {
+            error!(error = ?e, msg = e.to_string());
+            anyhow!("an error occured {e}")
+        });
 
     if let Some(s3_server) = s3_server {
         match try_join!(s3_server.run(), grpc_server_handle) {
@@ -173,7 +174,7 @@ async fn main() -> Result<()> {
                 Err(err)
             }
         }
-    }else{
+    } else {
         grpc_server_handle.await??;
         Ok(())
     }

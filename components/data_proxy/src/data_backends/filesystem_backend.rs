@@ -26,9 +26,8 @@ pub struct FSBackend {
 impl FSBackend {
     #[tracing::instrument(level = "debug")]
     #[allow(dead_code)]
-    pub async fn new(endpoint_id: String, base_path: &str) -> Result<Self> {
+    pub async fn new(_endpoint_id: String, base_path: &str) -> Result<Self> {
         let base_path = base_path.to_string();
-
         let handler = FSBackend {
             _endpoint_id,
             base_path,
