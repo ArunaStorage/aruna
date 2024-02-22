@@ -1,13 +1,17 @@
+use crate::structs::DbPermissionLevel;
 use crate::structs::Object;
 use anyhow::anyhow;
 use anyhow::Result;
+use diesel_ulid::DieselUlid;
+use http::HeaderMap;
+use http::HeaderValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserRuleInfo {
     pub user_id: String,
-    pub permissions: Vec<(String, String)>,
+    pub permissions: HashMap<String, String>,
     pub attributes: HashMap<String, String>,
 }
 
@@ -22,7 +26,7 @@ pub struct ObjectHierarchyRuleInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestInfo {
     pub method: String,
-    pub headers: HashMap<String, String>,
+    pub headers: HashMap<String, StringOrVec>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,10 +81,10 @@ pub struct ReplicationOutgoingRuleInput {
 #[derive(Debug, Default)]
 pub struct RootRuleInputBuilder {
     user_id: String,
-    permissions: Vec<(String, String)>,
+    permissions: HashMap<String, String>,
     attributes: HashMap<String, String>,
     method: String,
-    headers: HashMap<String, String>,
+    headers: HashMap<String, StringOrVec>,
 }
 
 impl RootRuleInputBuilder {
@@ -93,8 +97,8 @@ impl RootRuleInputBuilder {
         self
     }
 
-    pub fn permissions(mut self, permissions: Vec<(String, String)>) -> Self {
-        self.permissions = permissions;
+    pub fn permissions(mut self, permissions: HashMap<DieselUlid, DbPermissionLevel>) -> Self {
+        self.permissions = convert_permissions(permissions);
         self
     }
 
@@ -108,8 +112,8 @@ impl RootRuleInputBuilder {
         self
     }
 
-    pub fn headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.headers = headers;
+    pub fn headers(mut self, headers: &HeaderMap<HeaderValue>) -> Self {
+        self.headers = convert_headers(headers);
         self
     }
 
@@ -139,10 +143,10 @@ impl RootRuleInputBuilder {
 #[derive(Debug, Default)]
 pub struct ObjectRuleInputBuilder {
     user_id: String,
-    permissions: Vec<(String, String)>,
+    permissions: HashMap<String, String>,
     attributes: HashMap<String, String>,
     method: String,
-    headers: HashMap<String, String>,
+    headers: HashMap<String, StringOrVec>,
     object: Option<Object>,
     dataset: Option<Object>,
     collection: Option<Object>,
@@ -159,8 +163,8 @@ impl ObjectRuleInputBuilder {
         self
     }
 
-    pub fn permissions(mut self, permissions: Vec<(String, String)>) -> Self {
-        self.permissions = permissions;
+    pub fn permissions(mut self, permissions: HashMap<DieselUlid, DbPermissionLevel>) -> Self {
+        self.permissions = convert_permissions(permissions);
         self
     }
 
@@ -174,8 +178,8 @@ impl ObjectRuleInputBuilder {
         self
     }
 
-    pub fn headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.headers = headers;
+    pub fn headers(mut self, headers: &HeaderMap<HeaderValue>) -> Self {
+        self.headers = convert_headers(headers);
         self
     }
 
@@ -235,10 +239,10 @@ impl ObjectRuleInputBuilder {
 #[derive(Debug, Default)]
 pub struct PackageObjectRuleInputBuilder {
     user_id: String,
-    permissions: Vec<(String, String)>,
+    permissions: HashMap<String, String>,
     attributes: HashMap<String, String>,
     method: String,
-    headers: HashMap<String, String>,
+    headers: HashMap<String, StringOrVec>,
     object: Option<Object>,
     parents: Vec<Object>,
 }
@@ -253,8 +257,8 @@ impl PackageObjectRuleInputBuilder {
         self
     }
 
-    pub fn permissions(mut self, permissions: Vec<(String, String)>) -> Self {
-        self.permissions = permissions;
+    pub fn permissions(mut self, permissions: HashMap<DieselUlid, DbPermissionLevel>) -> Self {
+        self.permissions = convert_permissions(permissions);
         self
     }
 
@@ -268,8 +272,8 @@ impl PackageObjectRuleInputBuilder {
         self
     }
 
-    pub fn headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.headers = headers;
+    pub fn headers(mut self, headers: &HeaderMap<HeaderValue>) -> Self {
+        self.headers = convert_headers(headers);
         self
     }
 
@@ -315,10 +319,10 @@ impl PackageObjectRuleInputBuilder {
 #[derive(Debug, Default)]
 pub struct BundleRuleInputBuilder {
     user_id: String,
-    permissions: Vec<(String, String)>,
+    permissions: HashMap<String, String>,
     attributes: HashMap<String, String>,
     method: String,
-    headers: HashMap<String, String>,
+    headers: HashMap<String, StringOrVec>,
     objects: Vec<Object>,
     bundle_id: String,
     expires: Option<i64>,
@@ -334,8 +338,8 @@ impl BundleRuleInputBuilder {
         self
     }
 
-    pub fn permissions(mut self, permissions: Vec<(String, String)>) -> Self {
-        self.permissions = permissions;
+    pub fn permissions(mut self, permissions: HashMap<DieselUlid, DbPermissionLevel>) -> Self {
+        self.permissions = convert_permissions(permissions);
         self
     }
 
@@ -349,8 +353,8 @@ impl BundleRuleInputBuilder {
         self
     }
 
-    pub fn headers(mut self, headers: HashMap<String, String>) -> Self {
-        self.headers = headers;
+    pub fn headers(mut self, headers: &HeaderMap<HeaderValue>) -> Self {
+        self.headers = convert_headers(headers);
         self
     }
 
@@ -477,4 +481,46 @@ impl ReplicationOutgoingRuleInputBuilder {
             target_proxy_id: self.target_proxy_id,
         })
     }
+}
+
+
+// ------ HELPERS -------
+
+pub fn convert_permissions(perm: HashMap<DieselUlid, DbPermissionLevel>) -> HashMap<String, String> {
+    let mut permissions = HashMap::new();
+    for (k, v) in perm {
+        permissions.insert(k.to_string(), v.to_string());
+    }
+    permissions
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum StringOrVec {
+    Elem(String),
+    Vec(Vec<String>),
+}
+
+pub fn convert_headers(headers: &HeaderMap<HeaderValue>) -> HashMap<String, StringOrVec> {
+    let mut header_map = HashMap::new();
+    for (k, v) in headers.iter() {
+        let value_string = v.to_str().unwrap_or_default().to_string();
+        let entry = header_map.entry(k.to_string());
+        match entry {
+            std::collections::hash_map::Entry::Vacant(e) => {
+                e.insert(StringOrVec::Elem(value_string));
+            }
+            std::collections::hash_map::Entry::Occupied(mut e) => {
+                match e.get_mut() {
+                    StringOrVec::Elem(existing) => {
+                        *e.get_mut() = StringOrVec::Vec(vec![existing.clone(), value_string]);
+                    }
+                    StringOrVec::Vec(arr) => {
+                        arr.push(value_string);
+                    }
+                }
+            }
+        }
+    }
+    header_map
 }

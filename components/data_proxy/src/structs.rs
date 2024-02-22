@@ -48,6 +48,20 @@ pub enum DbPermissionLevel {
     Admin,
 }
 
+impl ToString for DbPermissionLevel {
+    #[tracing::instrument(level = "trace", skip(self))]
+    fn to_string(&self) -> String {
+        match self {
+            DbPermissionLevel::Deny => "deny".to_string(),
+            DbPermissionLevel::None => "none".to_string(),
+            DbPermissionLevel::Read => "read".to_string(),
+            DbPermissionLevel::Append => "append".to_string(),
+            DbPermissionLevel::Write => "write".to_string(),
+            DbPermissionLevel::Admin => "admin".to_string(),
+        }
+    }
+}
+
 impl From<&Method> for DbPermissionLevel {
     #[tracing::instrument(level = "trace", skip(method))]
     fn from(method: &Method) -> Self {

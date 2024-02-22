@@ -285,14 +285,7 @@ impl AuthHandler {
                     RootRuleInputBuilder::new()
                         .attributes(attributes)
                         .method(method.to_string())
-                        .headers(
-                            headers
-                                .iter()
-                                .map(|(k, v)| {
-                                    (k.to_string(), v.to_str().unwrap_or_default().to_string())
-                                })
-                                .collect(),
-                        )
+                        .headers(headers)
                         .build()
                         .map_err(|e| s3_error!(MalformedACLError, "Rule has wrong context"))?,
                 )
@@ -366,14 +359,8 @@ impl AuthHandler {
                 ObjectRuleInputBuilder::new()
                     .attributes(attributes)
                     .method(method.to_string())
-                    .headers(
-                        headers
-                            .iter()
-                            .map(|(k, v)| {
-                                (k.to_string(), v.to_str().unwrap_or_default().to_string())
-                            })
-                            .collect(),
-                    )
+                    .permissions(access_key_info.permissions)
+                    .headers(headers)
                     .project(project.clone())
                     .build().map_err(|_| s3_error!(MalformedACLError, "Rule has wrong context"))?,
             )
