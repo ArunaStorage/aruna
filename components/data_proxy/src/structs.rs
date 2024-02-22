@@ -113,7 +113,7 @@ pub struct User {
     pub user_id: DieselUlid,
     pub personal_permissions: HashMap<DieselUlid, DbPermissionLevel>,
     pub tokens: HashMap<DieselUlid, HashMap<DieselUlid, DbPermissionLevel>>,
-    pub custom_attributes: HashMap<String, String>,
+    pub attributes: HashMap<String, String>,
 }
 
 impl User {
@@ -1122,6 +1122,67 @@ impl ResourceState {
             }
         }
         Ok(Self([project, collection, dataset, object]))
+    }
+
+    pub fn from_list(list: &[Object]) -> Result<ResourceState> {
+        if list.len() > 4 {
+            bail!("Invalid list length");
+        }
+        let mut project = None;
+        let mut collection = None;
+        let mut dataset = None;
+        let mut object = None;
+
+        for obj in list {
+            match obj.object_type {
+                ObjectType::Project => {
+                    if !project.is_none() {
+                        bail!("Invalid resource state: Multiple projects")
+                    }
+                    project = Some(ResourceStates::new_found(
+                        obj.id,
+                        obj.name.clone(),
+                        ResourceVariant::Project,
+                    ));
+                }
+                ObjectType::Collection => {
+                    if !collection.is_none() {
+                        bail!("Invalid resource state: Multiple collection")
+                    }
+                    collection = Some(ResourceStates::new_found(
+                        obj.id,
+                        obj.name.clone(),
+                        ResourceVariant::Collection,
+                    ));
+                }
+                ObjectType::Dataset => {
+                    if !dataset.is_none() {
+                        bail!("Invalid resource state: Multiple datasets")
+                    }
+                    dataset = Some(ResourceStates::new_found(
+                        obj.id,
+                        obj.name.clone(),
+                        ResourceVariant::Dataset,
+                    ));
+                }
+                ObjectType::Object => {
+                    if !object.is_none() {
+                        bail!("Invalid resource state: Multiple objects")
+                    }
+                    object = Some(ResourceStates::new_found(
+                        obj.id,
+                        obj.name.clone(),
+                        ResourceVariant::Object,
+                    ));
+                }
+            }
+        }
+        Self::new(
+            project.ok_or_else(|| anyhow!("Project not found"))?,
+            collection.ok_or_else(|| ResourceStates::None),
+            dataset.ok_or_else(|| ResourceStates::None),
+            object.ok_or_else(|| ResourceStates::None),
+        )
     }
 }
 

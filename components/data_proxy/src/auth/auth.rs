@@ -11,6 +11,7 @@ use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::ResourceVariant;
+use aruna_rust_api::api::storage::models::v2::UserAttributes;
 use diesel_ulid::DieselUlid;
 use http::HeaderMap;
 use http::HeaderValue;
@@ -26,6 +27,7 @@ use s3s::S3Error;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::ops::Add;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -256,9 +258,13 @@ impl AuthHandler {
     pub fn extract_access_key_perms(
         &self,
         creds: Option<&Credentials>,
-    ) -> Option<AccessKeyPermissions> {
+    ) -> Option<(AccessKeyPermissions, UserAttributes)> {
         if let Some(creds) = creds {
-            return self.cache.get_key_perms(&creds.access_key);
+            if let Some(key) = self.cache.get_key_perms(&creds.access_key) {
+                if let Some(user) = self.cache.get_user_by_id(&key.user_id) {
+                    return Some((key, user.attributes.clone()));
+                }
+            }
         }
         None
     }
@@ -326,13 +332,8 @@ impl AuthHandler {
 
         // Create a "resource_state" struct that tracks what is missing, what is found and what is not set
         let resource_state = Some(
-            ResourceState::new(
-                ResourceStates::new_found(project.id, project.name, ResourceVariant::Project),
-                ResourceStates::None,
-                ResourceStates::None,
-                ResourceStates::None,
-            )
-            .map_err(|_| s3_error!(InternalError, "Internal Error"))?,
+            ResourceState::from_list(&[project])
+                .map_err(|_| s3_error!(InternalError, "Internal Error"))?,
         );
 
         Ok(CheckAccessResult::new(
@@ -387,7 +388,43 @@ impl AuthHandler {
                 s3_error!(NoSuchBucket, "No such bucket")
             })?;
 
-        todo!()
+        // Paths
+        let mut prefix = key_into_prefix(key_name);
+        prefix.remove(object.name.as_str());
+        prefix.remove(project.name.as_str());
+
+        if prefix.len() > 2 {
+            error!("This should not happen: Detected more than 4 Objects in the path");
+            return Err(s3_error!(InternalError, "Invalid key parsing"));
+        }
+
+        let mut objects = vec![project];
+        for prefix in prefix.iter() {
+            objects.push(
+                self.cache
+                    .get_full_resource_by_path(prefix)
+                    .ok_or_else(|| {
+                        error!("No such object");
+                        s3_error!(NoSuchKey, "No such object")
+                    })?,
+            );
+        }
+        objects.push(object);
+
+        // Create a "resource_state" struct that tracks what is missing, what is found and what is not set
+        let resource_state = Some(
+            ResourceState::from_list(&objects)
+                .map_err(|_| s3_error!(InternalError, "Internal Error"))?,
+        );
+
+        Ok(CheckAccessResult::new(
+            Some(user.user_id.to_string()),
+            Some(user.access_key),
+            resource_state,
+            None,
+            None,
+            headers,
+        ))
     }
 
     #[tracing::instrument(level = "trace", skip(self, bucket_name, key_name, creds, headers))]
@@ -427,9 +464,9 @@ impl AuthHandler {
         bucket: &str,
         method: &Method,
         headers: &HeaderMap<HeaderValue>,
-    ) -> Option<(Object, HashMap<String, String>)> {
+    ) -> Option<(Object, Option<HashMap<String, String>>)> {
         let project = self.cache.get_full_resource_by_path(bucket)?;
-        let headers = project.project_get_headers(method, headers)?;
+        let headers = project.project_get_headers(method, headers);
         Some((project, headers))
     }
 
@@ -550,4 +587,16 @@ pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
         return Err(anyhow!("Authorization flow error"));
     }
     Ok(split[1].to_string())
+}
+
+#[tracing::instrument(level = "trace", skip(key))]
+pub fn key_into_prefix(key: &str) -> HashSet<String> {
+    let mut parts = HashSet::new();
+    let mut prefix = String::new();
+    for s in key.splitn(4, "/") {
+        prefix.push_str(s);
+        parts.insert(prefix.clone());
+        prefix.push('/');
+    }
+    parts
 }

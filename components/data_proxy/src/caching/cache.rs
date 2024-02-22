@@ -754,6 +754,13 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
+    pub fn get_user_attributes(&self, resource_id: &DieselUlid) -> Option<HashMap<String, String>> {
+        self.users
+            .get(resource_id)
+            .map(|e| e.value().blocking_read().0.custom_attributes.clone())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_stripped_path_range(&self, prefix: &str, skip: &str) -> Vec<(String, DieselUlid)> {
         self.paths
             .range(format!("{prefix}/{skip}")..=format!("{prefix}~"))

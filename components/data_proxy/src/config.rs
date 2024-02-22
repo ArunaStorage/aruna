@@ -202,7 +202,7 @@ impl Backend {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum RuleTarget {
-    ALL,
+    ROOT, // Info
     OBJECT,
     OBJECTPACKAGE,
     BUNDLE,
