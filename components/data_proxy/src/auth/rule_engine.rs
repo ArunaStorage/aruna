@@ -110,8 +110,8 @@ impl RuleEngine {
             Value::Bool(b) => Ok(b),
             _ => {
                 error!("expected bool, got {:?}", result);
-                Err(anyhow!("expected bool, got {:?}", result)
-            )},
+                Err(anyhow!("expected bool, got {:?}", result))
+            }
         }
     }
 
@@ -146,7 +146,6 @@ impl RuleEngine {
             _ => Err(anyhow!("expected bool, got {:?}", result)),
         }
     }
-
 
     pub fn evaluate_bundle(&self, ctx: BundleRuleInput) -> Result<bool> {
         let mut context = Context::default();

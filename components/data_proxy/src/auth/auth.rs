@@ -12,6 +12,7 @@ use anyhow::bail;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::ResourceVariant;
 use aruna_rust_api::api::storage::models::v2::UserAttributes;
+use axum::http::method;
 use diesel_ulid::DieselUlid;
 use http::HeaderMap;
 use http::HeaderValue;
@@ -36,9 +37,15 @@ use std::time::SystemTime;
 use tonic::metadata::MetadataMap;
 use tracing::error;
 
+use super::rule_engine::RuleEngine;
+use super::rule_structs::RequestInfo;
+use super::rule_structs::RootRuleInput;
+use super::rule_structs::UserRuleInfo;
+
 pub struct AuthHandler {
     cache: Arc<Cache>,
     self_id: DieselUlid,
+    rule_engine: RuleEngine,
     encoding_key: (i32, EncodingKey),
 }
 
@@ -127,23 +134,22 @@ impl AuthHandler {
         self_id: DieselUlid,
         encode_secret: String,
         encoding_key_serial: i32,
-    ) -> Self {
+    ) -> Result<Self> {
         let private_pem = format!(
             "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
             encode_secret
         );
-        let encoding_key = EncodingKey::from_ed_pem(private_pem.as_bytes())
-            .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
-                e
-            })
-            .unwrap();
+        let encoding_key = EncodingKey::from_ed_pem(private_pem.as_bytes()).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
 
-        Self {
+        Ok(Self {
             cache,
             self_id,
+            rule_engine: RuleEngine::new()?,
             encoding_key: (encoding_key_serial, encoding_key),
-        }
+        })
     }
 
     #[tracing::instrument(level = "trace", skip(self, token))]
@@ -224,6 +230,8 @@ impl AuthHandler {
         Ok(token.claims)
     }
 
+    // ----------------- AUTHORIZATION -----------------
+
     #[tracing::instrument(level = "debug", skip(self, creds, method, path))]
     pub async fn check_access(
         &self,
@@ -233,7 +241,7 @@ impl AuthHandler {
         headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult, S3Error> {
         match path {
-            S3Path::Root => Ok(self.handle_root(creds)),
+            S3Path::Root => self.handle_root(method, creds, headers),
             S3Path::Bucket { bucket } => {
                 // Buckets are handled the same for GET and POST
                 self.handle_bucket(bucket, method, creds, headers).await
@@ -255,35 +263,40 @@ impl AuthHandler {
     }
 
     #[tracing::instrument(level = "trace", skip(self, creds))]
-    pub fn extract_access_key_perms(
+    pub fn handle_root(
         &self,
+        method: &Method,
         creds: Option<&Credentials>,
-    ) -> Option<(AccessKeyPermissions, UserAttributes)> {
-        if let Some(creds) = creds {
-            if let Some(key) = self.cache.get_key_perms(&creds.access_key) {
-                if let Some(user) = self.cache.get_user_by_id(&key.user_id) {
-                    return Some((key, user.attributes.clone()));
-                }
-            }
-        }
-        None
-    }
-
-    #[tracing::instrument(level = "trace", skip(self, creds))]
-    pub fn handle_root(&self, creds: Option<&Credentials>) -> CheckAccessResult {
-        if let Some(AccessKeyPermissions {
-            user_id,
-            access_key,
-            ..
-        }) = self.extract_access_key_perms(creds)
+        headers: &HeaderMap<HeaderValue>
+    ) -> Result<CheckAccessResult, S3Error> {
+        if let Some((
+            AccessKeyPermissions {
+                user_id,
+                access_key,
+                ..
+            },
+            attributes,
+        )) = self.extract_access_key_perms(creds)
         {
-            return CheckAccessResult {
+            self.rule_engine
+                .evaluate_root(RootRuleInput::new(
+                    user_id.to_string(),
+                    vec![],
+                    attributes,
+                    method.to_string(),
+                    headers
+                        .iter()
+                        .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or_default().to_string()))
+                        .collect(),
+                ))
+                .map_err(|e| s3_error!(AccessDenied, "Forbidden by rule"))?;
+            return Ok(CheckAccessResult {
                 user_id: Some(user_id.to_string()),
                 token_id: Some(access_key.to_string()),
                 ..Default::default()
-            };
+            });
         }
-        CheckAccessResult::default()
+        Err(s3_error!(AccessDenied, "Missing access key"))
     }
 
     #[tracing::instrument(level = "trace", skip(self, bucket_name, creds, headers))]
@@ -456,6 +469,23 @@ impl AuthHandler {
         headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult, S3Error> {
         todo!()
+    }
+
+    // ----------------- HELPERS -----------------
+
+    #[tracing::instrument(level = "trace", skip(self, creds))]
+    pub fn extract_access_key_perms(
+        &self,
+        creds: Option<&Credentials>,
+    ) -> Option<(AccessKeyPermissions, HashMap<String, String>)> {
+        if let Some(creds) = creds {
+            if let Some(key) = self.cache.get_key_perms(&creds.access_key) {
+                if let Some(user) = self.cache.get_user_attributes(&key.user_id) {
+                    return Some((key, user));
+                }
+            }
+        }
+        None
     }
 
     #[tracing::instrument(level = "trace", skip(self, bucket, method, headers))]

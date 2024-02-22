@@ -5,6 +5,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserRuleInfo {
     pub user_id: String,
+    pub permissions: Vec<(String, String)>,
     pub attributes: HashMap<String, String>,
 }
 
@@ -68,4 +69,23 @@ pub struct ReplicationIncomingRuleInput {
 pub struct ReplicationOutgoingRuleInput {
     pub objects: Object,
     pub target_proxy_id: String,
+}
+
+impl RootRuleInput {
+    pub fn new(
+        user_id: String,
+        permissions: Vec<(String, String)>,
+        attributes: HashMap<String, String>,
+        method: String,
+        header: HashMap<String, String>,
+    ) -> Self {
+        Self {
+            user: UserRuleInfo {
+                user_id,
+                permissions,
+                attributes,
+            },
+            request: RequestInfo { method, header },
+        }
+    }
 }

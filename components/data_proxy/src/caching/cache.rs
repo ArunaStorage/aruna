@@ -102,7 +102,7 @@ impl Cache {
 
         // Initialize auth handler
         let auth_handler =
-            AuthHandler::new(cache.clone(), self_id, encoding_key, encoding_key_serial);
+            AuthHandler::new(cache.clone(), self_id, encoding_key, encoding_key_serial)?;
 
         // Set auth handler in cache
         cache.set_auth(auth_handler).await;
