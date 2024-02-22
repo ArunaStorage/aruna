@@ -38,8 +38,10 @@ use tonic::metadata::MetadataMap;
 use tracing::error;
 
 use super::rule_engine::RuleEngine;
+use super::rule_structs::ObjectRuleInputBuilder;
 use super::rule_structs::RequestInfo;
 use super::rule_structs::RootRuleInput;
+use super::rule_structs::RootRuleInputBuilder;
 use super::rule_structs::UserRuleInfo;
 
 pub struct AuthHandler {
@@ -267,7 +269,7 @@ impl AuthHandler {
         &self,
         method: &Method,
         creds: Option<&Credentials>,
-        headers: &HeaderMap<HeaderValue>
+        headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult, S3Error> {
         if let Some((
             AccessKeyPermissions {
@@ -279,16 +281,21 @@ impl AuthHandler {
         )) = self.extract_access_key_perms(creds)
         {
             self.rule_engine
-                .evaluate_root(RootRuleInput::new(
-                    user_id.to_string(),
-                    vec![],
-                    attributes,
-                    method.to_string(),
-                    headers
-                        .iter()
-                        .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or_default().to_string()))
-                        .collect(),
-                ))
+                .evaluate_root(
+                    RootRuleInputBuilder::new()
+                        .attributes(attributes)
+                        .method(method.to_string())
+                        .headers(
+                            headers
+                                .iter()
+                                .map(|(k, v)| {
+                                    (k.to_string(), v.to_str().unwrap_or_default().to_string())
+                                })
+                                .collect(),
+                        )
+                        .build()
+                        .map_err(|e| s3_error!(MalformedACLError, "Rule has wrong context"))?,
+                )
                 .map_err(|e| s3_error!(AccessDenied, "Forbidden by rule"))?;
             return Ok(CheckAccessResult {
                 user_id: Some(user_id.to_string()),
@@ -309,13 +316,14 @@ impl AuthHandler {
     ) -> Result<CheckAccessResult, S3Error> {
         // TODO: Decide how to handle public bucket access
         // Query the User -> Must exist
-        let (access_key_info, attributes) = self.extract_access_key_perms(creds).ok_or_else(|| {
-            error!("No such user");
-            s3_error!(AccessDenied, "Access Denied")
-        })?;
+        let (access_key_info, attributes) =
+            self.extract_access_key_perms(creds).ok_or_else(|| {
+                error!("No such user");
+                s3_error!(AccessDenied, "Access Denied")
+            })?;
 
         // Query the project and extract the headers
-        let (headers, project) =
+        let (cors_headers, project) =
             if let Some(project) = self.cache.get_full_resource_by_path(bucket_name) {
                 // Check if the project is partially synced -> FAIL
                 if project.is_partial_sync(self.self_id) {
@@ -334,10 +342,14 @@ impl AuthHandler {
         // Extract the permission level from the method READ == "GET" and friends, WRITE == "POST" and friends
         let db_perm_from_method = DbPermissionLevel::from(method);
 
-        if access_key_info.permissions.get(&project.id).ok_or_else(|| {
-            error!("No permissions found");
-            s3_error!(AccessDenied, "Access Denied")
-        })? < &db_perm_from_method
+        if access_key_info
+            .permissions
+            .get(&project.id)
+            .ok_or_else(|| {
+                error!("No permissions found");
+                s3_error!(AccessDenied, "Access Denied")
+            })?
+            < &db_perm_from_method
         {
             error!("Insufficient permissions");
             return Err(s3_error!(AccessDenied, "Access Denied"));
@@ -349,13 +361,31 @@ impl AuthHandler {
                 .map_err(|_| s3_error!(InternalError, "Internal Error"))?,
         );
 
+        self.rule_engine
+            .evaluate_object(
+                ObjectRuleInputBuilder::new()
+                    .attributes(attributes)
+                    .method(method.to_string())
+                    .headers(
+                        headers
+                            .iter()
+                            .map(|(k, v)| {
+                                (k.to_string(), v.to_str().unwrap_or_default().to_string())
+                            })
+                            .collect(),
+                    )
+                    .project(project.clone())
+                    .build().map_err(|_| s3_error!(MalformedACLError, "Rule has wrong context"))?,
+            )
+            .map_err(|_| s3_error!(AccessDenied, "Forbidden by rule"))?;
+
         Ok(CheckAccessResult::new(
             Some(access_key_info.user_id.to_string()),
             Some(access_key_info.access_key),
             resource_state,
             Some((project, None)),
             None,
-            headers,
+            cors_headers,
         ))
     }
 

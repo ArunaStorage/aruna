@@ -1,8 +1,8 @@
 use crate::structs::Object;
+use anyhow::anyhow;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use anyhow::Result;
-use anyhow::anyhow;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserRuleInfo {
@@ -22,7 +22,7 @@ pub struct ObjectHierarchyRuleInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestInfo {
     pub method: String,
-    pub header: HashMap<String, String>,
+    pub headers: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,11 +80,10 @@ pub struct RootRuleInputBuilder {
     permissions: Vec<(String, String)>,
     attributes: HashMap<String, String>,
     method: String,
-    header: HashMap<String, String>,
+    headers: HashMap<String, String>,
 }
 
 impl RootRuleInputBuilder {
-
     pub fn new() -> Self {
         Self::default()
     }
@@ -109,8 +108,8 @@ impl RootRuleInputBuilder {
         self
     }
 
-    pub fn header(mut self, header: HashMap<String, String>) -> Self {
-        self.header = header;
+    pub fn headers(mut self, headers: HashMap<String, String>) -> Self {
+        self.headers = headers;
         self
     }
 
@@ -131,7 +130,7 @@ impl RootRuleInputBuilder {
             },
             request: RequestInfo {
                 method: self.method,
-                header: self.header,
+                headers: self.headers,
             },
         })
     }
@@ -143,7 +142,7 @@ pub struct ObjectRuleInputBuilder {
     permissions: Vec<(String, String)>,
     attributes: HashMap<String, String>,
     method: String,
-    header: HashMap<String, String>,
+    headers: HashMap<String, String>,
     object: Option<Object>,
     dataset: Option<Object>,
     collection: Option<Object>,
@@ -175,8 +174,8 @@ impl ObjectRuleInputBuilder {
         self
     }
 
-    pub fn header(mut self, header: HashMap<String, String>) -> Self {
-        self.header = header;
+    pub fn headers(mut self, headers: HashMap<String, String>) -> Self {
+        self.headers = headers;
         self
     }
 
@@ -201,7 +200,6 @@ impl ObjectRuleInputBuilder {
     }
 
     pub fn build(self) -> Result<ObjectRuleInput> {
-
         if self.user_id.is_empty() {
             return Err(anyhow!("user_id is required"));
         }
@@ -228,7 +226,7 @@ impl ObjectRuleInputBuilder {
             },
             request: RequestInfo {
                 method: self.method,
-                header: self.header,
+                headers: self.headers,
             },
         })
     }
@@ -240,7 +238,7 @@ pub struct PackageObjectRuleInputBuilder {
     permissions: Vec<(String, String)>,
     attributes: HashMap<String, String>,
     method: String,
-    header: HashMap<String, String>,
+    headers: HashMap<String, String>,
     object: Option<Object>,
     parents: Vec<Object>,
 }
@@ -270,8 +268,8 @@ impl PackageObjectRuleInputBuilder {
         self
     }
 
-    pub fn header(mut self, header: HashMap<String, String>) -> Self {
-        self.header = header;
+    pub fn headers(mut self, headers: HashMap<String, String>) -> Self {
+        self.headers = headers;
         self
     }
 
@@ -308,7 +306,7 @@ impl PackageObjectRuleInputBuilder {
             parents: self.parents,
             request: RequestInfo {
                 method: self.method,
-                header: self.header,
+                headers: self.headers,
             },
         })
     }
@@ -320,7 +318,7 @@ pub struct BundleRuleInputBuilder {
     permissions: Vec<(String, String)>,
     attributes: HashMap<String, String>,
     method: String,
-    header: HashMap<String, String>,
+    headers: HashMap<String, String>,
     objects: Vec<Object>,
     bundle_id: String,
     expires: Option<i64>,
@@ -351,8 +349,8 @@ impl BundleRuleInputBuilder {
         self
     }
 
-    pub fn header(mut self, header: HashMap<String, String>) -> Self {
-        self.header = header;
+    pub fn headers(mut self, headers: HashMap<String, String>) -> Self {
+        self.headers = headers;
         self
     }
 
@@ -397,7 +395,7 @@ impl BundleRuleInputBuilder {
             objects: self.objects,
             request: RequestInfo {
                 method: self.method,
-                header: self.header,
+                headers: self.headers,
             },
             bundle: BundleInfo {
                 id: self.bundle_id,
@@ -406,7 +404,6 @@ impl BundleRuleInputBuilder {
         })
     }
 }
-
 
 #[derive(Debug, Default)]
 pub struct ReplicationIncomingRuleInputBuilder {
@@ -447,7 +444,7 @@ impl ReplicationIncomingRuleInputBuilder {
 
 #[derive(Debug, Default)]
 pub struct ReplicationOutgoingRuleInputBuilder {
-    object: Object,
+    object: Option<Object>,
     target_proxy_id: String,
 }
 
@@ -457,7 +454,7 @@ impl ReplicationOutgoingRuleInputBuilder {
     }
 
     pub fn object(mut self, object: Object) -> Self {
-        self.objects = object;
+        self.object = Some(object);
         self
     }
 
@@ -467,7 +464,7 @@ impl ReplicationOutgoingRuleInputBuilder {
     }
 
     pub fn build(self) -> Result<ReplicationOutgoingRuleInput> {
-        if self.object.is_empty() {
+        if self.object.is_none() {
             return Err(anyhow!("objects is required"));
         }
 
@@ -476,7 +473,7 @@ impl ReplicationOutgoingRuleInputBuilder {
         }
 
         Ok(ReplicationOutgoingRuleInput {
-            objects: self.objects,
+            objects: self.object.ok_or_else(|| anyhow!("object is required"))?,
             target_proxy_id: self.target_proxy_id,
         })
     }
