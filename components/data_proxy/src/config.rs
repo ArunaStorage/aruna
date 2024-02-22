@@ -6,7 +6,8 @@ use anyhow::Result;
 pub struct Config {
     proxy: Proxy,
     persistence: Persistence,
-    frontend: Frontend,
+    frontend: Option<Frontend>,
+    backend: Backend,
     rules: Vec<Rule>,
 }
 
@@ -15,9 +16,14 @@ impl Config {
         let Config {
             proxy,
             persistence,
-            frontend,
-            rules,
+            backend,
+            ..
         } = self;
+
+        proxy.validate()?;
+        persistence.validate()?;
+        backend.validate()?;
+        Ok(())
     }
 }
 
@@ -29,6 +35,39 @@ pub struct Proxy {
     remote_synced: bool,
     enable_ingest: bool,
     grpc_server: String,
+}
+
+impl Proxy {
+    pub fn validate(&mut self) -> Result<()> {
+        let Proxy {
+            endpoint_id,
+            private_key,
+            serial,
+            remote_synced,
+            enable_ingest,
+            grpc_server,
+        } = self;
+
+        if let Some(private_key) = private_key {
+            if private_key.len() < 32 {
+                return Err(anyhow::anyhow!("private_key must be at least 32 characters long"));
+            }
+        }else{
+            let env_var = dotenvy::var("PROXY_PRIVATE_KEY").map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
+            *private_key = Some(env_var);
+        }
+
+        if let Some(serial) = serial {
+            if *serial < 1 {
+                return Err(anyhow::anyhow!("serial must be at least 1"));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -44,6 +83,51 @@ pub enum Persistence {
     },
 }
 
+impl Persistence {
+    fn validate(&mut self) -> Result<()> {
+        let Persistence::Postgres {
+            host,
+            port,
+            user,
+            password,
+            database,
+            schema,
+        } = self else {
+            return Ok(());
+        };
+
+        if host.is_empty() {
+            return Err(anyhow::anyhow!("host cannot be empty"));
+        }
+
+        if *port < 1 {
+            return Err(anyhow::anyhow!("port must be at least 1"));
+        }
+
+        if user.is_empty() {
+            return Err(anyhow::anyhow!("user cannot be empty"));
+        }
+
+        if database.is_empty() {
+            return Err(anyhow::anyhow!("database cannot be empty"));
+        }
+
+        if schema.is_empty() {
+            return Err(anyhow::anyhow!("schema cannot be empty"));
+        }
+
+        if let None = password {
+            let env_var = dotenvy::var("POSTGRES_PASSWORD").map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
+            *password = Some(env_var);
+        }
+        Ok(())
+    }
+}
+
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Frontend {
     server: String,
@@ -54,7 +138,7 @@ pub struct Frontend {
 #[serde(rename_all = "lowercase")]
 pub enum Backend {
     S3 {
-        host: String,
+        host: Option<String>,
         access_key: Option<String>,
         secret_key: Option<String>,
         encryption: bool,
@@ -69,6 +153,49 @@ pub enum Backend {
         compression: bool,
         dropbox_folder: Option<String>,
         backend_scheme: String,
+    }
+}
+
+impl Backend {
+    fn validate(&mut self) -> Result<()> {
+        match self {
+            Self::S3{
+                access_key,
+                secret_key,
+                host,
+                ..
+            } => {
+
+                if let None = host {
+                    let env_var = dotenvy::var("AWS_S3_HOST").map_err(|e| {
+                        tracing::error!(error = ?e, msg = e.to_string());
+                        e
+                    })?;
+                    *host = Some(env_var);
+                }
+
+                if let None = access_key {
+                    let env_var = dotenvy::var("AWS_ACCESS_KEY_ID").map_err(|e| {
+                        tracing::error!(error = ?e, msg = e.to_string());
+                        e
+                    })?;
+                    *access_key = Some(env_var);
+                }
+
+                if let None = secret_key {
+                    let env_var = dotenvy::var("AWS_SECRET_ACCESS").map_err(|e| {
+                        tracing::error!(error = ?e, msg = e.to_string());
+                        e
+                    })?;
+                    *secret_key = Some(env_var);
+                }
+
+                Ok(())
+            },
+            Self::FileSystem {..} => {
+                Ok(())
+            }
+        }
     }
 }
 

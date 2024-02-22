@@ -35,8 +35,7 @@ use tonic::metadata::MetadataMap;
 use tracing::error;
 
 pub struct AuthHandler {
-    pub cache: Arc<Cache>,
-
+    cache: Arc<Cache>,
     self_id: DieselUlid,
     encoding_key: (i32, EncodingKey),
 }

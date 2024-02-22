@@ -22,7 +22,7 @@ server="localhost:1337"
 hostname="localhost:1337"
 
 [backend.s3]
-# s3 host or (env AWS_S3_HOST)
+# s3 host
 host="http://localhost:9000"
 # s3 access key or (env AWS_ACCESS_KEY_ID)
 access_key="minioadmin"
