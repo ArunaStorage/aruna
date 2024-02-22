@@ -5,20 +5,20 @@ use aruna_rust_api::api::dataproxy::services::v2::dataproxy_replication_service_
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_server::DataproxyUserServiceServer;
 use caching::cache::Cache;
 use data_backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
+use futures_util::TryFutureExt;
 use grpc_api::bundler::BundlerServiceImpl;
 use grpc_api::{
     proxy_service::DataproxyReplicationServiceImpl, user_service::DataproxyUserServiceImpl,
 };
-use std::{net::SocketAddr, str::FromStr, sync::Arc};
+use lazy_static::lazy_static;
+use std::{net::SocketAddr, sync::Arc};
 use tokio::try_join;
 use tonic::transport::Server;
-use tracing::debug;
 use tracing::error;
 use tracing::info_span;
 use tracing::trace;
 use tracing::Instrument;
 use tracing_subscriber::EnvFilter;
-use futures_util::TryFutureExt;
 
 mod bundler;
 mod caching;
@@ -31,11 +31,24 @@ mod grpc_api;
 mod structs;
 #[macro_use]
 mod macros;
-mod helpers;
 mod auth;
 mod config;
+mod helpers;
 
+use crate::config::Config;
+use crate::data_backends::filesystem_backend::FSBackend;
 use crate::replication::replication_handler::ReplicationHandler;
+
+lazy_static! {
+    static ref CONFIG: Config = {
+        dotenvy::from_filename(".env").ok();
+        let config_file = dotenvy::var("CONFIG").unwrap_or("config.toml".to_string());
+        let mut config: Config =
+            toml::from_str(std::fs::read_to_string(config_file).unwrap().as_str()).unwrap();
+        config.validate().unwrap();
+        config
+    };
+}
 
 #[tracing::instrument(level = "trace", skip())]
 #[tokio::main]
@@ -61,100 +74,27 @@ async fn main() -> Result<()> {
 
     tracing::subscriber::set_global_default(subscriber)?;
 
-    let span = info_span!("INIT ENV");
-    let guard = span.enter();
-
-    let remote_synced = dotenvy::var("DATA_PROXY_REMOTE_SYNCED")
-        .map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?
-        .parse::<bool>()
-        .map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
-    debug!(target = "DATA_PROXY_REMOTE_SYNCED", value = remote_synced);
-    let aruna_host_url = if let true = remote_synced {
-        Some(dotenvy::var("ARUNA_HOST_URL").map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?)
-    } else {
-        None
-    };
-    debug!(target = "ARUNA_HOST_URL", value = aruna_host_url);
-    let with_persistence = dotenvy::var("DATA_PROXY_PERSISTENCE")
-        .map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?
-        .parse::<bool>()
-        .map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
-    debug!(target = "DATA_PROXY_PERSISTENCE", value = with_persistence);
-    let address = dotenvy::var("DATA_PROXY_DATA_SERVER").map_err(|e| {
-        tracing::error!(error = ?e, msg = e.to_string());
-        e
-    })?;
-    debug!(target = "DATA_PROXY_DATA_SERVER", value = address);
-    let hostname = dotenvy::var("DATA_PROXY_DATA_HOSTNAME").map_err(|e| {
-        tracing::error!(error = ?e, msg = e.to_string());
-        e
-    })?;
-    debug!(target = "DATA_PROXY_DATA_HOSTNAME", value = hostname);
-    // ULID of the endpoint
-    let endpoint_id = dotenvy::var("DATA_PROXY_ENDPOINT_ID").map_err(|e| {
-        tracing::error!(error = ?e, msg = e.to_string());
-        e
-    })?;
-    debug!(target = "DATA_PROXY_ENDPOINT_ID", value = endpoint_id);
-    let data_proxy_grpc_addr = dotenvy::var("DATA_PROXY_GRPC_SERVER")
-        .map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?
-        .parse::<SocketAddr>()
-        .map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
-    debug!(
-        target = "DATA_PROXY_GRPC_SERVER",
-        value = ?data_proxy_grpc_addr
-    );
-
-    let encoding_key = dotenvy::var("DATA_PROXY_ENCODING_KEY").map_err(|e| {
-        tracing::error!(error = ?e, msg = e.to_string());
-        e
-    })?;
-    let encoding_key_serial = dotenvy::var("DATA_PROXY_PUBKEY_SERIAL")
-        .map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?
-        .parse::<i32>()
-        .map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
-
-    drop(guard);
-
     trace!("init storage backend");
+
+    let backend: Box<dyn StorageBackend> = match CONFIG.backend {
+        config::Backend::S3 {..} => Box::new(S3Backend::new(CONFIG.proxy.endpoint_id.to_string()).await?),
+        config::Backend::FileSystem {
+            root_path,
+            ..
+        } => Box::new(FSBackend::new(CONFIG.proxy.endpoint_id.to_string(), root_path.as_str()).await?),
+    };
+
     let storage_backend: Arc<Box<dyn StorageBackend>> =
-        Arc::new(Box::new(S3Backend::new(endpoint_id.to_string()).await?));
+        Arc::new(backend);
 
     trace!("init cache");
     let (sender, receiver) = async_channel::unbounded();
     let cache = Cache::new(
-        aruna_host_url,
-        with_persistence,
-        diesel_ulid::DieselUlid::from_str(&endpoint_id)?,
-        encoding_key,
-        encoding_key_serial,
+        CONFIG.proxy.aruna_url,
+        CONFIG.persistence.is_some(),
+        CONFIG.proxy.endpoint_id,
+        CONFIG.proxy.private_key.ok_or_else(|| anyhow!("Private key not set"))?,
+        CONFIG.proxy.serial,
         sender.clone(),
         Some(storage_backend.clone()),
     )
@@ -164,7 +104,7 @@ async fn main() -> Result<()> {
     let replication_handler = ReplicationHandler::new(
         receiver,
         storage_backend.clone(),
-        endpoint_id.clone(),
+        CONFIG.proxy.endpoint_id.to_string(),
         cache.clone(),
     );
     tokio::spawn(async move {
@@ -176,35 +116,46 @@ async fn main() -> Result<()> {
 
     trace!("init s3 server");
     let cache_clone = cache.clone();
-    let s3_server = s3_frontend::s3server::S3Server::new(
-        &address,
-        hostname.to_string(),
-        storage_backend.clone(),
-        cache,
-    )
-    .await?;
-
+    let s3_server = if let Some(frontend) = CONFIG.frontend {
+        Some(s3_frontend::s3server::S3Server::new(
+            &frontend.server,
+            frontend.hostname,
+            storage_backend.clone(),
+            cache,
+        )
+        .await?)    
+    }else{
+        None
+    };
     trace!("init grpc server");
+
+    let proxy_grpc_addr = CONFIG.proxy.grpc_server.parse::<SocketAddr>()?;
+
     let grpc_server_handle = tokio::spawn(
         async move {
-            Server::builder()
+            let mut builder = Server::builder()
                 .add_service(DataproxyReplicationServiceServer::new(
                     DataproxyReplicationServiceImpl::new(
                         cache_clone.clone(),
                         sender,
-                        hostname.clone(),
                         storage_backend,
                     ),
                 ))
                 .add_service(DataproxyUserServiceServer::new(
                     DataproxyUserServiceImpl::new(cache_clone.clone()),
-                ))
-                .add_service(BundlerServiceServer::new(BundlerServiceImpl::new(
-                    cache_clone.clone(),
-                    hostname.clone(),
-                    false,
-                )))
-                .serve(data_proxy_grpc_addr)
+                ));
+
+                if let Some(frontend) = CONFIG.frontend {
+                    builder = builder
+                        .add_service(BundlerServiceServer::new(BundlerServiceImpl::new(
+                            cache_clone.clone(),
+                            frontend.hostname,
+                            true,
+                        )));
+                };
+                
+                builder
+                .serve(proxy_grpc_addr)
                 .await
         }
         .instrument(info_span!("grpc_server_run")),
@@ -214,11 +165,16 @@ async fn main() -> Result<()> {
         anyhow!("an error occured {e}")
     });
 
-    match try_join!(s3_server.run(), grpc_server_handle) {
-        Ok(_) => Ok(()),
-        Err(err) => {
-            error!("{}", err);
-            Err(err)
+    if let Some(s3_server) = s3_server {
+        match try_join!(s3_server.run(), grpc_server_handle) {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                error!("{}", err);
+                Err(err)
+            }
         }
+    }else{
+        grpc_server_handle.await??;
+        Ok(())
     }
 }

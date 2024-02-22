@@ -1,3 +1,1 @@
-pub(super) struct RuleEngine {
-    
-}
+pub(super) struct RuleEngine {}

@@ -1,3 +1,3 @@
 pub mod auth;
-mod rule_structs;
 mod rule_engine;
+mod rule_structs;

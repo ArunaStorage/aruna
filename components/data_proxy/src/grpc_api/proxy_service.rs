@@ -37,7 +37,6 @@ use tracing::{error, info_span, trace, Instrument};
 pub struct DataproxyReplicationServiceImpl {
     pub cache: Arc<Cache>,
     pub sender: Sender<ReplicationMessage>,
-    pub endpoint_url: String,
     pub backend: Arc<Box<dyn StorageBackend>>,
 }
 
@@ -46,13 +45,11 @@ impl DataproxyReplicationServiceImpl {
     pub fn new(
         cache: Arc<Cache>,
         sender: Sender<ReplicationMessage>,
-        endpoint_url: String,
         backend: Arc<Box<dyn StorageBackend>>,
     ) -> Self {
         Self {
             cache,
             sender,
-            endpoint_url,
             backend,
         }
     }

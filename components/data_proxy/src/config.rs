@@ -1,14 +1,14 @@
-use diesel_ulid::DieselUlid;
-use serde::{Serialize, Deserialize};
 use anyhow::Result;
+use diesel_ulid::DieselUlid;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
-    proxy: Proxy,
-    persistence: Persistence,
-    frontend: Option<Frontend>,
-    backend: Backend,
-    rules: Vec<Rule>,
+    pub proxy: Proxy,
+    pub persistence: Option<Persistence>,
+    pub frontend: Option<Frontend>,
+    pub backend: Backend,
+    pub rules: Vec<Rule>,
 }
 
 impl Config {
@@ -21,7 +21,9 @@ impl Config {
         } = self;
 
         proxy.validate()?;
-        persistence.validate()?;
+        if let Some(persistence) = persistence {
+            persistence.validate()?;
+        }
         backend.validate()?;
         Ok(())
     }
@@ -29,12 +31,13 @@ impl Config {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Proxy {
-    endpoint_id: DieselUlid,
-    private_key: Option<String>,
-    serial: Option<u64>,
-    remote_synced: bool,
-    enable_ingest: bool,
-    grpc_server: String,
+    pub endpoint_id: DieselUlid,
+    pub private_key: Option<String>,
+    pub serial: i32,
+    pub remote_synced: bool,
+    pub enable_ingest: bool,
+    pub aruna_url: Option<String>,
+    pub grpc_server: String,
 }
 
 impl Proxy {
@@ -46,13 +49,16 @@ impl Proxy {
             remote_synced,
             enable_ingest,
             grpc_server,
+            ..
         } = self;
 
         if let Some(private_key) = private_key {
             if private_key.len() < 32 {
-                return Err(anyhow::anyhow!("private_key must be at least 32 characters long"));
+                return Err(anyhow::anyhow!(
+                    "private_key must be at least 32 characters long"
+                ));
             }
-        }else{
+        } else {
             let env_var = dotenvy::var("PROXY_PRIVATE_KEY").map_err(|e| {
                 tracing::error!(error = ?e, msg = e.to_string());
                 e
@@ -73,7 +79,7 @@ impl Proxy {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Persistence {
-    Postgres{
+    Postgres {
         host: String,
         port: u16,
         user: String,
@@ -92,7 +98,8 @@ impl Persistence {
             password,
             database,
             schema,
-        } = self else {
+        } = self
+        else {
             return Ok(());
         };
 
@@ -127,11 +134,10 @@ impl Persistence {
     }
 }
 
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Frontend {
-    server: String,
-    hostname: String,
+    pub server: String,
+    pub hostname: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -145,7 +151,7 @@ pub enum Backend {
         compression: bool,
         deduplication: bool,
         dropbox_bucket: Option<String>,
-        backend_scheme: String,
+         backend_scheme: String,
     },
     FileSystem {
         root_path: String,
@@ -153,19 +159,18 @@ pub enum Backend {
         compression: bool,
         dropbox_folder: Option<String>,
         backend_scheme: String,
-    }
+    },
 }
 
 impl Backend {
     fn validate(&mut self) -> Result<()> {
         match self {
-            Self::S3{
+            Self::S3 {
                 access_key,
                 secret_key,
                 host,
                 ..
             } => {
-
                 if let None = host {
                     let env_var = dotenvy::var("AWS_S3_HOST").map_err(|e| {
                         tracing::error!(error = ?e, msg = e.to_string());
@@ -191,10 +196,8 @@ impl Backend {
                 }
 
                 Ok(())
-            },
-            Self::FileSystem {..} => {
-                Ok(())
             }
+            Self::FileSystem { .. } => Ok(()),
         }
     }
 }
@@ -209,6 +212,6 @@ pub enum RuleTarget {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Rule {
-    target: RuleTarget,
-    rule: String,
+    pub target: RuleTarget,
+    pub rule: String,
 }

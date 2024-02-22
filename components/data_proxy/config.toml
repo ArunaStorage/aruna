@@ -5,7 +5,8 @@ endpoint_id= "01H81W0ZMB54YEP5711Q2BK46V"
 private_key="MC4CAQAwBQYDK2VwBCIEIM/FI+bYw+auSKGyGqeISRIEjofvZV/lbK7QL1wkuCey"
 # The serial number of the proxy (will be received from the server on registration)
 serial=1337
-remote_synced=true
+# Optional will disable notification sync if not set
+aruna_url="http://localhost:50051"
 enable_ingest=false # Set to true to enable the ingest service
 grpc_server="0.0.0.0:50052"
 

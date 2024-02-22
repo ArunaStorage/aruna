@@ -241,7 +241,8 @@ impl AuthHandler {
                     // "GET" style methods
                     // &Method::GET | &Method::HEAD | &Method::OPTIONS
                     // 2 special cases: objects, bundles
-                    self.handle_object_get(bucket, key, method, creds, headers).await
+                    self.handle_object_get(bucket, key, method, creds, headers)
+                        .await
                 } else {
                     // "POST" style = modifying methods
                     // &Method::POST | &Method::PUT | &Method::DELETE | &Method::PATCH | (&Method::CONNECT | &Method::TRACE)
@@ -379,7 +380,8 @@ impl AuthHandler {
             return Err(s3_error!(NoSuchKey, "No such object"));
         }
 
-        let (project, headers) = self.get_project_and_headers(bucket_name, method, headers)
+        let (project, headers) = self
+            .get_project_and_headers(bucket_name, method, headers)
             .ok_or_else(|| {
                 error!("No such project");
                 s3_error!(NoSuchBucket, "No such bucket")

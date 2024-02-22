@@ -26,13 +26,8 @@ pub struct FSBackend {
 impl FSBackend {
     #[tracing::instrument(level = "debug")]
     #[allow(dead_code)]
-    pub async fn new(_endpoint_id: String) -> Result<Self> {
-        let base_path = dotenvy::var("FS_BASEPATH")
-            .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
-                e
-            })
-            .unwrap();
+    pub async fn new(endpoint_id: String, base_path: &str) -> Result<Self> {
+        let base_path = base_path.to_string();
 
         let handler = FSBackend {
             _endpoint_id,
