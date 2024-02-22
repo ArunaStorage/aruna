@@ -33,6 +33,7 @@ mod structs;
 mod macros;
 mod helpers;
 mod auth;
+mod config;
 
 use crate::replication::replication_handler::ReplicationHandler;
 

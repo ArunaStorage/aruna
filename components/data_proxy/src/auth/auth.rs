@@ -36,8 +36,9 @@ use tracing::error;
 
 pub struct AuthHandler {
     pub cache: Arc<Cache>,
-    pub self_id: DieselUlid,
-    pub encoding_key: (i32, EncodingKey),
+
+    self_id: DieselUlid,
+    encoding_key: (i32, EncodingKey),
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -1,0 +1,51 @@
+[proxy]
+# ID of the proxy
+endpoint_id= "01H81W0ZMB54YEP5711Q2BK46V"
+# Private ed25519 key of the proxy (can also be provided via env-var PROXY_PRIVATE_KEY)
+private_key="MC4CAQAwBQYDK2VwBCIEIM/FI+bYw+auSKGyGqeISRIEjofvZV/lbK7QL1wkuCey"
+# The serial number of the proxy (will be received from the server on registration)
+serial=1337
+remote_synced=true
+enable_ingest=false # Set to true to enable the ingest service
+grpc_server="0.0.0.0:50052"
+
+[persistence.postgres]
+host = "localhost"
+port = 5433
+user = "yugabyte"
+# Can also be provided via env-var POSTGRES_PASSWORD
+password = "yugabyte"
+schema = './src/database/schema.sql'
+
+[frontend.s3]
+server="localhost:1337"
+hostname="localhost:1337"
+
+[backend.s3]
+# s3 host or (env AWS_S3_HOST)
+host="http://localhost:9000"
+# s3 access key or (env AWS_ACCESS_KEY_ID)
+access_key="minioadmin"
+# s3 secret key or (env AWS_SECRET_ACCESS)
+secret_key="minioadmin"
+encryption=true
+compression=true
+deduplication=true
+dropbox_bucket="" # Set value to set a dropbox bucket
+# A scheme for the backend to use when deciding where to store objects
+# The following variables are available:
+# - <PROJECT_NAME> - The project name (lowercase)
+# - <PROJECT_ID> - The project ULID (lowercase)
+# - <COLLECTION_NAME> - The collection name (if present)
+# - <COLLECTION_ID> - The collection ULID (if present)
+# - <DATASET_NAME> - The dataset name (if present)
+# - <DATASET_ID> - The dataset ULID (if present)
+# - <OBJECT_NAME> - The object name
+# - <OBJECT_ID> - The object ULID
+# - <RANDOM:x> - A random string of (x == integer) lower_case ascii characters
+# - <PROXY_ID> - The proxy ULID (lowercase)
+backend_scheme="s3://<PROJECT>-<RANDOM:10>/<COLLECTION>/<DATASET>/<RANDOM:10>_<OBJECT>" 
+
+[[rules]]
+target="ALL" # ALL, OBJECT, BUNDLE, REPLICATION
+rule = "user.attributes.age > 18" # Example rule: Only allow users older than 18 to interact
