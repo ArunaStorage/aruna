@@ -1,8 +1,9 @@
-use super::cache::Cache;
+use crate::caching::cache::Cache;
 use crate::helpers::is_method_read;
 use crate::structs::AccessKeyPermissions;
 use crate::structs::CheckAccessResult;
 use crate::structs::DbPermissionLevel;
+use crate::structs::Object;
 use crate::structs::ObjectType;
 use crate::structs::ResourceState;
 use crate::structs::ResourceStates;
@@ -24,6 +25,7 @@ use s3s::s3_error;
 use s3s::S3Error;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::ops::Add;
 use std::str::FromStr;
 use std::sync::Arc;

@@ -18,6 +18,8 @@ use tracing::info_span;
 use tracing::trace;
 use tracing::Instrument;
 use tracing_subscriber::EnvFilter;
+use futures_util::TryFutureExt;
+
 mod bundler;
 mod caching;
 mod data_backends;
@@ -30,7 +32,7 @@ mod structs;
 #[macro_use]
 mod macros;
 mod helpers;
-use futures_util::TryFutureExt;
+mod auth;
 
 use crate::replication::replication_handler::ReplicationHandler;
 

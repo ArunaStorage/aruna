@@ -1,4 +1,5 @@
-use super::{auth::AuthHandler, grpc_query_handler::GrpcQueryHandler};
+use super::grpc_query_handler::GrpcQueryHandler;
+use crate::auth::auth::AuthHandler;
 use crate::caching::grpc_query_handler::sort_objects;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::replication::replication_handler::ReplicationMessage;
