@@ -23,6 +23,7 @@ use diesel_ulid::DieselUlid;
 use http::{HeaderMap, HeaderValue, Method};
 use s3s::dto::CreateBucketInput;
 use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
+use s3s::{s3_error, S3Error};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -1011,15 +1012,24 @@ impl Object {
     }
 
     #[tracing::instrument(level = "trace", skip(self, ep_id))]
-    pub fn is_partial_sync(&self, ep_id: DieselUlid) -> bool {
+    pub fn is_partial_sync(&self, ep_id: &DieselUlid) -> bool {
         self.endpoints
             .iter()
-            .find(|ep| ep.id == ep_id)
+            .find(|ep| &ep.id == ep_id)
             .map(|ep| match ep.variant {
                 SyncVariant::PartialSync(_) => true,
                 _ => false,
             })
             .unwrap_or(false)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, ep_id))]
+    pub fn fail_partial_sync(&self, ep_id: &DieselUlid) -> Result<(), S3Error> {
+        if self.is_partial_sync(ep_id) {
+            error!("Rejecting request: Object partial synced");
+            return Err(s3_error!(InvalidObjectState, "Object partial synced"));
+        }
+        Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -1073,11 +1083,9 @@ impl Object {
 }
 
 #[derive(Clone, Debug, Default)]
-pub enum ResourceStates {
+pub enum ResourceState {
     Found {
-        id: DieselUlid,
-        name: String,
-        variant: ResourceVariant,
+        object: Object,
     },
     Missing {
         name: String,
@@ -1087,45 +1095,55 @@ pub enum ResourceStates {
     None,
 }
 
-impl ResourceStates {
+impl ResourceState {
     pub fn is_missing(&self) -> bool {
-        matches!(self, ResourceStates::Missing { .. })
+        matches!(self, ResourceState::Missing { .. })
     }
 
-    pub fn new_found(id: DieselUlid, name: String, variant: ResourceVariant) -> Self {
-        Self::Found { id, name, variant }
+    pub fn new_found(object: Object) -> Self {
+        Self::Found { object }
     }
 
     pub fn new_missing(name: String, variant: ResourceVariant) -> Self {
         Self::Missing { name, variant }
     }
-}
 
-pub struct ResourceState([ResourceStates; 4]);
-
-impl Default for ResourceState {
-    fn default() -> Self {
-        Self([
-            ResourceStates::None,
-            ResourceStates::None,
-            ResourceStates::None,
-            ResourceStates::None,
-        ])
+    pub fn as_ref(&self) -> Option<&Object> {
+        match self {
+            ResourceState::Found { object } => Some(object),
+            _ => None,
+        }
     }
 }
 
-impl ResourceState {
-    pub fn new(
-        project: ResourceStates,
-        collection: ResourceStates,
-        dataset: ResourceStates,
-        object: ResourceStates,
-    ) -> Result<Self> {
+pub struct ResourceStates {
+    objects: [ResourceState; 4],
+}
+
+impl Default for ResourceStates {
+    fn default() -> Self {
+        Self {
+            objects: [
+                ResourceState::None,
+                ResourceState::None,
+                ResourceState::None,
+                ResourceState::None,
+            ],
+        }
+    }
+}
+
+impl ResourceStates {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn validate(&self) -> Result<()> {
         match (
-            project.is_missing(),
-            collection.is_missing(),
-            dataset.is_missing(),
-            object.is_missing(),
+            self.objects[0].is_missing(),
+            self.objects[1].is_missing(),
+            self.objects[2].is_missing(),
+            self.objects[3].is_missing(),
         ) {
             (false, true, true, true)
             | (false, false, true, true)
@@ -1135,77 +1153,128 @@ impl ResourceState {
                 bail!("Invalid resource state")
             }
         }
-        Ok(Self([project, collection, dataset, object]))
+        Ok(())
     }
 
-    pub fn from_list(list: &[&Object]) -> Result<ResourceState> {
-        if list.len() > 4 {
-            bail!("Invalid list length");
+    pub fn disallow_missing(&self) -> Result<(), S3Error> {
+        if self.objects.iter().any(|x| x.is_missing()) {
+            return Err(s3_error!(NoSuchKey, "Resource not found"));
         }
-        let mut project = None;
-        let mut collection = None;
-        let mut dataset = None;
-        let mut object = None;
+        Ok(())
+    }
 
-        for obj in list {
-            match obj.object_type {
-                ObjectType::Project => {
-                    if !project.is_none() {
-                        bail!("Invalid resource state: Multiple projects")
-                    }
-                    project = Some(ResourceStates::new_found(
-                        obj.id,
-                        obj.name.clone(),
-                        ResourceVariant::Project,
-                    ));
-                }
-                ObjectType::Collection => {
-                    if !collection.is_none() {
-                        bail!("Invalid resource state: Multiple collection")
-                    }
-                    collection = Some(ResourceStates::new_found(
-                        obj.id,
-                        obj.name.clone(),
-                        ResourceVariant::Collection,
-                    ));
-                }
-                ObjectType::Dataset => {
-                    if !dataset.is_none() {
-                        bail!("Invalid resource state: Multiple datasets")
-                    }
-                    dataset = Some(ResourceStates::new_found(
-                        obj.id,
-                        obj.name.clone(),
-                        ResourceVariant::Dataset,
-                    ));
-                }
-                ObjectType::Object => {
-                    if !object.is_none() {
-                        bail!("Invalid resource state: Multiple objects")
-                    }
-                    object = Some(ResourceStates::new_found(
-                        obj.id,
-                        obj.name.clone(),
-                        ResourceVariant::Object,
-                    ));
+    pub fn set_project(&mut self, project: Object) {
+        self.objects[0] = ResourceState::new_found(project);
+    }
+
+    pub fn set_collection(&mut self, collection: Object) {
+        self.objects[1] = ResourceState::new_found(collection);
+    }
+
+    pub fn set_dataset(&mut self, dataset: Object) {
+        self.objects[2] = ResourceState::new_found(dataset);
+    }
+
+    pub fn set_object(&mut self, object: Object) {
+        self.objects[3] = ResourceState::new_found(object);
+    }
+
+    pub fn get_project(&self) -> Option<&Object> {
+        self.objects[0].as_ref()
+    }
+
+    pub fn get_collection(&self) -> Option<&Object> {
+        self.objects[1].as_ref()
+    }
+
+    pub fn get_dataset(&self) -> Option<&Object> {
+        self.objects[2].as_ref()
+    }
+
+    pub fn get_object(&self) -> Option<&Object> {
+        self.objects[3].as_ref()
+    }
+
+    pub fn set_missing(&mut self, idx: usize, len: usize, name: String) -> Result<()> {
+        match (idx, len) {
+            (0, _) => self.objects[0] = ResourceState::new_missing(name, ResourceVariant::Project),
+            (1, 2) | (2, 3) | (3, 4) => {
+                self.objects[3] = ResourceState::new_missing(name, ResourceVariant::Object)
+            }
+            (2, _) => {
+                self.objects[1] = ResourceState::new_missing(name, ResourceVariant::Collection)
+            }
+            (3, _) => self.objects[2] = ResourceState::new_missing(name, ResourceVariant::Dataset),
+            _ => bail!("Invalid index"),
+        }
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn require_project(&self) -> Result<&Object, S3Error> {
+        self.objects[0].as_ref().ok_or_else(|| {
+            error!("Project not found");
+            s3_error!(NoSuchKey, "Project not found")
+        })
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn require_collection(&self) -> Result<&Object, S3Error> {
+        self.objects[1].as_ref().ok_or_else(|| {
+            error!("Collection not found");
+            s3_error!(NoSuchKey, "Collection not found")
+        })
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn require_dataset(&self) -> Result<&Object, S3Error> {
+        self.objects[2].as_ref().ok_or_else(|| {
+            error!("Dataset not found");
+            s3_error!(NoSuchKey, "Dataset not found")
+        })
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn require_object(&self) -> Result<&Object, S3Error> {
+        self.objects[3].as_ref().ok_or_else(|| {
+            error!("Object not found");
+            s3_error!(NoSuchKey, "Object not found")
+        })
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, key_info, perm))]
+    pub fn check_permissions(
+        &self,
+        key_info: &AccessKeyPermissions,
+        perm: DbPermissionLevel,
+    ) -> Result<(), S3Error> {
+        for ResourceState::Found { object } in self.objects.iter() {
+            if let Some(perm) = key_info.permissions.get(&object.id) {
+                if perm >= &perm {
+                    return Ok(());
                 }
             }
         }
-        Self::new(
-            project.ok_or_else(|| anyhow!("Project not found"))?,
-            collection.unwrap_or_else(|| ResourceStates::None),
-            dataset.unwrap_or_else(|| ResourceStates::None),
-            object.unwrap_or_else(|| ResourceStates::None),
-        )
+        error!("Insufficient permissions");
+        Err(s3_error!(AccessDenied, "Access Denied"))
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, ep_id))]
+    pub fn fail_partial_sync(&self, ep_id: &DieselUlid) -> Result<(), S3Error> {
+        for ResourceState::Found { object } in self.objects.iter().rev() {
+            object.fail_partial_sync(ep_id)?;
+            break; // Only check the last Found object
+        }
+        Ok(())
     }
 }
 
 #[derive(Default)]
 pub struct CheckAccessResult {
+    pub resource_states: ResourceStates,
     pub user_id: Option<String>,
     pub token_id: Option<String>,
-    pub resource_state: Option<ResourceState>,
-    pub object: Option<(Object, Option<ObjectLocation>)>,
+    pub object_location: Option<ObjectLocation>,
     pub bundle: Option<String>,
     pub headers: Option<HashMap<String, String>>,
 }
@@ -1213,21 +1282,21 @@ pub struct CheckAccessResult {
 impl CheckAccessResult {
     #[tracing::instrument(
         level = "trace",
-        skip(user_id, token_id, resource_state, object, bundle)
+        skip(user_id, token_id, resource_states, object_location, bundle)
     )]
     pub fn new(
+        resource_states: ResourceStates,
         user_id: Option<String>,
         token_id: Option<String>,
-        resource_state: Option<ResourceState>,
-        object: Option<(Object, Option<ObjectLocation>)>,
+        object_location: Option<ObjectLocation>,
         bundle: Option<String>,
         headers: Option<HashMap<String, String>>,
     ) -> Self {
         Self {
-            resource_state,
+            resource_states,
             user_id,
             token_id,
-            object,
+            object_location,
             bundle,
             headers,
         }

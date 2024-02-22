@@ -5,14 +5,11 @@ use crate::structs::CheckAccessResult;
 use crate::structs::DbPermissionLevel;
 use crate::structs::Object;
 use crate::structs::ObjectType;
-use crate::structs::ResourceState;
 use crate::structs::ResourceStates;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
-use aruna_rust_api::api::storage::models::v2::ResourceVariant;
-use aruna_rust_api::api::storage::models::v2::UserAttributes;
-use axum::http::method;
+use aruna_rust_api::api::storage::models::v2::DataClass;
 use diesel_ulid::DieselUlid;
 use http::HeaderMap;
 use http::HeaderValue;
@@ -28,7 +25,6 @@ use s3s::S3Error;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::ops::Add;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -36,13 +32,10 @@ use std::time::Duration;
 use std::time::SystemTime;
 use tonic::metadata::MetadataMap;
 use tracing::error;
-
+use super::auth_helpers;
 use super::rule_engine::RuleEngine;
 use super::rule_structs::ObjectRuleInputBuilder;
-use super::rule_structs::RequestInfo;
-use super::rule_structs::RootRuleInput;
 use super::rule_structs::RootRuleInputBuilder;
-use super::rule_structs::UserRuleInfo;
 
 pub struct AuthHandler {
     cache: Arc<Cache>,
@@ -249,17 +242,8 @@ impl AuthHandler {
                 self.handle_bucket(bucket, method, creds, headers).await
             }
             S3Path::Object { bucket, key } => {
-                if is_method_read(method) {
-                    // "GET" style methods
-                    // &Method::GET | &Method::HEAD | &Method::OPTIONS
-                    // 2 special cases: objects, bundles
-                    self.handle_object_get(bucket, key, method, creds, headers)
-                        .await
-                } else {
-                    // "POST" style = modifying methods
-                    // &Method::POST | &Method::PUT | &Method::DELETE | &Method::PATCH | (&Method::CONNECT | &Method::TRACE)
-                    self.handle_object_post(bucket, key, creds, headers).await
-                }
+                self.handle_object(bucket, key, method, creds, headers)
+                    .await
             }
         }
     }
@@ -316,43 +300,16 @@ impl AuthHandler {
             })?;
 
         // Query the project and extract the headers
-        let (cors_headers, project) =
-            if let Some(project) = self.cache.get_full_resource_by_path(bucket_name) {
-                // Check if the project is partially synced -> FAIL
-                if project.is_partial_sync(self.self_id) {
-                    error!("Invalid Bucket Name (partial synced)");
-                    return Err(s3_error!(
-                        InvalidBucketName,
-                        "Invalid Bucket Name (partial synced)"
-                    ));
-                }
-                (project.project_get_headers(method, headers), project)
-            } else {
-                error!("No such bucket");
-                return Err(s3_error!(NoSuchBucket, "No such bucket"));
-            };
+        let resource_states = self
+            .prefix_into_resource_states(&[(bucket_name.to_string(), bucket_name.to_string())])?;
 
         // Extract the permission level from the method READ == "GET" and friends, WRITE == "POST" and friends
-        let db_perm_from_method = DbPermissionLevel::from(method);
+        // Check if the user has the required permissions
+        resource_states.check_permissions(&access_key_info, DbPermissionLevel::from(method))?;
 
-        if access_key_info
-            .permissions
-            .get(&project.id)
-            .ok_or_else(|| {
-                error!("No permissions found");
-                s3_error!(AccessDenied, "Access Denied")
-            })?
-            < &db_perm_from_method
-        {
-            error!("Insufficient permissions");
-            return Err(s3_error!(AccessDenied, "Access Denied"));
-        }
-
-        // Create a "resource_state" struct that tracks what is missing, what is found and what is not set
-        let resource_state = Some(
-            ResourceState::from_list(&[&project])
-                .map_err(|_| s3_error!(InternalError, "Internal Error"))?,
-        );
+        let cors_headers = resource_states
+            .require_project()?
+            .project_get_headers(method, headers);
 
         self.rule_engine
             .evaluate_object(
@@ -361,23 +318,24 @@ impl AuthHandler {
                     .method(method.to_string())
                     .permissions(access_key_info.permissions)
                     .headers(headers)
-                    .project(project.clone())
-                    .build().map_err(|_| s3_error!(MalformedACLError, "Rule has wrong context"))?,
+                    .add_resource_states(&resource_states)
+                    .build()
+                    .map_err(|_| s3_error!(MalformedACLError, "Rule has wrong context"))?,
             )
             .map_err(|_| s3_error!(AccessDenied, "Forbidden by rule"))?;
 
         Ok(CheckAccessResult::new(
+            resource_states,
             Some(access_key_info.user_id.to_string()),
             Some(access_key_info.access_key),
-            resource_state,
-            Some((project, None)),
+            None,
             None,
             cors_headers,
         ))
     }
 
     #[tracing::instrument(level = "trace", skip(self, bucket_name, key_name, creds, headers))]
-    pub async fn handle_object_get(
+    pub async fn handle_object(
         &self,
         bucket_name: &str,
         key_name: &str,
@@ -385,87 +343,80 @@ impl AuthHandler {
         creds: Option<&Credentials>,
         headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult, S3Error> {
-        // Cache objects special cases
         match bucket_name {
             "objects" => {
+                if !is_method_read(method) {
+                    return Err(s3_error!(MethodNotAllowed, "Method not allowed"));
+                }
                 return self.handle_special_objects(key_name, creds, headers).await;
             }
             "bundles" => {
+                if !is_method_read(method) {
+                    return Err(s3_error!(MethodNotAllowed, "Method not allowed"));
+                }
                 return self.handle_bundles(key_name, creds, headers).await;
             }
             _ => {}
         }
 
-        // Query the Object -> Might be public
-        let object = self
-            .cache
-            .get_full_resource_by_path(&format!("{bucket_name}/{key_name}"))
-            .ok_or_else(|| {
-                error!("No such object");
-                s3_error!(NoSuchKey, "No such object")
-            })?;
+        let path = format!("{bucket_name}/{key_name}");
+        let prefix: Vec<(String, String)> = auth_helpers::key_into_prefix(&path)?;
+        let resource_states = self.prefix_into_resource_states(&prefix)?;
 
-        // Fail if the object is not a regular object
-        if object.object_type != ObjectType::Object {
-            error!("Invalid object type");
-            return Err(s3_error!(NoSuchKey, "No such object"));
+        if is_method_read(method) {
+            // Fail if the object has missing parts
+            resource_states.disallow_missing()?;
         }
 
-        let (project, headers) = self
-            .get_project_and_headers(bucket_name, method, headers)
-            .ok_or_else(|| {
-                error!("No such project");
-                s3_error!(NoSuchBucket, "No such bucket")
-            })?;
+        // Fail if the object is partially synced
+        resource_states.fail_partial_sync(&self.self_id)?;
 
-        // Paths
-        let mut prefix = key_into_prefix(key_name);
-        prefix.remove(object.name.as_str());
-        prefix.remove(project.name.as_str());
+        let cors_headers = resource_states
+            .require_project()?
+            .project_get_headers(method, headers);
 
-        if prefix.len() > 2 {
-            error!("This should not happen: Detected more than 4 Objects in the path");
-            return Err(s3_error!(InternalError, "Invalid key parsing"));
-        }
+        let mut rule_builder = ObjectRuleInputBuilder::new()
+            .method(method.to_string())
+            .headers(headers)
+            .add_resource_states(&resource_states);
 
-        let mut objects = vec![project];
-        for prefix in prefix.iter() {
-            objects.push(
-                self.cache
-                    .get_full_resource_by_path(prefix)
-                    .ok_or_else(|| {
-                        error!("No such object");
-                        s3_error!(NoSuchKey, "No such object")
-                    })?,
-            );
-        }
-        objects.push(object);
+        // Query the User
+        let user = if let Some((user, attributes)) = self.extract_access_key_perms(creds) {
+            if resource_states.require_object()?.data_class != DataClass::Public {
+                // Extract the permission level from the method READ == "GET" and friends, WRITE == "POST" and friends
+                // Check if the user has the required permissions
+                resource_states.check_permissions(&user, DbPermissionLevel::from(method))?;
+            }
+            rule_builder = rule_builder
+                .attributes(attributes.clone())
+                .permissions(user.permissions.clone());
+            Some(user)
+        } else {
+            None
+        };
 
-        // Create a "resource_state" struct that tracks what is missing, what is found and what is not set
-        let resource_state = Some(
-            ResourceState::from_list(&objects)
-                .map_err(|_| s3_error!(InternalError, "Internal Error"))?,
-        );
+        self.rule_engine
+            .evaluate_object(
+                rule_builder
+                    .build()
+                    .map_err(|_| s3_error!(MalformedACLError, "Rule has wrong context"))?,
+            )
+            .map_err(|_| s3_error!(AccessDenied, "Forbidden by rule"))?;
+
+        let location = if let Some(obj) = resource_states.get_object() {
+            self.cache.get_location(&obj.id).await
+        } else {
+            None
+        };
 
         Ok(CheckAccessResult::new(
-            Some(user.user_id.to_string()),
-            Some(user.access_key),
-            resource_state,
+            resource_states,
+            user.as_ref().map(|x| x.user_id.to_string()),
+            user.map(|x| x.access_key),
+            location,
             None,
-            None,
-            headers,
+            cors_headers,
         ))
-    }
-
-    #[tracing::instrument(level = "trace", skip(self, bucket_name, key_name, creds, headers))]
-    pub async fn handle_object_post(
-        &self,
-        bucket_name: &str,
-        key_name: &str,
-        creds: Option<&Credentials>,
-        headers: &HeaderMap<HeaderValue>,
-    ) -> Result<CheckAccessResult, S3Error> {
-        todo!()
     }
 
     #[tracing::instrument(level = "trace", skip(self, key_name, creds, headers))]
@@ -604,6 +555,49 @@ impl AuthHandler {
 
         Ok(token)
     }
+
+    #[tracing::instrument(level = "trace", skip(self, prefixes))]
+    pub fn prefix_into_resource_states(
+        &self,
+        prefixes: &[(String, String)],
+    ) -> Result<ResourceStates, S3Error> {
+        let mut resource_states: ResourceStates = ResourceStates::default();
+        let len = prefixes.len();
+        for (idx, (prefix, name)) in prefixes.iter().enumerate() {
+            let Some(obj) = self.cache.get_full_resource_by_path(prefix) else {
+                resource_states
+                    .set_missing(idx, len, name.to_string())
+                    .map_err(|e| {
+                        error!(error = ?e, msg = e.to_string());
+                        s3_error!(InternalError, "Internal Error")
+                    })?;
+                continue;
+            };
+            match obj.object_type {
+                ObjectType::Project => {
+                    resource_states.set_project(obj);
+                }
+                ObjectType::Dataset => {
+                    resource_states.set_dataset(obj);
+                }
+                ObjectType::Collection => {
+                    resource_states.set_collection(obj);
+                }
+                ObjectType::Object => {
+                    resource_states.set_object(obj);
+                }
+                _ => {
+                    error!("Invalid object type");
+                    return Err(s3_error!(NoSuchKey, "No such object"));
+                }
+            }
+        }
+        resource_states.validate().map_err(|e| {
+            error!(error = ?e, msg = e.to_string());
+            s3_error!(InternalError, "Internal Error")
+        })?;
+        Ok(resource_states)
+    }
 }
 
 #[tracing::instrument(level = "trace", skip(md))]
@@ -634,16 +628,4 @@ pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
         return Err(anyhow!("Authorization flow error"));
     }
     Ok(split[1].to_string())
-}
-
-#[tracing::instrument(level = "trace", skip(key))]
-pub fn key_into_prefix(key: &str) -> HashSet<String> {
-    let mut parts = HashSet::new();
-    let mut prefix = String::new();
-    for s in key.splitn(4, "/") {
-        prefix.push_str(s);
-        parts.insert(prefix.clone());
-        prefix.push('/');
-    }
-    parts
 }

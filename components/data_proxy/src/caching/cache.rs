@@ -363,6 +363,13 @@ impl Cache {
             .map(|e| e.value().0.blocking_read().clone())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, resource_id))]
+    pub async fn get_location(&self, resource_id: &DieselUlid) -> Option<ObjectLocation> {
+        let resource = self.resources.get(resource_id)?;
+        let location = resource.value().1.read().await.clone();
+        location
+    }
+
     #[tracing::instrument(level = "trace", skip(self, resource_id, with_intermediates))]
     pub async fn get_prefixes(
         &self,
@@ -757,7 +764,7 @@ impl Cache {
     pub fn get_user_attributes(&self, resource_id: &DieselUlid) -> Option<HashMap<String, String>> {
         self.users
             .get(resource_id)
-            .map(|e| e.value().blocking_read().0.custom_attributes.clone())
+            .map(|e| e.value().blocking_read().0.attributes.clone())
     }
 
     #[tracing::instrument(level = "trace", skip(self))]

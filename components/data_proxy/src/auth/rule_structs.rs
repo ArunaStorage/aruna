@@ -1,5 +1,6 @@
 use crate::structs::DbPermissionLevel;
 use crate::structs::Object;
+use crate::structs::ResourceStates;
 use anyhow::anyhow;
 use anyhow::Result;
 use diesel_ulid::DieselUlid;
@@ -25,6 +26,7 @@ pub struct ObjectHierarchyRuleInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestInfo {
+    pub bucket: bool, // Is this request for a bucket or an object
     pub method: String,
     pub headers: HashMap<String, StringOrVec>,
 }
@@ -45,7 +47,7 @@ pub struct RootRuleInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectRuleInput {
-    pub user: UserRuleInfo,
+    pub user: Option<UserRuleInfo>,
     pub object_hierarchy: ObjectHierarchyRuleInfo,
     pub request: RequestInfo,
 }
@@ -133,6 +135,7 @@ impl RootRuleInputBuilder {
                 attributes: self.attributes,
             },
             request: RequestInfo {
+                bucket: false,
                 method: self.method,
                 headers: self.headers,
             },
@@ -142,9 +145,10 @@ impl RootRuleInputBuilder {
 
 #[derive(Debug, Default)]
 pub struct ObjectRuleInputBuilder {
-    user_id: String,
-    permissions: HashMap<String, String>,
-    attributes: HashMap<String, String>,
+    user_id: Option<String>,
+    permissions: Option<HashMap<String, String>>,
+    attributes: Option<HashMap<String, String>>,
+    bucket: bool, // Bucket or Object request
     method: String,
     headers: HashMap<String, StringOrVec>,
     object: Option<Object>,
@@ -158,18 +162,23 @@ impl ObjectRuleInputBuilder {
         Self::default()
     }
 
+    pub fn bucket(mut self, bucket: bool) -> Self {
+        self.bucket = bucket;
+        self
+    }
+
     pub fn user_id(mut self, user_id: String) -> Self {
-        self.user_id = user_id;
+        self.user_id = Some(user_id);
         self
     }
 
     pub fn permissions(mut self, permissions: HashMap<DieselUlid, DbPermissionLevel>) -> Self {
-        self.permissions = convert_permissions(permissions);
+        self.permissions = Some(convert_permissions(permissions));
         self
     }
 
     pub fn attributes(mut self, attributes: HashMap<String, String>) -> Self {
-        self.attributes = attributes;
+        self.attributes = Some(attributes);
         self
     }
 
@@ -183,31 +192,55 @@ impl ObjectRuleInputBuilder {
         self
     }
 
-    pub fn object(mut self, object: Option<Object>) -> Self {
-        self.object = object;
-        self
+    pub fn object(mut self, object: Object) -> Result<Self> {
+        if self.object.is_some() {
+            return Err(anyhow!("object is already set"));
+        }
+        self.object = Some(object);
+        Ok(self)
     }
 
-    pub fn dataset(mut self, dataset: Option<Object>) -> Self {
-        self.dataset = dataset;
-        self
+    pub fn dataset(mut self, dataset: Object) -> Result<Self> {
+        if self.dataset.is_some() {
+            return Err(anyhow!("dataset is already set"));
+        }
+        self.dataset = Some(dataset);
+        Ok(self)
     }
 
-    pub fn collection(mut self, collection: Option<Object>) -> Self {
-        self.collection = collection;
-        self
+    pub fn collection(mut self, collection: Object) -> Result<Self> {
+        if self.collection.is_some() {
+            return Err(anyhow!("collection is already set"));
+        }
+        self.collection = Some(collection);
+        Ok(self)
     }
 
-    pub fn project(mut self, project: Object) -> Self {
+    pub fn project(mut self, project: Object) -> Result<Self> {
+        if self.project.is_some() {
+            return Err(anyhow!("project is already set"));
+        }
         self.project = Some(project);
+        Ok(self)
+    }
+
+    pub fn add_resource_states(mut self, resource_states: &ResourceStates) -> Self {
+        if let Some(project) = resource_states.get_project() {
+            self.project = Some(project.clone());
+        }
+        if let Some(collection) = resource_states.get_collection() {
+            self.collection = Some(collection.clone());
+        }
+        if let Some(dataset) = resource_states.get_dataset() {
+            self.dataset = Some(dataset.clone());
+        }
+        if let Some(object) = resource_states.get_object() {
+            self.object = Some(object.clone());
+        }
         self
     }
 
     pub fn build(self) -> Result<ObjectRuleInput> {
-        if self.user_id.is_empty() {
-            return Err(anyhow!("user_id is required"));
-        }
-
         if self.method.is_empty() {
             return Err(anyhow!("method is required"));
         }
@@ -216,12 +249,19 @@ impl ObjectRuleInputBuilder {
             return Err(anyhow!("project is required"));
         }
 
+        let user_info =
+            if self.user_id.is_none() && self.permissions.is_none() && self.attributes.is_none() {
+                None
+            } else {
+                Some(UserRuleInfo {
+                    user_id: self.user_id.ok_or_else(|| anyhow!("user_id is required"))?,
+                    permissions: self.permissions.unwrap_or_default(),
+                    attributes: self.attributes.unwrap_or_default(),
+                })
+            };
+
         Ok(ObjectRuleInput {
-            user: UserRuleInfo {
-                user_id: self.user_id,
-                permissions: self.permissions,
-                attributes: self.attributes,
-            },
+            user: user_info,
             object_hierarchy: ObjectHierarchyRuleInfo {
                 object: self.object,
                 dataset: self.dataset,
@@ -229,6 +269,7 @@ impl ObjectRuleInputBuilder {
                 project: self.project.ok_or_else(|| anyhow!("project is required"))?,
             },
             request: RequestInfo {
+                bucket: self.bucket,
                 method: self.method,
                 headers: self.headers,
             },
@@ -309,6 +350,7 @@ impl PackageObjectRuleInputBuilder {
             object: self.object.ok_or_else(|| anyhow!("object is required"))?,
             parents: self.parents,
             request: RequestInfo {
+                bucket: false,
                 method: self.method,
                 headers: self.headers,
             },
@@ -398,6 +440,7 @@ impl BundleRuleInputBuilder {
             },
             objects: self.objects,
             request: RequestInfo {
+                bucket: false,
                 method: self.method,
                 headers: self.headers,
             },
@@ -483,10 +526,11 @@ impl ReplicationOutgoingRuleInputBuilder {
     }
 }
 
-
 // ------ HELPERS -------
 
-pub fn convert_permissions(perm: HashMap<DieselUlid, DbPermissionLevel>) -> HashMap<String, String> {
+pub fn convert_permissions(
+    perm: HashMap<DieselUlid, DbPermissionLevel>,
+) -> HashMap<String, String> {
     let mut permissions = HashMap::new();
     for (k, v) in perm {
         permissions.insert(k.to_string(), v.to_string());
@@ -510,16 +554,14 @@ pub fn convert_headers(headers: &HeaderMap<HeaderValue>) -> HashMap<String, Stri
             std::collections::hash_map::Entry::Vacant(e) => {
                 e.insert(StringOrVec::Elem(value_string));
             }
-            std::collections::hash_map::Entry::Occupied(mut e) => {
-                match e.get_mut() {
-                    StringOrVec::Elem(existing) => {
-                        *e.get_mut() = StringOrVec::Vec(vec![existing.clone(), value_string]);
-                    }
-                    StringOrVec::Vec(arr) => {
-                        arr.push(value_string);
-                    }
+            std::collections::hash_map::Entry::Occupied(mut e) => match e.get_mut() {
+                StringOrVec::Elem(existing) => {
+                    *e.get_mut() = StringOrVec::Vec(vec![existing.clone(), value_string]);
                 }
-            }
+                StringOrVec::Vec(arr) => {
+                    arr.push(value_string);
+                }
+            },
         }
     }
     header_map
