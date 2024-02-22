@@ -309,7 +309,7 @@ impl AuthHandler {
     ) -> Result<CheckAccessResult, S3Error> {
         // TODO: Decide how to handle public bucket access
         // Query the User -> Must exist
-        let user = self.extract_access_key_perms(creds).ok_or_else(|| {
+        let (access_key_info, attributes) = self.extract_access_key_perms(creds).ok_or_else(|| {
             error!("No such user");
             s3_error!(AccessDenied, "Access Denied")
         })?;
@@ -334,7 +334,7 @@ impl AuthHandler {
         // Extract the permission level from the method READ == "GET" and friends, WRITE == "POST" and friends
         let db_perm_from_method = DbPermissionLevel::from(method);
 
-        if user.permissions.get(&project.id).ok_or_else(|| {
+        if access_key_info.permissions.get(&project.id).ok_or_else(|| {
             error!("No permissions found");
             s3_error!(AccessDenied, "Access Denied")
         })? < &db_perm_from_method
@@ -345,15 +345,15 @@ impl AuthHandler {
 
         // Create a "resource_state" struct that tracks what is missing, what is found and what is not set
         let resource_state = Some(
-            ResourceState::from_list(&[project])
+            ResourceState::from_list(&[&project])
                 .map_err(|_| s3_error!(InternalError, "Internal Error"))?,
         );
 
         Ok(CheckAccessResult::new(
-            Some(user.user_id.to_string()),
-            Some(user.access_key),
+            Some(access_key_info.user_id.to_string()),
+            Some(access_key_info.access_key),
             resource_state,
-            None,
+            Some((project, None)),
             None,
             headers,
         ))

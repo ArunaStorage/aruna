@@ -1124,7 +1124,7 @@ impl ResourceState {
         Ok(Self([project, collection, dataset, object]))
     }
 
-    pub fn from_list(list: &[Object]) -> Result<ResourceState> {
+    pub fn from_list(list: &[&Object]) -> Result<ResourceState> {
         if list.len() > 4 {
             bail!("Invalid list length");
         }
@@ -1179,9 +1179,9 @@ impl ResourceState {
         }
         Self::new(
             project.ok_or_else(|| anyhow!("Project not found"))?,
-            collection.ok_or_else(|| ResourceStates::None),
-            dataset.ok_or_else(|| ResourceStates::None),
-            object.ok_or_else(|| ResourceStates::None),
+            collection.unwrap_or_else(|| ResourceStates::None),
+            dataset.unwrap_or_else(|| ResourceStates::None),
+            object.unwrap_or_else(|| ResourceStates::None),
         )
     }
 }
