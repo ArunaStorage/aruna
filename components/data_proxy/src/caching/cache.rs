@@ -3,7 +3,7 @@ use crate::auth::auth::AuthHandler;
 use crate::caching::grpc_query_handler::sort_objects;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::replication::replication_handler::ReplicationMessage;
-use crate::structs::{AccessKeyPermissions, TypedRelation, User};
+use crate::structs::{AccessKeyPermissions, TypedId, User};
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
     structs::{Object, ObjectLocation, PubKey},
@@ -21,6 +21,7 @@ use jsonwebtoken::DecodingKey;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use s3s::auth::SecretKey;
 use std::collections::{HashMap, VecDeque};
+use std::ops::Deref;
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::RwLock;
 use tokio_postgres::GenericClient;
@@ -373,9 +374,9 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self, resource_id, with_intermediates))]
     pub async fn get_prefixes(
         &self,
-        resource_id: &DieselUlid,
+        resource_id: &TypedId,
         with_intermediates: bool,
-    ) -> Vec<(DieselUlid, String)> {
+    ) -> Vec<(TypedId, String)> {
         // /foo/bar/baz
         // /foo/bar/ <baz: resource_id>
         // /bar/baz/ <baz: resource_id>
@@ -386,12 +387,12 @@ impl Cache {
         // /foo/bar: id-foo/bar
 
         // VecDeque<(id, [Option<(String, DieselUlid)>; 4])>
-        const ARRAY_REPEAT_VALUE: std::option::Option<(std::string::String, DieselUlid)> =
-            None::<(String, DieselUlid)>;
+        const ARRAY_REPEAT_VALUE: std::option::Option<(std::string::String, TypedId)> =
+            None::<(String, TypedId)>;
         let mut prefixes = VecDeque::from([(resource_id.clone(), [ARRAY_REPEAT_VALUE; 4])]);
         let mut final_result = Vec::new();
         while let Some((id, visited)) = prefixes.pop_front() {
-            if let Some(parents) = self.get_parents(&id).await {
+            if let Some(parents) = self.get_parents(&id.get_id()).await {
                 for (parent_name, parent_id) in parents {
                     let mut visited_here = visited.clone();
                     for x in 3..=0 {
@@ -426,13 +427,13 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self, resource_id))]
     pub async fn get_suffixes(
         &self,
-        resource_id: &DieselUlid,
+        resource_id: &TypedId,
         with_intermediates: bool,
-    ) -> Vec<(DieselUlid, String)> {
+    ) -> Vec<(TypedId, String)> {
         let mut prefixes = VecDeque::from([(resource_id.clone(), "".to_string())]);
         let mut final_result = Vec::new();
         while let Some((id, name)) = prefixes.pop_front() {
-            if let Some(children) = self.get_children(&id).await {
+            if let Some(children) = self.get_children(&id.get_id()).await {
                 for (child_name, child_id) in children {
                     prefixes.push_back((child_id, format!("{}/{}", name, child_name)));
                     if with_intermediates {
@@ -449,7 +450,7 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self, resource_id))]
     pub async fn get_name_trees(
         &self,
-        resource_id: &DieselUlid,
+        resource_id: &TypedId,
         resource_name: String,
         new_name: Option<String>,
     ) -> (Vec<String>, Option<Vec<String>>) {
@@ -485,22 +486,15 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self, resource_id))]
-    pub async fn get_parents(&self, resource_id: &DieselUlid) -> Option<Vec<(String, DieselUlid)>> {
+    pub async fn get_parents(&self, resource_id: &DieselUlid) -> Option<Vec<(String, TypedId)>> {
         let resource = self.resources.get(resource_id)?;
         let resource = resource.value().0.read().await;
         if let Some(parents) = &resource.parents {
             let mut collected_parents = Vec::new();
             for parent in parents {
-                match parent {
-                    TypedRelation::Project(id)
-                    | TypedRelation::Collection(id)
-                    | TypedRelation::Dataset(id)
-                    | TypedRelation::Object(id) => {
-                        let parent = self.resources.get(id)?;
-                        let parent = parent.value().0.read().await;
-                        collected_parents.push((parent.name.clone(), parent.id));
-                    }
-                }
+                let parent = self.resources.get(&parent.get_id())?;
+                let parent = parent.value().0.read().await;
+                collected_parents.push((parent.name.clone(), TypedId::from(parent.deref())));
             }
             return Some(collected_parents);
         }
@@ -508,25 +502,15 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self, resource_id))]
-    pub async fn get_children(
-        &self,
-        resource_id: &DieselUlid,
-    ) -> Option<Vec<(String, DieselUlid)>> {
+    pub async fn get_children(&self, resource_id: &DieselUlid) -> Option<Vec<(String, TypedId)>> {
         let resource = self.resources.get(resource_id)?;
         let resource = resource.value().0.read().await;
         if let Some(children) = &resource.children {
             let mut collected_children = Vec::new();
             for child in children {
-                match child {
-                    TypedRelation::Project(id)
-                    | TypedRelation::Collection(id)
-                    | TypedRelation::Dataset(id)
-                    | TypedRelation::Object(id) => {
-                        let child = self.resources.get(id)?;
-                        let child = child.value().0.read().await;
-                        collected_children.push((child.name.clone(), child.id));
-                    }
-                }
+                let child = self.resources.get(&child.get_id())?;
+                let child = child.value().0.read().await;
+                collected_children.push((child.name.clone(), TypedId::from(child.deref())));
             }
             return Some(collected_children);
         }
@@ -657,7 +641,7 @@ impl Cache {
         };
 
         if old_name != object.name {
-            self.update_object_name(object.id, old_name, object.name)
+            self.update_object_name(TypedId::from(&object), old_name, object.name)
                 .await?;
         }
         Ok(())
@@ -666,7 +650,7 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self, object_id, new_name))]
     pub async fn update_object_name(
         &self,
-        object_id: DieselUlid,
+        object_id: TypedId,
         old_name: String,
         new_name: String,
     ) -> Result<()> {
@@ -710,8 +694,9 @@ impl Cache {
             .resources
             .remove(&id)
             .ok_or_else(|| anyhow!("Resource not found"))?;
+        let object = old.1 .0.read().await;
         for p in self
-            .get_name_trees(&id, old.1 .0.read().await.name.clone(), None)
+            .get_name_trees(&TypedId::from(object.deref()), object.name.clone(), None)
             .await
             .0
         {

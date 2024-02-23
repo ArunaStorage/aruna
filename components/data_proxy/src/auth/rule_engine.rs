@@ -95,6 +95,30 @@ impl RuleEngine {
         })
     }
 
+    pub fn has_root(&self) -> bool {
+        self.root != Expression::Atom(cel_parser::Atom::Bool(true))
+    }
+
+    pub fn has_object(&self) -> bool {
+        self.obj != Expression::Atom(cel_parser::Atom::Bool(true))
+    }
+
+    pub fn has_bundle(&self) -> bool {
+        self.bundle != Expression::Atom(cel_parser::Atom::Bool(true))
+    }
+
+    pub fn has_object_package(&self) -> bool {
+        self.obj_package != Expression::Atom(cel_parser::Atom::Bool(true))
+    }
+
+    pub fn has_replication_in(&self) -> bool {
+        self.repl_in != Expression::Atom(cel_parser::Atom::Bool(true))
+    }
+
+    pub fn has_replication_out(&self) -> bool {
+        self.repl_out != Expression::Atom(cel_parser::Atom::Bool(true))
+    }
+
     #[tracing::instrument(level = "trace", skip(self, ctx))]
     pub fn evaluate_root(&self, ctx: RootRuleInput) -> Result<bool> {
         let mut context = Context::default();

@@ -1346,35 +1346,89 @@ impl ResourceStates {
     }
 }
 
+pub enum ObjectsState {
+    Regular {
+        states: ResourceStates,
+        location: Option<ObjectLocation>,
+    },
+    Objects {
+        root: Object,
+        filename: String,
+    },
+    Bundle {
+        bundle_id: String,
+        filename: String,
+    },
+}
+
+impl Default for ObjectsState {
+    fn default() -> Self {
+        Self::Regular {
+            states: ResourceStates::default(),
+            location: None,
+        }
+    }
+}
+
+impl ObjectsState {
+    pub fn new_regular(states: ResourceStates, location: Option<ObjectLocation>) -> Self {
+        Self::Regular { states, location }
+    }
+    pub fn new_objects(root: Object, filename: String) -> Self {
+        Self::Objects { root, filename }
+    }
+}
+
+#[derive(Default)]
+pub enum UserState {
+    #[default]
+    Anonymous,
+    Personal {
+        user_id: DieselUlid,
+    },
+    Token {
+        access_key: String,
+        user_id: DieselUlid,
+    },
+}
+
+impl Into<UserState> for Option<AccessKeyPermissions> {
+    fn into(self) -> UserState {
+        match self {
+            Some(perm) => {
+                if perm.access_key == perm.user_id.to_string() {
+                    UserState::Personal {
+                        user_id: perm.user_id,
+                    }
+                } else {
+                    UserState::Token {
+                        access_key: perm.access_key,
+                        user_id: perm.user_id,
+                    }
+                }
+            }
+            None => UserState::Anonymous,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct CheckAccessResult {
-    pub resource_states: ResourceStates,
-    pub user_id: Option<String>,
-    pub token_id: Option<String>,
-    pub object_location: Option<ObjectLocation>,
-    pub bundle: Option<String>,
+    pub objects_state: ObjectsState,
+    pub user_state: UserState,
     pub headers: Option<HashMap<String, String>>,
 }
 
 impl CheckAccessResult {
-    #[tracing::instrument(
-        level = "trace",
-        skip(user_id, token_id, resource_states, object_location, bundle)
-    )]
+    #[tracing::instrument(level = "trace", skip(objects_state, user_state, headers))]
     pub fn new(
-        resource_states: ResourceStates,
-        user_id: Option<String>,
-        token_id: Option<String>,
-        object_location: Option<ObjectLocation>,
-        bundle: Option<String>,
+        objects_state: ObjectsState,
+        user_state: UserState,
         headers: Option<HashMap<String, String>>,
     ) -> Self {
         Self {
-            resource_states,
-            user_id,
-            token_id,
-            object_location,
-            bundle,
+            objects_state,
+            user_state,
             headers,
         }
     }
@@ -1493,6 +1547,39 @@ impl CORSConfiguration {
             }
         }
         None
+    }
+}
+
+// This is similar to TypedRelation but distinct to indicate that it is not a relation
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TypedId {
+    Project(DieselUlid),
+    Collection(DieselUlid),
+    Dataset(DieselUlid),
+    Object(DieselUlid),
+    Unknown(DieselUlid),
+}
+
+impl TypedId {
+    pub fn get_id(&self) -> DieselUlid {
+        match self {
+            TypedId::Project(id) => *id,
+            TypedId::Collection(id) => *id,
+            TypedId::Dataset(id) => *id,
+            TypedId::Object(id) => *id,
+            TypedId::Unknown(id) => *id,
+        }
+    }
+}
+
+impl From<&Object> for TypedId {
+    fn from(value: &Object) -> Self {
+        match value.object_type {
+            ObjectType::Project => TypedId::Project(value.id),
+            ObjectType::Collection => TypedId::Collection(value.id),
+            ObjectType::Dataset => TypedId::Dataset(value.id),
+            ObjectType::Object => TypedId::Object(value.id),
+        }
     }
 }
 

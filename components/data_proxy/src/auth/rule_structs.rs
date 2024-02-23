@@ -8,6 +8,7 @@ use http::HeaderMap;
 use http::HeaderValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use super::rule_engine::RuleEngine;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserRuleInfo {
@@ -76,7 +77,7 @@ pub struct ReplicationIncomingRuleInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplicationOutgoingRuleInput {
-    pub objects: Object,
+    pub objects: Option<Object>,
     pub target_proxy_id: String,
 }
 
@@ -87,44 +88,63 @@ pub struct RootRuleInputBuilder {
     attributes: HashMap<String, String>,
     method: String,
     headers: HashMap<String, StringOrVec>,
+    skip: bool,
 }
 
 impl RootRuleInputBuilder {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(engine: &RuleEngine) -> Self {
+        Self {
+            skip: engine.has_root(),
+            ..Self::default()
+        }
     }
 
-    pub fn user_id(mut self, user_id: String) -> Self {
-        self.user_id = user_id;
+    pub fn user_id(mut self, user_id: &str) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.user_id = user_id.to_string();
         self
     }
 
-    pub fn permissions(mut self, permissions: HashMap<DieselUlid, DbPermissionLevel>) -> Self {
-        self.permissions = convert_permissions(permissions);
+    pub fn permissions(mut self, permissions: &HashMap<DieselUlid, DbPermissionLevel>) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.permissions = convert_permissions(permissions.clone());
         self
     }
 
-    pub fn attributes(mut self, attributes: HashMap<String, String>) -> Self {
-        self.attributes = attributes;
+    pub fn attributes(mut self, attributes: &HashMap<String, String>) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.attributes = attributes.clone();
         self
     }
 
-    pub fn method(mut self, method: String) -> Self {
-        self.method = method;
+    pub fn method(mut self, method: &http::Method) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.method = method.to_string();
         self
     }
 
     pub fn headers(mut self, headers: &HeaderMap<HeaderValue>) -> Self {
+        if self.skip {
+            return self;
+        }
         self.headers = convert_headers(headers);
         self
     }
 
     pub fn build(self) -> Result<RootRuleInput> {
-        if self.user_id.is_empty() {
+        if !self.skip && self.user_id.is_empty() {
             return Err(anyhow!("user_id is required"));
         }
 
-        if self.method.is_empty() {
+        if !self.skip && self.method.is_empty() {
             return Err(anyhow!("method is required"));
         }
 
@@ -155,11 +175,15 @@ pub struct ObjectRuleInputBuilder {
     dataset: Option<Object>,
     collection: Option<Object>,
     project: Option<Object>,
+    skip: bool
 }
 
 impl ObjectRuleInputBuilder {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(rule_engine: &RuleEngine) -> Self {
+        Self{
+            skip: rule_engine.has_object(),
+            ..Self::default()
+        }
     }
 
     pub fn bucket(mut self, bucket: bool) -> Self {
@@ -167,64 +191,91 @@ impl ObjectRuleInputBuilder {
         self
     }
 
-    pub fn user_id(mut self, user_id: String) -> Self {
-        self.user_id = Some(user_id);
+    pub fn user_id(mut self, user_id: &str) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.user_id = Some(user_id.to_string());
         self
     }
 
-    pub fn permissions(mut self, permissions: HashMap<DieselUlid, DbPermissionLevel>) -> Self {
-        self.permissions = Some(convert_permissions(permissions));
+    pub fn permissions(mut self, permissions: &HashMap<DieselUlid, DbPermissionLevel>) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.permissions = Some(convert_permissions(permissions.clone()));
         self
     }
 
-    pub fn attributes(mut self, attributes: HashMap<String, String>) -> Self {
-        self.attributes = Some(attributes);
+    pub fn attributes(mut self, attributes: &HashMap<String, String>) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.attributes = Some(attributes.clone());
         self
     }
 
-    pub fn method(mut self, method: String) -> Self {
-        self.method = method;
+    pub fn method(mut self, method: &http::Method) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.method = method.to_string();
         self
     }
 
     pub fn headers(mut self, headers: &HeaderMap<HeaderValue>) -> Self {
+        if self.skip {
+            return self;
+        }
         self.headers = convert_headers(headers);
         self
     }
 
-    pub fn object(mut self, object: Object) -> Result<Self> {
+    pub fn object(mut self, object: &Object) -> Result<Self> {
+        if self.skip {
+            return Ok(self);
+        }
         if self.object.is_some() {
             return Err(anyhow!("object is already set"));
         }
-        self.object = Some(object);
+        self.object = Some(object.clone());
         Ok(self)
     }
 
-    pub fn dataset(mut self, dataset: Object) -> Result<Self> {
+    pub fn dataset(mut self, dataset: &Object) -> Result<Self> {
+        if self.skip {
+            return Ok(self);
+        }
         if self.dataset.is_some() {
             return Err(anyhow!("dataset is already set"));
         }
-        self.dataset = Some(dataset);
+        self.dataset = Some(dataset.clone());
         Ok(self)
     }
 
-    pub fn collection(mut self, collection: Object) -> Result<Self> {
+    pub fn collection(mut self, collection: &Object) -> Result<Self> {
         if self.collection.is_some() {
             return Err(anyhow!("collection is already set"));
         }
-        self.collection = Some(collection);
+        self.collection = Some(collection.clone());
         Ok(self)
     }
 
-    pub fn project(mut self, project: Object) -> Result<Self> {
+    pub fn project(mut self, project: &Object) -> Result<Self> {
+        if self.skip {
+            return Ok(self);
+        }
         if self.project.is_some() {
             return Err(anyhow!("project is already set"));
         }
-        self.project = Some(project);
+        self.project = Some(project.clone());
         Ok(self)
     }
 
     pub fn add_resource_states(mut self, resource_states: &ResourceStates) -> Self {
+        if self.skip {
+            return self;
+        }
         if let Some(project) = resource_states.get_project() {
             self.project = Some(project.clone());
         }
@@ -241,11 +292,11 @@ impl ObjectRuleInputBuilder {
     }
 
     pub fn build(self) -> Result<ObjectRuleInput> {
-        if self.method.is_empty() {
+        if !self.skip && self.method.is_empty() {
             return Err(anyhow!("method is required"));
         }
 
-        if self.project.is_none() {
+        if !self.skip && self.project.is_none() {
             return Err(anyhow!("project is required"));
         }
 
@@ -286,58 +337,85 @@ pub struct PackageObjectRuleInputBuilder {
     headers: HashMap<String, StringOrVec>,
     object: Option<Object>,
     parents: Vec<Object>,
+    skip: bool
 }
 
+// TODO: This could be optimized away if no rules are set by passing only references and cloning only when needed
+
 impl PackageObjectRuleInputBuilder {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(rule_engine: &RuleEngine) -> Self {
+        Self{
+            skip: rule_engine.has_object_package(),
+            ..Self::default()
+        }
     }
 
-    pub fn user_id(mut self, user_id: String) -> Self {
-        self.user_id = user_id;
+    pub fn user_id(mut self, user_id: &str) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.user_id = user_id.to_string();
         self
     }
 
-    pub fn permissions(mut self, permissions: HashMap<DieselUlid, DbPermissionLevel>) -> Self {
-        self.permissions = convert_permissions(permissions);
+    pub fn permissions(mut self, permissions: &HashMap<DieselUlid, DbPermissionLevel>) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.permissions = convert_permissions(permissions.clone());
         self
     }
 
-    pub fn attributes(mut self, attributes: HashMap<String, String>) -> Self {
-        self.attributes = attributes;
+    pub fn attributes(mut self, attributes: &HashMap<String, String>) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.attributes = attributes.clone();
         self
     }
 
-    pub fn method(mut self, method: String) -> Self {
-        self.method = method;
+    pub fn method(mut self, method: &http::Method) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.method = method.to_string();
         self
     }
 
     pub fn headers(mut self, headers: &HeaderMap<HeaderValue>) -> Self {
+        if self.skip {
+            return self;
+        }
         self.headers = convert_headers(headers);
         self
     }
 
     pub fn object(mut self, object: Option<Object>) -> Self {
+        if self.skip {
+            return self;
+        }
         self.object = object;
         self
     }
 
-    pub fn parents(mut self, parents: Vec<Object>) -> Self {
-        self.parents = parents;
+    pub fn parents(mut self, parents: &[Object]) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.parents = parents.to_vec();
         self
     }
 
     pub fn build(self) -> Result<PackageObjectRuleInput> {
-        if self.user_id.is_empty() {
+        if !self.skip && self.user_id.is_empty() {
             return Err(anyhow!("user_id is required"));
         }
 
-        if self.method.is_empty() {
+        if !self.skip && self.method.is_empty() {
             return Err(anyhow!("method is required"));
         }
 
-        if self.object.is_none() {
+        if !self.skip && self.object.is_none() {
             return Err(anyhow!("object is required"));
         }
 
@@ -368,67 +446,95 @@ pub struct BundleRuleInputBuilder {
     objects: Vec<Object>,
     bundle_id: String,
     expires: Option<i64>,
+    skip: bool, 
 }
 
 impl BundleRuleInputBuilder {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(rule_engine: &RuleEngine) -> Self {
+        Self{
+            skip: rule_engine.has_bundle(),
+            ..Self::default()
+        }
     }
 
-    pub fn user_id(mut self, user_id: String) -> Self {
-        self.user_id = user_id;
+    pub fn user_id(mut self, user_id: &str) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.user_id = user_id.to_string();
         self
     }
 
-    pub fn permissions(mut self, permissions: HashMap<DieselUlid, DbPermissionLevel>) -> Self {
-        self.permissions = convert_permissions(permissions);
+    pub fn permissions(mut self, permissions: &HashMap<DieselUlid, DbPermissionLevel>) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.permissions = convert_permissions(permissions.clone());
         self
     }
 
-    pub fn attributes(mut self, attributes: HashMap<String, String>) -> Self {
-        self.attributes = attributes;
+    pub fn attributes(mut self, attributes: &HashMap<String, String>) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.attributes = attributes.clone();
         self
     }
 
-    pub fn method(mut self, method: String) -> Self {
-        self.method = method;
+    pub fn method(mut self, method: &http::Method) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.method = method.to_string();
         self
     }
 
     pub fn headers(mut self, headers: &HeaderMap<HeaderValue>) -> Self {
+        if self.skip {
+            return self;
+        }
         self.headers = convert_headers(headers);
         self
     }
 
-    pub fn objects(mut self, objects: Vec<Object>) -> Self {
-        self.objects = objects;
+    pub fn objects(mut self, objects: &[Object]) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.objects = objects.to_vec();
         self
     }
 
-    pub fn bundle_id(mut self, bundle_id: String) -> Self {
-        self.bundle_id = bundle_id;
+    pub fn bundle_id(mut self, bundle_id: &str) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.bundle_id = bundle_id.to_string();
         self
     }
 
     pub fn expires(mut self, expires: Option<i64>) -> Self {
+        if self.skip {
+            return self;
+        }
         self.expires = expires;
         self
     }
 
     pub fn build(self) -> Result<BundleRuleInput> {
-        if self.user_id.is_empty() {
+        if !self.skip && self.user_id.is_empty() {
             return Err(anyhow!("user_id is required"));
         }
 
-        if self.method.is_empty() {
+        if !self.skip && self.method.is_empty() {
             return Err(anyhow!("method is required"));
         }
 
-        if self.objects.is_empty() {
+        if !self.skip && self.objects.is_empty() {
             return Err(anyhow!("objects is required"));
         }
 
-        if self.bundle_id.is_empty() {
+        if !self.skip && self.bundle_id.is_empty() {
             return Err(anyhow!("bundle_id is required"));
         }
 
@@ -446,7 +552,7 @@ impl BundleRuleInputBuilder {
             },
             bundle: BundleInfo {
                 id: self.bundle_id,
-                expires: self.expires.ok_or_else(|| anyhow!("expires is required"))?,
+                expires: self.expires.unwrap_or_else(|| u64::MAX as i64),
             },
         })
     }
@@ -456,29 +562,39 @@ impl BundleRuleInputBuilder {
 pub struct ReplicationIncomingRuleInputBuilder {
     objects: Vec<Object>,
     target_proxy_id: String,
+    skip: bool,
 }
 
 impl ReplicationIncomingRuleInputBuilder {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(rule_engine: &RuleEngine) -> Self {
+        Self{
+            skip: rule_engine.has_replication_in(),
+            ..Self::default()
+        }
     }
 
-    pub fn objects(mut self, objects: Vec<Object>) -> Self {
-        self.objects = objects;
+    pub fn objects(mut self, objects: &[Object]) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.objects = objects.to_vec();
         self
     }
 
-    pub fn target_proxy_id(mut self, target_proxy_id: String) -> Self {
-        self.target_proxy_id = target_proxy_id;
+    pub fn target_proxy_id(mut self, target_proxy_id: &str) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.target_proxy_id = target_proxy_id.to_string();
         self
     }
 
     pub fn build(self) -> Result<ReplicationIncomingRuleInput> {
-        if self.objects.is_empty() {
+        if !self.skip && self.objects.is_empty() {
             return Err(anyhow!("objects is required"));
         }
 
-        if self.target_proxy_id.is_empty() {
+        if !self.skip && self.target_proxy_id.is_empty() {
             return Err(anyhow!("target_proxy_id is required"));
         }
 
@@ -493,34 +609,44 @@ impl ReplicationIncomingRuleInputBuilder {
 pub struct ReplicationOutgoingRuleInputBuilder {
     object: Option<Object>,
     target_proxy_id: String,
+    skip: bool,
 }
 
 impl ReplicationOutgoingRuleInputBuilder {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(rule_engine: &RuleEngine) -> Self {
+        Self{
+            skip: rule_engine.has_replication_out(),
+            ..Self::default()
+        }
     }
 
-    pub fn object(mut self, object: Object) -> Self {
-        self.object = Some(object);
+    pub fn object(mut self, object: &Object) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.object = Some(object.clone());
         self
     }
 
-    pub fn target_proxy_id(mut self, target_proxy_id: String) -> Self {
-        self.target_proxy_id = target_proxy_id;
+    pub fn target_proxy_id(mut self, target_proxy_id: &str) -> Self {
+        if self.skip {
+            return self;
+        }
+        self.target_proxy_id = target_proxy_id.to_string();
         self
     }
 
     pub fn build(self) -> Result<ReplicationOutgoingRuleInput> {
-        if self.object.is_none() {
+        if !self.skip && self.object.is_none() {
             return Err(anyhow!("objects is required"));
         }
 
-        if self.target_proxy_id.is_empty() {
+        if !self.skip && self.target_proxy_id.is_empty() {
             return Err(anyhow!("target_proxy_id is required"));
         }
 
         Ok(ReplicationOutgoingRuleInput {
-            objects: self.object.ok_or_else(|| anyhow!("object is required"))?,
+            objects: self.object,
             target_proxy_id: self.target_proxy_id,
         })
     }

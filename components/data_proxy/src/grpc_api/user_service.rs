@@ -1,7 +1,10 @@
-use crate::caching::cache::Cache;
 use crate::auth::auth_helpers::get_token_from_md;
+use crate::caching::cache::Cache;
 use aruna_rust_api::api::dataproxy::services::v2::{
-    dataproxy_user_service_server::DataproxyUserService, CreateOrUpdateCredentialsRequest, CreateOrUpdateCredentialsResponse, GetCredentialsRequest, GetCredentialsResponse, PullReplicaRequest, PullReplicaResponse, PushReplicaRequest, PushReplicaResponse, ReplicationStatusRequest, ReplicationStatusResponse
+    dataproxy_user_service_server::DataproxyUserService, CreateOrUpdateCredentialsRequest,
+    CreateOrUpdateCredentialsResponse, GetCredentialsRequest, GetCredentialsResponse,
+    PullReplicaRequest, PullReplicaResponse, PushReplicaRequest, PushReplicaResponse,
+    ReplicationStatusRequest, ReplicationStatusResponse,
 };
 use std::sync::Arc;
 use tracing::error;
@@ -50,15 +53,15 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
                 })?;
 
                 let access_key = tid.unwrap_or_else(|| user.id.to_string());
-                let secret_key = self
-                    .cache
-                    .clone()
-                    .get_secret(&access_key)
-                    .await
-                    .map_err(|_| {
-                        error!(error = "Unable to authenticate user");
-                        tonic::Status::unauthenticated("Unable to authenticate user")
-                    })?;
+                let secret_key =
+                    self.cache
+                        .clone()
+                        .get_secret(&access_key)
+                        .await
+                        .map_err(|_| {
+                            error!(error = "Unable to authenticate user");
+                            tonic::Status::unauthenticated("Unable to authenticate user")
+                        })?;
 
                 Ok(tonic::Response::new(GetCredentialsResponse {
                     access_key,
@@ -87,10 +90,8 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
     async fn create_or_update_credentials(
         &self,
         request: tonic::Request<CreateOrUpdateCredentialsRequest>,
-    ) -> std::result::Result<
-        tonic::Response<CreateOrUpdateCredentialsResponse>,
-        tonic::Status,
-    >{
+    ) -> std::result::Result<tonic::Response<CreateOrUpdateCredentialsResponse>, tonic::Status>
+    {
         // TODO: Implement this method
         todo!()
     }
