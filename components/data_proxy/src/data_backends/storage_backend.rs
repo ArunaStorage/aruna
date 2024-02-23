@@ -2,6 +2,7 @@ use crate::structs::{Object, ObjectLocation, PartETag};
 use anyhow::Result;
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
+use diesel_ulid::DieselUlid;
 use std::fmt::Debug;
 
 /// A generic backend API for storing and retrieving objects
@@ -97,7 +98,7 @@ pub trait StorageBackend: Debug + Send + Sync {
         &self,
         obj: &Object,
         expected_size: Option<i64>,
-        ex_bucket: Option<String>,
+        names: [Option<(DieselUlid, String)>; 4],
         temp: bool,
     ) -> Result<ObjectLocation>;
 }

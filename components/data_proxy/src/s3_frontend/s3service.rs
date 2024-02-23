@@ -29,7 +29,6 @@ use aruna_file::transformers::zstd_decomp::ZstdDec;
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Hashalgorithm;
 use aruna_rust_api::api::storage::models::v2::{DataClass, Status};
-use aws_sdk_s3::error;
 use base64::engine::general_purpose;
 use base64::Engine;
 use chrono::Utc;
@@ -108,7 +107,6 @@ impl S3 for ArunaS3Service {
             None
         };
 
-        // If the object exists and the signatures match -> Skip the download
         let (object, old_location) = if let Some((object, Some(loc))) = object {
             (object, loc)
         } else {

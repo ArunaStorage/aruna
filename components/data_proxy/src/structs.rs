@@ -1,4 +1,3 @@
-use crate::database::persistence::{GenericBytes, Table, WithGenericBytes};
 use anyhow::Result;
 use anyhow::{anyhow, bail};
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
@@ -124,16 +123,25 @@ pub enum TypedRelation {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum FileFormat {
+    Raw,
+    RawEncrypted(String),
+    RawCompressed,
+    RawEncryptedCompressed(String),
+    Pithos,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ObjectLocation {
-    pub id: DieselUlid,
+    pub id: DieselUlid, // Not the object_id
     pub bucket: String,
     pub key: String,
     pub upload_id: Option<String>,
-    pub encryption_key: Option<String>,
-    pub compressed: bool,
+    pub file_format: FileFormat,
     pub raw_content_len: i64,
     pub disk_content_len: i64,
     pub disk_hash: Option<String>,
+    pub ref_count: u32, // Number of objects that reference this location
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -428,181 +436,6 @@ impl TryInto<create_object_request::Parent> for TypedRelation {
                 Err(anyhow!("Invalid "))
             }
         }
-    }
-}
-
-impl TryFrom<GenericBytes<i16>> for PubKey {
-    type Error = anyhow::Error;
-    #[tracing::instrument(level = "trace", skip(value))]
-    fn try_from(value: GenericBytes<i16>) -> Result<Self, Self::Error> {
-        Ok(bincode::deserialize(&value.data).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?)
-    }
-}
-
-impl TryInto<GenericBytes<i16>> for PubKey {
-    type Error = anyhow::Error;
-    #[tracing::instrument(level = "trace", skip(self))]
-    fn try_into(self) -> Result<GenericBytes<i16>, Self::Error> {
-        let data = bincode::serialize(&self).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
-        Ok(GenericBytes {
-            id: self.id,
-            data,
-            table: Self::get_table(),
-        })
-    }
-}
-
-impl WithGenericBytes<i16> for PubKey {
-    #[tracing::instrument(level = "trace", skip())]
-    fn get_table() -> Table {
-        Table::PubKeys
-    }
-}
-
-impl TryFrom<GenericBytes<DieselUlid>> for Object {
-    type Error = anyhow::Error;
-    #[tracing::instrument(level = "trace", skip(value))]
-    fn try_from(value: GenericBytes<DieselUlid>) -> Result<Self, Self::Error> {
-        Ok(bincode::deserialize(&value.data).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?)
-    }
-}
-
-impl TryInto<GenericBytes<DieselUlid>> for Object {
-    type Error = anyhow::Error;
-    #[tracing::instrument(level = "trace", skip(self))]
-    fn try_into(self) -> Result<GenericBytes<DieselUlid>, Self::Error> {
-        let data = bincode::serialize(&self).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
-        Ok(GenericBytes {
-            id: self.id,
-            data,
-            table: Self::get_table(),
-        })
-    }
-}
-
-impl WithGenericBytes<DieselUlid> for Object {
-    #[tracing::instrument(level = "trace", skip())]
-    fn get_table() -> Table {
-        Table::Objects
-    }
-}
-
-impl TryFrom<GenericBytes<DieselUlid>> for ObjectLocation {
-    type Error = anyhow::Error;
-    #[tracing::instrument(level = "trace", skip(value))]
-    fn try_from(value: GenericBytes<DieselUlid>) -> Result<Self, Self::Error> {
-        Ok(bincode::deserialize(&value.data).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?)
-    }
-}
-
-impl TryInto<GenericBytes<DieselUlid>> for ObjectLocation {
-    type Error = anyhow::Error;
-    #[tracing::instrument(level = "trace", skip(self))]
-    fn try_into(self) -> Result<GenericBytes<DieselUlid>, Self::Error> {
-        let data = bincode::serialize(&self).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
-        Ok(GenericBytes {
-            id: self.id,
-            data,
-            table: Self::get_table(),
-        })
-    }
-}
-
-impl WithGenericBytes<DieselUlid> for ObjectLocation {
-    #[tracing::instrument(level = "trace", skip())]
-    fn get_table() -> Table {
-        Table::ObjectLocations
-    }
-}
-
-impl WithGenericBytes<DieselUlid> for User {
-    #[tracing::instrument(level = "trace", skip())]
-    fn get_table() -> Table {
-        Table::Users
-    }
-}
-
-impl TryFrom<GenericBytes<DieselUlid>> for User {
-    type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
-    #[tracing::instrument(level = "trace", skip(value))]
-    fn try_from(value: GenericBytes<DieselUlid>) -> Result<Self, Self::Error> {
-        let user: User = bincode::deserialize(&value.data).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
-        Ok(user)
-    }
-}
-
-impl TryInto<GenericBytes<DieselUlid>> for User {
-    type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
-    #[tracing::instrument(level = "trace", skip(self))]
-    fn try_into(self) -> Result<GenericBytes<DieselUlid>, Self::Error> {
-        let user = self;
-        let data = bincode::serialize(&user).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
-        Ok(GenericBytes {
-            id: user.user_id,
-            data,
-            table: Self::get_table(),
-        })
-    }
-}
-
-impl WithGenericBytes<String> for AccessKeyPermissions {
-    #[tracing::instrument(level = "trace", skip())]
-    fn get_table() -> Table {
-        Table::Permissions
-    }
-}
-
-impl TryFrom<GenericBytes<String>> for AccessKeyPermissions {
-    type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
-    #[tracing::instrument(level = "trace", skip(value))]
-    fn try_from(value: GenericBytes<String>) -> Result<Self, Self::Error> {
-        let access_key_perm: AccessKeyPermissions =
-            bincode::deserialize(&value.data).map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
-                e
-            })?;
-        Ok(access_key_perm)
-    }
-}
-
-impl TryInto<GenericBytes<String>> for AccessKeyPermissions {
-    type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
-    #[tracing::instrument(level = "trace", skip(self))]
-    fn try_into(self) -> Result<GenericBytes<String>, Self::Error> {
-        let access_key_perm = self;
-        let data = bincode::serialize(&access_key_perm).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
-        Ok(GenericBytes {
-            id: access_key_perm.access_key,
-            data,
-            table: Self::get_table(),
-        })
     }
 }
 

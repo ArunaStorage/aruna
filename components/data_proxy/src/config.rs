@@ -2,6 +2,8 @@ use anyhow::Result;
 use diesel_ulid::DieselUlid;
 use serde::{Deserialize, Serialize};
 
+use crate::helpers::random_string;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub proxy: Proxy,
@@ -150,6 +152,7 @@ pub enum Backend {
         deduplication: bool,
         dropbox_bucket: Option<String>,
         backend_scheme: String,
+        tmp: Option<String>,
     },
     FileSystem {
         root_path: String,
@@ -157,6 +160,7 @@ pub enum Backend {
         compression: bool,
         dropbox_folder: Option<String>,
         backend_scheme: String,
+        tmp: Option<String>, // Will default to /tmp
     },
 }
 
@@ -196,6 +200,27 @@ impl Backend {
                 Ok(())
             }
             Self::FileSystem { .. } => Ok(()),
+        }
+    }
+
+    pub fn get_tmp(&self) -> Option<String> {
+        match self {
+            Self::S3 { tmp, .. } => tmp.clone(),
+            Self::FileSystem { tmp, .. } => tmp.clone(),
+        }
+    }
+
+    pub fn is_encrypted(&self) -> bool {
+        match self {
+            Self::S3 { encryption, .. } => *encryption,
+            Self::FileSystem { encryption, .. } => *encryption,
+        }
+    }
+
+    pub fn is_compressed(&self) -> bool {
+        match self {
+            Self::S3 { compression, .. } => *compression,
+            Self::FileSystem { compression, .. } => *compression,
         }
     }
 }

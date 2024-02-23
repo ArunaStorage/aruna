@@ -25,27 +25,28 @@ hostname="localhost:1337"
 [backend.s3]
 # s3 host
 host="http://localhost:9000"
-# s3 access key or (env AWS_ACCESS_KEY_ID)
-access_key="minioadmin"
-# s3 secret key or (env AWS_SECRET_ACCESS)
-secret_key="minioadmin"
+# (UNSUPPORTED) currently only env AWS_ACCESS_KEY_ID
+# access_key="minioadmin"
+# (UNSUPPORTED) currently only env AWS_SECRET_ACCESS
+# secret_key="minioadmin"
 encryption=true
 compression=true
-deduplication=true
+deduplication=true # If deduplication is enabled, the backend will check if an object with the same hash already exists and return the existing object if it does
+tmp="tmp12345" # Will generate a random temp bucket_name if not set
 dropbox_bucket="" # Set value to set a dropbox bucket
 # A scheme for the backend to use when deciding where to store objects
 # The following variables are available:
-# - <PROJECT_NAME> - The project name (lowercase)
-# - <PROJECT_ID> - The project ULID (lowercase)
-# - <COLLECTION_NAME> - The collection name (if present)
-# - <COLLECTION_ID> - The collection ULID (if present)
-# - <DATASET_NAME> - The dataset name (if present)
-# - <DATASET_ID> - The dataset ULID (if present)
-# - <OBJECT_NAME> - The object name
-# - <OBJECT_ID> - The object ULID
-# - <RANDOM:x> - A random string of (x == integer) lower_case ascii characters
-# - <PROXY_ID> - The proxy ULID (lowercase)
-backend_scheme="s3://<PROJECT>-<RANDOM:10>/<COLLECTION>/<DATASET>/<RANDOM:10>_<OBJECT>" 
+# - {{PROJECT_NAME}} - The project name (lowercase)
+# - {{PROJECT_ID}} - The project ULID (lowercase)
+# - {{COLLECTION_NAME}} - The collection name (if present)
+# - {{COLLECTION_ID}} - The collection ULID (if present)
+# - {{DATASET_NAME}} - The dataset name (if present)
+# - {{DATASET_ID}} - The dataset ULID (if present)
+# - {{OBJECT_NAME}} - The object name
+# - {{OBJECT_ID}} - The object ULID
+# - {{RANDOM:x}} - A random string of (x == integer) lower_case ascii characters
+# - {{PROXY_ID}} - The proxy ULID (lowercase)
+backend_scheme="s3://{{PROJECT_NAME}}-{{RANDOM:10}}/{{COLLECTION_NAME}}/{{DATASET_NAME}}/{{RANDOM:10}}_{{OBJECT_NAME}}" 
 
 [[rules]]
 target="ALL" # ALL, OBJECT, BUNDLE, REPLICATION

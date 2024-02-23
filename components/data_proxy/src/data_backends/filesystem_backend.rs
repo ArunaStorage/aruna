@@ -2,6 +2,7 @@ use anyhow::Result;
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 use bytes::BytesMut;
+use diesel_ulid::DieselUlid;
 use digest::Digest;
 use futures_util::StreamExt;
 use md5::Md5;
@@ -299,7 +300,7 @@ impl StorageBackend for FSBackend {
         &self,
         _obj: &Object,
         expected_size: Option<i64>,
-        ex_bucket: Option<String>,
+        names: [Option<(DieselUlid, String)>; 4],
         temp: bool,
     ) -> Result<ObjectLocation> {
         let key: String = thread_rng()

@@ -81,7 +81,7 @@ pub async fn list_response(
             }
         }
         (Some(delimiter), None) => {
-            for (path, id) in cache.get_stripped_path_range(prefix.as_str(), start_at) {
+            for (path, id) in cache.get_stripped_path_range("", start_at) {
                 // Breaks with next path to start at after max_keys is reached
                 let num_keys = keys.len() + common_prefixes.len();
                 if num_keys == max_keys {
@@ -100,7 +100,7 @@ pub async fn list_response(
                             &cache
                                 .get_resource_cloned(&id, true)
                                 .await
-                                .ok_or_else(|| s3_error!(NoSuchKey, "No key found for path"))?,
+                                .map_err(|_| s3_error!(NoSuchKey, "No key found for path"))?,
                         )
                             .into(),
                     );
@@ -133,7 +133,7 @@ pub async fn list_response(
             }
         }
         (None, None) => {
-            for (path, id) in cache.get_stripped_path_range(prefix.as_str(), start_at) {
+            for (path, id) in cache.get_stripped_path_range("", start_at) {
                 // Breaks with next path to start at after max_keys is reached
                 let num_keys = keys.len() + common_prefixes.len();
                 if num_keys == max_keys {

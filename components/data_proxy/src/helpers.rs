@@ -144,3 +144,9 @@ pub fn is_method_read(method: &Method) -> bool {
         _ => false,
     }
 }
+
+pub fn random_string(len: usize) -> String {
+    use rand::distributions::Alphanumeric;
+    use rand::{thread_rng, Rng};
+    thread_rng().sample_iter(&Alphanumeric).take(len).collect().to_ascii_lowercase()
+}

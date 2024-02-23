@@ -10,7 +10,7 @@ use aruna_rust_api::api::dataproxy::services::v2::{
 };
 use diesel_ulid::DieselUlid;
 use std::{str::FromStr, sync::Arc};
-use tracing::{error};
+use tracing::error;
 
 pub struct BundlerServiceImpl {
     pub cache: Arc<Cache>,
@@ -146,10 +146,12 @@ impl BundlerService for BundlerServiceImpl {
                     tonic::Status::invalid_argument("Unable to parse BundleID")
                 })?;
 
-            self.cache.check_delete_bundle(&bundle_id, &user.access_key).map_err(|e| {
-                error!(error = ?e, "Unable to delete bundle");
-                tonic::Status::unauthenticated("Unable to delete bundle")
-            })?;
+            self.cache
+                .check_delete_bundle(&bundle_id, &user.access_key)
+                .map_err(|e| {
+                    error!(error = ?e, "Unable to delete bundle");
+                    tonic::Status::unauthenticated("Unable to delete bundle")
+                })?;
             return Ok(tonic::Response::new(DeleteBundleResponse {}));
         }
 

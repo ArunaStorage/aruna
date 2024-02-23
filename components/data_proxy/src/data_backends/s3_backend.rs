@@ -1,7 +1,10 @@
+use super::location_handler::CompiledVariant;
 use super::storage_backend::StorageBackend;
+use crate::config::Backend;
 use crate::structs::Object;
 use crate::structs::ObjectLocation;
 use crate::structs::PartETag;
+use crate::CONFIG;
 use anyhow::anyhow;
 use anyhow::Result;
 use async_channel::{Receiver, Sender};
@@ -12,6 +15,7 @@ use aws_sdk_s3::{
     types::{CompletedMultipartUpload, CompletedPart},
     Client,
 };
+use diesel_ulid::DieselUlid;
 use rand::distributions::Alphanumeric;
 use rand::distributions::DistString;
 use rand::thread_rng;
@@ -23,15 +27,30 @@ use tracing::error;
 pub struct S3Backend {
     pub s3_client: Client,
     endpoint_id: String,
+    temp: String,
+    schema: CompiledVariant,
 }
 
 impl S3Backend {
     #[tracing::instrument]
     pub async fn new(endpoint_id: String) -> Result<Self> {
-        let s3_endpoint = dotenvy::var("AWS_S3_HOST").map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
+
+        let Backend::S3{
+            tmp,
+            backend_scheme,
+            host,
+            access_key,
+            secret_key,
+            ..
+        } = CONFIG.backend else {
+            return Err(anyhow!("Invalid backend"));
+        };
+
+        let temp = tmp.unwrap_or_else(|| format!("temp-{}", endpoint_id).to_ascii_lowercase());
+
+        let compiled_schema = CompiledVariant::new(backend_scheme.as_str())?;
+
+        let s3_endpoint = host.ok_or_else(|| anyhow!("Missing s3 host"))?;
         tracing::debug!("S3 Endpoint: {}", s3_endpoint);
 
         let config = aws_config::load_from_env().await;
@@ -45,6 +64,8 @@ impl S3Backend {
         let handler = S3Backend {
             s3_client,
             endpoint_id,
+            temp,
+            schema: compiled_schema,
         };
         Ok(handler)
     }
@@ -277,6 +298,19 @@ impl StorageBackend for S3Backend {
         ex_bucket: Option<String>,
         temp: bool,
     ) -> Result<ObjectLocation> {
+
+        // if temp {
+        //     return Ok(ObjectLocation {
+        //         id: DieselUlid::new(),
+        //         bucket: ex_bucket.unwrap_or_else(|| self.get_random_bucket().to_ascii_lowercase()),
+        //         key: obj.id.to_string(),
+        //         file_format: FileFormat::
+        //         raw_content_len: expected_size.unwrap_or_default(),
+        //         ..Default::default()
+        //     });
+        // }
+
+
         let key: String = thread_rng()
             .sample_iter(&Alphanumeric)
             .take(30)
