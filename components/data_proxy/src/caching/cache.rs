@@ -3,7 +3,7 @@ use crate::auth::auth::AuthHandler;
 use crate::caching::grpc_query_handler::sort_objects;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::replication::replication_handler::ReplicationMessage;
-use crate::structs::{AccessKeyPermissions, Bundle, TypedId, User};
+use crate::structs::{AccessKeyPermissions, Bundle, DbPermissionLevel, TypedId, User};
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
     structs::{Object, ObjectLocation, PubKey},
@@ -767,6 +767,7 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn add_bundle(&self, bundle: Bundle) {
         self.bundles.insert(bundle.id, bundle);
+        // TODO: Add to persistence layer
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -778,5 +779,38 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn delete_bundle(&self, bundle_id: &DieselUlid) {
         self.bundles.remove(bundle_id);
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, bundle_id, access_key))]
+    pub fn check_delete_bundle(&self, bundle_id: &DieselUlid, access_key: &str) -> Result<()> {
+        if let Some(bundle) = self.get_bundle(bundle_id) {
+            if bundle.owner_access_key == access_key {
+                Ok(())
+            } else {
+                Err(anyhow!("Access denied"))
+            }
+        } else {
+            Err(anyhow!("Bundle not found"))
+        }
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn check_access_parents(
+        &self,
+        key_info: &AccessKeyPermissions,
+        resource_id: &DieselUlid,
+        perm: DbPermissionLevel,
+    ) -> Result<()> {
+        if let Some(parents) = self.get_parents(resource_id).await {
+            for (_, id) in parents {
+                if let Some(perm) = key_info.permissions.get(&id.get_id()) {
+                    if perm >= &perm {
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        error!("Insufficient permissions");
+        Err(anyhow!("Insufficient permissions"))
     }
 }
