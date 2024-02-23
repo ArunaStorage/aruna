@@ -1,5 +1,6 @@
 use crate::{
-    caching::{auth::get_token_from_md, cache::Cache},
+    auth::auth_helpers::get_token_from_md,
+    caching::cache::Cache,
     helpers::sign_download_url,
     structs::{DbPermissionLevel, Endpoint, Object, ObjectType, ALL_RIGHTS_RESERVED},
 };

@@ -1,3 +1,7 @@
+use super::auth_helpers;
+use super::rule_engine::RuleEngine;
+use super::rule_structs::ObjectRuleInputBuilder;
+use super::rule_structs::RootRuleInputBuilder;
 use crate::caching::cache::Cache;
 use crate::helpers::is_method_read;
 use crate::structs::AccessKeyPermissions;
@@ -30,12 +34,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
-use tonic::metadata::MetadataMap;
 use tracing::error;
-use super::auth_helpers;
-use super::rule_engine::RuleEngine;
-use super::rule_structs::ObjectRuleInputBuilder;
-use super::rule_structs::RootRuleInputBuilder;
 
 pub struct AuthHandler {
     cache: Arc<Cache>,
@@ -598,34 +597,4 @@ impl AuthHandler {
         })?;
         Ok(resource_states)
     }
-}
-
-#[tracing::instrument(level = "trace", skip(md))]
-pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
-    let token_string = md
-        .get("Authorization")
-        .ok_or(anyhow!("Metadata token not found"))
-        .map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?
-        .to_str()?;
-
-    let split = token_string.split(' ').collect::<Vec<_>>();
-
-    if split.len() != 2 {
-        error!(split_len = split.len(), "wrong token length, expected: 2");
-        return Err(anyhow!("Authorization flow error"));
-    }
-
-    if split[0] != "Bearer" {
-        error!(split = split[0], "wrong token type, expected: Bearer");
-        return Err(anyhow!("Authorization flow error"));
-    }
-
-    if split[1].is_empty() {
-        error!(?split, "empty token");
-        return Err(anyhow!("Authorization flow error"));
-    }
-    Ok(split[1].to_string())
 }

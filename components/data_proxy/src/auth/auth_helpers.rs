@@ -1,5 +1,8 @@
+use anyhow::anyhow;
+use anyhow::Result;
 use diesel_ulid::DieselUlid;
 use s3s::{s3_error, S3Error};
+use tonic::metadata::MetadataMap;
 use tracing::error;
 
 use crate::structs::{AccessKeyPermissions, DbPermissionLevel, Object};
@@ -53,4 +56,34 @@ pub(super) fn check_multi_permissions(
     }
     error!("Insufficient permissions");
     Err(s3_error!(AccessDenied, "Access Denied"))
+}
+
+#[tracing::instrument(level = "trace", skip(md))]
+pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
+    let token_string = md
+        .get("Authorization")
+        .ok_or(anyhow!("Metadata token not found"))
+        .map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?
+        .to_str()?;
+
+    let split = token_string.split(' ').collect::<Vec<_>>();
+
+    if split.len() != 2 {
+        error!(split_len = split.len(), "wrong token length, expected: 2");
+        return Err(anyhow!("Authorization flow error"));
+    }
+
+    if split[0] != "Bearer" {
+        error!(split = split[0], "wrong token type, expected: Bearer");
+        return Err(anyhow!("Authorization flow error"));
+    }
+
+    if split[1].is_empty() {
+        error!(?split, "empty token");
+        return Err(anyhow!("Authorization flow error"));
+    }
+    Ok(split[1].to_string())
 }

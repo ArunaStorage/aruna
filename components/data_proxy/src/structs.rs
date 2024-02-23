@@ -2,7 +2,7 @@ use crate::database::persistence::{GenericBytes, Table, WithGenericBytes};
 use anyhow::Result;
 use anyhow::{anyhow, bail};
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
-use aruna_rust_api::api::storage::models::v2::Hash;
+use aruna_rust_api::api::storage::models::v2::permission::ResourceId;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::models::v2::{
     relation::Relation, DataClass, InternalRelationVariant, KeyValue, Object as GrpcObject,
@@ -10,6 +10,7 @@ use aruna_rust_api::api::storage::models::v2::{
 };
 use aruna_rust_api::api::storage::models::v2::{Collection, DataEndpoint};
 use aruna_rust_api::api::storage::models::v2::{Dataset, ResourceVariant};
+use aruna_rust_api::api::storage::models::v2::{Hash, Permission};
 use aruna_rust_api::api::storage::services::v2::create_collection_request;
 use aruna_rust_api::api::storage::services::v2::create_dataset_request;
 use aruna_rust_api::api::storage::services::v2::create_object_request;
@@ -20,7 +21,7 @@ use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
 use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
-use http::{HeaderMap, HeaderValue, Method};
+use http::{HeaderValue, Method};
 use s3s::dto::CreateBucketInput;
 use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
 use s3s::{s3_error, S3Error};
@@ -75,6 +76,23 @@ impl From<&Method> for DbPermissionLevel {
     }
 }
 
+impl From<&i32> for DbPermissionLevel {
+    #[tracing::instrument(level = "trace", skip(level))]
+    fn from(level: &i32) -> Self {
+        match level {
+            &0 => DbPermissionLevel::Deny,
+            &1 => DbPermissionLevel::None,
+            &2 => DbPermissionLevel::Read,
+            &3 => DbPermissionLevel::Append,
+            &4 => DbPermissionLevel::Write,
+            &5 => DbPermissionLevel::Admin,
+            _ => DbPermissionLevel::Deny,
+        }
+    }
+}
+
+//impl From<Option<Permission
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ObjectType {
     Project,
@@ -108,6 +126,7 @@ pub struct ObjectLocation {
 pub struct Object {
     pub id: DieselUlid,
     pub name: String,
+    pub title: String,
     pub key_values: Vec<KeyValue>,
     pub object_status: Status,
     pub data_class: DataClass,
@@ -161,35 +180,82 @@ impl User {
     }
 }
 
+pub fn perm_convert(perms: Vec<Permission>) -> HashMap<DieselUlid, DbPermissionLevel> {
+    perms
+        .iter()
+        .filter_map(|p| {
+            if let Some(id) = p.resource_id {
+                match id {
+                    ResourceId::ProjectId(id)
+                    | ResourceId::CollectionId(id)
+                    | ResourceId::DatasetId(id)
+                    | ResourceId::ObjectId(id) => Some((
+                        DieselUlid::from_str(&id).ok()?,
+                        DbPermissionLevel::from(&p.permission_level),
+                    )),
+                }
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 // TODO: FIX this
 impl TryFrom<GrpcUser> for User {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: GrpcUser) -> Result<Self> {
+        let mut attributes = if let Some(attr) = value.attributes {
+            let mut map = attr
+                .data_proxy_attributes
+                .iter()
+                .map(|e| (e.attribute_name.to_string(), e.attribute_value.to_string()))
+                .collect::<HashMap<String, String>>();
+            map.extend(
+                attr.custom_attributes
+                    .iter()
+                    .map(|e| (e.attribute_name.to_string(), e.attribute_value.to_string())),
+            );
+            map
+        } else {
+            HashMap::default()
+        };
+
         Ok(User {
             user_id: DieselUlid::from_str(&value.id)?,
-            personal_permissions: value
-                .attributes
-                .unwrap_or_default()
-                .personal_permissions
-                .iter()
-                .map(|(k, v)| Ok((DieselUlid::from_str(k)?, DbPermissionLevel::from_str(v)?)))
-                .collect::<Result<HashMap<DieselUlid, DbPermissionLevel>>>()?,
+            personal_permissions: perm_convert(
+                value.attributes.unwrap_or_default().personal_permissions,
+            ),
             tokens: value
+                .attributes
+                .ok_or_else(|| {
+                    error!("No tokens found");
+                    anyhow!("No tokens found")
+                })?
                 .tokens
                 .iter()
-                .map(|(k, v)| {
+                .map(|t| {
                     Ok((
-                        DieselUlid::from_str(k)?,
-                        v.iter()
-                            .map(|(k, v)| {
-                                Ok((DieselUlid::from_str(k)?, DbPermissionLevel::from_str(v)?))
-                            })
-                            .collect::<Result<HashMap<DieselUlid, DbPermissionLevel>>>()?,
+                        DieselUlid::from_str(&t.id)?,
+                        if let Some(perm) = t.permission {
+                            match perm.resource_id {
+                                Some(ResourceId::ProjectId(id))
+                                | Some(ResourceId::CollectionId(id))
+                                | Some(ResourceId::DatasetId(id))
+                                | Some(ResourceId::ObjectId(id)) => HashMap::from([(
+                                    DieselUlid::from_str(&id)?,
+                                    DbPermissionLevel::from(&perm.permission_level),
+                                )]),
+                                _ => Err(anyhow!("Invalid resource id"))?,
+                            }
+                        } else {
+                            Err(anyhow!("No permission found"))?
+                        },
                     ))
                 })
                 .collect::<Result<HashMap<DieselUlid, HashMap<DieselUlid, DbPermissionLevel>>>>()?,
-            custom_attributes: value.custom_attributes,
+            attributes: attributes,
         })
     }
 }
@@ -642,6 +708,7 @@ impl TryFrom<Project> for Object {
                 e
             })?,
             name: value.name.to_string(),
+            title: value.title.to_string(),
             key_values: value.key_values.clone(),
             object_status: value.status(),
             data_class: value.data_class(),
@@ -711,6 +778,7 @@ impl TryFrom<Collection> for Object {
         Ok(Object {
             id: DieselUlid::from_str(&value.id).map_err(|e| e)?,
             name: value.name.to_string(),
+            title: value.title.to_string(),
             key_values: value.key_values.clone(),
             object_status: value.status(),
             data_class: value.data_class(),
@@ -780,6 +848,7 @@ impl TryFrom<Dataset> for Object {
         Ok(Object {
             id: DieselUlid::from_str(&value.id)?,
             name: value.name.to_string(),
+            title: value.title.to_string(),
             key_values: value.key_values.clone(),
             object_status: value.status(),
             data_class: value.data_class(),
@@ -849,6 +918,7 @@ impl TryFrom<GrpcObject> for Object {
         Ok(Object {
             id: DieselUlid::from_str(&value.id)?,
             name: value.name.to_string(),
+            title: value.title.to_string(),
             key_values: value.key_values.clone(),
             object_status: value.status(),
             data_class: value.data_class(),
@@ -894,6 +964,7 @@ impl From<Object> for CreateCollectionRequest {
     fn from(value: Object) -> Self {
         CreateCollectionRequest {
             name: value.name,
+            title: value.title,
             description: "".to_string(),
             key_values: vec![],
             relations: vec![],
@@ -904,6 +975,7 @@ impl From<Object> for CreateCollectionRequest {
                 .flatten(),
             metadata_license_tag: Some(value.metadata_license),
             default_data_license_tag: Some(value.data_license),
+            authors: vec![],
         }
     }
 }
@@ -923,6 +995,8 @@ impl From<Object> for CreateDatasetRequest {
                 .flatten(),
             metadata_license_tag: Some(value.metadata_license),
             default_data_license_tag: Some(value.data_license),
+            title: value.title,
+            authors: vec![],
         }
     }
 }
@@ -933,6 +1007,7 @@ impl From<CreateBucketInput> for Object {
         Object {
             id: DieselUlid::generate(),
             name: value.bucket,
+            title: "".to_string(),
             key_values: vec![],
             object_status: Status::Available,
             data_class: DataClass::Private,
@@ -955,6 +1030,7 @@ impl From<Object> for CreateObjectRequest {
     fn from(value: Object) -> Self {
         CreateObjectRequest {
             name: value.name,
+            title: value.title,
             description: "".to_string(),
             key_values: vec![],
             relations: vec![],
@@ -966,6 +1042,7 @@ impl From<Object> for CreateObjectRequest {
             hashes: vec![],
             metadata_license_tag: value.metadata_license,
             data_license_tag: value.data_license,
+            authors: vec![],
         }
     }
 }
