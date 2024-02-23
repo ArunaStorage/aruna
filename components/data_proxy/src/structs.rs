@@ -21,7 +21,8 @@ use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use diesel_ulid::DieselUlid;
 use http::{HeaderValue, Method};
-use rand::distributions::Alphanumeric;
+use rand::distributions::{Alphanumeric, DistString};
+use rand::thread_rng;
 use s3s::dto::CreateBucketInput;
 use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
 use s3s::{s3_error, S3Error};
@@ -145,6 +146,33 @@ impl FileFormat {
                 Alphanumeric.sample_string(&mut thread_rng(), 32),
             ),
             _ => FileFormat::Raw,
+        }
+    }
+
+    pub fn is_encrypted(&self) -> bool {
+        match self {
+            FileFormat::RawEncrypted(_)
+            | FileFormat::RawEncryptedCompressed(_)
+            | FileFormat::Pithos => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_compressed(&self) -> bool {
+        match self {
+            FileFormat::RawCompressed
+            | FileFormat::RawEncryptedCompressed(_)
+            | FileFormat::Pithos => true,
+            _ => false,
+        }
+    }
+
+    pub fn get_encryption_key(&self) -> Option<Vec<u8>> {
+        match self {
+            FileFormat::RawEncrypted(key) | FileFormat::RawEncryptedCompressed(key) => {
+                Some(key.as_bytes().to_vec())
+            }
+            _ => None,
         }
     }
 }

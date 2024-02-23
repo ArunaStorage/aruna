@@ -41,13 +41,10 @@ pub async fn get_bundle(
                                 file_name: name.to_string(),
                                 input_size: location.disk_content_len as u64,
                                 file_size: location.raw_content_len as u64,
-                                skip_decompression: !location.compressed,
-                                skip_decryption: location.encryption_key.is_none(),
-                                encryption_key: location
-                                    .encryption_key
-                                    .as_ref()
-                                    .map(|e| e.to_string().into_bytes()),
-                                ..Default::default()
+                                skip_decompression: location.file_format.is_compressed(),
+                                skip_decryption: location.file_format.is_encrypted(),
+                                encryption_key: location.file_format.get_encryption_key()
+                                    ..Default::default(),
                             },
                             counter >= len,
                         ))

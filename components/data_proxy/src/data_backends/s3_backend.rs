@@ -31,6 +31,7 @@ pub struct S3Backend {
     use_pithos: bool,
     encryption: bool,
     compression: bool,
+    dropbox: Option<String>,
 }
 
 impl S3Backend {
@@ -42,6 +43,7 @@ impl S3Backend {
             host,
             encryption,
             compression,
+            dropbox_bucket,
             ..
         } = &CONFIG.backend
         else {
@@ -73,6 +75,7 @@ impl S3Backend {
             use_pithos: *encryption || *compression,
             encryption: *encryption,
             compression: *compression,
+            dropbox: dropbox_bucket.clone(),
         };
         Ok(handler)
     }

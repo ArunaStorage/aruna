@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use anyhow::Result;
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
@@ -6,32 +7,64 @@ use diesel_ulid::DieselUlid;
 use digest::Digest;
 use futures_util::StreamExt;
 use md5::Md5;
-use rand::{
-    distributions::{Alphanumeric, DistString},
-    thread_rng, Rng,
-};
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use std::path::Path;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::pin;
 
-use crate::structs::{Object, ObjectLocation, PartETag};
+use crate::helpers::random_string;
+use crate::structs::FileFormat;
+use crate::{
+    config::Backend,
+    structs::{Object, ObjectLocation, PartETag},
+    CONFIG,
+};
 
-use super::storage_backend::StorageBackend;
+use super::{location_handler::CompiledVariant, storage_backend::StorageBackend};
 
 #[derive(Debug, Clone)]
 pub struct FSBackend {
     _endpoint_id: String,
     pub base_path: String,
+    temp: String,
+    schema: CompiledVariant,
+    use_pithos: bool,
+    encryption: bool,
+    compression: bool,
+    dropbox: Option<String>,
 }
 
 impl FSBackend {
     #[tracing::instrument(level = "debug")]
     #[allow(dead_code)]
-    pub async fn new(_endpoint_id: String, base_path: &str) -> Result<Self> {
-        let base_path = base_path.to_string();
+    pub async fn new(_endpoint_id: String) -> Result<Self> {
+        let Backend::FileSystem {
+            root_path,
+            encryption,
+            compression,
+            dropbox_folder,
+            backend_scheme,
+            tmp,
+        } = &CONFIG.backend
+        else {
+            return Err(anyhow!("Invalid backend"));
+        };
+
+        let temp = tmp
+            .clone()
+            .unwrap_or_else(|| format!("/tmp").to_ascii_lowercase());
+
+        let compiled_schema = CompiledVariant::new(backend_scheme.as_str())?;
+
         let handler = FSBackend {
             _endpoint_id,
-            base_path,
+            temp,
+            base_path: root_path.clone(),
+            schema: compiled_schema,
+            use_pithos: *encryption || *compression,
+            encryption: *encryption,
+            compression: *compression,
+            dropbox: dropbox_folder.clone(),
         };
         Ok(handler)
     }
@@ -293,42 +326,42 @@ impl StorageBackend for FSBackend {
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", skip(self, _obj, expected_size, ex_bucket, temp))]
-    /// Initialize a new location for a specific object
-    /// This takes the object_info into account and creates a new location for the object
     async fn initialize_location(
         &self,
-        _obj: &Object,
+        obj: &Object,
         expected_size: Option<i64>,
         names: [Option<(DieselUlid, String)>; 4],
         temp: bool,
     ) -> Result<ObjectLocation> {
-        let key: String = thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(30)
-            .map(char::from)
-            .collect::<String>()
-            .to_ascii_lowercase();
+        if temp {
+            // No pithos for temp
+            let file_format = FileFormat::from_bools(false, self.encryption, self.compression);
+            return Ok(ObjectLocation {
+                id: DieselUlid::generate(),
+                bucket: self.temp.clone(),
+                key: format!(
+                    "{}{}",
+                    obj.id.to_string().to_ascii_lowercase(),
+                    random_string(3)
+                ),
+                file_format,
+                raw_content_len: expected_size.unwrap_or_default(),
+                ..Default::default()
+            });
+        }
 
-        let bucket: String = thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(5)
-            .map(char::from)
-            .collect::<String>()
-            .to_ascii_lowercase();
+        let (bucket, key) = self.schema.into_names(names);
 
-        let encryption_key: String = Alphanumeric.sample_string(&mut thread_rng(), 32);
+        let file_format =
+            FileFormat::from_bools(self.use_pithos, self.encryption, self.compression);
 
         Ok(ObjectLocation {
-            id: diesel_ulid::DieselUlid::generate(),
-            bucket: ex_bucket.unwrap_or_else(|| bucket),
-            upload_id: None,
+            id: DieselUlid::generate(),
+            bucket,
             key,
-            encryption_key: Some(encryption_key),
-            compressed: !temp,
+            file_format,
             raw_content_len: expected_size.unwrap_or_default(),
-            disk_content_len: 0,
-            disk_hash: None,
+            ..Default::default()
         })
     }
 }

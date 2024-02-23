@@ -80,9 +80,9 @@ async fn main() -> Result<()> {
         config::Backend::S3 { .. } => {
             Box::new(S3Backend::new(CONFIG.proxy.endpoint_id.to_string()).await?)
         }
-        config::Backend::FileSystem { root_path, .. } => Box::new(
-            FSBackend::new(CONFIG.proxy.endpoint_id.to_string(), root_path.as_str()).await?,
-        ),
+        config::Backend::FileSystem { .. } => {
+            Box::new(FSBackend::new(CONFIG.proxy.endpoint_id.to_string()).await?)
+        }
     };
 
     let storage_backend: Arc<Box<dyn StorageBackend>> = Arc::new(backend);
