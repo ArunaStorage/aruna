@@ -1,8 +1,7 @@
-use crate::caching::{auth::get_token_from_md, cache::Cache};
+use crate::caching::cache::Cache;
+use crate::auth::auth_helpers::get_token_from_md;
 use aruna_rust_api::api::dataproxy::services::v2::{
-    dataproxy_user_service_server::DataproxyUserService, GetCredentialsRequest,
-    GetCredentialsResponse, PullReplicaRequest, PullReplicaResponse, PushReplicaRequest,
-    PushReplicaResponse, ReplicationStatusRequest, ReplicationStatusResponse,
+    dataproxy_user_service_server::DataproxyUserService, CreateOrUpdateCredentialsRequest, CreateOrUpdateCredentialsResponse, GetCredentialsRequest, GetCredentialsResponse, PullReplicaRequest, PullReplicaResponse, PushReplicaRequest, PushReplicaResponse, ReplicationStatusRequest, ReplicationStatusResponse
 };
 use std::sync::Arc;
 use tracing::error;
@@ -50,10 +49,11 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
                     tonic::Status::unauthenticated("Unable to authenticate user")
                 })?;
 
-                let (access_key, secret_key) = self
+                let access_key = tid.unwrap_or_else(|| user.id.to_string());
+                let secret_key = self
                     .cache
                     .clone()
-                    .create_or_get_secret(user, tid)
+                    .get_secret(&access_key)
                     .await
                     .map_err(|_| {
                         error!(error = "Unable to authenticate user");
@@ -62,7 +62,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
 
                 Ok(tonic::Response::new(GetCredentialsResponse {
                     access_key,
-                    secret_key,
+                    secret_key: secret_key.expose().to_string(),
                 }))
             } else {
                 error!("query handler not available");
@@ -76,6 +76,23 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
                 "Unable to authenticate user",
             ))
         };
+    }
+
+    /// CreateOrUpdateCredentials
+    ///
+    /// Status: BETA
+    ///
+    /// Authorized method that needs a aruna-token to exchange for dataproxy
+    /// specific S3AccessKey and S3SecretKey
+    async fn create_or_update_credentials(
+        &self,
+        request: tonic::Request<CreateOrUpdateCredentialsRequest>,
+    ) -> std::result::Result<
+        tonic::Response<CreateOrUpdateCredentialsResponse>,
+        tonic::Status,
+    >{
+        // TODO: Implement this method
+        todo!()
     }
 
     #[tracing::instrument(level = "trace", skip(self, _request))]

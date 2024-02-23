@@ -1,5 +1,6 @@
 use crate::{
-    caching::{auth::get_token_from_md, cache::Cache},
+    auth::auth_helpers::get_token_from_md,
+    caching::cache::Cache,
     data_backends::storage_backend::StorageBackend,
     replication::replication_handler::ReplicationMessage,
     s3_frontend::utils::replication_sink::ReplicationSink,
