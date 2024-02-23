@@ -21,6 +21,7 @@ use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use diesel_ulid::DieselUlid;
 use http::{HeaderValue, Method};
+use rand::distributions::Alphanumeric;
 use s3s::dto::CreateBucketInput;
 use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
 use s3s::{s3_error, S3Error};
@@ -122,8 +123,9 @@ pub enum TypedRelation {
     Object(DieselUlid),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub enum FileFormat {
+    #[default]
     Raw,
     RawEncrypted(String),
     RawCompressed,
@@ -131,7 +133,23 @@ pub enum FileFormat {
     Pithos,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+impl FileFormat {
+    pub fn from_bools(allow_pithos: bool, allow_encryption: bool, allow_compression: bool) -> Self {
+        match (allow_pithos, allow_encryption, allow_compression) {
+            (true, _, _) => FileFormat::Pithos,
+            (false, true, false) => {
+                FileFormat::RawEncrypted(Alphanumeric.sample_string(&mut thread_rng(), 32))
+            }
+            (false, false, true) => FileFormat::RawCompressed,
+            (false, true, true) => FileFormat::RawEncryptedCompressed(
+                Alphanumeric.sample_string(&mut thread_rng(), 32),
+            ),
+            _ => FileFormat::Raw,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ObjectLocation {
     pub id: DieselUlid, // Not the object_id
     pub bucket: String,

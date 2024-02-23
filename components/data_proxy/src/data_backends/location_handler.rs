@@ -14,7 +14,7 @@ use rand::distributions::Alphanumeric;
 use rand::thread_rng;
 use rand::Rng;
 //backend_scheme="s3://{{PROJECT_NAME}}-{{RANDOM:10}}/{{COLLECTION_NAME}}/{{DATASET_NAME}}/{{RANDOM:10}}_{{OBJECT_NAME}}"
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Arguments {
     Project,
     ProjectId,
@@ -30,22 +30,44 @@ pub enum Arguments {
 }
 
 impl Arguments {
-    pub fn with_hierarchy(&self, hierarchy: &[(String, DieselUlid); 4]) -> String {
+    pub fn with_hierarchy(&self, hierarchy: &[Option<(DieselUlid, String)>; 4]) -> String {
         match self {
-            Arguments::Project => hierarchy[0].0.clone(),
-            Arguments::ProjectId => hierarchy[0].1.to_string().to_ascii_lowercase(),
-            Arguments::Collection => hierarchy.get(1).map(|(a, b)| a.clone()).unwrap_or_default(),
+            Arguments::Project => hierarchy[0].unwrap_or_default().1.clone(),
+            Arguments::ProjectId => hierarchy[0]
+                .unwrap_or_default()
+                .0
+                .to_string()
+                .to_ascii_lowercase(),
+            Arguments::Collection => hierarchy
+                .get(1)
+                .cloned()
+                .flatten()
+                .map(|(a, b)| b.clone())
+                .unwrap_or_default(),
             Arguments::CollectionId => hierarchy
                 .get(1)
-                .map(|(a, b)| b.to_string().to_ascii_lowercase())
+                .cloned()
+                .flatten()
+                .map(|(a, b)| a.to_string().to_ascii_lowercase())
                 .unwrap_or_default(),
-            Arguments::Dataset => hierarchy.get(2).map(|(a, b)| a.clone()).unwrap_or_default(),
+            Arguments::Dataset => hierarchy
+                .get(2)
+                .cloned()
+                .flatten()
+                .map(|(a, b)| b.clone())
+                .unwrap_or_default(),
             Arguments::DatasetId => hierarchy
                 .get(1)
-                .map(|(a, b)| b.to_string().to_ascii_lowercase())
+                .cloned()
+                .flatten()
+                .map(|(a, b)| a.to_string().to_ascii_lowercase())
                 .unwrap_or_default(),
-            Arguments::Object => hierarchy[3].0.clone(),
-            Arguments::ObjectId => hierarchy[3].1.to_string().to_ascii_lowercase(),
+            Arguments::Object => hierarchy[3].unwrap_or_default().1.clone(),
+            Arguments::ObjectId => hierarchy[3]
+                .unwrap_or_default()
+                .0
+                .to_string()
+                .to_ascii_lowercase(),
             Arguments::Random(x) => thread_rng()
                 .sample_iter(&Alphanumeric)
                 .take(*x as usize)
@@ -58,13 +80,13 @@ impl Arguments {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SchemaVariant {
     S3,
     Filesystem,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CompiledVariant {
     pub bucket_arguments: Vec<Arguments>,
     pub key_arguments: Vec<Arguments>,
@@ -82,7 +104,7 @@ impl CompiledVariant {
         }
     }
 
-    pub fn into_names(&self, hierarchy: [(String, DieselUlid); 4]) -> (String, String) {
+    pub fn into_names(&self, hierarchy: [Option<(DieselUlid, String)>; 4]) -> (String, String) {
         let bucket = self
             .bucket_arguments
             .iter()

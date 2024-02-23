@@ -1,6 +1,8 @@
 use super::location_handler::CompiledVariant;
 use super::storage_backend::StorageBackend;
 use crate::config::Backend;
+use crate::helpers::random_string;
+use crate::structs::FileFormat;
 use crate::structs::Object;
 use crate::structs::ObjectLocation;
 use crate::structs::PartETag;
@@ -16,9 +18,6 @@ use aws_sdk_s3::{
     Client,
 };
 use diesel_ulid::DieselUlid;
-use rand::distributions::Alphanumeric;
-use rand::distributions::DistString;
-use rand::thread_rng;
 use rand::Rng;
 use tokio_stream::StreamExt;
 use tracing::error;
@@ -29,28 +28,33 @@ pub struct S3Backend {
     endpoint_id: String,
     temp: String,
     schema: CompiledVariant,
+    use_pithos: bool,
+    encryption: bool,
+    compression: bool,
 }
 
 impl S3Backend {
     #[tracing::instrument]
     pub async fn new(endpoint_id: String) -> Result<Self> {
-
-        let Backend::S3{
+        let Backend::S3 {
             tmp,
             backend_scheme,
             host,
-            access_key,
-            secret_key,
+            encryption,
+            compression,
             ..
-        } = CONFIG.backend else {
+        } = &CONFIG.backend
+        else {
             return Err(anyhow!("Invalid backend"));
         };
 
-        let temp = tmp.unwrap_or_else(|| format!("temp-{}", endpoint_id).to_ascii_lowercase());
+        let temp = tmp
+            .clone()
+            .unwrap_or_else(|| format!("temp-{}", endpoint_id).to_ascii_lowercase());
 
         let compiled_schema = CompiledVariant::new(backend_scheme.as_str())?;
 
-        let s3_endpoint = host.ok_or_else(|| anyhow!("Missing s3 host"))?;
+        let s3_endpoint = host.clone().ok_or_else(|| anyhow!("Missing s3 host"))?;
         tracing::debug!("S3 Endpoint: {}", s3_endpoint);
 
         let config = aws_config::load_from_env().await;
@@ -66,6 +70,9 @@ impl S3Backend {
             endpoint_id,
             temp,
             schema: compiled_schema,
+            use_pithos: *encryption || *compression,
+            encryption: *encryption,
+            compression: *compression,
         };
         Ok(handler)
     }
@@ -288,49 +295,45 @@ impl StorageBackend for S3Backend {
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", skip(self, obj, expected_size, ex_bucket, temp))]
+    #[tracing::instrument(level = "trace", skip(self, obj, expected_size, names, temp))]
     /// Initialize a new location for a specific object
     /// This takes the object_info into account and creates a new location for the object
     async fn initialize_location(
         &self,
         obj: &Object,
         expected_size: Option<i64>,
-        ex_bucket: Option<String>,
+        names: [Option<(DieselUlid, String)>; 4],
         temp: bool,
     ) -> Result<ObjectLocation> {
+        if temp {
+            // No pithos for temp
+            let file_format = FileFormat::from_bools(false, self.encryption, self.compression);
+            return Ok(ObjectLocation {
+                id: DieselUlid::generate(),
+                bucket: self.temp.clone(),
+                key: format!(
+                    "{}{}",
+                    obj.id.to_string().to_ascii_lowercase(),
+                    random_string(3)
+                ),
+                file_format,
+                raw_content_len: expected_size.unwrap_or_default(),
+                ..Default::default()
+            });
+        }
 
-        // if temp {
-        //     return Ok(ObjectLocation {
-        //         id: DieselUlid::new(),
-        //         bucket: ex_bucket.unwrap_or_else(|| self.get_random_bucket().to_ascii_lowercase()),
-        //         key: obj.id.to_string(),
-        //         file_format: FileFormat::
-        //         raw_content_len: expected_size.unwrap_or_default(),
-        //         ..Default::default()
-        //     });
-        // }
+        let (bucket, key) = self.schema.into_names(names);
 
-
-        let key: String = thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(30)
-            .map(char::from)
-            .collect::<String>()
-            .to_ascii_lowercase();
-
-        // TODO: READ setting and set this based on settings
-        let encryption_key: String = Alphanumeric.sample_string(&mut thread_rng(), 32);
+        let file_format =
+            FileFormat::from_bools(self.use_pithos, self.encryption, self.compression);
 
         Ok(ObjectLocation {
-            id: obj.id,
-            bucket: ex_bucket.unwrap_or_else(|| self.get_random_bucket().to_ascii_lowercase()),
-            upload_id: None,
+            id: DieselUlid::generate(),
+            bucket,
             key,
-            encryption_key: Some(encryption_key),
-            compressed: !temp,
+            file_format,
             raw_content_len: expected_size.unwrap_or_default(),
-            disk_content_len: 0,
-            disk_hash: None,
+            ..Default::default()
         })
     }
 }
