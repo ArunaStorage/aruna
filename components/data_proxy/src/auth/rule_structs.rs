@@ -1,14 +1,17 @@
+use super::rule_engine::RuleEngine;
+use crate::structs::Bundle;
 use crate::structs::DbPermissionLevel;
 use crate::structs::Object;
 use crate::structs::ResourceStates;
 use anyhow::anyhow;
 use anyhow::Result;
+use chrono::Duration;
+use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use http::HeaderMap;
 use http::HeaderValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use super::rule_engine::RuleEngine;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserRuleInfo {
@@ -175,12 +178,12 @@ pub struct ObjectRuleInputBuilder {
     dataset: Option<Object>,
     collection: Option<Object>,
     project: Option<Object>,
-    skip: bool
+    skip: bool,
 }
 
 impl ObjectRuleInputBuilder {
     pub fn new(rule_engine: &RuleEngine) -> Self {
-        Self{
+        Self {
             skip: rule_engine.has_object(),
             ..Self::default()
         }
@@ -337,14 +340,14 @@ pub struct PackageObjectRuleInputBuilder {
     headers: HashMap<String, StringOrVec>,
     object: Option<Object>,
     parents: Vec<Object>,
-    skip: bool
+    skip: bool,
 }
 
 // TODO: This could be optimized away if no rules are set by passing only references and cloning only when needed
 
 impl PackageObjectRuleInputBuilder {
     pub fn new(rule_engine: &RuleEngine) -> Self {
-        Self{
+        Self {
             skip: rule_engine.has_object_package(),
             ..Self::default()
         }
@@ -444,14 +447,13 @@ pub struct BundleRuleInputBuilder {
     method: String,
     headers: HashMap<String, StringOrVec>,
     objects: Vec<Object>,
-    bundle_id: String,
-    expires: Option<i64>,
-    skip: bool, 
+    bundle: Bundle,
+    skip: bool,
 }
 
 impl BundleRuleInputBuilder {
     pub fn new(rule_engine: &RuleEngine) -> Self {
-        Self{
+        Self {
             skip: rule_engine.has_bundle(),
             ..Self::default()
         }
@@ -505,19 +507,11 @@ impl BundleRuleInputBuilder {
         self
     }
 
-    pub fn bundle_id(mut self, bundle_id: &str) -> Self {
+    pub fn bundle(mut self, bundle_id: &Bundle) -> Self {
         if self.skip {
             return self;
         }
-        self.bundle_id = bundle_id.to_string();
-        self
-    }
-
-    pub fn expires(mut self, expires: Option<i64>) -> Self {
-        if self.skip {
-            return self;
-        }
-        self.expires = expires;
+        self.bundle = bundle_id.clone();
         self
     }
 
@@ -534,7 +528,7 @@ impl BundleRuleInputBuilder {
             return Err(anyhow!("objects is required"));
         }
 
-        if !self.skip && self.bundle_id.is_empty() {
+        if !self.skip && self.bundle.is_default() {
             return Err(anyhow!("bundle_id is required"));
         }
 
@@ -551,8 +545,12 @@ impl BundleRuleInputBuilder {
                 headers: self.headers,
             },
             bundle: BundleInfo {
-                id: self.bundle_id,
-                expires: self.expires.unwrap_or_else(|| u64::MAX as i64),
+                id: self.bundle.id.to_string(),
+                expires: self
+                    .bundle
+                    .expires_at
+                    .unwrap_or_else(|| Utc::now() + Duration::weeks(100 * 52))
+                    .timestamp(),
             },
         })
     }
@@ -567,7 +565,7 @@ pub struct ReplicationIncomingRuleInputBuilder {
 
 impl ReplicationIncomingRuleInputBuilder {
     pub fn new(rule_engine: &RuleEngine) -> Self {
-        Self{
+        Self {
             skip: rule_engine.has_replication_in(),
             ..Self::default()
         }
@@ -614,7 +612,7 @@ pub struct ReplicationOutgoingRuleInputBuilder {
 
 impl ReplicationOutgoingRuleInputBuilder {
     pub fn new(rule_engine: &RuleEngine) -> Self {
-        Self{
+        Self {
             skip: rule_engine.has_replication_out(),
             ..Self::default()
         }

@@ -19,7 +19,7 @@ use aruna_rust_api::api::storage::services::v2::CreateDatasetRequest;
 use aruna_rust_api::api::storage::services::v2::CreateObjectRequest;
 use aruna_rust_api::api::storage::services::v2::CreateProjectRequest;
 use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
-use chrono::NaiveDateTime;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use diesel_ulid::DieselUlid;
 use http::{HeaderValue, Method};
 use s3s::dto::CreateBucketInput;
@@ -38,6 +38,20 @@ pub const ALL_RIGHTS_RESERVED: &str = "AllRightsReserved";
 #[tracing::instrument(level = "trace", skip())]
 pub fn type_name_of<T>(_: T) -> &'static str {
     std::any::type_name::<T>()
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Bundle {
+    pub id: DieselUlid,
+    pub owner_access_key: String,
+    pub ids: Vec<DieselUlid>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub once: bool,
+}
+impl Bundle {
+    pub fn is_default(&self) -> bool {
+        self.id == DieselUlid::default()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -1356,7 +1370,7 @@ pub enum ObjectsState {
         filename: String,
     },
     Bundle {
-        bundle_id: String,
+        bundle: Bundle,
         filename: String,
     },
 }
@@ -1376,6 +1390,9 @@ impl ObjectsState {
     }
     pub fn new_objects(root: Object, filename: String) -> Self {
         Self::Objects { root, filename }
+    }
+    pub fn new_bundle(bundle: Bundle, filename: String) -> Self {
+        Self::Bundle { bundle, filename }
     }
 }
 

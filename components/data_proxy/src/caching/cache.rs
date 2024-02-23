@@ -3,7 +3,7 @@ use crate::auth::auth::AuthHandler;
 use crate::caching::grpc_query_handler::sort_objects;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::replication::replication_handler::ReplicationMessage;
-use crate::structs::{AccessKeyPermissions, TypedId, User};
+use crate::structs::{AccessKeyPermissions, Bundle, TypedId, User};
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
     structs::{Object, ObjectLocation, PubKey},
@@ -13,7 +13,6 @@ use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use async_channel::Sender;
-use chrono::{DateTime, Utc};
 use crossbeam_skiplist::SkipMap;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
@@ -39,7 +38,7 @@ pub struct Cache {
         RandomState,
     >,
     // Map with bundle id as key and (access_key, Vec<ObjectId>, Timestamp<u64>) as value
-    bundles: DashMap<DieselUlid, (String, Vec<DieselUlid>, DateTime<Utc>)>,
+    bundles: DashMap<DieselUlid, Bundle>,
     // Maps with path / key as key and set of all ObjectIds as value
     // /project1/collection1/dataset1 -> ObjectID
     // /project1/collection1/exaset1/object1 -> ObjectID
@@ -766,23 +765,14 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn add_bundle(
-        &self,
-        bundle_id: DieselUlid,
-        object_ids: Vec<DieselUlid>,
-        access_key: &str,
-        timestamp: DateTime<Utc>,
-    ) {
-        self.bundles
-            .insert(bundle_id, (access_key.to_string(), object_ids, timestamp));
+    pub fn add_bundle(&self, bundle: Bundle) {
+        self.bundles.insert(bundle.id, bundle);
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_bundle(&self, bundle_id: &DieselUlid) -> Option<(String, Vec<DieselUlid>)> {
-        self.bundles.get(bundle_id).map(|e| {
-            let (a, b, _) = e.value();
-            (a.clone(), b.clone())
-        })
+    pub fn get_bundle(&self, bundle_id: &DieselUlid) -> Option<Bundle> {
+        let result = self.bundles.get(bundle_id).map(|e| e.clone());
+        result
     }
 
     #[tracing::instrument(level = "trace", skip(self))]

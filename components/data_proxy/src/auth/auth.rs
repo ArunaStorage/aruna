@@ -2,6 +2,7 @@ use super::auth_helpers;
 use super::rule_engine::RuleEngine;
 use super::rule_structs::ObjectRuleInputBuilder;
 use super::rule_structs::RootRuleInputBuilder;
+use crate::auth::rule_structs::BundleRuleInputBuilder;
 use crate::auth::rule_structs::PackageObjectRuleInputBuilder;
 use crate::caching::cache::Cache;
 use crate::helpers::is_method_read;
@@ -151,7 +152,10 @@ impl AuthHandler {
     }
 
     #[tracing::instrument(level = "trace", skip(self, token))]
-    pub fn check_permissions(&self, token: &str) -> Result<(DieselUlid, Option<String>), anyhow::Error> {
+    pub fn check_permissions(
+        &self,
+        token: &str,
+    ) -> Result<(DieselUlid, Option<String>), anyhow::Error> {
         let kid = decode_header(token)?
             .kid
             .ok_or_else(|| anyhow!("Unspecified kid"))
@@ -448,13 +452,19 @@ impl AuthHandler {
         // Get the parents (For permissions check)
         let parents = self.get_parents(&object_id).await;
         let mut rule_builder = PackageObjectRuleInputBuilder::new(&self.rule_engine)
-        .method(&Method::GET)
-        .headers(headers).object(Some(object));
+            .method(&Method::GET)
+            .headers(headers)
+            .object(Some(object));
 
         let user = match self.extract_access_key_perms(creds) {
             Some((user, attributes)) => {
                 if !is_public {
-                    self.check_permission_list(&parents, user.permissions.clone(), DbPermissionLevel::Read).await?;
+                    self.check_permission_list(
+                        &parents,
+                        user.permissions.clone(),
+                        DbPermissionLevel::Read,
+                    )
+                    .await?;
                 }
                 rule_builder = rule_builder
                     .attributes(&attributes)
@@ -483,7 +493,47 @@ impl AuthHandler {
         creds: Option<&Credentials>,
         headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult, S3Error> {
-        todo!()
+        // Extract object name and "path"
+        let Some((object_name, path)) = key_name.split_once("/") else {
+            return Err(s3_error!(NoSuchKey, "No such object"));
+        };
+        // Extract the bundle_id
+        let bundle_id = DieselUlid::from_str(object_name).map_err(|e| {
+            error!(error = ?e, msg = e.to_string());
+            s3_error!(NoSuchKey, "No such object")
+        })?;
+
+        // Query the bundle
+        let bundle = self.cache.get_bundle(&bundle_id).ok_or_else(|| {
+            error!("Bundle not found");
+            s3_error!(NoSuchKey, "No such object")
+        })?;
+
+        let mut rule_builder = BundleRuleInputBuilder::new(&self.rule_engine)
+            .method(&Method::GET)
+            .headers(headers)
+            .bundle(&bundle);
+
+        let object_state = ObjectsState::new_bundle(bundle, path.to_string());
+
+        let user = match self.extract_access_key_perms(creds) {
+            Some((user, attributes)) => {
+                rule_builder = rule_builder
+                    .attributes(&attributes)
+                    .permissions(&user.permissions);
+                Some(user).into()
+            }
+            None => UserState::Anonymous,
+        };
+        self.rule_engine
+            .evaluate_bundle(
+                rule_builder
+                    .build()
+                    .map_err(|_| s3_error!(MalformedACLError, "Rule has wrong context"))?,
+            )
+            .map_err(|_| s3_error!(AccessDenied, "Forbidden by rule"))?;
+
+        Ok(CheckAccessResult::new(object_state, user, None))
     }
 
     // ----------------- HELPERS -----------------
@@ -566,7 +616,10 @@ impl AuthHandler {
     }
 
     #[tracing::instrument(level = "trace", skip(self, target_endpoint))]
-    pub(crate) fn sign_dataproxy_token(&self, target_endpoint: DieselUlid) -> Result<String, anyhow::Error> {
+    pub(crate) fn sign_dataproxy_token(
+        &self,
+        target_endpoint: DieselUlid,
+    ) -> Result<String, anyhow::Error> {
         let claims = ArunaTokenClaims {
             iss: self.self_id.to_string(),
             sub: self.self_id.to_string(),
@@ -677,15 +730,19 @@ impl AuthHandler {
     #[tracing::instrument(level = "trace", skip(self, parents))]
     async fn get_parent_project_objects(
         &self,
-        parents: &[TypedId]
+        parents: &[TypedId],
     ) -> Result<Vec<Object>, S3Error> {
         let mut objects = vec![];
         for id in parents {
             if let TypedId::Project(id) = id {
-                let (obj, _) = self.cache.get_resource_cloned(id, true).await.map_err(|_| {
-                    error!("No such object");
-                    s3_error!(NoSuchKey, "No such object")
-                })?;
+                let (obj, _) = self
+                    .cache
+                    .get_resource_cloned(id, true)
+                    .await
+                    .map_err(|_| {
+                        error!("No such object");
+                        s3_error!(NoSuchKey, "No such object")
+                    })?;
                 objects.push(obj);
             }
         }
