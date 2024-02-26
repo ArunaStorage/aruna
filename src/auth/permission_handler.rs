@@ -4,19 +4,15 @@ use super::{
 };
 use crate::{
     caching::cache::Cache,
-    database::{
-        dsls::{object_dsl::ObjectWithRelations, user_dsl::OIDCMapping},
-        enums::DbPermissionLevel,
-    },
+    database::{dsls::user_dsl::OIDCMapping, enums::DbPermissionLevel},
 };
 use anyhow::anyhow;
 use anyhow::Result;
 use base64::{engine::general_purpose, Engine};
-use cel_interpreter::{extractors::This, to_value, ExecutionError, Program, ResolveResult};
-use cel_interpreter::{Context as PolicyContext, Value};
+use cel_interpreter::{extractors::This, Program};
 use diesel_ulid::DieselUlid;
 use log::error;
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
 pub struct PermissionHandler {
     cache: Arc<Cache>,
@@ -52,7 +48,7 @@ impl PermissionHandler {
         //     self.token_handler.process_token(token).await,
         //     "Unauthorized"
         // );
-        let ref processed_token @ ProcessedToken {
+        let ref _processed_token @ ProcessedToken {
             main_id,
             token,
             is_personal: personal,
@@ -70,135 +66,135 @@ impl PermissionHandler {
             }
         };
 
-        dbg!(&processed_token);
-        dbg!(&ctxs);
+        // dbg!(&processed_token);
+        // dbg!(&ctxs);
 
-        // Define rule
-        let program = Program::compile(
-            " // If proxy context ...
-            processed_token.is_proxy ?
-                (
-                    // Check if has intent
-                    has(processed_token.proxy_intent) ?
-                        (
-                        // Check if intent == Action::Impersonate
-                        processed_token.proxy_intent.endsWith(string(3)) ?
-                            (
-                                // Only Registered, SelfUser, GlobalProxy or Resource ctxs are
-                                // allowed
-                                ctxs.all(ctx,
-                                    (ctx.variant == 'Registered')
-                                        || (ctx.variant == 'SelfUser')
-                                        || (ctx.variant =='GlobalProxy')
-                                        || has(ctx.variant.Resource)
-                                ) ?
-                                    'CheckProxyContexts'
-                                :   false
-                            )
-                        :   (
-                                // Check if intent == Action::FetchInfo
-                                processed_token.proxy_intent.endsWith(string(2)) ?
-                                    (
-                                        ctxs.all(ctx,
-                                            (ctx.variant == 'Registered')
-                                            || (ctx.variant == 'SelfUser')
-                                            || (ctx.variant =='GlobalProxy')
-                                            || (has(ctx.variant.Resource) ?
-                                                    (ctx.variant.Resource[1] == 'READ')
-                                                :   false )
-                                            || (has(ctx.variant.User) ?
-                                                    (ctx.variant.User[1] == 'READ')
-                                                :   false )) ?
-                                            'CheckProxyContexts'
-                                        :   false
+        // // Define rule
+        // let program = Program::compile(
+        //     " // If proxy context ...
+        //     processed_token.is_proxy ?
+        //         (
+        //             // Check if has intent
+        //             has(processed_token.proxy_intent) ?
+        //                 (
+        //                 // Check if intent == Action::Impersonate
+        //                 processed_token.proxy_intent.endsWith(string(3)) ?
+        //                     (
+        //                         // Only Registered, SelfUser, GlobalProxy or Resource ctxs are
+        //                         // allowed
+        //                         ctxs.all(ctx,
+        //                             (ctx.variant == 'Registered')
+        //                                 || (ctx.variant == 'SelfUser')
+        //                                 || (ctx.variant =='GlobalProxy')
+        //                                 || has(ctx.variant.Resource)
+        //                         ) ?
+        //                             'CheckProxyContexts'
+        //                         :   false
+        //                     )
+        //                 :   (
+        //                         // Check if intent == Action::FetchInfo
+        //                         processed_token.proxy_intent.endsWith(string(2)) ?
+        //                             (
+        //                                 ctxs.all(ctx,
+        //                                     (ctx.variant == 'Registered')
+        //                                     || (ctx.variant == 'SelfUser')
+        //                                     || (ctx.variant =='GlobalProxy')
+        //                                     || (has(ctx.variant.Resource) ?
+        //                                             (ctx.variant.Resource[1] == 'READ')
+        //                                         :   false )
+        //                                     || (has(ctx.variant.User) ?
+        //                                             (ctx.variant.User[1] == 'READ')
+        //                                         :   false )) ?
+        //                                     'CheckProxyContexts'
+        //                                 :   false
 
-                                    )
-                                :   (
-                                        (
-                                        ctx.all(ctx,
-                                            (ctx.variant == 'NotActivated')
-                                            || (ctx.variant == 'Registered')
-                                            || (ctx.variant == 'GlobalProxy'))
-                                        ) ?
-                                            true
-                                        :   (
-                                            ctxs.exists(ctx, has(ctx.variant.Resource)) ?
-                                                'CheckResourceProxyContexts'
-                                            :   ctxs.exists(ctx, (
-                                                    has(ctx.variant.User) ?
-                                                        (ctx.variant.User[1] == 'READ') : false)) ?
-                                                    'CheckUserProxyContexts'
-                                                :   false
-                                            )
-                                    )
-                            )
-                        )
-                    :   'Missing Intent'
-                )
-            :   'CheckUserContexts'",
-        )
-        .map_err(|e| {
-            dbg!(&e);
-            tonic::Status::unauthenticated("Policy error")
-        })?;
-        let mut policy_context = PolicyContext::default();
+        //                             )
+        //                         :   (
+        //                                 (
+        //                                 ctx.all(ctx,
+        //                                     (ctx.variant == 'NotActivated')
+        //                                     || (ctx.variant == 'Registered')
+        //                                     || (ctx.variant == 'GlobalProxy'))
+        //                                 ) ?
+        //                                     true
+        //                                 :   (
+        //                                     ctxs.exists(ctx, has(ctx.variant.Resource)) ?
+        //                                         'CheckResourceProxyContexts'
+        //                                     :   ctxs.exists(ctx, (
+        //                                             has(ctx.variant.User) ?
+        //                                                 (ctx.variant.User[1] == 'READ') : false)) ?
+        //                                             'CheckUserProxyContexts'
+        //                                         :   false
+        //                                     )
+        //                             )
+        //                     )
+        //                 )
+        //             :   'Missing Intent'
+        //         )
+        //     :   'CheckUserContexts'",
+        // )
+        // .map_err(|e| {
+        //     dbg!(&e);
+        //     tonic::Status::unauthenticated("Policy error")
+        // })?;
+        // let mut policy_context = PolicyContext::default();
 
-        // External data
-        policy_context
-            .add_variable(
-                "processed_token",
-                processed_token.clone(), //to_value(processed_token)
-                                         //    .map_err(|_| tonic::Status::unauthenticated("Import error"))?,
-            )
-            .map_err(|_| tonic::Status::unauthenticated("Import error"))?;
-        policy_context
-            .add_variable(
-                "ctxs",
-                ctxs.clone(),
-                //to_value(ctxs.clone()).map_err(|e| {
-                //    dbg!(&e);
-                //    tonic::Status::unauthenticated("Import error")
-                //})?,
-            )
-            .map_err(|e| {
-                dbg!(&e);
-                tonic::Status::unauthenticated("Import error")
-            })?;
+        // // External data
+        // policy_context
+        //     .add_variable(
+        //         "processed_token",
+        //         processed_token.clone(), //to_value(processed_token)
+        //                                  //    .map_err(|_| tonic::Status::unauthenticated("Import error"))?,
+        //     )
+        //     .map_err(|_| tonic::Status::unauthenticated("Import error"))?;
+        // policy_context
+        //     .add_variable(
+        //         "ctxs",
+        //         ctxs.clone(),
+        //         //to_value(ctxs.clone()).map_err(|e| {
+        //         //    dbg!(&e);
+        //         //    tonic::Status::unauthenticated("Import error")
+        //         //})?,
+        //     )
+        //     .map_err(|e| {
+        //         dbg!(&e);
+        //         tonic::Status::unauthenticated("Import error")
+        //     })?;
 
-        // Custom functions
-        let higher_than = |perm1: Arc<String>, perm2: Arc<String>| -> bool {
-            let perm1 = match perm1.as_str() {
-                "DENY" => 0,
-                "NONE" => 1,
-                "READ" => 2,
-                "APPEND" => 3,
-                "WRITE" => 4,
-                "ADMIN" => 5,
-                _ => 0,
-            };
-            let perm2 = match perm2.as_str() {
-                "DENY" => 0,
-                "NONE" => 1,
-                "READ" => 2,
-                "APPEND" => 3,
-                "WRITE" => 4,
-                "ADMIN" => 5,
-                _ => 0,
-            };
-            perm1 > perm2
-        };
-        policy_context.add_function("higher_than", higher_than);
+        // // Custom functions
+        // let higher_than = |perm1: Arc<String>, perm2: Arc<String>| -> bool {
+        //     let perm1 = match perm1.as_str() {
+        //         "DENY" => 0,
+        //         "NONE" => 1,
+        //         "READ" => 2,
+        //         "APPEND" => 3,
+        //         "WRITE" => 4,
+        //         "ADMIN" => 5,
+        //         _ => 0,
+        //     };
+        //     let perm2 = match perm2.as_str() {
+        //         "DENY" => 0,
+        //         "NONE" => 1,
+        //         "READ" => 2,
+        //         "APPEND" => 3,
+        //         "WRITE" => 4,
+        //         "ADMIN" => 5,
+        //         _ => 0,
+        //     };
+        //     perm1 > perm2
+        // };
+        // policy_context.add_function("higher_than", higher_than);
 
-        let ends_with =
-            |This(s): This<Arc<String>>, end: Arc<String>| -> bool { s.ends_with(end.as_str()) };
-        policy_context.add_function("endsWith", ends_with);
+        // let ends_with =
+        //     |This(s): This<Arc<String>>, end: Arc<String>| -> bool { s.ends_with(end.as_str()) };
+        // policy_context.add_function("endsWith", ends_with);
 
-        // Execute query
-        let value = program.execute(&policy_context).map_err(|e| {
-            dbg!(&e);
-            tonic::Status::unauthenticated("Policy error")
-        })?;
-        dbg!(&value);
+        // // Execute query
+        // let value = program.execute(&policy_context).map_err(|e| {
+        //     dbg!(&e);
+        //     tonic::Status::unauthenticated("Policy error")
+        // })?;
+        // dbg!(&value);
 
         // Individual permission checking if token is signed from Dataproxy
         if is_proxy {

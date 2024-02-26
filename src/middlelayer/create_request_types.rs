@@ -14,7 +14,7 @@ use crate::utils::conversions::relations::ContextContainer;
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::relation::Relation as RelationEnum;
-use aruna_rust_api::api::storage::models::v2::{Hash, InternalRelationVariant, Relation};
+use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::{
     models::v2::{ExternalRelation, KeyValue},
     services::v2::{

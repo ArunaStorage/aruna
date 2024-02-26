@@ -10,7 +10,6 @@ use aruna_rust_api::api::storage::services::v2::{
     ArchiveProjectRequest, SnapshotCollectionRequest, SnapshotDatasetRequest,
 };
 use dashmap::DashMap;
-use deadpool_postgres::Object as DClient;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use tokio_postgres::Client;

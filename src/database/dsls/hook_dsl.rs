@@ -3,7 +3,6 @@ use crate::database::crud::{CrudDb, PrimaryKey};
 use crate::database::dsls::object_dsl::KeyValue;
 use anyhow::anyhow;
 use anyhow::Result;
-use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
 use aruna_rust_api::api::storage::models::v2::relation::Relation;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
@@ -22,9 +21,6 @@ pub struct Hook {
     pub project_ids: Vec<DieselUlid>,
     pub owner: DieselUlid,
     pub trigger: Json<Trigger>,
-    //pub trigger_type: TriggerType,
-    //pub trigger_key: String,
-    //pub trigger_value: String,
     pub timeout: NaiveDateTime,
     pub hook: Json<HookVariant>,
 }
