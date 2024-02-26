@@ -10,6 +10,7 @@ pub mod notification;
 pub mod object;
 pub mod projects;
 pub mod relations;
+pub mod rules;
 pub mod search;
 pub mod service_account;
 pub mod users;

@@ -11,7 +11,7 @@ use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate,
 };
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
-use crate::utils::conversions::get_token_from_md;
+use crate::utils::grpc_utils::get_token_from_md;
 use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
 use crate::utils::search_utils;
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Dataset};
@@ -19,11 +19,12 @@ use aruna_rust_api::api::storage::services::v2::dataset_service_server::DatasetS
 use aruna_rust_api::api::storage::services::v2::{
     CreateDatasetRequest, CreateDatasetResponse, DeleteDatasetRequest, DeleteDatasetResponse,
     GetDatasetRequest, GetDatasetResponse, GetDatasetsRequest, GetDatasetsResponse,
-    SnapshotDatasetRequest, SnapshotDatasetResponse, UpdateDatasetDataClassRequest,
-    UpdateDatasetDataClassResponse, UpdateDatasetDescriptionRequest,
-    UpdateDatasetDescriptionResponse, UpdateDatasetKeyValuesRequest,
-    UpdateDatasetKeyValuesResponse, UpdateDatasetLicensesRequest, UpdateDatasetLicensesResponse,
-    UpdateDatasetNameRequest, UpdateDatasetNameResponse,
+    SnapshotDatasetRequest, SnapshotDatasetResponse, UpdateDatasetAuthorsRequest,
+    UpdateDatasetAuthorsResponse, UpdateDatasetDataClassRequest, UpdateDatasetDataClassResponse,
+    UpdateDatasetDescriptionRequest, UpdateDatasetDescriptionResponse,
+    UpdateDatasetKeyValuesRequest, UpdateDatasetKeyValuesResponse, UpdateDatasetLicensesRequest,
+    UpdateDatasetLicensesResponse, UpdateDatasetNameRequest, UpdateDatasetNameResponse,
+    UpdateDatasetTitleRequest, UpdateDatasetTitleResponse,
 };
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
@@ -474,5 +475,24 @@ impl DatasetService for DatasetServiceImpl {
             dataset: Some(generic_resource.into_inner()?),
         };
         return_with_log!(response);
+    }
+
+    async fn update_dataset_authors(
+        &self,
+        request: Request<UpdateDatasetAuthorsRequest>,
+    ) -> Result<Response<UpdateDatasetAuthorsResponse>> {
+        // TODO
+        Err(tonic::Status::unimplemented(
+            "Updating dataset authors is not yet implemented",
+        ))
+    }
+    async fn update_dataset_title(
+        &self,
+        request: Request<UpdateDatasetTitleRequest>,
+    ) -> Result<Response<UpdateDatasetTitleResponse>> {
+        // TODO
+        Err(tonic::Status::unimplemented(
+            "Updating dataset titles is not yet implemented",
+        ))
     }
 }

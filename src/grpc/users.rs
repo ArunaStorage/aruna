@@ -9,7 +9,8 @@ use crate::middlelayer::token_request_types::{CreateToken, DeleteToken, GetToken
 use crate::middlelayer::user_request_types::{
     ActivateUser, DeactivateUser, GetUser, RegisterUser, UpdateUserEmail, UpdateUserName,
 };
-use crate::utils::conversions::{as_api_token, convert_token_to_proto, get_token_from_md};
+use crate::utils::conversions::users::{as_api_token, convert_token_to_proto};
+use crate::utils::grpc_utils::get_token_from_md;
 use anyhow::anyhow;
 
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_client::DataproxyUserServiceClient;
@@ -19,18 +20,22 @@ use aruna_rust_api::api::storage::services::v2::get_endpoint_request::Endpoint a
 use aruna_rust_api::api::storage::services::v2::user_service_server::UserService;
 use aruna_rust_api::api::storage::services::v2::{
     AcknowledgePersonalNotificationsRequest, AcknowledgePersonalNotificationsResponse,
-    ActivateUserRequest, ActivateUserResponse, AddOidcProviderRequest, AddOidcProviderResponse,
-    CreateApiTokenRequest, CreateApiTokenResponse, DeactivateUserRequest, DeactivateUserResponse,
-    DeleteApiTokenRequest, DeleteApiTokenResponse, DeleteApiTokensRequest, DeleteApiTokensResponse,
-    GetAllUsersRequest, GetAllUsersResponse, GetApiTokenRequest, GetApiTokenResponse,
-    GetApiTokensRequest, GetApiTokensResponse, GetDataproxyTokenUserRequest,
-    GetDataproxyTokenUserResponse, GetEndpointRequest, GetNotActivatedUsersRequest,
-    GetNotActivatedUsersResponse, GetPersonalNotificationsRequest,
+    ActivateUserRequest, ActivateUserResponse, AddDataProxyAttributeUserRequest,
+    AddDataProxyAttributeUserResponse, AddOidcProviderRequest, AddOidcProviderResponse,
+    AddPubkeyUserRequest, AddPubkeyUserResponse, AddTrustedEndpointsUserRequest,
+    AddTrustedEndpointsUserResponse, CreateApiTokenRequest, CreateApiTokenResponse,
+    DeactivateUserRequest, DeactivateUserResponse, DeleteApiTokenRequest, DeleteApiTokenResponse,
+    DeleteApiTokensRequest, DeleteApiTokensResponse, GetAllUsersRequest, GetAllUsersResponse,
+    GetApiTokenRequest, GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse,
+    GetDataproxyTokenUserRequest, GetDataproxyTokenUserResponse, GetEndpointRequest,
+    GetNotActivatedUsersRequest, GetNotActivatedUsersResponse, GetPersonalNotificationsRequest,
     GetPersonalNotificationsResponse, GetS3CredentialsUserRequest, GetS3CredentialsUserResponse,
     GetUserRedactedRequest, GetUserRedactedResponse, GetUserRequest, GetUserResponse,
-    RegisterUserRequest, RegisterUserResponse, RemoveOidcProviderRequest,
-    RemoveOidcProviderResponse, UpdateUserDisplayNameRequest, UpdateUserDisplayNameResponse,
-    UpdateUserEmailRequest, UpdateUserEmailResponse,
+    RegisterUserRequest, RegisterUserResponse, RemoveDataProxyAttributeUserRequest,
+    RemoveDataProxyAttributeUserResponse, RemoveOidcProviderRequest, RemoveOidcProviderResponse,
+    RemoveTrustedEndpointsUserRequest, RemoveTrustedEndpointsUserResponse,
+    UpdateUserDisplayNameRequest, UpdateUserDisplayNameResponse, UpdateUserEmailRequest,
+    UpdateUserEmailResponse,
 };
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -824,5 +829,55 @@ impl UserService for UserServiceImpl {
             user: Some(user.into()),
         };
         return_with_log!(response);
+    }
+
+    // !!!!! TODO!!!!!
+    async fn add_pubkey_user(
+        &self,
+        request: tonic::Request<AddPubkeyUserRequest>,
+    ) -> std::result::Result<tonic::Response<AddPubkeyUserResponse>, tonic::Status> {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "Adding pubkeys is currently unimplemented",
+        ))
+    }
+    async fn add_trusted_endpoints_user(
+        &self,
+        request: tonic::Request<AddTrustedEndpointsUserRequest>,
+    ) -> std::result::Result<tonic::Response<AddTrustedEndpointsUserResponse>, tonic::Status> {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "Adding trusted endpoints is currently unimplemented",
+        ))
+    }
+    async fn remove_trusted_endpoints_user(
+        &self,
+        request: tonic::Request<RemoveTrustedEndpointsUserRequest>,
+    ) -> std::result::Result<tonic::Response<RemoveTrustedEndpointsUserResponse>, tonic::Status>
+    {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "Removing trusted endpoints is currently unimplemented",
+        ))
+    }
+    async fn add_data_proxy_attribute_user(
+        &self,
+        request: tonic::Request<AddDataProxyAttributeUserRequest>,
+    ) -> std::result::Result<tonic::Response<AddDataProxyAttributeUserResponse>, tonic::Status>
+    {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "Adding data proxy attributes is currently unimplemented",
+        ))
+    }
+    async fn remove_data_proxy_attribute_user(
+        &self,
+        request: tonic::Request<RemoveDataProxyAttributeUserRequest>,
+    ) -> std::result::Result<tonic::Response<RemoveDataProxyAttributeUserResponse>, tonic::Status>
+    {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "Removing data proxy attributes is currently unimplemented",
+        ))
     }
 }

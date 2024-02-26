@@ -9,8 +9,8 @@ use crate::middlelayer::service_account_request_types::{
     GetS3CredentialsSVCAccount, GetServiceAccountToken, GetServiceAccountTokens,
     SetServiceAccountPermission,
 };
-use crate::utils::conversions::convert_token_to_proto;
-use crate::{auth::permission_handler::PermissionHandler, utils::conversions::get_token_from_md};
+use crate::utils::conversions::users::convert_token_to_proto;
+use crate::{auth::permission_handler::PermissionHandler, utils::grpc_utils::get_token_from_md};
 use aruna_rust_api::api::storage::models::v2::context::Context as ProtoContext;
 use aruna_rust_api::api::storage::services::v2::{
     service_account_service_server::ServiceAccountService, CreateDataproxyTokenSvcAccountRequest,
@@ -23,6 +23,13 @@ use aruna_rust_api::api::storage::services::v2::{
     GetServiceAccountTokenRequest, GetServiceAccountTokenResponse, GetServiceAccountTokensRequest,
     GetServiceAccountTokensResponse, SetServiceAccountPermissionRequest,
     SetServiceAccountPermissionResponse,
+};
+use aruna_rust_api::api::storage::services::v2::{
+    AddDataProxyAttributeSvcAccountRequest, AddDataProxyAttributeSvcAccountResponse,
+    AddPubkeySvcAccountRequest, AddPubkeySvcAccountResponse, AddTrustedEndpointsSvcAccountRequest,
+    AddTrustedEndpointsSvcAccountResponse, RemoveDataProxyAttributeSvcAccountRequest,
+    RemoveDataProxyAttributeSvcAccountResponse, RemoveTrustedEndpointsSvcAccountRequest,
+    RemoveTrustedEndpointsSvcAccountResponse,
 };
 use std::sync::Arc;
 use tonic::{Request, Response, Result};
@@ -433,5 +440,57 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
             token: response_token,
         };
         return_with_log!(response);
+    }
+    // !!!!! TODO!!!!!
+    async fn add_pubkey_svc_account(
+        &self,
+        request: tonic::Request<AddPubkeySvcAccountRequest>,
+    ) -> std::result::Result<tonic::Response<AddPubkeySvcAccountResponse>, tonic::Status> {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "Adding pubkeys is currently unimplemented",
+        ))
+    }
+    async fn add_trusted_endpoints_svc_account(
+        &self,
+        request: tonic::Request<AddTrustedEndpointsSvcAccountRequest>,
+    ) -> std::result::Result<tonic::Response<AddTrustedEndpointsSvcAccountResponse>, tonic::Status>
+    {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "Adding trusted endpoints is currently unimplemented",
+        ))
+    }
+    async fn remove_trusted_endpoints_svc_account(
+        &self,
+        request: tonic::Request<RemoveTrustedEndpointsSvcAccountRequest>,
+    ) -> std::result::Result<tonic::Response<RemoveTrustedEndpointsSvcAccountResponse>, tonic::Status>
+    {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "Removing trusted endpoints is currently unimplemented",
+        ))
+    }
+    async fn add_data_proxy_attribute_svc_account(
+        &self,
+        request: tonic::Request<AddDataProxyAttributeSvcAccountRequest>,
+    ) -> std::result::Result<tonic::Response<AddDataProxyAttributeSvcAccountResponse>, tonic::Status>
+    {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "Adding data proxy attributes is currently unimplemented",
+        ))
+    }
+    async fn remove_data_proxy_attribute_svc_account(
+        &self,
+        request: tonic::Request<RemoveDataProxyAttributeSvcAccountRequest>,
+    ) -> std::result::Result<
+        tonic::Response<RemoveDataProxyAttributeSvcAccountResponse>,
+        tonic::Status,
+    > {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "Removing data proxy attributes is currently unimplemented",
+        ))
     }
 }

@@ -3,7 +3,7 @@ use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::db_handler::DatabaseHandler;
-use crate::utils::conversions::get_token_from_md;
+use crate::utils::grpc_utils::get_token_from_md;
 use aruna_rust_api::api::storage::services::v2::authorization_service_server::AuthorizationService;
 use aruna_rust_api::api::storage::services::v2::{
     CreateAuthorizationRequest, CreateAuthorizationResponse, DeleteAuthorizationRequest,

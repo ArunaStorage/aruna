@@ -1,3 +1,5 @@
+use super::structs::CachedRule;
+use super::structs::ObjectWrapper;
 use super::structs::ProxyCacheIterator;
 use super::structs::PubKeyEnum;
 use crate::auth::issuer_handler::convert_to_pubkeys_issuers;
@@ -12,6 +14,8 @@ use crate::database::dsls::internal_relation_dsl::INTERNAL_RELATION_VARIANT_BELO
 use crate::database::dsls::object_dsl::get_all_objects_with_relations;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::dsls::pub_key_dsl::PubKey as DbPubkey;
+use crate::database::dsls::rule_dsl::Rule;
+use crate::database::dsls::rule_dsl::RuleBinding;
 use crate::database::dsls::stats_dsl::ObjectStats;
 use crate::database::dsls::user_dsl::OIDCMapping;
 use crate::database::dsls::user_dsl::User;
@@ -46,6 +50,7 @@ use evmap::ReadHandleFactory;
 use evmap::WriteHandle;
 use itertools::Itertools;
 use std::collections::VecDeque;
+use std::ops::Deref;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -59,6 +64,8 @@ pub struct Cache {
     issuer_info: DashMap<String, Issuer>,
     pub issuer_sender: Sender<String>,
     lock: AtomicBool,
+    object_rules: DashMap<DieselUlid, Arc<CachedRule>>,
+    object_rule_bindings: DashMap<DieselUlid, Arc<Vec<RuleBinding>>, RandomState>,
 }
 
 impl Cache {
@@ -75,6 +82,8 @@ impl Cache {
             issuer_info: DashMap::default(),
             issuer_sender,
             lock: AtomicBool::new(false),
+            object_rules: DashMap::default(),
+            object_rule_bindings: DashMap::default(),
         });
 
         let cache_clone = cache.clone();
@@ -152,6 +161,30 @@ impl Cache {
             );
         }
 
+        let bindings = RuleBinding::all(&client).await?;
+        for b in bindings {
+            let object_id = b.object_id;
+            if let Some(bindings) = self.object_rule_bindings.get(&object_id).map(|x| x.clone()) {
+                let mut bindings = bindings.deref().clone();
+                bindings.push(b.clone());
+                self.object_rule_bindings
+                    .insert(object_id, Arc::new(bindings));
+            } else {
+                self.object_rule_bindings
+                    .insert(object_id, Arc::new(vec![b.clone()]));
+            }
+        }
+        let rules = Rule::all(&client).await?;
+        for r in rules {
+            self.object_rules.insert(
+                r.rule_id.clone(),
+                Arc::new(CachedRule {
+                    rule: r.clone(),
+                    compiled: cel_interpreter::Program::compile(&r.rule_expressions)?,
+                }),
+            );
+        }
+
         self.lock.store(false, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
@@ -165,6 +198,29 @@ impl Cache {
     pub fn get_object(&self, id: &DieselUlid) -> Option<ObjectWithRelations> {
         self.check_lock();
         self.object_cache.get(id).map(|x| x.value().clone())
+    }
+
+    pub fn get_wrapped_object(&self, id: &DieselUlid) -> Option<ObjectWrapper> {
+        self.check_lock();
+        if let Some(object) = self.object_cache.get(id).map(|x| x.value().clone()) {
+            let rules = self.object_rule_bindings.get(id).map(|x| x.clone());
+            Some(ObjectWrapper {
+                object_with_relations: object,
+                rules: rules.unwrap_or(Arc::new(Vec::new())),
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn get_rule_bindings(&self, id: &DieselUlid) -> Option<Arc<Vec<RuleBinding>>> {
+        self.check_lock();
+        self.object_rule_bindings.get(id).map(|x| x.clone())
+    }
+
+    pub fn get_rule(&self, id: &DieselUlid) -> Option<Arc<CachedRule>> {
+        self.check_lock();
+        self.object_rules.get(id).map(|x| x.clone())
     }
 
     pub fn get_object_with_stats(&self, id: &DieselUlid) -> Option<ObjectWithRelations> {
@@ -227,11 +283,11 @@ impl Cache {
     }
 
     pub fn get_protobuf_object(&self, id: &DieselUlid) -> Option<generic_resource::Resource> {
-        if let Some(object) = self.get_object(id) {
-            if object.object.object_type == ObjectType::OBJECT {
-                Some(object.into())
+        if let Some(wrapped) = self.get_wrapped_object(id) {
+            if wrapped.object_with_relations.object.object_type == ObjectType::OBJECT {
+                Some(wrapped.into())
             } else if let Some(object_stats) = self.get_object_stats(id) {
-                let mut resource: generic_resource::Resource = object.into();
+                let mut resource: generic_resource::Resource = wrapped.into();
                 match resource {
                     generic_resource::Resource::Project(ref mut project) => {
                         project.stats = Some(Stats {
@@ -259,7 +315,7 @@ impl Cache {
 
                 Some(resource)
             } else {
-                Some(object.into())
+                Some(wrapped.into())
             }
         } else {
             None

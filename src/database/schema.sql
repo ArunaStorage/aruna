@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS objects (
     id UUID NOT NULL PRIMARY KEY, -- The unique per object id
     revision_number INT NOT NULL,
     name VARCHAR(511) NOT NULL,          -- Filename or subpath
+    title VARCHAR(511) NOT NULL,          -- Filename or subpath
     description VARCHAR(1023) NOT NULL,                 
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     created_by UUID NOT NULL REFERENCES users(id),
@@ -159,6 +160,7 @@ CREATE TABLE IF NOT EXISTS objects (
     endpoints JSONB NOT NULL DEFAULT '{}',
     metadata_license VARCHAR(511) NOT NULL REFERENCES licenses(tag),
     data_license VARCHAR(511) NOT NULL REFERENCES licenses(tag),
+    rules JSONB NOT NULL DEFAULT '{}',
     UNIQUE(id, object_type)
 );
 CREATE INDEX IF NOT EXISTS objects_pk_idx ON objects (id);
@@ -275,6 +277,24 @@ CREATE TABLE IF NOT EXISTS workspaces (
     endpoint_ids JSONB,
     UNIQUE(name)
 );
+
+/* ----- Object rules ------------------------------------- */
+CREATE TABLE IF NOT EXISTS rules (
+    id UUID PRIMARY KEY NOT NULL,
+    rule_expressions VARCHAR(2047) NOT NULL,
+    description VARCHAR(511),
+    owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    is_public BOOL NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE IF NOT EXISTS rule_bindings (
+    rule_id UUID REFERENCES rules(id) ON DELETE CASCADE,
+    origin_id REFERENCES objects(id) ON DELETE CASCADE,
+    object_id REFERENCES objects(id) ON DELETE CASCADE,
+    cascading BOOL NOT NULL DEFAULT TRUE,
+    PRIMARY KEY(rule_id, origin_id, object_id)
+);
+
 -- Insert predefined relation types
 INSERT INTO relation_types (relation_name) VALUES ('BELONGS_TO'), ('VERSION'), ('METADATA'), ('ORIGIN'), ('POLICY'), ('DELETED') ON CONFLICT (relation_name) DO NOTHING;
 -- Create partial unique index for BELONGS_TO relations only

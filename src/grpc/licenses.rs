@@ -2,7 +2,7 @@ use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::middlelayer::db_handler::DatabaseHandler;
-use crate::utils::conversions::get_token_from_md;
+use crate::utils::grpc_utils::get_token_from_md;
 use aruna_rust_api::api::storage::services::v2::license_service_server::LicenseService;
 use aruna_rust_api::api::storage::services::v2::{
     CreateLicenseRequest, CreateLicenseResponse, GetLicenseRequest, GetLicenseResponse,

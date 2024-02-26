@@ -75,14 +75,25 @@ pub struct EndpointInfo {
     pub status: Option<ReplicationStatus>, // Only Some() for ObjectType::Object
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Author {
+    pub first_name: String,
+    pub last_name: String,
+    pub email: Option<String>,
+    pub orcid: Option<String>,
+    pub user_id: Option<DieselUlid>,
+}
+
 #[derive(FromRow, FromSql, Debug, Clone, ToSql)]
 pub struct Object {
     pub id: DieselUlid,
     pub revision_number: i32,
     pub name: String,
+    pub title: String,
     pub description: String,
     pub created_at: Option<NaiveDateTime>,
     pub created_by: DieselUlid,
+    pub authors: Json<Vec<Author>>,
     pub content_len: i64,
     pub count: i64,
     pub key_values: Json<KeyValues>,
@@ -110,8 +121,8 @@ pub struct ObjectWithRelations {
 #[async_trait::async_trait]
 impl CrudDb for Object {
     async fn create(&mut self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO objects (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints, metadata_license, data_license ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+        let query = "INSERT INTO objects (id, revision_number, title, name, description, created_by, authors, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints, metadata_license, data_license ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
         ) RETURNING *;";
 
         let prepared = client.prepare(query).await?;
@@ -122,9 +133,11 @@ impl CrudDb for Object {
                 &[
                     &self.id,
                     &self.revision_number,
+                    &self.title,
                     &self.name,
                     &self.description,
                     &self.created_by,
+                    &self.authors,
                     &self.content_len,
                     &self.count,
                     &self.key_values,
@@ -653,9 +666,11 @@ impl Object {
             id: new_id,
             revision_number: object.revision_number,
             name: object.name,
+            title: object.title,
             description: object.description,
             created_at: object.created_at,
             created_by: object.created_by,
+            authors: object.authors,
             content_len: object.content_len,
             count: object.count,
             key_values: object.key_values,
@@ -690,8 +705,9 @@ impl Object {
             FROM o
             LEFT OUTER JOIN internal_relations ir1 ON o.id IN (ir1.target_pid, ir1.origin_pid)
             WHERE o.id IN ";
-        let query_five = " GROUP BY o.id, o.revision_number, o.name, o.description, o.created_at, o.created_by, o.content_len, o.count, o.key_values, 
-        o.object_status, o.data_class, o.object_type, o.external_relations, o.hashes, o.dynamic, o.endpoints, o.metadata_license, o.data_license;";
+        let query_five = " GROUP BY o.id, o.revision_number, o.name, o.title, o.description, o.created_at, 
+        o.created_by, o.authors, o.content_len, o.count, o.key_values, o.object_status, o.data_class, o.object_type, 
+        o.external_relations, o.hashes, o.dynamic, o.endpoints, o.metadata_license, o.data_license;";
         let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
         for id in ids {
             inserts.push(id);
@@ -739,7 +755,7 @@ impl Object {
         //    (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints)
         //    VALUES $1;";
         let query = "COPY objects \
-        (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints, metadata_license, data_license)
+        (id, revision_number, name, title, description, created_by, authors, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints, metadata_license, data_license)
         FROM STDIN BINARY";
         let sink: CopyInSink<_> = client.copy_in(query).await?;
         let writer = BinaryCopyInWriter::new(
@@ -749,7 +765,9 @@ impl Object {
                 Type::INT4,
                 Type::VARCHAR,
                 Type::VARCHAR,
+                Type::VARCHAR,
                 Type::UUID,
+                Type::JSONB,
                 Type::INT8,
                 Type::INT8,
                 Type::JSONB,
@@ -772,8 +790,10 @@ impl Object {
                     &object.id,
                     &object.revision_number,
                     &object.name,
+                    &object.title,
                     &object.description,
                     &object.created_by,
+                    &object.authors,
                     &object.content_len,
                     &object.count,
                     &object.key_values,
@@ -864,10 +884,13 @@ impl PartialEq for Object {
                     && self_external_relation
                         .iter()
                         .all(|i| other_external_relation.contains(i))
+                    && self.authors.0.iter().all(|i| other.authors.0.contains(i))
                     && self.hashes == other.hashes
                     && self.dynamic == other.dynamic
                     && self.metadata_license == other.metadata_license
                     && self.data_license == other.data_license
+                    && self.name == other.name
+                    && self.title == other.title
             }
             (Some(_), Some(_)) => {
                 self.id == other.id
@@ -882,6 +905,7 @@ impl PartialEq for Object {
                     && self_external_relation
                         .iter()
                         .all(|i| other_external_relation.contains(i))
+                    && self.authors.0.iter().all(|i| other.authors.0.contains(i))
                     && self.hashes == other.hashes
                     && self.dynamic == other.dynamic
                     && self.metadata_license == other.metadata_license
@@ -978,6 +1002,7 @@ impl ObjectWithRelations {
                 created_at: None,
                 revision_number: 0,
                 created_by: DieselUlid::generate(),
+                authors: Json(Vec::new()),
                 content_len: 0,
                 key_values: Json(KeyValues(vec![])),
                 object_status: ObjectStatus::AVAILABLE,
@@ -987,6 +1012,7 @@ impl ObjectWithRelations {
                 hashes: Json(Hashes(vec![])),
                 dynamic: false,
                 name: "a_name".to_string(),
+                title: "".to_string(),
                 description: "a_name".to_string(),
                 count: 0,
                 endpoints: Json(DashMap::default()),
@@ -1012,9 +1038,11 @@ impl ObjectWithRelations {
                 id: *id,
                 revision_number: 0,
                 name: "object_name.whatev".to_string(),
+                title: "".to_string(),
                 description: "".to_string(),
                 created_at: None,
                 created_by: DieselUlid::generate(),
+                authors: Json(Vec::new()),
                 content_len: 0,
                 count: 0,
                 key_values: Json(KeyValues(vec![])),

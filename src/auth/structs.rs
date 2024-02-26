@@ -17,7 +17,7 @@ pub enum ContextVariant {
     GlobalProxy,
     GlobalAdmin,
 }
-#[derive(Debug)]
+#[derive(Debug, Serialize, Clone)]
 pub struct Context {
     pub variant: ContextVariant,
     pub allow_service_account: bool,

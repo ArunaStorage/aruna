@@ -1,6 +1,7 @@
 use crate::auth::permission_handler::{PermissionCheck, PermissionHandler};
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
+use crate::caching::structs::ObjectWrapper;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::clone_request_types::CloneObject;
@@ -10,7 +11,7 @@ use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::presigned_url_handler::{PresignedDownload, PresignedUpload};
 use crate::middlelayer::update_request_types::UpdateObject;
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
-use crate::utils::conversions::get_token_from_md;
+use crate::utils::grpc_utils::get_token_from_md;
 use crate::utils::grpc_utils::{get_id_and_ctx, IntoGenericInner};
 use crate::utils::search_utils;
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Object};
@@ -20,7 +21,8 @@ use aruna_rust_api::api::storage::services::v2::{
     DeleteObjectRequest, DeleteObjectResponse, FinishObjectStagingRequest,
     FinishObjectStagingResponse, GetDownloadUrlRequest, GetDownloadUrlResponse, GetObjectRequest,
     GetObjectResponse, GetObjectsRequest, GetObjectsResponse, GetUploadUrlRequest,
-    GetUploadUrlResponse, UpdateObjectRequest, UpdateObjectResponse,
+    GetUploadUrlResponse, UpdateObjectAuthorsRequest, UpdateObjectAuthorsResponse,
+    UpdateObjectRequest, UpdateObjectResponse, UpdateObjectTitleRequest, UpdateObjectTitleResponse,
 };
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
@@ -90,7 +92,14 @@ impl ObjectService for ObjectServiceImpl {
         )
         .await;
 
-        let generic_object: generic_resource::Resource = object_plus.into();
+        let generic_object: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: object_plus,
+            rules: self
+                .cache
+                .get_rule_bindings(&object_plus.object.id)
+                .ok_or_else(|| tonic::Status::not_found("Object not found"))?,
+        }
+        .into();
 
         let response = CreateObjectResponse {
             object: Some(generic_object.into_inner()?),
@@ -217,7 +226,7 @@ impl ObjectService for ObjectServiceImpl {
         if !is_proxy {
             let object = self
                 .cache
-                .get_object(&tonic_invalid!(
+                .get_wrapped_object(&tonic_invalid!(
                     DieselUlid::from_str(&request.object_id),
                     "Invalid id"
                 ))
@@ -246,7 +255,14 @@ impl ObjectService for ObjectServiceImpl {
         )
         .await;
 
-        let object: generic_resource::Resource = object.into();
+        let object: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: object,
+            rules: self
+                .cache
+                .get_rule_bindings(&object.object.id)
+                .ok_or_else(|| tonic::Status::not_found("Object not found"))?,
+        }
+        .into();
         let response = FinishObjectStagingResponse {
             object: Some(object.into_inner()?),
         };
@@ -299,7 +315,14 @@ impl ObjectService for ObjectServiceImpl {
         )
         .await;
 
-        let object: generic_resource::Resource = object.into();
+        let object: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: object,
+            rules: self
+                .cache
+                .get_rule_bindings(&object.object.id)
+                .ok_or_else(|| tonic::Status::not_found("Object not found"))?,
+        }
+        .into();
         let response = UpdateObjectResponse {
             object: Some(object.into_inner()?),
             new_revision,
@@ -342,7 +365,14 @@ impl ObjectService for ObjectServiceImpl {
         )
         .await;
 
-        let converted: generic_resource::Resource = new.into();
+        let converted: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: new,
+            rules: self
+                .cache
+                .get_rule_bindings(&new.object.id)
+                .ok_or_else(|| tonic::Status::not_found("Object not found"))?,
+        }
+        .into();
         let response = CloneObjectResponse {
             object: Some(converted.into_inner()?),
         };
@@ -414,7 +444,7 @@ impl ObjectService for ObjectServiceImpl {
 
         let res = self
             .cache
-            .get_object(&object_id)
+            .get_wrapped_object(&object_id)
             .ok_or_else(|| Status::not_found("Object not found"))?;
 
         let generic_object: generic_resource::Resource = res.into();
@@ -451,7 +481,7 @@ impl ObjectService for ObjectServiceImpl {
             .map(|id| -> Result<Object> {
                 let resource: generic_resource::Resource = self
                     .cache
-                    .get_object(id)
+                    .get_wrapped_object(id)
                     .ok_or_else(|| Status::not_found("Resource not found"))?
                     .into();
                 resource.into_inner()
@@ -461,5 +491,23 @@ impl ObjectService for ObjectServiceImpl {
         let response = GetObjectsResponse { objects: res? };
 
         return_with_log!(response);
+    }
+    async fn update_object_authors(
+        &self,
+        request: Request<UpdateObjectAuthorsRequest>,
+    ) -> Result<Response<UpdateObjectAuthorsResponse>> {
+        // TODO
+        Err(tonic::Status::unimplemented(
+            "Updating object authors is not yet implemented",
+        ))
+    }
+    async fn update_object_title(
+        &self,
+        request: Request<UpdateObjectTitleRequest>,
+    ) -> Result<Response<UpdateObjectTitleResponse>> {
+        // TODO
+        Err(tonic::Status::unimplemented(
+            "Updating object titles is not yet implemented",
+        ))
     }
 }

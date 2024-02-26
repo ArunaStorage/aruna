@@ -2,6 +2,7 @@ use crate::caching::cache::Cache;
 use crate::database::enums::DbPermissionLevel;
 use crate::grpc::users::UserServiceImpl;
 use crate::{auth::structs::Context, database::enums::ObjectMapping};
+use anyhow::{anyhow, Result as AnyhowResult};
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, Collection, Dataset, Object, Project, User,
 };
@@ -10,6 +11,7 @@ use diesel_ulid::DieselUlid;
 use rusty_ulid::DecodingError;
 use std::str::FromStr;
 use std::sync::Arc;
+use tonic::metadata::MetadataMap;
 use tonic::{Result, Status};
 use xxhash_rust::xxh3::xxh3_128;
 
@@ -146,4 +148,41 @@ pub fn query(cache: &Arc<Cache>, id: &DieselUlid) -> Result<generic_resource::Re
     cache
         .get_protobuf_object(id)
         .ok_or_else(|| Status::not_found("Resource not found"))
+}
+
+pub fn get_token_from_md(md: &MetadataMap) -> AnyhowResult<String> {
+    let token_string = md
+        .get("Authorization")
+        .ok_or(anyhow!("Metadata token not found"))?
+        .to_str()?;
+
+    let split = token_string.split(' ').collect::<Vec<_>>();
+
+    if split.len() != 2 {
+        log::debug!(
+            "Could not get token from metadata: Wrong length, expected: 2, got: {:?}",
+            split.len()
+        );
+        return Err(anyhow!("Authorization flow error"));
+    }
+
+    if split[0] != "Bearer" {
+        log::debug!(
+            "Could not get token from metadata: Invalid token type, expected: Bearer, got: {:?}",
+            split[0]
+        );
+
+        return Err(anyhow!("Authorization flow error"));
+    }
+
+    if split[1].is_empty() {
+        log::debug!(
+            "Could not get token from metadata: Invalid token length, expected: >0, got: {:?}",
+            split[1].len()
+        );
+
+        return Err(anyhow!("Authorization flow error"));
+    }
+
+    Ok(split[1].to_string())
 }

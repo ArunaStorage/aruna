@@ -35,7 +35,7 @@ use crate::{
         natsio_handler::NatsIoHandler,
         utils::{calculate_reply_hmac, parse_event_consumer_subject},
     },
-    utils::conversions::get_token_from_md,
+    utils::grpc_utils::get_token_from_md,
 };
 
 crate::impl_grpc_server!(

@@ -2,7 +2,7 @@ use crate::auth::permission_handler::PermissionCheck;
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::middlelayer::db_handler::DatabaseHandler;
-use crate::{auth::permission_handler::PermissionHandler, utils::conversions::get_token_from_md};
+use crate::{auth::permission_handler::PermissionHandler, utils::grpc_utils::get_token_from_md};
 use aruna_rust_api::api::storage::services::v2::partial_replicate_data_request::DataVariant;
 //use aruna_rust_api::api::storage::services::v2::partial_replicate_data_request::Response as Resource;
 use aruna_rust_api::api::storage::services::v2::{

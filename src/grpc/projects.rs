@@ -1,6 +1,7 @@
 use crate::auth::permission_handler::{PermissionCheck, PermissionHandler};
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
+use crate::caching::structs::ObjectWrapper;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
@@ -9,7 +10,7 @@ use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate,
 };
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
-use crate::utils::conversions::get_token_from_md;
+use crate::utils::grpc_utils::get_token_from_md;
 use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
 
 use crate::database::dsls::object_dsl::ObjectWithRelations;
@@ -20,11 +21,12 @@ use aruna_rust_api::api::storage::services::v2::project_service_server::ProjectS
 use aruna_rust_api::api::storage::services::v2::{
     ArchiveProjectRequest, ArchiveProjectResponse, CreateProjectRequest, CreateProjectResponse,
     DeleteProjectRequest, DeleteProjectResponse, GetProjectRequest, GetProjectResponse,
-    GetProjectsRequest, GetProjectsResponse, UpdateProjectDataClassRequest,
-    UpdateProjectDataClassResponse, UpdateProjectDescriptionRequest,
-    UpdateProjectDescriptionResponse, UpdateProjectKeyValuesRequest,
-    UpdateProjectKeyValuesResponse, UpdateProjectLicensesRequest, UpdateProjectLicensesResponse,
-    UpdateProjectNameRequest, UpdateProjectNameResponse,
+    GetProjectsRequest, GetProjectsResponse, UpdateProjectAuthorsRequest,
+    UpdateProjectAuthorsResponse, UpdateProjectDataClassRequest, UpdateProjectDataClassResponse,
+    UpdateProjectDescriptionRequest, UpdateProjectDescriptionResponse,
+    UpdateProjectKeyValuesRequest, UpdateProjectKeyValuesResponse, UpdateProjectLicensesRequest,
+    UpdateProjectLicensesResponse, UpdateProjectNameRequest, UpdateProjectNameResponse,
+    UpdateProjectTitleRequest, UpdateProjectTitleResponse,
 };
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
@@ -93,7 +95,12 @@ impl ProjectService for ProjectServiceImpl {
 
         // Create and return gRPC response
         let response = CreateProjectResponse {
-            project: Some(generic_resource::Resource::from(project).into_inner()?),
+            project: Some(
+                self.cache
+                    .get_protobuf_object(&project.object.id)
+                    .ok_or_else(|| tonic::Status::not_found("Project not found"))?
+                    .into_inner()?,
+            ),
         };
 
         return_with_log!(response);
@@ -236,7 +243,14 @@ impl ProjectService for ProjectServiceImpl {
         )
         .await;
 
-        let project: generic_resource::Resource = project.into();
+        let project: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: project,
+            rules: self
+                .cache
+                .get_rule_bindings(&project.object.id)
+                .ok_or_else(|| tonic::Status::not_found("Project not found"))?,
+        }
+        .into();
         let response = UpdateProjectNameResponse {
             project: Some(project.into_inner()?),
         };
@@ -279,7 +293,14 @@ impl ProjectService for ProjectServiceImpl {
         )
         .await;
 
-        let project: generic_resource::Resource = project.into();
+        let project: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: project,
+            rules: self
+                .cache
+                .get_rule_bindings(&project.object.id)
+                .ok_or_else(|| tonic::Status::not_found("Project not found"))?,
+        }
+        .into();
 
         let response = UpdateProjectDescriptionResponse {
             project: Some(project.into_inner()?),
@@ -323,7 +344,14 @@ impl ProjectService for ProjectServiceImpl {
         )
         .await;
 
-        let project: generic_resource::Resource = project.into();
+        let project: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: project,
+            rules: self
+                .cache
+                .get_rule_bindings(&project.object.id)
+                .ok_or_else(|| tonic::Status::not_found("Project not found"))?,
+        }
+        .into();
 
         let response = UpdateProjectKeyValuesResponse {
             project: Some(project.into_inner()?),
@@ -368,7 +396,14 @@ impl ProjectService for ProjectServiceImpl {
         )
         .await;
 
-        let project: generic_resource::Resource = project.into();
+        let project: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: project,
+            rules: self
+                .cache
+                .get_rule_bindings(&project.object.id)
+                .ok_or_else(|| tonic::Status::not_found("Project not found"))?,
+        }
+        .into();
         let response = UpdateProjectDataClassResponse {
             project: Some(project.into_inner()?),
         };
@@ -458,10 +493,35 @@ impl ProjectService for ProjectServiceImpl {
         )
         .await;
 
-        let generic_resource: generic_resource::Resource = project.into();
+        let generic_resource: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: project,
+            rules: self
+                .cache
+                .get_rule_bindings(&project.object.id)
+                .ok_or_else(|| tonic::Status::not_found("Project not found"))?,
+        }
+        .into();
         let response = UpdateProjectLicensesResponse {
             project: Some(generic_resource.into_inner()?),
         };
         return_with_log!(response);
+    }
+    async fn update_project_authors(
+        &self,
+        request: Request<UpdateProjectAuthorsRequest>,
+    ) -> Result<Response<UpdateProjectAuthorsResponse>> {
+        // TODO
+        Err(tonic::Status::unimplemented(
+            "Updating project authors is not yet implemented",
+        ))
+    }
+    async fn update_project_title(
+        &self,
+        request: Request<UpdateProjectTitleRequest>,
+    ) -> Result<Response<UpdateProjectTitleResponse>> {
+        // TODO
+        Err(tonic::Status::unimplemented(
+            "Updating project titles is not yet implemented",
+        ))
     }
 }

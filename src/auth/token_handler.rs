@@ -82,6 +82,7 @@ pub enum Action {
     FetchInfo = 3,
     //DpExchange = 4,
 }
+#[derive(Clone, Debug, Serialize)]
 pub struct ProcessedToken {
     pub main_id: DieselUlid,       // User/Proxy Id
     pub token: Option<DieselUlid>, // Maybe token

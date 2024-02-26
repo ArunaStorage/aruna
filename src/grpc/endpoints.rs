@@ -4,7 +4,7 @@ use crate::caching::cache::Cache;
 use crate::caching::structs::PubKeyEnum;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::endpoints_request_types::{CreateEP, DeleteEP, GetEP};
-use crate::utils::conversions::get_token_from_md;
+use crate::utils::grpc_utils::get_token_from_md;
 use anyhow::bail;
 use aruna_rust_api::api::storage::models::v2::Endpoint;
 use aruna_rust_api::api::storage::services::v2::endpoint_service_server::EndpointService;

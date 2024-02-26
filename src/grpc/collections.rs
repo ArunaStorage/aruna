@@ -11,8 +11,7 @@ use crate::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate,
 };
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
-use crate::utils::conversions::get_token_from_md;
-use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
+use crate::utils::grpc_utils::{get_id_and_ctx, get_token_from_md, query, IntoGenericInner};
 use crate::utils::search_utils;
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Collection};
 use aruna_rust_api::api::storage::services::v2::collection_service_server::CollectionService;
@@ -20,11 +19,12 @@ use aruna_rust_api::api::storage::services::v2::{
     CreateCollectionRequest, CreateCollectionResponse, DeleteCollectionRequest,
     DeleteCollectionResponse, GetCollectionRequest, GetCollectionResponse, GetCollectionsRequest,
     GetCollectionsResponse, SnapshotCollectionRequest, SnapshotCollectionResponse,
+    UpdateCollectionAuthorsRequest, UpdateCollectionAuthorsResponse,
     UpdateCollectionDataClassRequest, UpdateCollectionDataClassResponse,
     UpdateCollectionDescriptionRequest, UpdateCollectionDescriptionResponse,
     UpdateCollectionKeyValuesRequest, UpdateCollectionKeyValuesResponse,
     UpdateCollectionLicensesRequest, UpdateCollectionLicensesResponse, UpdateCollectionNameRequest,
-    UpdateCollectionNameResponse,
+    UpdateCollectionNameResponse, UpdateCollectionTitleRequest, UpdateCollectionTitleResponse,
 };
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
@@ -469,5 +469,24 @@ impl CollectionService for CollectionServiceImpl {
             collection: Some(generic_resource.into_inner()?),
         };
         return_with_log!(response);
+    }
+
+    async fn update_collection_authors(
+        &self,
+        request: Request<UpdateCollectionAuthorsRequest>,
+    ) -> Result<Response<UpdateCollectionAuthorsResponse>> {
+        // TODO
+        Err(tonic::Status::unimplemented(
+            "Updating collection authors is not yet implemented",
+        ))
+    }
+    async fn update_collection_title(
+        &self,
+        request: Request<UpdateCollectionTitleRequest>,
+    ) -> Result<Response<UpdateCollectionTitleResponse>> {
+        // TODO
+        Err(tonic::Status::unimplemented(
+            "Updating collection titles is not yet implemented",
+        ))
     }
 }

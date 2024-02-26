@@ -5,7 +5,7 @@ use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::hooks_request_types::CreateHook;
 use crate::middlelayer::hooks_request_types::ListBy;
-use crate::utils::conversions::get_token_from_md;
+use crate::utils::grpc_utils::get_token_from_md;
 use aruna_rust_api::api::hooks::services::v2::hooks_service_server::HooksService;
 use aruna_rust_api::api::hooks::services::v2::AddProjectsToHookRequest;
 use aruna_rust_api::api::hooks::services::v2::AddProjectsToHookResponse;

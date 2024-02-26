@@ -11,6 +11,7 @@ use crate::middlelayer::db_handler::DatabaseHandler;
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::notification::services::v2::EventVariant;
+use cel_interpreter::Value;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
@@ -218,6 +219,35 @@ impl DatabaseHandler {
                 affected.push(destination);
             }
         }
+
+        // Policy evaluation:
+        for id in &affected {
+            if let Some(bindings) = self.cache.get_rule_bindings(id).map(|b| b.clone()) {
+                for binding in bindings.clone().iter() {
+                    if let Some(rule) = self.cache.get_rule(&binding.rule_id) {
+                        let mut ctx = cel_interpreter::Context::default();
+                        let current_state =
+                            // TODO potential deadlock?
+                            Object::get_object_with_relations(id, transaction_client).await?;
+                        ctx.add_variable("object", current_state);
+                        let value = rule.compiled.execute(&ctx).map_err(|e| {
+                            anyhow!(format!("Policy evaluation error: {}", e.to_string()))
+                        })?;
+                        if value != Value::Bool(true) {
+                            transaction.rollback().await?;
+                            return Err(anyhow!(format!(
+                                "Policy {} evaluated false",
+                                rule.rule.rule_id
+                            )));
+                        }
+                    } else {
+                        transaction.rollback().await?;
+                        return Err(anyhow!("Rules and Bindings are out of sync"));
+                    };
+                }
+            }
+        }
+
         transaction.commit().await?;
 
         // TODO:

@@ -1,5 +1,9 @@
+use std::sync::Arc;
+
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::dsls::pub_key_dsl::PubKey;
+use crate::database::dsls::rule_dsl::Rule;
+use crate::database::dsls::rule_dsl::RuleBinding;
 use crate::database::dsls::user_dsl::User;
 use crate::database::enums::ObjectStatus;
 use ahash::RandomState;
@@ -19,6 +23,19 @@ use jsonwebtoken::DecodingKey;
 pub enum PubKeyEnum {
     DataProxy((String, DecodingKey, DieselUlid)), // DataProxy((Raw Key String, DecodingKey, Endpoint ID))
     Server((String, DecodingKey)), // Server((Key String, DecodingKey)) + ArunaServer ID ?
+}
+
+// This is a helper struct for handling GenericResources
+#[derive(Clone)]
+pub struct ObjectWrapper {
+    pub object_with_relations: ObjectWithRelations,
+    pub rules: Arc<Vec<RuleBinding>>,
+}
+
+#[derive(Clone)]
+pub struct CachedRule {
+    pub rule: Rule,
+    pub compiled: cel_interpreter::Program,
 }
 
 impl PubKeyEnum {

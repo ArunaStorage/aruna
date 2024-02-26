@@ -192,14 +192,14 @@ async fn process_resource_event(
                     ids
                 }
             } {
-                if let Some(object_plus) = cache.get_object(&res_ulid) {
+                if let Some(object_plus) = cache.get_wrapped_object(&res_ulid) {
                     // Convert to proto and compare checksum
                     let proto_resource: generic_resource::Resource = object_plus.clone().into();
                     let proto_checksum = checksum_resource(proto_resource.clone())?;
 
                     if proto_checksum != resource.checksum {
                         // Update updated object in cache and search index
-                        cache.upsert_object(&res_ulid, object_plus);
+                        cache.upsert_object(&res_ulid, object_plus.object_with_relations.clone());
 
                         // Update resource search index only for public/private resources
                         search_utils::update_search_index(

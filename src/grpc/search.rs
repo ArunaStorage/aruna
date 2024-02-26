@@ -27,7 +27,7 @@ use crate::{
     auth::structs::Context,
     middlelayer::db_handler::DatabaseHandler,
     search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument},
-    utils::conversions::get_token_from_md,
+    utils::grpc_utils::get_token_from_md,
 };
 
 crate::impl_grpc_server!(SearchServiceImpl, search_client: Arc<MeilisearchClient>);

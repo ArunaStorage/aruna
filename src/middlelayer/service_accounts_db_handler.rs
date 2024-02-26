@@ -16,7 +16,7 @@ use crate::database::dsls::user_dsl::{User, UserAttributes};
 use crate::database::enums::{DataProxyFeature, ObjectMapping, ObjectType};
 use crate::middlelayer::service_account_request_types::CreateServiceAccount;
 use crate::middlelayer::token_request_types::CreateToken;
-use crate::utils::conversions::convert_token_to_proto;
+use crate::utils::conversions::users::convert_token_to_proto;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_client::DataproxyUserServiceClient;
 use aruna_rust_api::api::dataproxy::services::v2::GetCredentialsRequest;

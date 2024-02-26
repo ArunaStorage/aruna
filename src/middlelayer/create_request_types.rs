@@ -10,7 +10,7 @@ use crate::database::dsls::object_dsl::{
 use crate::database::enums::{
     DbPermissionLevel, ObjectStatus, ObjectType, ReplicationStatus, ReplicationType,
 };
-use crate::utils::conversions::ContextContainer;
+use crate::utils::conversions::relations::ContextContainer;
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::relation::Relation as RelationEnum;
