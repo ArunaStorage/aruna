@@ -44,6 +44,7 @@ impl CreateTemplate {
                     .collect::<Result<Vec<DieselUlid>>>()?,
             ),
         };
+        // TODO: Add rules to workspace templates
         Ok(workspace)
     }
 }
@@ -69,8 +70,10 @@ impl CreateWorkspace {
             revision_number: 0,
             name: [template.prefix, id.to_string()].join("-"),
             description: template.description,
+            title: String::new(),
             created_at: None,
             created_by: template.owner,
+            authors: Json(Vec::new()),
             content_len: 0,
             count: 0,
             key_values: Json(crate::database::dsls::object_dsl::KeyValues(Vec::new())),

@@ -210,6 +210,10 @@ impl DatabaseHandler {
         // Delete Objects
         Object::set_deleted(&object_ids_to_delete, transaction_client).await?;
 
+        // Evaluate rules
+        let mut all: Vec<DieselUlid> = affected_resources.clone().into_iter().collect();
+        all.push(id);
+        self.evaluate_policies(&all, transaction_client).await?;
         // Commit transaction
         transaction.commit().await?;
 

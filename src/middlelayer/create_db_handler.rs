@@ -11,11 +11,11 @@ use crate::middlelayer::db_handler::DatabaseHandler;
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::notification::services::v2::EventVariant;
-use cel_interpreter::Value;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use postgres_types::Json;
+use tokio_postgres::Client;
 
 impl DatabaseHandler {
     pub async fn create_resource(
@@ -26,9 +26,6 @@ impl DatabaseHandler {
     ) -> Result<(ObjectWithRelations, Option<User>)> {
         // Init transaction
         let mut client = self.database.get_client().await?;
-
-        // query endpoints
-        //let endpoint_ids = request.get_endpoint(self.cache.clone(), &client).await?;
 
         // check if resource with same name on same hierarchy exists
         match request.get_type() {
@@ -46,71 +43,10 @@ impl DatabaseHandler {
                 };
             }
             ObjectType::DATASET | ObjectType::COLLECTION => {
-                let parent_id = request
-                    .get_parent()
-                    .ok_or_else(|| anyhow!("No parent found"))?
-                    .get_id()?;
-                let parent = Object::get_object_with_relations(&parent_id, &client).await?;
-                let name = request.get_name()?;
-                if parent
-                    .outbound_belongs_to
-                    .0
-                    .iter()
-                    .map(|rel| match rel.target_type {
-                        ObjectType::OBJECT => {
-                            // Check if object splits by '/'
-                            match rel.target_name.split('/').next().map(|s| s.to_string()) {
-                                // return first path
-                                Some(split) => split,
-                                // return full name
-                                None => rel.target_name.to_string(),
-                            }
-                        }
-                        // return name of other resources
-                        _ => rel.target_name.to_string(),
-                    })
-                    // Check if names contain request name
-                    .contains(&name)
-                {
-                    return Err(anyhow!(
-                        "Name is invalid: Contains path of object".to_string()
-                    ));
-                }
+                self.check_hierarchy(&request).await?;
             }
             ObjectType::OBJECT => {
-                let parent_id = request
-                    .get_parent()
-                    .ok_or_else(|| anyhow!("No parent found"))?
-                    .get_id()?;
-                let parent = Object::get_object_with_relations(&parent_id, &client).await?;
-                let name = request.get_name()?;
-                let query = match name.split('/').next() {
-                    Some(name) => name.to_string(),
-                    None => name,
-                };
-                if parent
-                    .outbound_belongs_to
-                    .0
-                    .iter()
-                    .map(|rel| match rel.target_type {
-                        ObjectType::OBJECT => {
-                            // Check if object splits by '/'
-                            match rel.target_name.split('/').next().map(|s| s.to_string()) {
-                                // return first path
-                                Some(split) => split,
-                                // return full name
-                                None => rel.target_name.to_string(),
-                            }
-                        }
-                        // return name of other resources
-                        _ => rel.target_name.to_string(),
-                    })
-                    .contains(&query)
-                {
-                    return Err(anyhow!(
-                        "Name is invalid: Contains substring that matches same hierarchy object"
-                    ));
-                }
+                self.check_object(&request).await?;
             }
         }
         // Transaction setup
@@ -122,7 +58,6 @@ impl DatabaseHandler {
         let mut object = request
             .as_new_db_object(user_id, transaction_client, self.cache.clone())
             .await?;
-        //object.endpoints = Json(endpoint_ids);
         object.create(transaction_client).await?;
 
         // Create internal relation for parent and add user permissions for resource
@@ -183,8 +118,6 @@ impl DatabaseHandler {
                     return Err(anyhow!(
                         "Either cache not synced or other database error while creating object"
                     ));
-                } else {
-                    result?
                 }
 
                 let parent =
@@ -198,54 +131,13 @@ impl DatabaseHandler {
             }
         };
 
-        // Create specified relations
-        let internal_relations = request.get_other_relations(object.id, self.cache.clone())?;
-        InternalRelation::batch_create(&internal_relations, transaction_client).await?;
-        // Collect affected objects
-        let mut affected: Vec<DieselUlid> = Vec::new();
-        for (source, destination) in internal_relations
-            .iter()
-            .map(|ir| (ir.origin_pid, ir.target_pid))
-        {
-            if source == object.id && destination == object.id {
-                // Are relations from self to self even possible?
-                continue;
-            } else if source == object.id {
-                affected.push(destination);
-            } else if destination == object.id {
-                affected.push(source);
-            } else {
-                affected.push(source);
-                affected.push(destination);
-            }
-        }
+        let affected = self
+            .collect_and_create_affected(request, &object, transaction_client)
+            .await?;
 
-        // Policy evaluation:
-        for id in &affected {
-            if let Some(bindings) = self.cache.get_rule_bindings(id).map(|b| b.clone()) {
-                for binding in bindings.clone().iter() {
-                    if let Some(rule) = self.cache.get_rule(&binding.rule_id) {
-                        let mut ctx = cel_interpreter::Context::default();
-                        let current_state =
-                            // TODO potential deadlock?
-                            Object::get_object_with_relations(id, transaction_client).await?;
-                        ctx.add_variable("object", current_state);
-                        let value = rule.compiled.execute(&ctx).map_err(|e| {
-                            anyhow!(format!("Policy evaluation error: {}", e.to_string()))
-                        })?;
-                        if value != Value::Bool(true) {
-                            transaction.rollback().await?;
-                            return Err(anyhow!(format!(
-                                "Policy {} evaluated false",
-                                rule.rule.rule_id
-                            )));
-                        }
-                    } else {
-                        transaction.rollback().await?;
-                        return Err(anyhow!("Rules and Bindings are out of sync"));
-                    };
-                }
-            }
+        if let Err(err) = self.evaluate_policies(&affected, transaction_client).await {
+            transaction.rollback().await?;
+            return Err(err);
         }
 
         transaction.commit().await?;
@@ -351,5 +243,110 @@ impl DatabaseHandler {
             //transaction.commit().await?;
             Ok((owr, user))
         }
+    }
+
+    async fn check_hierarchy(&self, request: &CreateRequest) -> Result<()> {
+        let client = self.database.get_client().await?;
+        let parent_id = request
+            .get_parent()
+            .ok_or_else(|| anyhow!("No parent found"))?
+            .get_id()?;
+        let parent = Object::get_object_with_relations(&parent_id, &client).await?;
+        let name = request.get_name()?;
+        if parent
+            .outbound_belongs_to
+            .0
+            .iter()
+            .map(|rel| match rel.target_type {
+                ObjectType::OBJECT => {
+                    // Check if object splits by '/'
+                    match rel.target_name.split('/').next().map(|s| s.to_string()) {
+                        // return first path
+                        Some(split) => split,
+                        // return full name
+                        None => rel.target_name.to_string(),
+                    }
+                }
+                // return name of other resources
+                _ => rel.target_name.to_string(),
+            })
+            // Check if names contain request name
+            .contains(&name)
+        {
+            return Err(anyhow!(
+                "Name is invalid: Contains path of object".to_string()
+            ));
+        }
+        Ok(())
+    }
+
+    async fn check_object(&self, request: &CreateRequest) -> Result<()> {
+        let client = self.database.get_client().await?;
+        let parent_id = request
+            .get_parent()
+            .ok_or_else(|| anyhow!("No parent found"))?
+            .get_id()?;
+        let parent = Object::get_object_with_relations(&parent_id, &client).await?;
+        let name = request.get_name()?;
+        let query = match name.split('/').next() {
+            Some(name) => name.to_string(),
+            None => name,
+        };
+        if parent
+            .outbound_belongs_to
+            .0
+            .iter()
+            .map(|rel| match rel.target_type {
+                ObjectType::OBJECT => {
+                    // Check if object splits by '/'
+                    match rel.target_name.split('/').next().map(|s| s.to_string()) {
+                        // return first path
+                        Some(split) => split,
+                        // return full name
+                        None => rel.target_name.to_string(),
+                    }
+                }
+                // return name of other resources
+                _ => rel.target_name.to_string(),
+            })
+            .contains(&query)
+        {
+            return Err(anyhow!(
+                "Name is invalid: Contains substring that matches same hierarchy object"
+            ));
+        }
+        Ok(())
+    }
+
+    async fn collect_and_create_affected(
+        &self,
+        request: CreateRequest,
+        object: &Object,
+        transaction_client: &Client,
+    ) -> Result<Vec<DieselUlid>> {
+        // Create specified relations
+        let internal_relations = request.get_other_relations(object.id, self.cache.clone())?;
+        // TODO: BelongsTo relations zulassen
+        InternalRelation::batch_create(&internal_relations, transaction_client).await?;
+        // Collect affected objects
+        let mut affected: Vec<DieselUlid> = Vec::new();
+        for (source, destination) in internal_relations
+            .iter()
+            .map(|ir| (ir.origin_pid, ir.target_pid))
+        {
+            if source == object.id && destination == object.id {
+                // Are relations from self to self even possible?
+                continue;
+            }
+            if source == object.id {
+                affected.push(destination);
+            } else if destination == object.id {
+                affected.push(source);
+            } else {
+                affected.push(source);
+                affected.push(destination);
+            }
+        }
+        Ok(affected)
     }
 }

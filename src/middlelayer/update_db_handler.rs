@@ -40,6 +40,9 @@ impl DatabaseHandler {
         }
 
         Object::update_dataclass(id, dataclass, transaction_client).await?;
+
+        self.evaluate_policies(&vec![id], transaction_client)
+            .await?;
         transaction.commit().await?;
 
         // Fetch hierarchies and object relations for notifications
@@ -74,6 +77,8 @@ impl DatabaseHandler {
         let name = request.get_name()?;
         let id = request.get_id()?;
         Object::update_name(id, name, transaction_client).await?;
+        self.evaluate_policies(&vec![id], transaction_client)
+            .await?;
         transaction.commit().await?;
 
         // Fetch hierarchies and object relations for notifications
@@ -112,6 +117,8 @@ impl DatabaseHandler {
         let description = request.get_description();
         let id = request.get_id()?;
         Object::update_description(id, description, transaction_client).await?;
+        self.evaluate_policies(&vec![id], transaction_client)
+            .await?;
         transaction.commit().await?;
 
         // Fetch hierarchies and object relations for notifications
@@ -182,15 +189,17 @@ impl DatabaseHandler {
             for kv in rm_key_values.0 {
                 if kv.variant == KeyValueVariant::STATIC_LABEL {
                     return Err(anyhow!("Cannot remove static labels."));
-                } else if kv.variant == KeyValueVariant::HOOK_STATUS {
+                }
+                if kv.variant == KeyValueVariant::HOOK_STATUS {
                     return Err(anyhow!(
                         "Cannot remove hook_status outside of hook_callback"
                     ));
-                } else {
-                    object.remove_key_value(transaction_client, kv).await?;
                 }
+                object.remove_key_value(transaction_client, kv).await?;
             }
         }
+        self.evaluate_policies(&vec![id], transaction_client)
+            .await?;
         transaction.commit().await?;
 
         // Trigger hook
@@ -234,13 +243,19 @@ impl DatabaseHandler {
     }
 
     pub async fn update_license(&self, request: LicenseUpdate) -> Result<ObjectWithRelations> {
-        let client = self.database.get_client().await?;
+        let mut client = self.database.get_client().await?;
+        let transaction = client.transaction().await?;
+        let transaction_client = transaction.client();
+
         let id = request.get_id()?;
-        let old = Object::get(id, &client)
+        let old = Object::get(id, transaction_client)
             .await?
             .ok_or_else(|| anyhow!("Resource not found"))?;
-        let (metadata_tag, data_tag) = request.get_licenses(&old, &client).await?;
-        Object::update_licenses(id, data_tag, metadata_tag, &client).await?;
+        let (metadata_tag, data_tag) = request.get_licenses(&old, transaction_client).await?;
+        Object::update_licenses(id, data_tag, metadata_tag, transaction_client).await?;
+        self.evaluate_policies(&vec![id], transaction_client)
+            .await?;
+        transaction.commit().await?;
 
         // Fetch hierarchies and object relations for notifications
         let object_plus = Object::get_object_with_relations(&id, &client).await?;
@@ -316,10 +331,12 @@ impl DatabaseHandler {
                 id,
                 content_len: old.content_len,
                 count: 1,
+                title: old.title.clone(),
                 revision_number: old.revision_number + 1,
                 external_relations: old.clone().external_relations,
                 created_at: None,
                 created_by: user_id,
+                authors: old.authors.clone(),
                 data_class,
                 description: req.get_description(old.clone()),
                 name: req.get_name(old.clone()),
@@ -384,9 +401,11 @@ impl DatabaseHandler {
                 external_relations: old.clone().external_relations,
                 created_at: None,
                 created_by: old.created_by,
+                authors: old.authors.clone(),
                 data_class,
                 description: req.get_description(old.clone()),
                 name: old.clone().name,
+                title: old.title.clone(),
                 key_values: Json(req.get_add_keyvals(old.clone())?),
                 hashes: old.clone().hashes,
                 object_type: crate::database::enums::ObjectType::OBJECT,
@@ -417,6 +436,9 @@ impl DatabaseHandler {
 
             (id, false, affected)
         };
+        let mut all = vec![id];
+        all.extend(&affected);
+        self.evaluate_policies(&all, transaction_client).await?;
         transaction.commit().await?;
 
         // Cache sync of newly created object
@@ -596,6 +618,8 @@ impl DatabaseHandler {
         )
         .await?;
 
+        self.evaluate_policies(&vec![id], transaction_client)
+            .await?;
         transaction.commit().await?;
 
         let object = Object::get_object_with_relations(&id, &client).await?;
@@ -635,11 +659,5 @@ impl DatabaseHandler {
             //transaction.commit().await?;
             Ok(object)
         }
-        // TODO
-        // - UpdateObjectEvent
-        // - Replication logic
-        //  ->  DataProxy, that calls finish, is updated to
-        //      ReplicationStatus::Finished
-        //Ok(object)
     }
 }

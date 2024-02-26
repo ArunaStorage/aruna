@@ -78,7 +78,8 @@ impl DatabaseHandler {
                         .ok_or_else(|| anyhow!("Object not found"))?;
                     if origin.object_type != request_type {
                         return Err(anyhow!("Wrong data variant provided"));
-                    } else if let Some(ep) = origin.endpoints.0.get(&proxy_id) {
+                    }
+                    if let Some(ep) = origin.endpoints.0.get(&proxy_id) {
                         if ep.replication == ReplicationType::FullSync {
                             return Err(anyhow!("Cannot overwrite FullSync status for Endpoint"));
                             // TODO: At least for now this is not allowed, because additional
@@ -229,14 +230,18 @@ impl DatabaseHandler {
             )
             .await?;
         }
-        transaction.commit().await?;
 
         // Try to emit object updated notification(s)
         let mut all_updated: Vec<DieselUlid> = sub_res.iter().map(|r| r.id).collect();
         all_updated.push(resource_id);
         all_updated.append(&mut partial_synced_objects);
         all_updated.append(&mut partial_synced_hierarchy);
+
+        self.evaluate_policies(&all_updated, transaction_client)
+            .await?;
+        transaction.commit().await?;
         let mut all = Object::get_objects_with_relations(&all_updated, &client).await?;
+
         sort_objects(&mut all);
         dbg!(&all);
         for owr in all {
@@ -358,35 +363,34 @@ impl DatabaseHandler {
                 ReplicationType::PartialSync(inherits) => {
                     if !inherits {
                         return Err(anyhow!("Can only delete root partial synced objects"));
-                    } else {
-                        let higher_ups: Vec<DieselUlid> =
-                            Object::fetch_object_hierarchies_by_id(&resource_id, &client)
-                                .await?
-                                .into_iter()
-                                .map(|hierarchy| -> Result<Vec<DieselUlid>> {
-                                    let mut flattened =
-                                        vec![DieselUlid::from_str(&hierarchy.project_id)?];
-                                    if let Some(id) = hierarchy.collection_id {
-                                        flattened.push(DieselUlid::from_str(&id)?);
-                                    }
-                                    if let Some(id) = hierarchy.dataset_id {
-                                        flattened.push(DieselUlid::from_str(&id)?);
-                                    }
-                                    if let Some(id) = hierarchy.object_id {
-                                        flattened.push(DieselUlid::from_str(&id)?);
-                                    }
-                                    Ok(flattened)
-                                })
-                                .collect::<Result<Vec<Vec<DieselUlid>>>>()?
-                                .into_iter()
-                                .flatten()
-                                .dedup()
-                                .collect();
-                        let higher_ups = Object::get_objects(&higher_ups, &client).await?;
-                        for resource in higher_ups {
-                            if resource.endpoints.0.get(&endpoint_id).is_some() {
-                                return Err(anyhow!("Cannot delete replication if higher resources exist with specified dataproxy replication"));
-                            }
+                    }
+                    let higher_ups: Vec<DieselUlid> =
+                        Object::fetch_object_hierarchies_by_id(&resource_id, &client)
+                            .await?
+                            .into_iter()
+                            .map(|hierarchy| -> Result<Vec<DieselUlid>> {
+                                let mut flattened =
+                                    vec![DieselUlid::from_str(&hierarchy.project_id)?];
+                                if let Some(id) = hierarchy.collection_id {
+                                    flattened.push(DieselUlid::from_str(&id)?);
+                                }
+                                if let Some(id) = hierarchy.dataset_id {
+                                    flattened.push(DieselUlid::from_str(&id)?);
+                                }
+                                if let Some(id) = hierarchy.object_id {
+                                    flattened.push(DieselUlid::from_str(&id)?);
+                                }
+                                Ok(flattened)
+                            })
+                            .collect::<Result<Vec<Vec<DieselUlid>>>>()?
+                            .into_iter()
+                            .flatten()
+                            .dedup()
+                            .collect();
+                    let higher_ups = Object::get_objects(&higher_ups, &client).await?;
+                    for resource in higher_ups {
+                        if resource.endpoints.0.get(&endpoint_id).is_some() {
+                            return Err(anyhow!("Cannot delete replication if higher resources exist with specified dataproxy replication"));
                         }
                     }
                 }
@@ -415,12 +419,17 @@ impl DatabaseHandler {
         }
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
+        let mut ids = Vec::new();
         for object in &updated_objects {
             object.object.update(transaction_client).await?;
-            self.cache.upsert_object(&object.object.id, object.clone());
+            ids.push(object.object.id);
         }
+        self.evaluate_policies(&ids, transaction_client).await?;
         transaction.commit().await?;
 
+        for object in &updated_objects {
+            self.cache.upsert_object(&object.object.id, object.clone());
+        }
         for object in updated_objects {
             let hierarchies = object.object.fetch_object_hierarchies(&client).await?;
             let block_id = DieselUlid::generate();

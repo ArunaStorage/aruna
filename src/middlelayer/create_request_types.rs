@@ -154,25 +154,21 @@ impl CreateRequest {
             CreateRequest::Project(req, _) => req
                 .relations
                 .iter()
-                .filter_map(filter_relations)
                 .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
             CreateRequest::Collection(req) => req
                 .relations
                 .iter()
-                .filter_map(filter_relations)
                 .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
             CreateRequest::Dataset(req) => req
                 .relations
                 .iter()
-                .filter_map(filter_relations)
                 .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
             CreateRequest::Object(req) => req
                 .relations
                 .iter()
-                .filter_map(filter_relations)
                 .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
         }
@@ -394,10 +390,12 @@ impl CreateRequest {
             id,
             revision_number: 0,
             name,
+            title: String::new(), // TODO! Add to API requests?
             description: self.get_description(),
             created_at: None,
             content_len: 0,
             created_by: user_id,
+            authors: Json(Vec::new()), // TODO! Add to API requests?
             count: 1,
             key_values: Json(key_values),
             object_status: self.get_status(),
@@ -519,19 +517,5 @@ impl CreateRequest {
                 }
             }
         }
-    }
-}
-
-fn filter_relations(
-    relation: &Relation,
-) -> Option<&aruna_rust_api::api::storage::models::v2::InternalRelation> {
-    match &relation.relation {
-        Some(RelationEnum::Internal(internal)) => match internal.defined_variant() {
-            InternalRelationVariant::Metadata
-            | InternalRelationVariant::Policy
-            | InternalRelationVariant::Custom => Some(internal),
-            _ => None,
-        },
-        _ => None,
     }
 }

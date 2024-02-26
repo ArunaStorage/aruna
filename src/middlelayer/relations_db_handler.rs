@@ -59,6 +59,12 @@ impl DatabaseHandler {
             )
             .await?;
         }
+
+        self.evaluate_policies(
+            &affected_objects.clone().into_iter().collect(),
+            transaction_client,
+        )
+        .await?;
         transaction.commit().await?;
 
         // Try to emit object updated notification(s)

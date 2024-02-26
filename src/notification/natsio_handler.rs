@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::database::dsls::object_dsl::{Hierarchy, ObjectWithRelations};
 use crate::database::dsls::user_dsl::User;
-use crate::utils::grpc_utils::{checksum_resource, checksum_user};
+use crate::utils::grpc_utils::{checksum_resource, checksum_user, generic_object_without_rules};
 
 use super::handler::{EventHandler, EventStreamHandler, EventType};
 use super::utils::{
@@ -336,7 +336,7 @@ impl NatsIoHandler {
     ) -> anyhow::Result<()> {
         // Calculate resource checksum
         let resource_checksum = tonic_internal!(
-            checksum_resource(object.clone().into(),),
+            checksum_resource(generic_object_without_rules(object.clone())),
             "Checksum calculation failed"
         );
 
@@ -377,7 +377,7 @@ impl NatsIoHandler {
     ) -> anyhow::Result<()> {
         // Calculate resource checksum
         let resource_checksum = tonic_internal!(
-            checksum_resource(object.clone().into(),),
+            checksum_resource(generic_object_without_rules(object.clone())),
             "Checksum calculation failed"
         );
 

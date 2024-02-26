@@ -129,30 +129,56 @@ impl DatabaseHandler {
             }
             None => return Err(anyhow!("No status provided")),
         };
-        // Update status
-        let kvs = object
-            .key_values
-            .0
-             .0
-            .iter()
-            .map(|kv| -> Result<KeyValue> {
-                if kv.key == request.0.hook_id {
-                    let value = serde_json::to_string(&value)?;
-                    Ok(KeyValue {
-                        key: kv.key.clone(),
-                        value,
-                        variant: KeyValueVariant::HOOK_STATUS,
-                    })
-                } else {
-                    Ok(kv.clone())
-                }
-            })
-            .collect::<Result<Vec<KeyValue>>>()?;
-        object.key_values = Json(crate::database::dsls::object_dsl::KeyValues(kvs.clone()));
-        object.update(transaction_client).await?;
+        let kvs = if let Err(e) = self
+            .evaluate_policies(&vec![object_id], transaction_client)
+            .await
+        {
+            transaction.rollback().await?;
+            if let Some(hook) =
+                Hook::get(DieselUlid::from_str(&request.0.hook_id)?, &client).await?
+            {
+                let value = HookStatusValues {
+                    name: hook.name,
+                    status: HookStatusVariant::ERROR(e.to_string()),
+                    trigger: hook.trigger.0,
+                };
+                let kv = KeyValue {
+                    key: request.0.hook_id,
+                    value: serde_json::to_string(&value)?,
+                    variant: KeyValueVariant::HOOK_STATUS,
+                };
+                // Update status
+                Object::add_key_value(&object_id, &client, kv.clone()).await?;
+                vec![kv]
+            } else {
+                return Err(anyhow!("Hook not found"));
+            }
+        } else {
+            // Update status
+            let kvs = object
+                .key_values
+                .0
+                 .0
+                .iter()
+                .map(|kv| -> Result<KeyValue> {
+                    if kv.key == request.0.hook_id {
+                        let value = serde_json::to_string(&value)?;
+                        Ok(KeyValue {
+                            key: kv.key.clone(),
+                            value,
+                            variant: KeyValueVariant::HOOK_STATUS,
+                        })
+                    } else {
+                        Ok(kv.clone())
+                    }
+                })
+                .collect::<Result<Vec<KeyValue>>>()?;
+            object.key_values = Json(crate::database::dsls::object_dsl::KeyValues(kvs.clone()));
+            object.update(transaction_client).await?;
 
-        transaction.commit().await?;
-
+            transaction.commit().await?;
+            kvs
+        };
         // Update object in cache
         let owr = Object::get_object_with_relations(&object_id, &client).await?;
         dbg!(&owr);
@@ -227,9 +253,8 @@ impl DatabaseHandler {
                                 if regex.is_match(&object.object.name) {
                                     is_match = true;
                                     break;
-                                } else {
-                                    continue;
                                 }
+                                continue;
                             }
                             Filter::KeyValue(KeyValue {
                                 key,
@@ -245,9 +270,8 @@ impl DatabaseHandler {
                                     {
                                         is_match = true;
                                         break;
-                                    } else {
-                                        continue;
                                     }
+                                    continue;
                                 }
                             }
                         }
@@ -274,200 +298,4 @@ impl DatabaseHandler {
             Ok(())
         }
     }
-
-    // async fn hook_action(
-    //     &self,
-    //     authorizer: Arc<PermissionHandler>,
-    //     hooks: Vec<HookWithAssociatedProject>,
-    //     object: ObjectWithRelations,
-    //     user_id: DieselUlid,
-    // ) -> Result<()> {
-    //     let mut client = self.database.get_client().await?;
-    //     let mut affected_parents: Vec<DieselUlid> = Vec::new();
-    //     for hook in hooks {
-    //         dbg!("Hook: {:?}", &hook);
-    //         let mut object = object.clone();
-    //         let status_value = HookStatusValues {
-    //             name: hook.name,
-    //             status: HookStatusVariant::RUNNING,
-    //             trigger: hook.trigger.0.clone(),
-    //         };
-    //         let hook_status = KeyValue {
-    //             key: hook.id.to_string(),
-    //             value: serde_json::to_string(&status_value)?,
-    //             variant: KeyValueVariant::HOOK_STATUS,
-    //         };
-    //         dbg!("HookStatus: {:?}", &hook_status);
-    //         object.object.key_values.0 .0.push(hook_status.clone());
-    //         Object::add_key_value(&object.object.id, &client, hook_status).await?;
-    //         let object_id = object.object.id;
-    //         self.cache.upsert_object(&object.object.id, object.clone());
-
-    //         let transaction = client.transaction().await?;
-    //         let transaction_client = transaction.client();
-    //         let affected_parent = match hook.hook.0 {
-    //             crate::database::dsls::hook_dsl::HookVariant::Internal(internal_hook) => {
-    //                 match internal_hook {
-    //                     crate::database::dsls::hook_dsl::InternalHook::AddLabel { key, value } => {
-    //                         Object::add_key_value(
-    //                             &object_id,
-    //                             transaction_client,
-    //                             KeyValue {
-    //                                 key,
-    //                                 value,
-    //                                 variant: KeyValueVariant::LABEL,
-    //                             },
-    //                         )
-    //                         .await?;
-    //                         None
-    //                     }
-    //                     crate::database::dsls::hook_dsl::InternalHook::AddHook { key, value } => {
-    //                         Object::add_key_value(
-    //                             &object_id,
-    //                             transaction_client,
-    //                             KeyValue {
-    //                                 key,
-    //                                 value,
-    //                                 variant: KeyValueVariant::HOOK,
-    //                             },
-    //                         )
-    //                         .await?;
-    //                         None
-    //                     }
-    //                     crate::database::dsls::hook_dsl::InternalHook::CreateRelation {
-    //                         relation,
-    //                     } => {
-    //                         match relation {
-    //                             aruna_rust_api::api::storage::models::v2::relation::Relation::External(external) => {
-    //                                 let relation: ExternalRelation = (&external).try_into()?;
-    //                                 Object::add_external_relations(&object_id, transaction_client, vec![relation]).await?;
-    //                                 None
-    //                             },
-    //                             aruna_rust_api::api::storage::models::v2::relation::Relation::Internal(internal) => {
-    //                                 let affected_parent = Some(DieselUlid::from_str(&internal.resource_id)?);
-    //                                 let mut internal = InternalRelation::from_api(&internal, object_id, self.cache.clone())?;
-    //                                 internal.create(transaction_client).await?;
-    //                                 affected_parent
-    //                             },
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //             crate::database::dsls::hook_dsl::HookVariant::External(ExternalHook{ url, credentials, template, method }) => {
-
-    //                 // This creates only presigned download urls for available objects.
-    //                 // If ObjectType is not OBJECT, only s3 credentials are generated.
-    //                 // This should allow for generic external hooks that can also be
-    //                 // triggered for other ObjectTypes than OBJECTs
-    //                 let (secret,
-    //                     download,
-    //                     pubkey_serial,
-    //                     upload_credentials) =
-    //                 match (object.object.object_type, &object.object.object_status) {
-    //                     // Get download url and s3-credentials for upload
-    //                     (ObjectType::OBJECT, ObjectStatus::AVAILABLE) => {
-    //                         let (secret, pubkey_serial) = authorizer.token_handler.sign_hook_secret(self.cache.clone(), object_id, hook.id).await?;
-    //                         // Create append only s3-credentials
-    //                         let append_only_token = APIToken{
-    //                             pub_key: pubkey_serial,
-    //                             name: format!("{}-append_only", hook.id),
-    //                             created_at: chrono::Utc::now().naive_utc(),
-    //                             expires_at: hook.timeout,
-    //                             // TODO: Custom resource permissions for hooks
-    //                             object_id: Some(ObjectMapping::PROJECT(hook.project_id)),
-    //                             user_rights: crate::database::enums::DbPermissionLevel::APPEND,
-    //                         };
-    //                         let token_id = self.create_hook_token(&user_id, append_only_token).await?;
-
-    //                         // Create download url for response
-    //                         let request = PresignedDownload(GetDownloadUrlRequest{ object_id: object_id.to_string()});
-    //                         let (download, upload_credentials) = self.get_presigned_download_with_credentials(self.cache.clone(), authorizer.clone(), request, user_id, Some(token_id)).await?;
-    //                         let download = Some(download);
-    //                         (secret, download, pubkey_serial, upload_credentials)
-    //                     },
-    //                     // Get only s3-credentials for upload
-    //                     (_,_) => {
-    //                         let (secret, pubkey_serial) = authorizer.token_handler.sign_hook_secret(self.cache.clone(), object_id, hook.id).await?;
-    //                         // Create append only s3-credentials
-    //                         let append_only_token = APIToken{
-    //                             pub_key: pubkey_serial,
-    //                             name: format!("{}-append_only", hook.id),
-    //                             created_at: chrono::Utc::now().naive_utc(),
-    //                             expires_at: hook.timeout,
-    //                             // TODO: Custom resource permissions for hooks
-    //                             object_id: Some(ObjectMapping::PROJECT(hook.project_id)),
-    //                             user_rights: crate::database::enums::DbPermissionLevel::APPEND,
-    //                         };
-    //                         let token_id = self.create_hook_token(&user_id, append_only_token).await?;
-    //                         // Create download url for response
-    //                         let upload_credentials = self.get_s3_credentials(self.cache.clone(), authorizer.clone(), object_id, user_id, Some(token_id)).await?;
-    //                         (secret, None, pubkey_serial, Some(upload_credentials))
-    //                     }
-    //                 };
-    //                 let (access_key, secret_key) = match upload_credentials {
-    //                             Some(ref creds) => (Some(creds.access_key.to_string()), Some(creds.secret_key.to_string())),
-    //                             None => (None, None)
-    //                 };
-
-    //                 // Create & send request
-    //                 let client = reqwest::Client::new();
-    //                 let base_request = match method {
-    //                     crate::database::dsls::hook_dsl::Method::PUT => {
-    //                         match credentials {
-    //                             Some(Credentials{token}) => client.put(url).bearer_auth(token),
-    //                             None => client.put(url),
-    //                         }
-    //                     },
-    //                     crate::database::dsls::hook_dsl::Method::POST => {
-    //                         match credentials {
-    //                             Some(Credentials{token}) =>  {
-    //                                 client.post(url).bearer_auth(token)
-    //                             },
-    //                             None => {
-    //                                 client.post(url)
-    //                             }
-    //                         }
-    //                     }
-    //                 };
-    //                 // Put everything into template
-    //                 match template {
-    //                     TemplateVariant::Basic => {
-    //                         let json = serde_json::to_string(&BasicTemplate {
-    //                             hook_id: hook.id,
-    //                             object: object.try_into()?,
-    //                             secret,
-    //                             download,
-    //                             pubkey_serial,
-    //                             access_key,
-    //                             secret_key,
-    //                         })?;
-    //                         dbg!("Template: {json}");
-    //                         let response = base_request.json(&json).send().await?;
-    //                         dbg!("External hook response: {:?}", response);
-    //                     }
-    //                     TemplateVariant::Custom(template) => {
-    //                         let template = CustomTemplate::create_custom_template(template, hook.id, &object.object, secret, download, upload_credentials, pubkey_serial)?;
-    //                         let response = base_request.header(CONTENT_TYPE, "text/plain").body(template).send().await?;
-    //                         dbg!("Custom template hook response: {:?}", response);
-    //                     },
-    //                 };
-    //                 None
-    //             }
-    //         };
-    //         if let Some(p) = affected_parent {
-    //             affected_parents.push(p);
-    //         }
-    //         transaction.commit().await?;
-    //     }
-    //     let updated = Object::get_object_with_relations(&object.object.id, &client).await?;
-    //     if !affected_parents.is_empty() {
-    //         let mut affected =
-    //             Object::get_objects_with_relations(&affected_parents, &client).await?;
-    //         affected.push(updated);
-    //         for object in affected {
-    //             self.cache.upsert_object(&object.object.id.clone(), object);
-    //         }
-    //     }
-    //     Ok(())
-    // }
 }

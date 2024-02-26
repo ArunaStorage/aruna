@@ -15,6 +15,8 @@ use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use tokio_postgres::Client;
 
+use super::db_handler::DatabaseHandler;
+
 #[derive(Debug)]
 pub enum SnapshotRequest {
     Project(ArchiveProjectRequest),
@@ -46,16 +48,19 @@ pub struct SnapshotProject {
 }
 
 impl SnapshotResponse {
-    pub async fn snapshot(&mut self, client: DClient) -> Result<Vec<ObjectWithRelations>> {
+    pub async fn snapshot(
+        &mut self,
+        handler: &DatabaseHandler,
+    ) -> Result<Vec<ObjectWithRelations>> {
         let result = match self {
             SnapshotResponse::ArchiveProject(req) => {
-                SnapshotResponse::archive_project(req, client).await?
+                SnapshotResponse::archive_project(req, handler).await?
             }
             SnapshotResponse::SnapshotCollection(ref mut req) => {
-                SnapshotResponse::snapshot_collection(req, client).await?
+                SnapshotResponse::snapshot_collection(req, handler).await?
             }
             SnapshotResponse::SnapshotDataset(ref mut req) => {
-                SnapshotResponse::snapshot_dataset(req, client).await?
+                SnapshotResponse::snapshot_dataset(req, handler).await?
             }
         };
         Ok(result)
@@ -63,19 +68,24 @@ impl SnapshotResponse {
 
     async fn archive_project(
         project: &SnapshotProject,
-        mut client: DClient,
+        handler: &DatabaseHandler,
     ) -> Result<Vec<ObjectWithRelations>> {
+        let mut client = handler.database.get_client().await?;
         let transaction = client.transaction().await?;
         let client = transaction.client();
         let objects = Object::archive(&project.resource_ids, client).await?;
+        handler
+            .evaluate_policies(&project.resource_ids, client)
+            .await?;
         transaction.commit().await?;
         Ok(objects)
     }
 
     async fn snapshot_collection(
         collection: &mut SnapshotCollection,
-        mut client: DClient,
+        handler: &DatabaseHandler,
     ) -> Result<Vec<ObjectWithRelations>> {
+        let mut client = handler.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
         collection.collection.create(transaction_client).await?;
@@ -88,6 +98,9 @@ impl SnapshotResponse {
         updated.push(collection.collection.id);
         Object::batch_create(&collection.datasets, transaction_client).await?;
         InternalRelation::batch_create(&collection.relations, transaction_client).await?;
+        handler
+            .evaluate_policies(&updated, transaction_client)
+            .await?;
         transaction.commit().await?;
         let results = Object::get_objects_with_relations(&updated, &client).await?;
         Ok(results)
@@ -95,14 +108,18 @@ impl SnapshotResponse {
 
     async fn snapshot_dataset(
         dataset: &mut SnapshotDataset,
-        mut client: DClient,
+        handler: &DatabaseHandler,
     ) -> Result<Vec<ObjectWithRelations>> {
+        let mut client = handler.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
         dataset.dataset.create(transaction_client).await?;
         if !dataset.relations.is_empty() {
             InternalRelation::batch_create(&dataset.relations, transaction_client).await?;
         }
+        handler
+            .evaluate_policies(&vec![dataset.dataset.id], transaction_client)
+            .await?;
         transaction.commit().await?;
         Ok(vec![
             Object::get_object_with_relations(&dataset.dataset.id, &client).await?,

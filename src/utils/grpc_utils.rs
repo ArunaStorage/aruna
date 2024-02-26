@@ -1,10 +1,14 @@
 use crate::caching::cache::Cache;
-use crate::database::enums::DbPermissionLevel;
+use crate::database::dsls::internal_relation_dsl::InternalRelation;
+use crate::database::dsls::object_dsl::ObjectWithRelations;
+use crate::database::enums::{DbPermissionLevel, ObjectType};
 use crate::grpc::users::UserServiceImpl;
 use crate::{auth::structs::Context, database::enums::ObjectMapping};
 use anyhow::{anyhow, Result as AnyhowResult};
+use aruna_rust_api::api::storage::models::v2::relation::Relation as RelationEnum;
 use aruna_rust_api::api::storage::models::v2::{
-    generic_resource, Collection, Dataset, Object, Project, User,
+    generic_resource, Collection, DataEndpoint, Dataset, Object, Project, Relation,
+    ReplicationStatus, User,
 };
 use base64::{engine::general_purpose, Engine};
 use diesel_ulid::DieselUlid;
@@ -14,6 +18,8 @@ use std::sync::Arc;
 use tonic::metadata::MetadataMap;
 use tonic::{Result, Status};
 use xxhash_rust::xxh3::xxh3_128;
+
+use super::conversions::relations::from_db_internal_relation;
 
 pub fn type_name_of<T>(_: T) -> &'static str {
     std::any::type_name::<T>()
@@ -90,6 +96,193 @@ impl UserServiceImpl {
                 Ok(user_id)
             }
         }
+    }
+}
+
+pub fn generic_object_without_rules(object: ObjectWithRelations) -> generic_resource::Resource {
+    let object_with_relations = object;
+    let (inbound, outbound) = (
+        object_with_relations
+            .inbound
+            .0
+            .iter()
+            .chain(object_with_relations.inbound_belongs_to.0.iter())
+            .map(|r| r.clone())
+            .collect::<Vec<InternalRelation>>(),
+        object_with_relations
+            .outbound
+            .0
+            .iter()
+            .chain(object_with_relations.outbound_belongs_to.0.iter())
+            .map(|r| r.clone())
+            .collect::<Vec<InternalRelation>>(),
+    );
+
+    let mut inbound = inbound
+        .into_iter()
+        .map(|r| from_db_internal_relation(r, true))
+        .collect::<Vec<_>>();
+
+    let mut outbound = outbound
+        .into_iter()
+        .map(|r| from_db_internal_relation(r, false))
+        .collect::<Vec<_>>();
+    let mut relations: Vec<Relation> = object_with_relations
+        .object
+        .external_relations
+        .0
+         .0
+        .into_iter()
+        .map(|r| Relation {
+            relation: Some(RelationEnum::External(r.1.into())),
+        })
+        .collect();
+    relations.append(&mut inbound);
+    relations.append(&mut outbound);
+    let stats = None;
+
+    match object_with_relations.object.object_type {
+        ObjectType::PROJECT => generic_resource::Resource::Project(Project {
+            id: object_with_relations.object.id.to_string(),
+            name: object_with_relations.object.name,
+            title: object_with_relations.object.title.to_string(),
+            description: object_with_relations.object.description,
+            created_at: object_with_relations.object.created_at.map(|t| t.into()),
+            stats,
+            created_by: object_with_relations.object.created_by.to_string(),
+            authors: object_with_relations
+                .object
+                .authors
+                .0
+                .into_iter()
+                .map(|a| a.into())
+                .collect(),
+            data_class: object_with_relations.object.data_class.into(),
+            dynamic: object_with_relations.object.dynamic,
+            key_values: object_with_relations.object.key_values.0.into(),
+            status: object_with_relations.object.object_status.into(),
+            relations,
+            endpoints: object_with_relations
+                .object
+                .endpoints
+                .0
+                .iter()
+                .map(|e| DataEndpoint {
+                    id: e.key().to_string(),
+                    variant: Some(e.replication.into()),
+                    status: None,
+                })
+                .collect(),
+            metadata_license_tag: object_with_relations.object.metadata_license,
+            default_data_license_tag: object_with_relations.object.data_license,
+            rule_bindings: Vec::new(),
+        }),
+        ObjectType::COLLECTION => generic_resource::Resource::Collection(Collection {
+            id: object_with_relations.object.id.to_string(),
+            name: object_with_relations.object.name,
+            title: object_with_relations.object.title.to_string(),
+            description: object_with_relations.object.description,
+            created_at: object_with_relations.object.created_at.map(|t| t.into()),
+            stats,
+            created_by: object_with_relations.object.created_by.to_string(),
+            authors: object_with_relations
+                .object
+                .authors
+                .0
+                .into_iter()
+                .map(|a| a.into())
+                .collect(),
+            data_class: object_with_relations.object.data_class.into(),
+            dynamic: object_with_relations.object.dynamic,
+            key_values: object_with_relations.object.key_values.0.into(),
+            status: object_with_relations.object.object_status.into(),
+            relations,
+            endpoints: object_with_relations
+                .object
+                .endpoints
+                .0
+                .iter()
+                .map(|e| DataEndpoint {
+                    id: e.key().to_string(),
+                    variant: Some(e.replication.into()),
+                    status: None,
+                })
+                .collect(),
+            metadata_license_tag: object_with_relations.object.metadata_license,
+            default_data_license_tag: object_with_relations.object.data_license,
+            rule_bindings: Vec::new(),
+        }),
+        ObjectType::DATASET => generic_resource::Resource::Dataset(Dataset {
+            id: object_with_relations.object.id.to_string(),
+            name: object_with_relations.object.name,
+            title: object_with_relations.object.title.to_string(),
+            description: object_with_relations.object.description,
+            created_at: object_with_relations.object.created_at.map(|t| t.into()),
+            stats,
+            created_by: object_with_relations.object.created_by.to_string(),
+            authors: object_with_relations
+                .object
+                .authors
+                .0
+                .into_iter()
+                .map(|a| a.into())
+                .collect(),
+            data_class: object_with_relations.object.data_class.into(),
+            dynamic: object_with_relations.object.dynamic,
+            key_values: object_with_relations.object.key_values.0.into(),
+            status: object_with_relations.object.object_status.into(),
+            relations,
+            endpoints: object_with_relations
+                .object
+                .endpoints
+                .0
+                .iter()
+                .map(|e| DataEndpoint {
+                    id: e.key().to_string(),
+                    variant: Some(e.replication.into()),
+                    status: None,
+                })
+                .collect(),
+            metadata_license_tag: object_with_relations.object.metadata_license,
+            default_data_license_tag: object_with_relations.object.data_license,
+            rule_bindings: Vec::new(),
+        }),
+        ObjectType::OBJECT => generic_resource::Resource::Object(Object {
+            id: object_with_relations.object.id.to_string(),
+            content_len: object_with_relations.object.content_len,
+            name: object_with_relations.object.name,
+            title: object_with_relations.object.title.to_string(),
+            description: object_with_relations.object.description,
+            created_at: object_with_relations.object.created_at.map(|t| t.into()),
+            created_by: object_with_relations.object.created_by.to_string(),
+            authors: object_with_relations
+                .object
+                .authors
+                .0
+                .into_iter()
+                .map(|a| a.into())
+                .collect(),
+            data_class: object_with_relations.object.data_class.into(),
+            dynamic: object_with_relations.object.dynamic,
+            hashes: object_with_relations.object.hashes.0.into(),
+            key_values: object_with_relations.object.key_values.0.into(),
+            status: object_with_relations.object.object_status.into(),
+            relations,
+            endpoints: object_with_relations
+                .object
+                .endpoints
+                .0
+                .iter()
+                .map(|e| DataEndpoint {
+                    id: e.key().to_string(),
+                    variant: Some(e.replication.into()),
+                    status: e.status.map(|s| ReplicationStatus::from(s) as i32),
+                })
+                .collect(),
+            metadata_license_tag: object_with_relations.object.metadata_license,
+            data_license_tag: object_with_relations.object.data_license,
+            rule_bindings: Vec::new(),
+        }),
     }
 }
 

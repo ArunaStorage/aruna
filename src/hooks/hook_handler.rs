@@ -87,32 +87,53 @@ impl HookHandler {
             crate::database::dsls::hook_dsl::HookVariant::Internal(ref internal_hook) => {
                 match internal_hook {
                     crate::database::dsls::hook_dsl::InternalHook::AddLabel { key, value } => {
-                        self.add_keyvals(
-                            object.clone(),
-                            user_id,
-                            key.to_string(),
-                            value.to_string(),
-                            APIKeyValVariant::Label,
-                        )
-                        .await?;
-                        // Add finished status
-                        self.add_status(&hook, &object, HookStatusVariant::FINISHED)
+                        if let Err(e) = self
+                            .add_keyvals(
+                                object.clone(),
+                                user_id,
+                                key.to_string(),
+                                value.to_string(),
+                                APIKeyValVariant::Label,
+                            )
+                            .await
+                        {
+                            self.add_status(
+                                &hook,
+                                &object,
+                                HookStatusVariant::ERROR(e.to_string()),
+                            )
                             .await?;
+                        } else {
+                            // Add finished status
+                            self.add_status(&hook, &object, HookStatusVariant::FINISHED)
+                                .await?;
+                        }
                     }
                     crate::database::dsls::hook_dsl::InternalHook::AddHook { key, value } => {
-                        self.add_keyvals(
-                            object.clone(),
-                            user_id,
-                            key.to_string(),
-                            value.to_string(),
-                            APIKeyValVariant::Hook,
-                        )
-                        .await?;
-                        // Add finished status
-                        self.add_status(&hook, &object, HookStatusVariant::FINISHED)
+                        if let Err(e) = self
+                            .add_keyvals(
+                                object.clone(),
+                                user_id,
+                                key.to_string(),
+                                value.to_string(),
+                                APIKeyValVariant::Hook,
+                            )
+                            .await
+                        {
+                            self.add_status(
+                                &hook,
+                                &object,
+                                HookStatusVariant::ERROR(e.to_string()),
+                            )
                             .await?;
+                        } else {
+                            // Add finished status
+                            self.add_status(&hook, &object, HookStatusVariant::FINISHED)
+                                .await?;
+                        }
                     }
                     crate::database::dsls::hook_dsl::InternalHook::CreateRelation { relation } => {
+                        // TODO: Policy evaluation
                         let relation = aruna_rust_api::api::storage::models::v2::Relation {
                             relation: Some(relation.clone()),
                         };
@@ -127,15 +148,25 @@ impl HookHandler {
                             .database_handler
                             .get_resource(request, self.database_handler.cache.clone())
                             .await?;
-                        self.database_handler
+                        if let Err(e) = self
+                            .database_handler
                             .modify_relations(
                                 resource,
                                 labels_info.relations_to_add,
                                 labels_info.relations_to_remove,
                             )
+                            .await
+                        {
+                            self.add_status(
+                                &hook,
+                                &object,
+                                HookStatusVariant::ERROR(e.to_string()),
+                            )
                             .await?;
-                        self.add_status(&hook, &object, HookStatusVariant::FINISHED)
-                            .await?;
+                        } else {
+                            self.add_status(&hook, &object, HookStatusVariant::FINISHED)
+                                .await?;
+                        }
                     }
                 }
             }

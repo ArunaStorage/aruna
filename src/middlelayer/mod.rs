@@ -11,7 +11,6 @@ pub mod hooks_db_handler;
 pub mod hooks_request_types;
 pub mod license_db_handler;
 pub mod presigned_url_handler;
-pub mod query_handler;
 pub mod relations_db_handler;
 pub mod relations_request_types;
 pub mod replication_db_handler;
