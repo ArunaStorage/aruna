@@ -275,6 +275,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
     prefix VARCHAR(511) NOT NULL,
     hook_ids JSONB,
     endpoint_ids JSONB,
+    rules JSONB,
     UNIQUE(name)
 );
 

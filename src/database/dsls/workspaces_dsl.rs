@@ -14,13 +14,14 @@ pub struct WorkspaceTemplate {
     pub prefix: String,
     pub hook_ids: Json<Vec<DieselUlid>>,
     pub endpoint_ids: Json<Vec<DieselUlid>>,
+    pub rules: Json<Vec<DieselUlid>>,
 }
 
 #[async_trait::async_trait]
 impl CrudDb for WorkspaceTemplate {
     async fn create(&mut self, client: &Client) -> Result<()> {
-        let query = "INSERT INTO workspaces (id, name, description, owner, prefix, hook_ids, endpoint_ids ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7
+        let query = "INSERT INTO workspaces (id, name, description, owner, prefix, hook_ids, endpoint_ids, rules ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8
         ) RETURNING *;";
 
         let prepared = client.prepare(query).await?;
@@ -36,6 +37,7 @@ impl CrudDb for WorkspaceTemplate {
                     &self.prefix,
                     &self.hook_ids,
                     &self.endpoint_ids,
+                    &self.rules,
                 ],
             )
             .await?;

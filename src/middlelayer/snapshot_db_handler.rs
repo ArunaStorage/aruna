@@ -40,7 +40,7 @@ impl DatabaseHandler {
         };
 
         // Execute archive/snapshot
-        let result = snapshot_resources.snapshot(client).await?;
+        let result = snapshot_resources.snapshot(&self).await?;
         // Update cache
         for o in &result {
             self.cache.upsert_object(&o.object.id, o.clone());

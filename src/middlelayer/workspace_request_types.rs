@@ -33,14 +33,21 @@ impl CreateTemplate {
                 self.0
                     .hook_ids
                     .iter()
-                    .map(|id| DieselUlid::from_str(id).map_err(|_| anyhow!("Invalid id")))
+                    .map(|id| DieselUlid::from_str(id).map_err(|_| anyhow!("Invalid hook id")))
                     .collect::<Result<Vec<DieselUlid>>>()?,
             ),
             endpoint_ids: Json(
                 self.0
                     .endpoint_ids
                     .iter()
-                    .map(|id| DieselUlid::from_str(id).map_err(|_| anyhow!("Invalid id")))
+                    .map(|id| DieselUlid::from_str(id).map_err(|_| anyhow!("Invalid endpoint id")))
+                    .collect::<Result<Vec<DieselUlid>>>()?,
+            ),
+            rules: Json(
+                self.0
+                    .rules
+                    .iter()
+                    .map(|id| DieselUlid::from_str(id).map_err(|_| anyhow!("Invalid rule id")))
                     .collect::<Result<Vec<DieselUlid>>>()?,
             ),
         };
