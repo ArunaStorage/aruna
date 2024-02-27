@@ -24,18 +24,20 @@ use aruna_rust_api::api::storage::services::v2::{
     AddDataProxyAttributeUserResponse, AddOidcProviderRequest, AddOidcProviderResponse,
     AddPubkeyUserRequest, AddPubkeyUserResponse, AddTrustedEndpointsUserRequest,
     AddTrustedEndpointsUserResponse, CreateApiTokenRequest, CreateApiTokenResponse,
+    CreateS3CredentialsUserTokenRequest, CreateS3CredentialsUserTokenResponse,
     DeactivateUserRequest, DeactivateUserResponse, DeleteApiTokenRequest, DeleteApiTokenResponse,
-    DeleteApiTokensRequest, DeleteApiTokensResponse, GetAllUsersRequest, GetAllUsersResponse,
+    DeleteApiTokensRequest, DeleteApiTokensResponse, DeleteS3CredentialsUserResponse,
+    DeleteS3CredentialsUserTokenRequest, GetAllUsersRequest, GetAllUsersResponse,
     GetApiTokenRequest, GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse,
     GetDataproxyTokenUserRequest, GetDataproxyTokenUserResponse, GetEndpointRequest,
     GetNotActivatedUsersRequest, GetNotActivatedUsersResponse, GetPersonalNotificationsRequest,
-    GetPersonalNotificationsResponse, GetS3CredentialsUserRequest, GetS3CredentialsUserResponse,
-    GetUserRedactedRequest, GetUserRedactedResponse, GetUserRequest, GetUserResponse,
-    RegisterUserRequest, RegisterUserResponse, RemoveDataProxyAttributeUserRequest,
-    RemoveDataProxyAttributeUserResponse, RemoveOidcProviderRequest, RemoveOidcProviderResponse,
-    RemoveTrustedEndpointsUserRequest, RemoveTrustedEndpointsUserResponse,
-    UpdateUserDisplayNameRequest, UpdateUserDisplayNameResponse, UpdateUserEmailRequest,
-    UpdateUserEmailResponse,
+    GetPersonalNotificationsResponse, GetS3CredentialsUserTokenRequest,
+    GetS3CredentialsUserTokenResponse, GetUserRedactedRequest, GetUserRedactedResponse,
+    GetUserRequest, GetUserResponse, RegisterUserRequest, RegisterUserResponse,
+    RemoveDataProxyAttributeUserRequest, RemoveDataProxyAttributeUserResponse,
+    RemoveOidcProviderRequest, RemoveOidcProviderResponse, RemoveTrustedEndpointsUserRequest,
+    RemoveTrustedEndpointsUserResponse, UpdateUserDisplayNameRequest,
+    UpdateUserDisplayNameResponse, UpdateUserEmailRequest, UpdateUserEmailResponse,
 };
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -64,7 +66,8 @@ impl UserService for UserServiceImpl {
         // Validate display name and email is filled
         if request.get_display_name().is_empty() {
             return Err(tonic::Status::invalid_argument("Display name is mandatory"));
-        } else if request.get_email().is_empty() {
+        }
+        if request.get_email().is_empty() {
             return Err(tonic::Status::invalid_argument("Email is mandatory"));
         }
 
@@ -464,10 +467,10 @@ impl UserService for UserServiceImpl {
     }
 
     //ToDo: Docs
-    async fn get_s3_credentials_user(
+    async fn get_s3_credentials_user_token(
         &self,
-        request: Request<GetS3CredentialsUserRequest>,
-    ) -> Result<Response<GetS3CredentialsUserResponse>, Status> {
+        request: Request<GetS3CredentialsUserTokenRequest>,
+    ) -> Result<Response<GetS3CredentialsUserTokenResponse>, Status> {
         log_received!(&request);
 
         // Consume gRPC request into its parts
@@ -588,7 +591,7 @@ impl UserService for UserServiceImpl {
         .into_inner();
 
         // Return S3 credentials to user
-        let response = GetS3CredentialsUserResponse {
+        let response = GetS3CredentialsUserTokenResponse {
             s3_access_key: response.access_key,
             s3_secret_key: response.secret_key,
             s3_endpoint_url: endpoint_s3_url.to_string(),
@@ -875,6 +878,25 @@ impl UserService for UserServiceImpl {
         request: tonic::Request<RemoveDataProxyAttributeUserRequest>,
     ) -> std::result::Result<tonic::Response<RemoveDataProxyAttributeUserResponse>, tonic::Status>
     {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "Removing data proxy attributes is currently unimplemented",
+        ))
+    }
+    async fn create_s3_credentials_user_token(
+        &self,
+        request: tonic::Request<CreateS3CredentialsUserTokenRequest>,
+    ) -> std::result::Result<tonic::Response<CreateS3CredentialsUserTokenResponse>, tonic::Status>
+    {
+        //TODO
+        Err(tonic::Status::unimplemented(
+            "Removing data proxy attributes is currently unimplemented",
+        ))
+    }
+    async fn delete_s3_credentials_user_token(
+        &self,
+        request: tonic::Request<DeleteS3CredentialsUserTokenRequest>,
+    ) -> std::result::Result<tonic::Response<DeleteS3CredentialsUserResponse>, tonic::Status> {
         //TODO
         Err(tonic::Status::unimplemented(
             "Removing data proxy attributes is currently unimplemented",

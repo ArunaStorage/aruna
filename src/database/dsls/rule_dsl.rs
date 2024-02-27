@@ -1,6 +1,5 @@
 use crate::database::crud::{CrudDb, PrimaryKey};
 use anyhow::Result;
-use cel_interpreter::Program;
 use diesel_ulid::DieselUlid;
 use postgres_from_row::FromRow;
 use postgres_types::{FromSql, ToSql};
@@ -40,7 +39,7 @@ impl CrudDb for Rule {
     }
 }
 impl Rule {
-    async fn update(&self, client: &Client) -> Result<Option<Self>> {
+    pub async fn update(&self, client: &Client) -> Result<()> {
         todo!()
     }
 }

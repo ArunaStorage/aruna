@@ -39,6 +39,7 @@ use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::models::v2::Stats;
 use aruna_rust_api::api::storage::models::v2::User as APIUser;
 use aruna_rust_api::api::storage::services::v2::get_hierarchy_response::Graph;
+use aruna_rust_api::api::storage::services::v2::Rule as APIRule;
 use aruna_rust_api::api::storage::services::v2::UserPermission;
 use async_channel::Sender;
 use chrono::NaiveDateTime;
@@ -218,11 +219,53 @@ impl Cache {
         self.object_rule_bindings.get(id).map(|x| x.clone())
     }
 
+    pub fn insert_rule_binding(&self, resource_ids: Vec<DieselUlid>, binding: RuleBinding) {
+        self.check_lock();
+        for id in resource_ids {
+            if let Some(bindings) = self.get_rule_bindings(&id) {
+                let mut updated = bindings.to_vec();
+                updated.push(binding);
+                self.object_rule_bindings.insert(&id, Arc::new(updated));
+            } else {
+                self.object_rule_bindings
+                    .insert(&id, Arc::new(vec![binding]));
+            }
+        }
+    }
+
     pub fn get_rule(&self, id: &DieselUlid) -> Option<Arc<CachedRule>> {
         self.check_lock();
         self.object_rules.get(id).map(|x| x.clone())
     }
 
+    pub fn insert_rule(&self, id: &DieselUlid, rule: CachedRule) {
+        self.check_lock();
+        self.object_rules.insert(*id, Arc::new(rule));
+    }
+
+    pub fn delete_rule(&self, id: &DieselUlid) {
+        self.check_lock();
+        self.object_rules.remove(id);
+        self.object_rule_bindings.alter_all(|_, v| {
+            let mut updated = v.to_vec();
+            updated.retain(|binding| &binding.rule_id == id);
+            Arc::new(updated)
+        });
+    }
+
+    pub fn list_rules(&self) -> Vec<APIRule> {
+        self.check_lock();
+        self.object_rules
+            .iter()
+            .filter_map(|rule| {
+                if rule.rule.is_public {
+                    Some(rule.as_ref().into())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
     pub fn get_object_with_stats(&self, id: &DieselUlid) -> Option<ObjectWithRelations> {
         if let Some(mut object) = self.get_object(id) {
             if object.object.object_type == ObjectType::OBJECT {

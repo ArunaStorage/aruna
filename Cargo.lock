@@ -80,7 +80,7 @@ checksum = "5ad32ce52e4161730f7098c077cd2ed6229b5804ccf99e5366be1ab72a98b4e1"
 [[package]]
 name = "aruna-rust-api"
 version = "2.0.0-beta.10"
-source = "git+https://github.com/ArunaStorage/rust-api.git?branch=pre/beta12#b64c530a9b62d880eb996634c5add1295ff2ff84"
+source = "git+https://github.com/ArunaStorage/rust-api.git?branch=pre/beta12#c06fa31d1fc28341b1e0b32e7e65258cf6ea23fd"
 dependencies = [
  "prost",
  "prost-types",
@@ -3828,9 +3828,9 @@ dependencies = [
 
 [[package]]
 name = "tempfile"
-version = "3.10.0"
+version = "3.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a365e8cd18e44762ef95d87f284f4b5cd04107fec2ff3052bd6a3e6069669e67"
+checksum = "85b77fafb263dd9d05cbeac119526425676db3784113aa9295c88498cbf8bff1"
 dependencies = [
  "cfg-if",
  "fastrand 2.0.1",
