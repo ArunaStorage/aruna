@@ -14,18 +14,6 @@ use crate::structs::PartETag;
 use crate::structs::TypedRelation;
 use crate::structs::ALL_RIGHTS_RESERVED;
 use anyhow::Result;
-use aruna_file::helpers::footer_parser::FooterParser;
-use aruna_file::streamreadwrite::ArunaStreamReadWriter;
-use aruna_file::transformer::ReadWriter;
-use aruna_file::transformers::async_sender_sink::AsyncSenderSink;
-use aruna_file::transformers::decrypt::ChaCha20Dec;
-use aruna_file::transformers::encrypt::ChaCha20Enc;
-use aruna_file::transformers::filter::Filter;
-use aruna_file::transformers::footer::FooterGenerator;
-use aruna_file::transformers::hashing_transformer::HashingTransformer;
-use aruna_file::transformers::size_probe::SizeProbe;
-use aruna_file::transformers::zstd_comp::ZstdEnc;
-use aruna_file::transformers::zstd_decomp::ZstdDec;
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Hashalgorithm;
 use aruna_rust_api::api::storage::models::v2::{DataClass, Status};
@@ -37,6 +25,18 @@ use futures_util::TryStreamExt;
 use http::HeaderName;
 use http::HeaderValue;
 use md5::{Digest, Md5};
+use pithos_lib::helpers::footer_parser::FooterParser;
+use pithos_lib::streamreadwrite::GenericStreamReadWriter;
+use pithos_lib::transformer::ReadWriter;
+use pithos_lib::transformers::async_sender_sink::AsyncSenderSink;
+use pithos_lib::transformers::decrypt::ChaCha20Dec;
+use pithos_lib::transformers::encrypt::ChaCha20Enc;
+use pithos_lib::transformers::filter::Filter;
+use pithos_lib::transformers::footer::FooterGenerator;
+use pithos_lib::transformers::hashing_transformer::HashingTransformer;
+use pithos_lib::transformers::size_probe::SizeProbe;
+use pithos_lib::transformers::zstd_comp::ZstdEnc;
+use pithos_lib::transformers::zstd_decomp::ZstdDec;
 use s3s::dto::*;
 use s3s::s3_error;
 use s3s::S3Error;
@@ -87,9 +87,8 @@ impl S3 for ArunaS3Service {
         req: S3Request<CompleteMultipartUploadInput>,
     ) -> S3Result<S3Response<CompleteMultipartUploadOutput>> {
         let CheckAccessResult {
-            user_id,
-            token_id,
-            object,
+            user_state,
+            objects_state,
             ..
         } = req
             .extensions
@@ -100,19 +99,14 @@ impl S3 for ArunaS3Service {
                 s3_error!(UnexpectedContent, "Missing data context")
             })?;
 
-        let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
-        {
-            user_id.and_then(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
-        } else {
-            None
-        };
+        let impersonating_token =
+            user_state.sign_impersonating_token(self.cache.auth.read().await.as_ref());
 
-        let (object, old_location) = if let Some((object, Some(loc))) = object {
-            (object, loc)
-        } else {
-            error!("object not initialized");
-            return Err(s3_error!(InvalidArgument, "Object not initialized"));
-        };
+        let (object, old_location) = objects_state.extract_object()?;
+        let old_location = old_location.ok_or_else(|| {
+            error!(error = "Unable to extract object location");
+            s3_error!(InternalError, "Unable to extract object location")
+        })?;
 
         let parts = match req.input.multipart_upload {
             Some(parts) => parts.parts.ok_or_else(|| {
@@ -167,7 +161,7 @@ impl S3 for ArunaS3Service {
 
         let mut new_location = self
             .backend
-            .initialize_location(&object, None, None, false)
+            .initialize_location(&object, None, objects_state.try_slice()?, false)
             .await
             .map_err(|_| {
                 error!(error = "Unable to create object_location");
@@ -224,40 +218,23 @@ impl S3 for ArunaS3Service {
         let mut new_object = ProxyObject::from(req.input);
 
         if let Some(client) = self.cache.aruna_client.read().await.as_ref() {
-            let CheckAccessResult {
-                user_id, token_id, ..
-            } = data.ok_or_else(|| {
+            let CheckAccessResult { user_state, .. } = data.ok_or_else(|| {
                 error!(error = "Missing data context");
                 s3_error!(InternalError, "Internal Error")
             })?;
 
-            let token = self
-                .cache
-                .auth
-                .read()
-                .await
-                .as_ref()
-                .ok_or_else(|| {
-                    error!(error = "Missing auth handler");
-                    s3_error!(InternalError, "Missing auth handler")
-                })?
-                .sign_impersonating_token(
-                    user_id.ok_or_else(|| {
-                        error!(error = "Unauthorized: Impersonating user error");
-                        s3_error!(NotSignedUp, "Unauthorized: Impersonating user error")
-                    })?,
-                    token_id,
-                )
-                .map_err(|_| {
-                    error!(error = "Unauthorized: Impersonating error");
-                    s3_error!(NotSignedUp, "Unauthorized: Impersonating error")
-                })?;
+            let impersonating_token = user_state
+            .sign_impersonating_token(self.cache.auth.read().await.as_ref())
+            .ok_or_else(|| {
+                error!(error = "Unauthorized: Impersonating error");
+                s3_error!(NotSignedUp, "Unauthorized: Impersonating error")
+            })?;
 
             // TODO: EndpointInfo
             // -> CreateProject adds matching EndpointId to create project request, and then returns a
             //    correctly parsed Object where Endpoint infos are added
             new_object = client
-                .create_project(new_object, &token)
+                .create_project(new_object, &impersonating_token)
                 .await
                 .map_err(|_| {
                     error!(error = "Unable to create project");
@@ -286,11 +263,8 @@ impl S3 for ArunaS3Service {
         req: S3Request<CreateMultipartUploadInput>,
     ) -> S3Result<S3Response<CreateMultipartUploadOutput>> {
         let CheckAccessResult {
-            user_id,
-            token_id,
-            resource_ids,
-            missing_resources,
-            object,
+            objects_state,
+            user_state,
             ..
         } = req
             .extensions
@@ -301,17 +275,10 @@ impl S3 for ArunaS3Service {
                 s3_error!(UnexpectedContent, "Missing data context")
             })?;
 
-        let impersonating_token = if let Some(auth_handler) = self.cache.auth.read().await.as_ref()
-        {
-            user_id.and_then(|u| auth_handler.sign_impersonating_token(u, token_id).ok())
-        } else {
-            None
-        };
+        let impersonating_token =
+            user_state.sign_impersonating_token(self.cache.auth.read().await.as_ref());
 
-        let res_ids = resource_ids.ok_or_else(|| {
-            error!(error = "Missing resource ids");
-            s3_error!(InvalidArgument, "Unknown object path")
-        })?;
+        let (states, locations) = objects_state.require_regular()?;
 
         let mut new_object = if let Some((o, _)) = object {
             if o.object_type == crate::structs::ObjectType::Object {
@@ -682,7 +649,7 @@ impl S3 for ArunaS3Service {
                     // Stream takes receiver chunks und them into vec
                     let mut output = Vec::with_capacity(131_128);
                     let mut arsw =
-                        ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
+                        GenericStreamReadWriter::new_with_writer(footer_receiver, &mut output);
 
                     // processes chunks and puts them into output
                     arsw.process().await.map_err(|_| {
@@ -714,7 +681,7 @@ impl S3 for ArunaS3Service {
                         })?;
                     let mut output = Vec::with_capacity(131_128);
                     let mut arsw =
-                        ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
+                        GenericStreamReadWriter::new_with_writer(footer_receiver, &mut output);
 
                     arsw.process().await.map_err(|_| {
                         error!(error = "Unable to get footer");
@@ -796,7 +763,7 @@ impl S3 for ArunaS3Service {
         tokio::spawn(
             async move {
                 pin!(receiver);
-                let mut asrw = ArunaStreamReadWriter::new_with_sink(
+                let mut asrw = GenericStreamReadWriter::new_with_sink(
                     receiver,
                     AsyncSenderSink::new(final_send),
                 );
@@ -1480,7 +1447,7 @@ impl S3 for ArunaS3Service {
 
         match req.input.body {
             Some(data) => {
-                let mut awr = ArunaStreamReadWriter::new_with_sink(
+                let mut awr = GenericStreamReadWriter::new_with_sink(
                     data,
                     BufferedS3Sink::new(
                         self.backend.clone(),
@@ -1792,7 +1759,7 @@ impl S3 for ArunaS3Service {
                     true,
                 );
 
-                let mut awr = ArunaStreamReadWriter::new_with_sink(data, sink);
+                let mut awr = GenericStreamReadWriter::new_with_sink(data, sink);
 
                 if location.compressed {
                     trace!("adding zstd compressor");

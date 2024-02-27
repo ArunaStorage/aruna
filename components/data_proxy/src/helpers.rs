@@ -1,5 +1,6 @@
 use anyhow::Result;
 use http::Method;
+use rand::distributions::DistString;
 use reqsign::{AwsCredential, AwsV4Signer};
 use url::Url;
 
@@ -147,10 +148,8 @@ pub fn is_method_read(method: &Method) -> bool {
 
 pub fn random_string(len: usize) -> String {
     use rand::distributions::Alphanumeric;
-    use rand::{thread_rng, Rng};
-    thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(len)
-        .collect()
+    use rand::thread_rng;
+    Alphanumeric
+        .sample_string(&mut thread_rng(), len)
         .to_ascii_lowercase()
 }

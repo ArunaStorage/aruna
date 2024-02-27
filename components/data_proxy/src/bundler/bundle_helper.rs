@@ -1,14 +1,17 @@
 use std::sync::Arc;
 
 use crate::{data_backends::storage_backend::StorageBackend, structs::ObjectLocation};
+use futures_util::TryStreamExt;
+use pithos_lib::helpers::notifications::Message;
 use pithos_lib::{
-    helpers::structs::FileContext, streamreadwrite::GenericStreamReadWriter, transformer::ReadWriter, transformers::{
+    helpers::structs::FileContext,
+    streamreadwrite::GenericStreamReadWriter,
+    transformer::ReadWriter,
+    transformers::{
         async_sender_sink::AsyncSenderSink, decrypt::ChaCha20Dec, gzip_comp::GzipEnc, tar::TarEnc,
         zstd_decomp::ZstdDec,
-    }
+    },
 };
-use pithos_lib::helpers::notifications::Message;
-use futures_util::TryStreamExt;
 use s3s::{dto::StreamingBlob, s3_error};
 use tokio::pin;
 use tracing::{debug, info_span, trace, Instrument};
@@ -35,16 +38,14 @@ pub async fn get_bundle(
                 if let Some(location) = loc {
                     file_info_sender_clone
                         .clone()
-                        .send(
-                            Message::FileContext(FileContext {
-                                file_path: name.to_string(),
-                                compressed_size: location.disk_content_len as u64,
-                                decompressed_size: location.raw_content_len as u64,
-                                compression: location.file_format.is_compressed(),
-                                encryption_key: location.file_format.get_encryption_key_as_enc_key(),
-                                ..Default::default()
-                            }),
-                        )
+                        .send(Message::FileContext(FileContext {
+                            file_path: name.to_string(),
+                            compressed_size: location.disk_content_len as u64,
+                            decompressed_size: location.raw_content_len as u64,
+                            compression: location.file_format.is_compressed(),
+                            encryption_key: location.file_format.get_encryption_key_as_enc_key(),
+                            ..Default::default()
+                        }))
                         .await
                         .map_err(|e| {
                             tracing::error!(error = ?e, msg = e.to_string());
@@ -61,13 +62,11 @@ pub async fn get_bundle(
                 } else {
                     file_info_sender_clone
                         .clone()
-                        .send(
-                            Message::FileContext(FileContext {
-                                file_path: name.to_string(),
-                                is_dir: true,
-                                ..Default::default()
-                            })
-                        )
+                        .send(Message::FileContext(FileContext {
+                            file_path: name.to_string(),
+                            is_dir: true,
+                            ..Default::default()
+                        }))
                         .await
                         .map_err(|e| {
                             tracing::error!(error = ?e, msg = e.to_string());

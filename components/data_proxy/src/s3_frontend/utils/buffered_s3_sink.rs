@@ -1,11 +1,12 @@
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::structs::{ObjectLocation, PartETag};
 use anyhow::{anyhow, Result};
-use pithos_lib::transformer::{Sink, Transformer};
-use async_channel::{Receiver, Sender};
+use async_channel::{Receiver, Sender, TryRecvError};
 use bytes::{BufMut, BytesMut};
+use pithos_lib::helpers::notifications::{Message, Notifier};
+use pithos_lib::transformer::{Sink, Transformer, TransformerType};
 use std::sync::Arc;
-use tracing::{debug, info_span, trace, Instrument};
+use tracing::{debug, error, info_span, trace, Instrument};
 
 pub struct BufferedS3Sink {
     backend: Arc<Box<dyn StorageBackend>>,
@@ -17,6 +18,9 @@ pub struct BufferedS3Sink {
     tags: Vec<PartETag>,
     sum: usize,
     sender: Option<Sender<String>>,
+    notifier: Option<Arc<Notifier>>,
+    msg_receiver: Option<Receiver<Message>>,
+    idx: Option<usize>,
 }
 
 impl Sink for BufferedS3Sink {}
@@ -63,6 +67,9 @@ impl BufferedS3Sink {
                 tags: t,
                 sum: 0,
                 sender: tx,
+                notifier: None,
+                msg_receiver: None,
+                idx: None,
             },
             sx,
         )
@@ -70,6 +77,26 @@ impl BufferedS3Sink {
 }
 
 impl BufferedS3Sink {
+    #[tracing::instrument(level = "trace", skip(self))]
+    fn process_messages(&mut self) -> Result<bool> {
+        if let Some(rx) = &self.msg_receiver {
+            loop {
+                match rx.try_recv() {
+                    Ok(Message::Finished) => return Ok(true),
+                    Ok(_) => {}
+                    Err(TryRecvError::Empty) => {
+                        break;
+                    }
+                    Err(TryRecvError::Closed) => {
+                        error!("Message receiver closed");
+                        return Err(anyhow!("Message receiver closed"));
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
+
     #[tracing::instrument(level = "trace", skip(self))]
     async fn initialize_multipart(&mut self) -> Result<()> {
         trace!("Initializing multipart");
@@ -189,8 +216,18 @@ impl BufferedS3Sink {
 
 #[async_trait::async_trait]
 impl Transformer for BufferedS3Sink {
+    #[tracing::instrument(level = "trace", skip(self))]
+    async fn initialize(&mut self, idx: usize) -> (TransformerType, Sender<Message>) {
+        self.idx = Some(idx);
+        let (sx, rx) = async_channel::bounded(10);
+        self.msg_receiver = Some(rx);
+        (TransformerType::Sink, sx)
+    }
+
     #[tracing::instrument(level = "trace", skip(self, buf))]
-    async fn process_bytes(&mut self, buf: &mut BytesMut) -> Result<bool> {
+    async fn process_bytes(&mut self, buf: &mut BytesMut) -> Result<()> {
+        let finished = self.process_messages()?;
+
         self.sum += buf.len();
         let len = buf.len();
 
@@ -199,9 +236,12 @@ impl Transformer for BufferedS3Sink {
         if self.single_part_upload {
             if len == 0 && finished {
                 self.upload_part().await?;
-                return Ok(true);
+                if let Some(notifier) = &self.notifier {
+                    notifier.send_read_writer(Message::Finished)?;
+                }
+                return Ok(());
             }
-            Ok(false)
+            Ok(())
         } else {
             if self.buffer.len() > 5242880 {
                 trace!("exceeds 5 Mib -> upload multi part");
@@ -223,9 +263,19 @@ impl Transformer for BufferedS3Sink {
                         self.finish_multipart().await?;
                     }
                 }
-                return Ok(true);
+                if let Some(notifier) = &self.notifier {
+                    notifier.send_read_writer(Message::Finished)?;
+                }
+                return Ok(());
             }
-            Ok(false)
+            Ok(())
         }
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, notifier))]
+    #[inline]
+    async fn set_notifier(&mut self, notifier: Arc<Notifier>) -> Result<()> {
+        self.notifier = Some(notifier);
+        Ok(())
     }
 }

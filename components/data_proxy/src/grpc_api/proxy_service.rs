@@ -521,99 +521,99 @@ impl DataproxyReplicationServiceImpl {
         Ok(objects)
     }
 
-    async fn get_footer(&self, location: ObjectLocation) -> Result<Option<FooterParser>> {
-        let content_length = location.raw_content_len;
-        let encryption_key = location
-            .clone()
-            .encryption_key
-            .map(|k| k.as_bytes().to_vec());
+    // async fn get_footer(&self, location: ObjectLocation) -> Result<Option<FooterParser>> {
+    //     let content_length = location.raw_content_len;
+    //     let encryption_key = location
+    //         .clone()
+    //         .encryption_key
+    //         .map(|k| k.as_bytes().to_vec());
 
-        // Gets 128 kb chunks (last 2)
-        let footer_parser: Option<FooterParser> = if content_length > 5245120 {
-            trace!("getting footer");
-            // Without encryption block because this is already checked inside
-            let (footer_sender, footer_receiver) = async_channel::bounded(100);
-            pin!(footer_receiver);
+    //     // Gets 128 kb chunks (last 2)
+    //     let footer_parser: Option<FooterParser> = if content_length > 5245120 {
+    //         trace!("getting footer");
+    //         // Without encryption block because this is already checked inside
+    //         let (footer_sender, footer_receiver) = async_channel::bounded(100);
+    //         pin!(footer_receiver);
 
-            let parser = match encryption_key.clone() {
-                Some(key) => {
-                    self.backend
-                        .get_object(
-                            location.clone(),
-                            Some(format!("bytes=-{}", (65536 + 28) * 2)),
-                            // "-" means last (2) chunks
-                            // when encrypted + 28 for encryption information (16 bytes nonce, 12 bytes checksum)
-                            // Encrypted chunk = | 16 b nonce | 65536 b data | 12 b checksum |
-                            footer_sender,
-                        )
-                        .await
-                        .map_err(|_| {
-                            error!(error = "Unable to get encryption_footer");
-                            tonic::Status::internal("Unable to get encryption_footer")
-                        })?;
-                    let mut output = Vec::with_capacity(131_128);
-                    // Stream takes receiver chunks und them into vec
-                    let mut arsw =
-                        GenericStreamReadWriter::new_with_writer(footer_receiver, &mut output);
+    //         let parser = match encryption_key.clone() {
+    //             Some(key) => {
+    //                 self.backend
+    //                     .get_object(
+    //                         location.clone(),
+    //                         Some(format!("bytes=-{}", (65536 + 28) * 2)),
+    //                         // "-" means last (2) chunks
+    //                         // when encrypted + 28 for encryption information (16 bytes nonce, 12 bytes checksum)
+    //                         // Encrypted chunk = | 16 b nonce | 65536 b data | 12 b checksum |
+    //                         footer_sender,
+    //                     )
+    //                     .await
+    //                     .map_err(|_| {
+    //                         error!(error = "Unable to get encryption_footer");
+    //                         tonic::Status::internal("Unable to get encryption_footer")
+    //                     })?;
+    //                 let mut output = Vec::with_capacity(131_128);
+    //                 // Stream takes receiver chunks und them into vec
+    //                 let mut arsw =
+    //                     GenericStreamReadWriter::new_with_writer(footer_receiver, &mut output);
 
-                    // processes chunks and puts them into output
-                    arsw.process().await.map_err(|_| {
-                        error!(error = "Unable to get footer");
-                        anyhow!("Unable to get footer")
-                    })?;
-                    drop(arsw);
+    //                 // processes chunks and puts them into output
+    //                 arsw.process().await.map_err(|_| {
+    //                     error!(error = "Unable to get footer");
+    //                     anyhow!("Unable to get footer")
+    //                 })?;
+    //                 drop(arsw);
 
-                    match output.try_into() {
-                        Ok(i) => match FooterParser::from_encrypted(&i, &key) {
-                            Ok(p) => Some(p),
-                            Err(e) => {
-                                error!(?e);
-                                return Err(anyhow!("Could not parse footer from encrypted"));
-                            }
-                        },
-                        Err(e) => {
-                            error!(?e);
-                            return Err(anyhow!("Could not parse footer from encrypted"));
-                        }
-                    }
-                }
-                None => {
-                    self.backend
-                        .get_object(
-                            location.clone(),
-                            Some(format!("bytes=-{}", 65536 * 2)),
-                            // when not encrypted without 28
-                            footer_sender,
-                        )
-                        .await
-                        .map_err(|_| {
-                            error!(error = "Unable to get compression_footer");
-                            anyhow!("Unable to get compression footer")
-                        })?;
-                    let mut output = Vec::with_capacity(131_128);
-                    let mut arsw =
-                        GenericStreamReadWriter::new_with_writer(footer_receiver, &mut output);
+    //                 match output.try_into() {
+    //                     Ok(i) => match FooterParser::from_encrypted(&i, &key) {
+    //                         Ok(p) => Some(p),
+    //                         Err(e) => {
+    //                             error!(?e);
+    //                             return Err(anyhow!("Could not parse footer from encrypted"));
+    //                         }
+    //                     },
+    //                     Err(e) => {
+    //                         error!(?e);
+    //                         return Err(anyhow!("Could not parse footer from encrypted"));
+    //                     }
+    //                 }
+    //             }
+    //             None => {
+    //                 self.backend
+    //                     .get_object(
+    //                         location.clone(),
+    //                         Some(format!("bytes=-{}", 65536 * 2)),
+    //                         // when not encrypted without 28
+    //                         footer_sender,
+    //                     )
+    //                     .await
+    //                     .map_err(|_| {
+    //                         error!(error = "Unable to get compression_footer");
+    //                         anyhow!("Unable to get compression footer")
+    //                     })?;
+    //                 let mut output = Vec::with_capacity(131_128);
+    //                 let mut arsw =
+    //                     GenericStreamReadWriter::new_with_writer(footer_receiver, &mut output);
 
-                    arsw.process().await.map_err(|_| {
-                        error!(error = "Unable to get footer");
-                        anyhow!("Unable to get footer")
-                    })?;
-                    drop(arsw);
+    //                 arsw.process().await.map_err(|_| {
+    //                     error!(error = "Unable to get footer");
+    //                     anyhow!("Unable to get footer")
+    //                 })?;
+    //                 drop(arsw);
 
-                    match output.try_into() {
-                        Ok(i) => Some(FooterParser::new(&i)),
-                        Err(_) => {
-                            return Err(anyhow!("Could not parse footer from unencrypted"));
-                        }
-                    }
-                }
-            };
-            parser
-        } else {
-            None
-        };
-        Ok(footer_parser)
-    }
+    //                 match output.try_into() {
+    //                     Ok(i) => Some(FooterParser::new(&i)),
+    //                     Err(_) => {
+    //                         return Err(anyhow!("Could not parse footer from unencrypted"));
+    //                     }
+    //                 }
+    //             }
+    //         };
+    //         parser
+    //     } else {
+    //         None
+    //     };
+    //     Ok(footer_parser)
+    // }
 
     async fn send_object(
         &self,
@@ -625,9 +625,7 @@ impl DataproxyReplicationServiceImpl {
     ) -> Result<()> {
         // Get encryption_key
         let key = location
-            .clone()
-            .encryption_key
-            .map(|k| k.as_bytes().to_vec());
+            .get_encryption_key();
         // Create channel for get_object
         let (object_sender, object_receiver) = async_channel::bounded(255);
 

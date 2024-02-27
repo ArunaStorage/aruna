@@ -22,8 +22,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use diesel_ulid::DieselUlid;
 use http::{HeaderValue, Method};
 use pithos_lib::helpers::structs::EncryptionKey;
-use rand::distributions::{Alphanumeric, DistString};
-use rand::thread_rng;
+use rand::RngCore;
 use s3s::dto::CreateBucketInput;
 use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
 use s3s::{s3_error, S3Error};
@@ -33,6 +32,8 @@ use std::{
     str::FromStr,
 };
 use tracing::{debug, error};
+
+use crate::auth::auth::AuthHandler;
 
 /* ----- Constants ----- */
 pub const ALL_RIGHTS_RESERVED: &str = "AllRightsReserved";
@@ -129,23 +130,22 @@ pub enum TypedRelation {
 pub enum FileFormat {
     #[default]
     Raw,
-    RawEncrypted(String),
+    RawEncrypted([u8; 32]),
     RawCompressed,
-    RawEncryptedCompressed(String),
-    Pithos,
+    RawEncryptedCompressed([u8; 32]),
+    Pithos([u8; 32]),
 }
 
 impl FileFormat {
     pub fn from_bools(allow_pithos: bool, allow_encryption: bool, allow_compression: bool) -> Self {
+        let mut enc_key = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut enc_key);
+
         match (allow_pithos, allow_encryption, allow_compression) {
-            (true, _, _) => FileFormat::Pithos,
-            (false, true, false) => {
-                FileFormat::RawEncrypted(Alphanumeric.sample_string(&mut thread_rng(), 32))
-            }
+            (true, _, _) => FileFormat::Pithos(enc_key),
+            (false, true, false) => FileFormat::RawEncrypted(enc_key),
             (false, false, true) => FileFormat::RawCompressed,
-            (false, true, true) => FileFormat::RawEncryptedCompressed(
-                Alphanumeric.sample_string(&mut thread_rng(), 32),
-            ),
+            (false, true, true) => FileFormat::RawEncryptedCompressed(enc_key),
             _ => FileFormat::Raw,
         }
     }
@@ -154,7 +154,7 @@ impl FileFormat {
         match self {
             FileFormat::RawEncrypted(_)
             | FileFormat::RawEncryptedCompressed(_)
-            | FileFormat::Pithos => true,
+            | FileFormat::Pithos(_) => true,
             _ => false,
         }
     }
@@ -163,28 +163,27 @@ impl FileFormat {
         match self {
             FileFormat::RawCompressed
             | FileFormat::RawEncryptedCompressed(_)
-            | FileFormat::Pithos => true,
+            | FileFormat::Pithos(_) => true,
             _ => false,
         }
     }
 
-    pub fn get_encryption_key(&self) -> Option<Vec<u8>> {
+    pub fn get_encryption_key(&self) -> Option<[u8; 32]> {
         match self {
-            FileFormat::RawEncrypted(key) | FileFormat::RawEncryptedCompressed(key) => {
-                Some(key.as_bytes().to_vec())
-            }
+            FileFormat::RawEncrypted(key)
+            | FileFormat::RawEncryptedCompressed(key)
+            | FileFormat::Pithos(key) => Some(key.clone()),
             _ => None,
         }
     }
 
     pub fn get_encryption_key_as_enc_key(&self) -> EncryptionKey {
         match self {
-            FileFormat::RawEncrypted(key) | FileFormat::RawEncryptedCompressed(key) => {
-                EncryptionKey::new_same_key(key.as_bytes().to_vec())
-            }
+            FileFormat::RawEncrypted(key)
+            | FileFormat::RawEncryptedCompressed(key)
+            | FileFormat::Pithos(key) => EncryptionKey::new_same_key(key.clone()),
             _ => EncryptionKey::default(),
         }
-    
     }
 }
 
@@ -199,6 +198,12 @@ pub struct ObjectLocation {
     pub disk_content_len: i64,
     pub disk_hash: Option<String>,
     pub ref_count: u32, // Number of objects that reference this location
+}
+
+impl ObjectLocation {
+    pub fn get_encryption_key(&self) -> Option<[u8; 32]> {
+        self.file_format.get_encryption_key()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1248,6 +1253,15 @@ impl ResourceStates {
         }
         Ok(())
     }
+
+    pub fn as_slice(&self) -> [Option<(DieselUlid, String)>; 4] {
+        [
+            self.objects[0].as_ref().map(|x| (x.id, x.name.clone())),
+            self.objects[1].as_ref().map(|x| (x.id, x.name.clone())),
+            self.objects[2].as_ref().map(|x| (x.id, x.name.clone())),
+            self.objects[3].as_ref().map(|x| (x.id, x.name.clone())),
+        ]
+    }
 }
 
 pub enum ObjectsState {
@@ -1284,6 +1298,28 @@ impl ObjectsState {
     pub fn new_bundle(bundle: Bundle, filename: String) -> Self {
         Self::Bundle { bundle, filename }
     }
+    pub fn extract_object(&self) -> Result<(Object, Option<ObjectLocation>), S3Error> {
+        match self {
+            ObjectsState::Regular { states, location } => {
+                Ok((states.require_object()?.clone(), location.clone()))
+            }
+            _ => Err(s3_error!(InvalidRequest, "Object not found")),
+        }
+    }
+
+    pub fn try_slice(&self) -> Result<[Option<(DieselUlid, String)>; 4], S3Error> {
+        match self {
+            ObjectsState::Regular { states, .. } => Ok(states.as_slice()),
+            _ => Err(s3_error!(InvalidRequest, "Object not found")),
+        }
+    }
+
+    pub fn require_regular(self) -> Result<(ResourceStates, Option<ObjectLocation>), S3Error> {
+        match self {
+            ObjectsState::Regular { states, location } => Ok((states, location)),
+            _ => Err(s3_error!(InvalidRequest, "Object not found")),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -1297,6 +1333,38 @@ pub enum UserState {
         access_key: String,
         user_id: DieselUlid,
     },
+}
+
+impl UserState {
+    pub fn get_access_key(&self) -> Option<String> {
+        match self {
+            UserState::Token { access_key, .. } => Some(access_key.to_string()),
+            UserState::Personal { user_id } => Some(user_id.to_string()),
+            _ => None,
+        }
+    }
+
+    pub fn sign_impersonating_token(&self, auth_handler: Option<&AuthHandler>) -> Option<String> {
+        match auth_handler {
+            Some(auth_handler) => match self {
+                UserState::Token {
+                    access_key,
+                    user_id,
+                } => Some(
+                    auth_handler
+                        .sign_impersonating_token(user_id.to_string(), Some(access_key))
+                        .ok()?,
+                ),
+                UserState::Personal { user_id } => Some(
+                    auth_handler
+                        .sign_impersonating_token(user_id.to_string(), None::<String>)
+                        .ok()?,
+                ),
+                _ => None,
+            },
+            None => None,
+        }
+    }
 }
 
 impl Into<UserState> for Option<AccessKeyPermissions> {
@@ -1319,7 +1387,7 @@ impl Into<UserState> for Option<AccessKeyPermissions> {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CheckAccessResult {
     pub objects_state: ObjectsState,
     pub user_state: UserState,

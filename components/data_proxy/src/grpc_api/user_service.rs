@@ -4,7 +4,8 @@ use aruna_rust_api::api::dataproxy::services::v2::{
     dataproxy_user_service_server::DataproxyUserService, CreateOrUpdateCredentialsRequest,
     CreateOrUpdateCredentialsResponse, GetCredentialsRequest, GetCredentialsResponse,
     PullReplicaRequest, PullReplicaResponse, PushReplicaRequest, PushReplicaResponse,
-    ReplicationStatusRequest, ReplicationStatusResponse,
+    ReplicationStatusRequest, ReplicationStatusResponse, RevokeCredentialsRequest,
+    RevokeCredentialsResponse,
 };
 use std::sync::Arc;
 use tracing::error;
@@ -79,6 +80,19 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
                 "Unable to authenticate user",
             ))
         };
+    }
+
+    /// RevokeCredentials
+    ///
+    /// Status: BETA
+    ///
+    /// Authorized method that needs a aruna-token
+    /// Revokes the current credentials
+    async fn revoke_credentials(
+        &self,
+        request: tonic::Request<RevokeCredentialsRequest>,
+    ) -> std::result::Result<tonic::Response<RevokeCredentialsResponse>, tonic::Status> {
+        todo!()
     }
 
     /// CreateOrUpdateCredentials

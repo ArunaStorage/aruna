@@ -1,11 +1,18 @@
+use std::sync::Arc;
+
 use anyhow::anyhow;
 use anyhow::Result;
-use pithos_lib::transformer::{Sink, Transformer};
 use aruna_rust_api::api::dataproxy::services::v2::{
     pull_replication_response::Message, Chunk, PullReplicationResponse,
 };
+use async_channel::Receiver;
+use async_channel::Sender;
+use async_channel::TryRecvError;
 use bytes::{BufMut, BytesMut};
 use md5::{Digest, Md5};
+use pithos_lib::helpers::notifications::Notifier;
+use pithos_lib::transformer::TransformerType;
+use pithos_lib::transformer::{Sink, Transformer};
 use tokio::sync::mpsc::Sender as TokioSender;
 use tracing::error;
 
@@ -19,6 +26,9 @@ pub struct ReplicationSink {
     is_finished: bool,
     bytes_counter: u64,
     bytes_start: u64,
+    notifier: Option<Arc<Notifier>>,
+    msg_receiver: Option<Receiver<pithos_lib::helpers::notifications::Message>>,
+    idx: Option<usize>,
 }
 
 impl Sink for ReplicationSink {}
@@ -41,8 +51,32 @@ impl ReplicationSink {
             is_finished: false,
             bytes_counter: 0,
             bytes_start: 0,
+            notifier: None,
+            msg_receiver: None,
+            idx: None,
         }
     }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    fn process_messages(&mut self) -> Result<bool> {
+        if let Some(rx) = &self.msg_receiver {
+            loop {
+                match rx.try_recv() {
+                    Ok(pithos_lib::helpers::notifications::Message::Finished) => return Ok(true),
+                    Ok(_) => {}
+                    Err(TryRecvError::Empty) => {
+                        break;
+                    }
+                    Err(TryRecvError::Closed) => {
+                        error!("Message receiver closed");
+                        return Err(anyhow!("Message receiver closed"));
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
+
     async fn create_and_send_message(&mut self) -> Result<()> {
         if self.buffer.is_empty() {
             return Ok(());
@@ -104,11 +138,27 @@ impl ReplicationSink {
 
 #[async_trait::async_trait]
 impl Transformer for ReplicationSink {
-    #[tracing::instrument(level = "trace", skip(self, buf, finished))]
-    async fn process_bytes(&mut self, buf: &mut BytesMut, finished: bool, _: bool) -> Result<bool> {
+    #[tracing::instrument(level = "trace", skip(self))]
+    async fn initialize(
+        &mut self,
+        idx: usize,
+    ) -> (
+        TransformerType,
+        Sender<pithos_lib::helpers::notifications::Message>,
+    ) {
+        self.idx = Some(idx);
+        let (sx, rx) = async_channel::bounded(10);
+        self.msg_receiver = Some(rx);
+        (TransformerType::Sink, sx)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, buf))]
+    async fn process_bytes(&mut self, buf: &mut BytesMut) -> Result<()> {
         // blocksize: 65536
         self.bytes_counter += buf.len() as u64;
         self.buffer.put(buf.split());
+
+        let finished = self.process_messages()?;
 
         if finished && !self.buffer.is_empty() {
             self.create_and_send_message().await.map_err(|e| {
@@ -116,7 +166,12 @@ impl Transformer for ReplicationSink {
                 tonic::Status::unauthenticated(e.to_string())
             })?;
             self.is_finished = true;
-            return Ok(self.is_finished);
+
+            if let Some(notifier) = &self.notifier {
+                notifier.send_read_writer(pithos_lib::helpers::notifications::Message::Finished)?;
+            }
+
+            return Ok(());
         }
 
         if self.blocklist.is_empty() && finished && !&self.is_finished {
@@ -125,7 +180,10 @@ impl Transformer for ReplicationSink {
                 tonic::Status::unauthenticated(e.to_string())
             })?;
             self.is_finished = true;
-            return Ok(self.is_finished);
+            if let Some(notifier) = &self.notifier {
+                notifier.send_read_writer(pithos_lib::helpers::notifications::Message::Finished)?;
+            }
+            return Ok(());
         }
         if !self.blocklist.is_empty() {
             while (self.bytes_counter - self.bytes_start)
@@ -138,6 +196,13 @@ impl Transformer for ReplicationSink {
             }
         }
 
-        Ok(self.is_finished)
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, notifier))]
+    #[inline]
+    async fn set_notifier(&mut self, notifier: Arc<Notifier>) -> Result<()> {
+        self.notifier = Some(notifier);
+        Ok(())
     }
 }

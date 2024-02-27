@@ -3,18 +3,18 @@ use crate::s3_frontend::utils::buffered_s3_sink::BufferedS3Sink;
 use crate::structs::ObjectLocation;
 use anyhow::anyhow;
 use anyhow::Result;
-use aruna_file::streamreadwrite::ArunaStreamReadWriter;
-use aruna_file::transformer::ReadWriter;
-use aruna_file::transformers::decrypt::ChaCha20Dec;
-use aruna_file::transformers::encrypt::ChaCha20Enc;
-use aruna_file::transformers::footer::FooterGenerator;
-use aruna_file::transformers::hashing_transformer::HashingTransformer;
-use aruna_file::transformers::size_probe::SizeProbe;
-use aruna_file::transformers::zstd_comp::ZstdEnc;
-use aruna_file::transformers::zstd_decomp::ZstdDec;
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Hashalgorithm;
 use md5::{Digest, Md5};
+use pithos_lib::streamreadwrite::GenericStreamReadWriter;
+use pithos_lib::transformer::ReadWriter;
+use pithos_lib::transformers::decrypt::ChaCha20Dec;
+use pithos_lib::transformers::encrypt::ChaCha20Enc;
+use pithos_lib::transformers::footer::FooterGenerator;
+use pithos_lib::transformers::hashing_transformer::HashingTransformer;
+use pithos_lib::transformers::size_probe::SizeProbe;
+use pithos_lib::transformers::zstd_comp::ZstdEnc;
+use pithos_lib::transformers::zstd_decomp::ZstdDec;
 use sha2::Sha256;
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -38,15 +38,9 @@ impl DataHandler {
 
         let (tx_send, tx_receive) = async_channel::bounded(10);
 
-        let clone_key: Option<Vec<u8>> = before_location
-            .clone()
-            .encryption_key
-            .map(|k| k.as_bytes().to_vec());
+        let clone_key = before_location.get_encryption_key();
 
-        let after_key: Option<Vec<u8>> = new_location
-            .clone()
-            .encryption_key
-            .map(|k| k.as_bytes().to_vec());
+        let after_key = new_location.get_encryption_key();
 
         let before_location = before_location.clone();
         let backend_clone = backend.clone();
@@ -66,18 +60,18 @@ impl DataHandler {
 
                 pin!(tx_receive);
                 // Bind to variable to extend the lifetime of arsw to the end of the function
-                let mut asr = ArunaStreamReadWriter::new_with_sink(tx_receive, sink);
+                let mut asr = GenericStreamReadWriter::new_with_sink(tx_receive, sink);
                 let (orig_probe, orig_size_stream) = SizeProbe::new();
                 asr = asr.add_transformer(orig_probe);
 
                 if let Some(key) = clone_key.clone() {
-                    asr = asr.add_transformer(ChaCha20Dec::new(Some(key)).map_err(|e| {
+                    asr = asr.add_transformer(ChaCha20Dec::new_with_fixed(key).map_err(|e| {
                         error!(error = ?e, msg = e.to_string());
                         tonic::Status::unauthenticated(e.to_string())
                     })?);
                 }
 
-                if before_location.compressed {
+                if before_location.file_format.is_compressed() {
                     asr = asr.add_transformer(ZstdDec::new());
                 }
 
@@ -85,19 +79,21 @@ impl DataHandler {
 
                 asr = asr.add_transformer(uncompressed_probe);
 
-                let (sha_transformer, sha_recv) = HashingTransformer::new(Sha256::new());
-                let (md5_transformer, md5_recv) = HashingTransformer::new(Md5::new());
+                let (sha_transformer, sha_recv) =
+                    HashingTransformer::new_with_backchannel(Sha256::new(), "sha256");
+                let (md5_transformer, md5_recv) =
+                    HashingTransformer::new_with_backchannel(Md5::new(), "md5");
 
                 asr = asr.add_transformer(sha_transformer);
                 asr = asr.add_transformer(md5_transformer);
-                asr = asr.add_transformer(ZstdEnc::new(false));
+                asr = asr.add_transformer(ZstdEnc::new());
                 asr = asr.add_transformer(FooterGenerator::new(None));
-                asr = asr.add_transformer(ChaCha20Enc::new(
-                    false,
+                asr = asr.add_transformer(ChaCha20Enc::new_with_fixed(
                     after_key.ok_or_else(|| anyhow!("Missing encryption_key"))?,
                 )?);
 
-                let (final_sha, final_sha_recv) = HashingTransformer::new(Sha256::new());
+                let (final_sha, final_sha_recv) =
+                    HashingTransformer::new_with_backchannel(Sha256::new(), "sha256");
 
                 asr = asr.add_transformer(final_sha);
                 asr.process().await.map_err(|e| {

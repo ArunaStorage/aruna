@@ -4,14 +4,6 @@ use crate::{
 };
 use ahash::{HashSet, RandomState};
 use anyhow::{anyhow, Result};
-use pithos_lib::{
-    streamreadwrite::GenericStreamReadWriter,
-    transformer::ReadWriter,
-    transformers::{
-        encrypt::ChaCha20Enc, footer::FooterGenerator, hashing_transformer::HashingTransformer,
-        size_probe::SizeProbe,
-    },
-};
 use aruna_rust_api::api::dataproxy::services::v2::{ObjectInfo, ReplicationStatus};
 use aruna_rust_api::api::{
     dataproxy::services::v2::{
@@ -25,6 +17,14 @@ use async_channel::{Receiver, Sender};
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use md5::{Digest, Md5};
+use pithos_lib::{
+    streamreadwrite::GenericStreamReadWriter,
+    transformer::ReadWriter,
+    transformers::{
+        encrypt::ChaCha20Enc, footer::FooterGenerator, hashing_transformer::HashingTransformer,
+        size_probe::SizeProbe,
+    },
+};
 use sha2::Sha256;
 use std::{str::FromStr, sync::Arc};
 use tokio::pin;
@@ -790,7 +790,8 @@ impl ReplicationHandler {
         });
 
         // Initialize hashing transformers
-        let (final_sha_trans, final_sha_recv) = HashingTransformer::new(Sha256::new());
+        let (final_sha_trans, final_sha_recv) =
+            HashingTransformer::new(Sha256::new(), "sha256".to_string(), false);
         let (final_size_trans, final_size_recv) = SizeProbe::new();
 
         trace!("Starting ArunaStreamReadWriter taks");
@@ -818,14 +819,14 @@ impl ReplicationHandler {
                 awr = awr.add_transformer(FooterGenerator::new(Some(blocklist.clone())));
             }
 
-            if let Some(enc_key) = &location_clone.encryption_key {
+            if let Some(enc_key) = &location_clone.get_encryption_key() {
                 trace!("adding encryption transformer");
-                awr = awr.add_transformer(
-                    ChaCha20Enc::new(true, enc_key.to_string().into_bytes()).map_err(|e| {
+                awr = awr.add_transformer(ChaCha20Enc::new_with_fixed(enc_key.clone()).map_err(
+                    |e| {
                         tracing::error!(error = ?e, msg = e.to_string());
                         e
-                    })?,
-                );
+                    },
+                )?);
             }
 
             trace!("Adding size and hash transformer");
