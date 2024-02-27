@@ -90,7 +90,7 @@ impl DatabaseHandler {
     pub async fn delete_rule_binding(&self, request: DeleteRuleBinding) -> Result<()> {
         let client = self.database.get_client().await?;
         let (resource_id, rule_id) = request.get_ids()?;
-        RuleBinding::delete_by(&resource_id, &rule_id, &client).await?;
+        RuleBinding::delete_by(resource_id, rule_id, &client).await?;
         self.cache.remove_rule_bindings(resource_id, rule_id);
         Ok(())
     }
