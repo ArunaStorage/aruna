@@ -1,5 +1,6 @@
 use anyhow::Result;
-use aruna_file::helpers::footer_parser::{FooterParser, Range as ArunaRange};
+use pithos_lib::helpers::footer_parser::FooterParser;
+use pithos_lib::helpers::structs::Range as ArunaRange;
 use s3s::dto::Range as S3Range;
 use s3s::dto::Range::{Int, Suffix};
 

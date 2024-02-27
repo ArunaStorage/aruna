@@ -4,8 +4,8 @@ use crate::{
 };
 use ahash::{HashSet, RandomState};
 use anyhow::{anyhow, Result};
-use aruna_file::{
-    streamreadwrite::ArunaStreamReadWriter,
+use pithos_lib::{
+    streamreadwrite::GenericStreamReadWriter,
     transformer::ReadWriter,
     transformers::{
         encrypt::ChaCha20Enc, footer::FooterGenerator, hashing_transformer::HashingTransformer,
@@ -799,7 +799,7 @@ impl ReplicationHandler {
             pin!(data_stream);
 
             trace!(?max_chunks);
-            let mut awr = ArunaStreamReadWriter::new_with_sink(
+            let mut awr = GenericStreamReadWriter::new_with_sink(
                 data_stream,
                 BufferedS3Sink::new(
                     backend.clone(),

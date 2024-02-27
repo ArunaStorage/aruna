@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use anyhow::Result;
-use aruna_file::transformer::{Sink, Transformer};
+use pithos_lib::transformer::{Sink, Transformer};
 use aruna_rust_api::api::dataproxy::services::v2::{
     pull_replication_response::Message, Chunk, PullReplicationResponse,
 };

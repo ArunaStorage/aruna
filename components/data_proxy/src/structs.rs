@@ -21,6 +21,7 @@ use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use diesel_ulid::DieselUlid;
 use http::{HeaderValue, Method};
+use pithos_lib::helpers::structs::EncryptionKey;
 use rand::distributions::{Alphanumeric, DistString};
 use rand::thread_rng;
 use s3s::dto::CreateBucketInput;
@@ -174,6 +175,16 @@ impl FileFormat {
             }
             _ => None,
         }
+    }
+
+    pub fn get_encryption_key_as_enc_key(&self) -> EncryptionKey {
+        match self {
+            FileFormat::RawEncrypted(key) | FileFormat::RawEncryptedCompressed(key) => {
+                EncryptionKey::new_same_key(key.as_bytes().to_vec())
+            }
+            _ => EncryptionKey::default(),
+        }
+    
     }
 }
 

@@ -7,8 +7,8 @@ use crate::{
     structs::{Object, ObjectLocation},
 };
 use anyhow::{anyhow, Result};
-use aruna_file::{
-    helpers::footer_parser::FooterParser, streamreadwrite::ArunaStreamReadWriter,
+use pithos_lib::{
+    helpers::footer_parser::FooterParser, streamreadwrite::GenericStreamReadWriter,
     transformer::ReadWriter, transformers::decrypt::ChaCha20Dec,
 };
 
@@ -554,7 +554,7 @@ impl DataproxyReplicationServiceImpl {
                     let mut output = Vec::with_capacity(131_128);
                     // Stream takes receiver chunks und them into vec
                     let mut arsw =
-                        ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
+                        GenericStreamReadWriter::new_with_writer(footer_receiver, &mut output);
 
                     // processes chunks and puts them into output
                     arsw.process().await.map_err(|_| {
@@ -592,7 +592,7 @@ impl DataproxyReplicationServiceImpl {
                         })?;
                     let mut output = Vec::with_capacity(131_128);
                     let mut arsw =
-                        ArunaStreamReadWriter::new_with_writer(footer_receiver, &mut output);
+                        GenericStreamReadWriter::new_with_writer(footer_receiver, &mut output);
 
                     arsw.process().await.map_err(|_| {
                         error!(error = "Unable to get footer");
@@ -650,7 +650,7 @@ impl DataproxyReplicationServiceImpl {
         let _ = tokio::spawn(
             async move {
                 pin!(object_receiver);
-                let asrw = ArunaStreamReadWriter::new_with_sink(
+                let asrw = GenericStreamReadWriter::new_with_sink(
                     // Receive get_object
                     object_receiver,
                     // ReplicationSink sends into stream via sender
@@ -659,7 +659,7 @@ impl DataproxyReplicationServiceImpl {
 
                 // Add decryption transformer
 
-                asrw.add_transformer(ChaCha20Dec::new(key).map_err(|e| {
+                asrw.add_transformer(ChaCha20Dec::new_with_fixed(key).map_err(|e| {
                     tracing::error!(error = ?e, msg = e.to_string());
                     e
                 })?)

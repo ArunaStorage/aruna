@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
 use crate::{data_backends::storage_backend::StorageBackend, structs::ObjectLocation};
-use aruna_file::{
-    streamreadwrite::ArunaStreamReadWriter,
-    transformer::{FileContext, ReadWriter},
-    transformers::{
+use pithos_lib::{
+    helpers::structs::FileContext, streamreadwrite::GenericStreamReadWriter, transformer::ReadWriter, transformers::{
         async_sender_sink::AsyncSenderSink, decrypt::ChaCha20Dec, gzip_comp::GzipEnc, tar::TarEnc,
         zstd_decomp::ZstdDec,
-    },
+    }
 };
+use pithos_lib::helpers::notifications::Message;
 use futures_util::TryStreamExt;
 use s3s::{dto::StreamingBlob, s3_error};
 use tokio::pin;
@@ -36,18 +35,16 @@ pub async fn get_bundle(
                 if let Some(location) = loc {
                     file_info_sender_clone
                         .clone()
-                        .send((
-                            FileContext {
-                                file_name: name.to_string(),
-                                input_size: location.disk_content_len as u64,
-                                file_size: location.raw_content_len as u64,
-                                skip_decompression: location.file_format.is_compressed(),
-                                skip_decryption: location.file_format.is_encrypted(),
-                                encryption_key: location.file_format.get_encryption_key()
-                                    ..Default::default(),
-                            },
-                            counter >= len,
-                        ))
+                        .send(
+                            Message::FileContext(FileContext {
+                                file_path: name.to_string(),
+                                compressed_size: location.disk_content_len as u64,
+                                decompressed_size: location.raw_content_len as u64,
+                                compression: location.file_format.is_compressed(),
+                                encryption_key: location.file_format.get_encryption_key_as_enc_key(),
+                                ..Default::default()
+                            }),
+                        )
                         .await
                         .map_err(|e| {
                             tracing::error!(error = ?e, msg = e.to_string());
@@ -64,14 +61,13 @@ pub async fn get_bundle(
                 } else {
                     file_info_sender_clone
                         .clone()
-                        .send((
-                            FileContext {
-                                file_name: name.to_string(),
+                        .send(
+                            Message::FileContext(FileContext {
+                                file_path: name.to_string(),
                                 is_dir: true,
                                 ..Default::default()
-                            },
-                            counter >= len,
-                        ))
+                            })
+                        )
                         .await
                         .map_err(|e| {
                             tracing::error!(error = ?e, msg = e.to_string());
@@ -94,11 +90,11 @@ pub async fn get_bundle(
         async move {
             pin!(data_clone);
 
-            let mut aruna_stream_writer = ArunaStreamReadWriter::new_with_sink(
+            let mut aruna_stream_writer = GenericStreamReadWriter::new_with_sink(
                 data_clone,
                 AsyncSenderSink::new(final_sender_clone.clone()),
             )
-            .add_transformer(ChaCha20Dec::new(None).map_err(|e| {
+            .add_transformer(ChaCha20Dec::new().map_err(|e| {
                 tracing::error!(error = ?e, msg = e.to_string());
                 e
             })?)
@@ -106,7 +102,7 @@ pub async fn get_bundle(
             .add_transformer(TarEnc::new())
             .add_transformer(GzipEnc::new());
             aruna_stream_writer
-                .add_file_context_receiver(file_info_receiver.clone())
+                .add_message_receiver(file_info_receiver.clone())
                 .await
                 .map_err(|e| {
                     tracing::error!(error = ?e, msg = e.to_string());

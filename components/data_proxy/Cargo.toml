@@ -7,8 +7,8 @@ version = "2.0.0-rc.2"
 
 [dependencies]
 anyhow = "1.0.80"
-aruna-rust-api = { path = "/home/beavis/projects/rust-api" }
-aruna-file = { git = "https://github.com/ArunaStorage/aruna-file.git", branch = "feat/replication" }
+aruna-rust-api = { git = "https://github.com/ArunaStorage/rust-api.git", branch = "pre/beta12" }
+pithos_lib = { git = "https://github.com/ArunaStorage/aruna-file.git", branch = "feat/pithos_rework" }
 async-channel = "2.2.0"
 async-stream = "0.3.5"
 async-trait = "0.1.77"

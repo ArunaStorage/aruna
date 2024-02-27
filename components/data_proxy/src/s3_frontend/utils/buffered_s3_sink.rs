@@ -1,7 +1,7 @@
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::structs::{ObjectLocation, PartETag};
 use anyhow::{anyhow, Result};
-use aruna_file::transformer::{Sink, Transformer};
+use pithos_lib::transformer::{Sink, Transformer};
 use async_channel::{Receiver, Sender};
 use bytes::{BufMut, BytesMut};
 use std::sync::Arc;
@@ -189,8 +189,8 @@ impl BufferedS3Sink {
 
 #[async_trait::async_trait]
 impl Transformer for BufferedS3Sink {
-    #[tracing::instrument(level = "trace", skip(self, buf, finished))]
-    async fn process_bytes(&mut self, buf: &mut BytesMut, finished: bool, _: bool) -> Result<bool> {
+    #[tracing::instrument(level = "trace", skip(self, buf))]
+    async fn process_bytes(&mut self, buf: &mut BytesMut) -> Result<bool> {
         self.sum += buf.len();
         let len = buf.len();
 
