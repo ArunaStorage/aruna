@@ -65,3 +65,11 @@ impl CreateRuleBinding {
         })
     }
 }
+
+impl DeleteRuleBinding {
+    pub fn get_ids(&self) -> Result<(DieselUlid, DieselUlid)> {
+        let res_id = DieselUlid::from_str(&self.0.object_id)?;
+        let rule_id = DieselUlid::from_str(&self.0.rule_id)?;
+        Ok((res_id, rule_id))
+    }
+}

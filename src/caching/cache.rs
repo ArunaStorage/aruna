@@ -233,6 +233,16 @@ impl Cache {
         }
     }
 
+    pub fn remove_rule_bindings(&self, resource_id: DieselUlid, rule_id: DieselUlid) {
+        self.check_lock();
+        self.object_rule_bindings.alter_all(|_, bindings| {
+            let mut updated = bindings.to_vec();
+            updated.retain(|b| (b.rule_id != rule_id) && (b.origin_id != resource_id));
+            Arc::new(updated)
+        });
+        self.object_rule_bindings.retain(|k, v| !v.is_empty());
+    }
+
     pub fn get_rule(&self, id: &DieselUlid) -> Option<Arc<CachedRule>> {
         self.check_lock();
         self.object_rules.get(id).map(|x| x.clone())

@@ -1,4 +1,5 @@
 use crate::caching::structs::CachedRule;
+use crate::database::dsls::rule_dsl::RuleBinding;
 use crate::database::{crud::CrudDb, dsls::object_dsl::Object};
 use crate::middlelayer::rule_request_types::{CreateRuleBinding, DeleteRuleBinding, UpdateRule};
 use anyhow::{anyhow, Result};
@@ -87,6 +88,10 @@ impl DatabaseHandler {
         Ok(())
     }
     pub async fn delete_rule_binding(&self, request: DeleteRuleBinding) -> Result<()> {
-        todo!()
+        let client = self.database.get_client().await?;
+        let (resource_id, rule_id) = request.get_ids()?;
+        RuleBinding::delete_by(&resource_id, &rule_id, &client).await?;
+        self.cache.remove_rule_bindings(resource_id, rule_id);
+        Ok(())
     }
 }

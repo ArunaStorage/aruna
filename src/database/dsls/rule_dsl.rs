@@ -59,3 +59,13 @@ impl CrudDb for RuleBinding {
         todo!()
     }
 }
+
+impl RuleBinding {
+    pub async fn delete_by(
+        resource_id: &DieselUlid,
+        policy_id: &DieselUlid,
+        client: &Client,
+    ) -> Result<()> {
+        todo!()
+    }
+}

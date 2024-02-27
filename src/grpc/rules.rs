@@ -4,7 +4,7 @@ use crate::caching::cache::Cache;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::rule_request_types::{
-    CreateRule, CreateRuleBinding, DeleteRule, UpdateRule,
+    CreateRule, CreateRuleBinding, DeleteRule, DeleteRuleBinding, UpdateRule,
 };
 use crate::utils::grpc_utils::get_token_from_md;
 use aruna_rust_api::api::storage::services::v2::{
@@ -220,7 +220,7 @@ impl RulesService for RuleServiceImpl {
                     &token,
                     vec![Context::res_ctx(
                         resource_id,
-                        DbPermissionLevel::APPEND,
+                        DbPermissionLevel::ADMIN,
                         false
                     )]
                 )
@@ -232,6 +232,7 @@ impl RulesService for RuleServiceImpl {
             .get_rule(&rule_id)
             .ok_or_else(|| tonic::Status::not_found("Rule not found"))?;
         if !rule.rule.is_public && rule.rule.owner_id != user_id {
+            // Private rules can only be added by rule owners
             return Err(tonic::Status::unauthenticated("Unauthorized"));
         }
         tonic_invalid!(
@@ -252,8 +253,36 @@ impl RulesService for RuleServiceImpl {
         &self,
         request: Request<DeleteRuleBindingRequest>,
     ) -> Result<Response<DeleteRuleBindingResponse>> {
-        Err(tonic::Status::unimplemented(
-            "Deleting rule bindings currently not implemented",
-        ))
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+
+        let request = DeleteRuleBinding(request.into_inner());
+        let (resource_id, rule_id) = tonic_invalid!(request.get_ids(), "Invalid ids provided");
+        let user_id = tonic_auth!(
+            self.authorizer
+                .check_permissions(
+                    &token,
+                    vec![Context::res_ctx(
+                        resource_id,
+                        DbPermissionLevel::ADMIN,
+                        false
+                    )]
+                )
+                .await,
+            "Unauthorized"
+        );
+        self.cache
+            .get_rule(&rule_id)
+            .ok_or_else(|| tonic::Status::not_found("Rule not found"))?;
+
+        tonic_invalid!(
+            self.database_handler.delete_rule_binding(request).await,
+            "Invalid request"
+        );
+        return_with_log!(DeleteRuleBinding);
     }
 }
