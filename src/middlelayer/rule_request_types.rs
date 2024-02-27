@@ -1,3 +1,5 @@
+use crate::database::dsls::internal_relation_dsl::InternalRelation;
+use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::dsls::rule_dsl::RuleBinding;
 use crate::{caching::structs::CachedRule, database::dsls::rule_dsl::Rule};
 use anyhow::{anyhow, Result};
@@ -15,6 +17,37 @@ pub struct DeleteRule(pub DeleteRuleRequest);
 #[derive(Clone)]
 pub struct CreateRuleBinding(pub CreateRuleBindingRequest);
 pub struct DeleteRuleBinding(pub DeleteRuleBindingRequest);
+
+pub struct UpdateRules {
+    higher_hierarchy: Vec<DieselUlid>,
+    lower_hierarchy: Vec<DieselUlid>,
+}
+
+impl UpdateRules {
+    pub fn init_struct(owr: ObjectWithRelations) -> Self {
+        let higher: Vec<DieselUlid> = owr
+            .inbound_belongs_to
+            .0
+            .into_iter()
+            .map(|(_, ir)| ir.origin_pid)
+            .collect();
+        let lower: Vec<DieselUlid> = owr
+            .outbound_belongs_to
+            .0
+            .into_iter()
+            .map(|(_, ir)| ir.target_pid)
+            .collect();
+        let new = UpdateRules {
+            higher_hierarchy: higher,
+            lower_hierarchy: lower,
+        };
+        new
+    }
+
+    fn update_struct(mut self, client: &Client) -> Self {
+        todo!()
+    }
+}
 
 impl CreateRule {
     pub fn build_rule(&self, user_id: DieselUlid) -> Result<CachedRule> {

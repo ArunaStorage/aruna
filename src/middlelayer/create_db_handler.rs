@@ -135,6 +135,9 @@ impl DatabaseHandler {
             .collect_and_create_affected(request, &object, transaction_client)
             .await?;
 
+        //TODO:
+        // Create/Update cascading rules
+
         if let Err(err) = self.evaluate_policies(&affected, transaction_client).await {
             transaction.rollback().await?;
             return Err(err);
@@ -325,7 +328,7 @@ impl DatabaseHandler {
         transaction_client: &Client,
     ) -> Result<Vec<DieselUlid>> {
         // Create specified relations
-        let internal_relations = request.get_other_relations(object.id, self.cache.clone())?;
+        let internal_relations = request.get_internal_relations(object.id, self.cache.clone())?;
         // TODO: BelongsTo relations zulassen
         InternalRelation::batch_create(&internal_relations, transaction_client).await?;
         // Collect affected objects

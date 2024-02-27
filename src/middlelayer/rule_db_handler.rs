@@ -11,6 +11,13 @@ use tokio_postgres::Client;
 use super::{db_handler::DatabaseHandler, rule_request_types::CreateRule};
 
 impl DatabaseHandler {
+    pub async fn update_rules(&self, object_id: DieselUlid) -> Result<()> {
+        let client = self.database.get_client().await?;
+        let owr = Object::get_object_with_relations(&object_id, &client).await?;
+
+        todo!()
+    }
+
     pub async fn evaluate_policies(
         &self,
         affected: &Vec<DieselUlid>,

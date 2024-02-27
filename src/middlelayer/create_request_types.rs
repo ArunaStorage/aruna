@@ -145,7 +145,7 @@ impl CreateRequest {
         Ok(container.0)
     }
 
-    pub fn get_other_relations(
+    pub fn get_internal_relations(
         &self,
         id: DieselUlid,
         cache: Arc<Cache>,
