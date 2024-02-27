@@ -2,8 +2,6 @@ use anyhow::Result;
 use diesel_ulid::DieselUlid;
 use serde::{Deserialize, Serialize};
 
-use crate::helpers::random_string;
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub proxy: Proxy,
