@@ -8,8 +8,10 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 use pithos_lib::{
-    helpers::footer_parser::{Footer, FooterParser}, streamreadwrite::GenericStreamReadWriter,
-    transformer::ReadWriter, transformers::decrypt::ChaCha20Dec,
+    helpers::footer_parser::{Footer, FooterParser},
+    streamreadwrite::GenericStreamReadWriter,
+    transformer::ReadWriter,
+    transformers::decrypt::ChaCha20Dec,
 };
 
 use aruna_rust_api::api::dataproxy::services::v2::{
@@ -332,7 +334,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                             trace!(?object, ?location);
                             // Need to keep track when to create an object, and when to only update the location
                             // Get chunk size from blocklist
-                            let max_blocks = blocklist.as_ref().map(|l| l.len()).unwrap_or(1);
+                            let max_blocks = location.count_blocks();
                             stored_objects.insert(object.id, max_blocks);
                             // Send ObjectInfo into stream
                             object_output_send
@@ -359,7 +361,6 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                 .send_object(
                                     object.id.to_string(),
                                     location,
-                                    blocklist.unwrap_or(Vec::default()),
                                     object_output_send.clone(),
                                     retry_rcv.clone(),
                                 )
@@ -494,13 +495,11 @@ impl DataproxyReplicationServiceImpl {
         &self,
         object_id: String,
         location: ObjectLocation,
-        footer: Option<Footer>,
         sender: tokio::sync::mpsc::Sender<Result<PullReplicationResponse, tonic::Status>>,
         error_rcv: Receiver<Option<(i64, String)>>, // contains chunk_idx and object_id
     ) -> Result<()> {
         // Get encryption_key
-        let key = location
-            .get_encryption_key();
+        let key = location.get_encryption_key();
         // Create channel for get_object
         let (object_sender, object_receiver) = async_channel::bounded(255);
 

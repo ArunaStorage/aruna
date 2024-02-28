@@ -224,11 +224,11 @@ impl S3 for ArunaS3Service {
             })?;
 
             let impersonating_token = user_state
-            .sign_impersonating_token(self.cache.auth.read().await.as_ref())
-            .ok_or_else(|| {
-                error!(error = "Unauthorized: Impersonating error");
-                s3_error!(NotSignedUp, "Unauthorized: Impersonating error")
-            })?;
+                .sign_impersonating_token(self.cache.auth.read().await.as_ref())
+                .ok_or_else(|| {
+                    error!(error = "Unauthorized: Impersonating error");
+                    s3_error!(NotSignedUp, "Unauthorized: Impersonating error")
+                })?;
 
             // TODO: EndpointInfo
             // -> CreateProject adds matching EndpointId to create project request, and then returns a

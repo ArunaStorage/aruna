@@ -18,7 +18,7 @@ use tracing::error;
 
 pub struct ReplicationSink {
     object_id: String,
-    blocklist: Vec<u8>,
+    maximum_chunks: usize,
     chunk_counter: usize, // One chunk contains multiple blocks
     sender: TokioSender<Result<PullReplicationResponse, tonic::Status>>,
     error_recv: async_channel::Receiver<Option<(i64, String)>>,
@@ -37,13 +37,13 @@ impl ReplicationSink {
     #[tracing::instrument(level = "trace", skip())]
     pub fn new(
         object_id: String,
-        blocklist: Vec<u8>,
+        chunks: usize,
         sender: TokioSender<Result<PullReplicationResponse, tonic::Status>>,
         error_recv: async_channel::Receiver<Option<(i64, String)>>,
     ) -> ReplicationSink {
         ReplicationSink {
+            maximum_chunks: chunks,
             object_id,
-            blocklist,
             sender,
             error_recv,
             chunk_counter: 0,
@@ -77,18 +77,22 @@ impl ReplicationSink {
         Ok(false)
     }
 
-    async fn create_and_send_message(&mut self) -> Result<()> {
+    async fn create_and_send_message(&mut self) -> Result<bool> {
         if self.buffer.is_empty() {
-            return Ok(());
+            return Ok(true);
         }
 
-        let len = if self.blocklist.is_empty() {
-            self.buffer.len() as u64
+        let len = if self.chunk_counter < self.maximum_chunks {
+            65536 + 28
         } else {
-            65536 * (self.blocklist[self.chunk_counter] as u64)
+            self.buffer.len() as usize
         };
 
-        let data = self.buffer.split_to(len as usize).to_vec();
+        if self.buffer.len() < len {
+            return Ok(true);
+        }
+
+        let data = self.buffer.split_to(len).to_vec();
 
         // create a Md5 hasher instance
         let mut hasher = Md5::new();
@@ -103,7 +107,7 @@ impl ReplicationSink {
             message: Some(Message::Chunk(Chunk {
                 object_id: self.object_id.clone(),
                 chunk_idx: (self.chunk_counter as i64),
-                data, // Clear self.buffer
+                data,
                 checksum: hex::encode(result),
             })),
         };
@@ -130,9 +134,9 @@ impl ReplicationSink {
         }
 
         self.chunk_counter += 1;
-        self.bytes_start += len;
+        self.bytes_start += len as u64;
 
-        Ok(())
+        Ok(false)
     }
 }
 
@@ -160,7 +164,7 @@ impl Transformer for ReplicationSink {
 
         let finished = self.process_messages()?;
 
-        if finished && !self.buffer.is_empty() {
+        if finished && !self.buffer.is_empty() && !self.is_finished{
             self.create_and_send_message().await.map_err(|e| {
                 error!(error = ?e, msg = e.to_string());
                 tonic::Status::unauthenticated(e.to_string())
@@ -174,26 +178,12 @@ impl Transformer for ReplicationSink {
             return Ok(());
         }
 
-        if self.blocklist.is_empty() && finished && !&self.is_finished {
-            self.create_and_send_message().await.map_err(|e| {
+        if !self.buffer.is_empty() {
+            while self.create_and_send_message().await.map_err(|e| {
                 error!(error = ?e, msg = e.to_string());
                 tonic::Status::unauthenticated(e.to_string())
-            })?;
-            self.is_finished = true;
-            if let Some(notifier) = &self.notifier {
-                notifier.send_read_writer(pithos_lib::helpers::notifications::Message::Finished)?;
-            }
-            return Ok(());
-        }
-        if !self.blocklist.is_empty() {
-            while (self.bytes_counter - self.bytes_start)
-                > 65536 * (self.blocklist[self.chunk_counter] as u64)
-            {
-                self.create_and_send_message().await.map_err(|e| {
-                    error!(error = ?e, msg = e.to_string());
-                    tonic::Status::unauthenticated(e.to_string())
-                })?;
-            }
+            })?
+            {}
         }
 
         Ok(())

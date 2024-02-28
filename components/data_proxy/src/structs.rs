@@ -204,6 +204,15 @@ impl ObjectLocation {
     pub fn get_encryption_key(&self) -> Option<[u8; 32]> {
         self.file_format.get_encryption_key()
     }
+
+    pub fn count_blocks(&self) -> usize {
+        match &self.file_format {
+            FileFormat::RawCompressed | FileFormat::Raw => (self.raw_content_len as usize / 65536) + 1,
+            FileFormat::RawEncrypted(_)
+            | FileFormat::RawEncryptedCompressed(_)
+            | FileFormat::Pithos(_) => ((self.raw_content_len as usize + 109) / (65536 + 28)) + 1, // 109 is the overhead for a new key in footer
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
