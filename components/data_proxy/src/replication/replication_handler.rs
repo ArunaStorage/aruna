@@ -1,3 +1,4 @@
+use crate::CONFIG;
 use crate::{
     caching::cache::Cache, data_backends::storage_backend::StorageBackend,
     s3_frontend::utils::buffered_s3_sink::BufferedS3Sink, structs::ObjectLocation,
@@ -17,15 +18,11 @@ use async_channel::{Receiver, Sender};
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use md5::{Digest, Md5};
+use pithos_lib::transformers::footer_extractor::FooterExtractor;
 use pithos_lib::{
     streamreadwrite::GenericStreamReadWriter,
-    transformer::ReadWriter,
-    transformers::{
-        encrypt::ChaCha20Enc, footer::FooterGenerator, hashing_transformer::HashingTransformer,
-        size_probe::SizeProbe,
-    },
+    transformer::ReadWriter
 };
-use sha2::Sha256;
 use std::{str::FromStr, sync::Arc};
 use tokio::pin;
 use tracing::trace;
@@ -61,20 +58,8 @@ pub struct ReplicationHandler {
     pub self_id: String,
 }
 
-type ObjectHandler = Arc<
-    DashMap<
-        String,
-        (
-            Sender<DataChunk>,
-            Receiver<DataChunk>,
-            i64,
-            Vec<u8>,
-            i64,
-            bool,
-        ),
-        RandomState,
-    >,
->;
+type ObjectHandler =
+    Arc<DashMap<String, (Sender<DataChunk>, Receiver<DataChunk>, i64, i64, bool), RandomState>>;
 impl ReplicationHandler {
     #[tracing::instrument(level = "trace", skip(cache, backend, receiver))]
     pub fn new(
@@ -238,7 +223,6 @@ impl ReplicationHandler {
                             object_rcv.clone(),
                             Default::default(),
                             Default::default(),
-                            Default::default(),
                             false,
                         ),
                     );
@@ -258,8 +242,6 @@ impl ReplicationHandler {
                             Some(ResponseMessage::ObjectInfo(ObjectInfo {
                                 object_id,
                                 chunks,
-                                block_list,
-                                raw_size,
                                 ..
                             })) => {
                                 counter += 1;
@@ -277,26 +259,6 @@ impl ReplicationHandler {
                                         tracing::error!(error = ?e, msg = e.to_string());
                                         e
                                     })?;
-                                // .. and a datachannel is created
-                                let block_list = block_list
-                                    .iter()
-                                    .map(|block| {
-                                        u8::try_from(*block).map_err(|_| {
-                                            anyhow!("Could not convert blocklist to u8")
-                                        })
-                                    })
-                                    .collect::<Result<Vec<u8>>>()
-                                    .map_err(|e| {
-                                        tracing::error!(error = ?e, msg = e.to_string());
-                                        e
-                                    })?
-                                    .clone();
-                                // and stored in object_handler_map ...
-                                {
-                                    data_map.alter(&object_id, |_, (sdx, rcv, ..)| {
-                                        (sdx, rcv, chunks, block_list.clone(), raw_size, true)
-                                    });
-                                }
                                 // ... and then ObjectInfo gets acknowledged
                                 request_sender_clone
                                     .send(PullReplicationRequest {
@@ -438,7 +400,7 @@ impl ReplicationHandler {
                                 batch.push((key.clone(), value.clone()));
                             }
                             for entry in batch.clone() {
-                                let (id, (_, rcv, chunks, blocklist, raw_size, synced)) = {
+                                let (id, (_, rcv, chunks, raw_size, synced)) = {
                                     let (key, value) = entry;
                                     (key.clone(), value.clone())
                                 };
@@ -460,7 +422,7 @@ impl ReplicationHandler {
                                     continue;
                                 } else {
                                     backend
-                                        .initialize_location(&object, Some(raw_size), None, false)
+                                        .initialize_location(&object, Some(raw_size), cache.get_single_parent(&object.id).await?, false)
                                         .await
                                         .map_err(|e| {
                                             tracing::error!(error = ?e, msg = e.to_string());
@@ -476,7 +438,6 @@ impl ReplicationHandler {
                                     &mut location,
                                     backend.clone(),
                                     chunks,
-                                    blocklist.clone(),
                                 )
                                 .await
                                 .map_err(|e| {
@@ -662,7 +623,6 @@ impl ReplicationHandler {
         location: &mut ObjectLocation,
         backend: Arc<Box<dyn StorageBackend>>,
         max_chunks: i64,
-        blocklist: Vec<u8>,
     ) -> Result<()> {
         let mut expected = 0;
         let mut retry_counter = 0;
@@ -789,77 +749,43 @@ impl ReplicationHandler {
             Ok::<(), anyhow::Error>(())
         });
 
-        // Initialize hashing transformers
-        let (final_sha_trans, final_sha_recv) =
-            HashingTransformer::new(Sha256::new(), "sha256".to_string(), false);
-        let (final_size_trans, final_size_recv) = SizeProbe::new();
-
         trace!("Starting ArunaStreamReadWriter taks");
         let location_clone = location.clone();
-        let _ = tokio::spawn(async move {
-            pin!(data_stream);
+        pin!(data_stream);
+        let mut awr = GenericStreamReadWriter::new_with_sink(
+            data_stream,
+            BufferedS3Sink::new(
+                backend.clone(),
+                location_clone.clone(),
+                None,
+                None,
+                false,
+                None,
+                false,
+            )
+            .0,
+        );
 
-            trace!(?max_chunks);
-            let mut awr = GenericStreamReadWriter::new_with_sink(
-                data_stream,
-                BufferedS3Sink::new(
-                    backend.clone(),
-                    location_clone.clone(),
-                    None,
-                    None,
-                    false,
-                    None,
-                    false,
-                )
-                .0,
-            );
+        let (extractor, rx) = FooterExtractor::new(CONFIG.proxy.private_key.try_into());
 
-            if location_clone.raw_content_len > 5242880 + 80 * 28 {
-                trace!("adding footer generator");
-                awr = awr.add_transformer(FooterGenerator::new(Some(blocklist.clone())));
-            }
+        awr = awr.add_transformer(extractor);
 
-            if let Some(enc_key) = &location_clone.get_encryption_key() {
-                trace!("adding encryption transformer");
-                awr = awr.add_transformer(ChaCha20Enc::new_with_fixed(enc_key.clone()).map_err(
-                    |e| {
-                        tracing::error!(error = ?e, msg = e.to_string());
-                        e
-                    },
-                )?);
-            }
-
-            trace!("Adding size and hash transformer");
-            awr = awr.add_transformer(final_sha_trans);
-            awr = awr.add_transformer(final_size_trans);
-            awr.process().await.map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
-                e
-            })?;
-
-            Ok::<(), anyhow::Error>(())
-        })
-        .await
-        .map_err(|e| {
+        awr.process().await.map_err(|e| {
             tracing::error!(error = ?e, msg = e.to_string());
             e
         })?;
 
+        let footer = rx.try_recv().map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
+
+        // TODO:
         // Fetch calculated hashes
-        trace!("fetching hashes");
-        let sha_final: String = final_sha_recv.try_recv().map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
-        //let initial_size: u64 = trace_err!(initial_size_recv.try_recv())?;
-        let final_size: u64 = final_size_recv.try_recv().map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
 
         // Put infos into location
-        location.disk_content_len = final_size as i64;
-        location.disk_hash = Some(sha_final.clone());
+        location.disk_content_len = footer.eof_metadata.disk_file_size as i64;
+        location.disk_hash = Some(hex::encode(footer.eof_metadata.disk_hash_sha256));
 
         Ok(())
     }

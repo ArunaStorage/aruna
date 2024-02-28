@@ -12,6 +12,7 @@ use crate::structs::DbPermissionLevel;
 use crate::structs::Object;
 use crate::structs::ObjectType;
 use crate::structs::ObjectsState;
+use crate::structs::PubKey;
 use crate::structs::ResourceStates;
 use crate::structs::TypedId;
 use crate::structs::UserState;
@@ -155,7 +156,7 @@ impl AuthHandler {
     pub fn check_permissions(
         &self,
         token: &str,
-    ) -> Result<(DieselUlid, Option<String>), anyhow::Error> {
+    ) -> Result<(DieselUlid, Option<String>, Option<PubKey>), anyhow::Error> {
         let kid = decode_header(token)?
             .kid
             .ok_or_else(|| anyhow!("Unspecified kid"))
@@ -163,7 +164,7 @@ impl AuthHandler {
                 tracing::error!(error = ?e, msg = e.to_string());
                 e
             })?;
-        let (_, dec_key) = self
+        let (pk, dec_key) = self
             .cache
             .get_pubkey(i32::from_str(&kid).map_err(|e| {
                 tracing::error!(error = ?e, msg = e.to_string());
@@ -177,10 +178,10 @@ impl AuthHandler {
 
         if let Some(it) = claims.it {
             match it.action {
-                Action::All => Ok((DieselUlid::from_str(&claims.sub)?, claims.tid)),
+                Action::All => Ok((DieselUlid::from_str(&claims.sub)?, claims.tid, Some(pk))),
                 Action::CreateSecrets => {
                     if it.target == self.self_id {
-                        Ok((DieselUlid::from_str(&claims.sub)?, claims.tid))
+                        Ok((DieselUlid::from_str(&claims.sub)?, claims.tid, Some(pk)))
                     } else {
                         error!("Token is not valid for this Dataproxy");
                         bail!("Token is not valid for this Dataproxy")
@@ -188,7 +189,7 @@ impl AuthHandler {
                 }
                 Action::DpExchange => {
                     if it.target == self.self_id {
-                        Ok((DieselUlid::from_str(&claims.sub)?, None))
+                        Ok((DieselUlid::from_str(&claims.sub)?, None, Some(pk)))
                     } else {
                         error!("Token is not valid for this Dataproxy");
                         bail!("Token is not valid for this Dataproxy")
@@ -207,6 +208,7 @@ impl AuthHandler {
                     e
                 })?,
                 claims.tid,
+                Some(pk),
             ))
         }
     }

@@ -42,7 +42,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
                 tonic::Status::unauthenticated(e.to_string())
             })?;
 
-            let (u, tid) = a.check_permissions(&token).map_err(|_| {
+            let (u, tid, _) = a.check_permissions(&token).map_err(|_| {
                 error!(error = "Unable to authenticate user");
                 tonic::Status::unauthenticated("Unable to authenticate user")
             })?;

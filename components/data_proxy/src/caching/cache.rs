@@ -9,7 +9,7 @@ use crate::{
     structs::{Object, ObjectLocation, PubKey},
 };
 use ahash::RandomState;
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use async_channel::Sender;
@@ -812,5 +812,52 @@ impl Cache {
         }
         error!("Insufficient permissions");
         Err(anyhow!("Insufficient permissions"))
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn get_resource_name(&self, id: &DieselUlid) -> Option<String> {
+        self.resources
+            .get(id)
+            .map(|e| e.value().0.blocking_read().name.clone())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, id))]
+    pub async fn get_single_parent(
+        &self,
+        id: &DieselUlid,
+    ) -> Result<[Option<(DieselUlid, String)>; 4]> {
+        let mut id = id.clone();
+
+        let mut result = [
+            None,
+            None,
+            None,
+            Some((
+                id.clone(),
+                self.get_resource_name(&id)
+                    .await
+                    .ok_or_else(|| anyhow!("Resource not found"))?,
+            )),
+        ];
+        while let Some(r_id) = self.get_parents(&id).await {
+            if let Some((name, typed_id)) = r_id.first() {
+                match typed_id {
+                    TypedId::Dataset(p_id) => {
+                        result[2] = Some((p_id.clone(), name.clone()));
+                        id = p_id.clone();
+                    }
+                    TypedId::Collection(p_id) => {
+                        result[1] = Some((p_id.clone(), name.clone()));
+                        id = p_id.clone();
+                    }
+                    TypedId::Project(p_id) => {
+                        result[2] = Some((p_id.clone(), name.clone()));
+                        id = p_id.clone();
+                    }
+                    _ => bail!("Unexpected parent type"),
+                }
+            }
+        }
+        Ok(result)
     }
 }

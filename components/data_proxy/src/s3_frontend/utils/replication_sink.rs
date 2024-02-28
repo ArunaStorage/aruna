@@ -164,7 +164,7 @@ impl Transformer for ReplicationSink {
 
         let finished = self.process_messages()?;
 
-        if finished && !self.buffer.is_empty() && !self.is_finished{
+        if finished && !self.buffer.is_empty() && !self.is_finished {
             self.create_and_send_message().await.map_err(|e| {
                 error!(error = ?e, msg = e.to_string());
                 tonic::Status::unauthenticated(e.to_string())
@@ -182,8 +182,7 @@ impl Transformer for ReplicationSink {
             while self.create_and_send_message().await.map_err(|e| {
                 error!(error = ?e, msg = e.to_string());
                 tonic::Status::unauthenticated(e.to_string())
-            })?
-            {}
+            })? {}
         }
 
         Ok(())

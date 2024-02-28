@@ -43,7 +43,7 @@ impl BundlerService for BundlerServiceImpl {
                 tonic::Status::unauthenticated(e.to_string())
             })?;
             // Check if permissions are valid
-            let (u, tid) = a.check_permissions(&token).map_err(|e| {
+            let (u, tid, _) = a.check_permissions(&token).map_err(|e| {
                 error!(error = ?e, msg = e.to_string());
                 tonic::Status::unauthenticated(format!("Unable to authenticate user"))
             })?;
@@ -124,7 +124,7 @@ impl BundlerService for BundlerServiceImpl {
                 tonic::Status::unauthenticated(e.to_string())
             })?;
 
-            let (u, tid) = a.check_permissions(&token).map_err(|_| {
+            let (u, tid, _) = a.check_permissions(&token).map_err(|_| {
                 error!(error = "Unable to authenticate user");
                 tonic::Status::unauthenticated("Unable to authenticate user")
             })?;

@@ -4,14 +4,18 @@ use crate::{
     data_backends::storage_backend::StorageBackend,
     replication::replication_handler::ReplicationMessage,
     s3_frontend::utils::replication_sink::ReplicationSink,
-    structs::{Object, ObjectLocation},
+    structs::{Object, ObjectLocation, PubKey},
 };
 use anyhow::{anyhow, Result};
+use bytes::{BufMut, BytesMut};
 use pithos_lib::{
     helpers::footer_parser::{Footer, FooterParser},
     streamreadwrite::GenericStreamReadWriter,
     transformer::ReadWriter,
-    transformers::decrypt::ChaCha20Dec,
+    transformers::{
+        decrypt::ChaCha20Dec, footer::FooterGenerator, footer_updater::FooterUpdater,
+        zstd_decomp::ZstdDec,
+    },
 };
 
 use aruna_rust_api::api::dataproxy::services::v2::{
@@ -99,6 +103,8 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
         let finished_state_handler = Arc::new(Mutex::new(false));
         let finished_state_clone = finished_state_handler.clone();
 
+        let (id, pk) = self.get_endpoint_from_token(&token).await?;
+
         // Recieving loop
         let proxy_replication_service = self.clone();
         let output_sender = object_output_send.clone();
@@ -113,7 +119,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                 Message::InitMessage(init) => {
                                     trace!(?init);
                                     let msg = proxy_replication_service
-                                        .check_permissions(init, token.clone())
+                                        .check_permissions(init, id)
                                         .await
                                         .map_err(|e| {
                                             tracing::error!(error = ?e, msg = e.to_string());
@@ -190,7 +196,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                                 {
                                                     // Returns claims.sub as id -> Can return UserIds or DataproxyIds
                                                     // -> UserIds cannot be found in object.endpoints, so this should be safe
-                                                    let (dataproxy_id, _) = auth
+                                                    let (dataproxy_id, _, _) = auth
                                                         .check_permissions(&token)
                                                         .map_err(|_| {
                                                             error!(
@@ -293,8 +299,10 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
 
         // Responding loop
         let proxy_replication_service = self.clone();
+
+        let mut pubkey = pk.key.to_string();
         tokio::spawn(async move {
-            'outer: loop {
+            loop {
                 match object_input_rcv.recv().await {
                     // Errors
                     Err(err) => {
@@ -360,6 +368,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                             proxy_replication_service
                                 .send_object(
                                     object.id.to_string(),
+                                    pubkey.clone(),
                                     location,
                                     object_output_send.clone(),
                                     retry_rcv.clone(),
@@ -434,10 +443,36 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
 }
 
 impl DataproxyReplicationServiceImpl {
+    async fn get_endpoint_from_token(
+        &self,
+        token: &str,
+    ) -> Result<(DieselUlid, PubKey), tonic::Status> {
+        // 2. check if proxy has permissions to pull everything
+        if let Some(auth) = self.cache.auth.read().await.as_ref() {
+            // Returns claims.sub as id -> Can return UserIds or DataproxyIds
+            // -> UserIds cannot be found in object.endpoints, so this should be safe
+            let (dataproxy_id, _, pk) = auth.check_permissions(&token).map_err(|_| {
+                error!(error = "DataProxy not authenticated");
+                tonic::Status::unauthenticated("DataProxy not authenticated")
+            })?;
+
+            return Ok((
+                dataproxy_id,
+                pk.ok_or_else(|| {
+                    error!("No public key found for endpoint");
+                    tonic::Status::internal("No public key found for endpoint")
+                })?,
+            ));
+        }
+        Err(tonic::Status::unauthenticated(
+            "DataProxy not authenticated",
+        ))
+    }
+
     async fn check_permissions(
         &self,
         init: InitMessage,
-        token: String,
+        endpoint_id: DieselUlid,
     ) -> Result<Vec<(Object, ObjectLocation)>, tonic::Status> {
         let ids = init
             .object_ids
@@ -465,27 +500,13 @@ impl DataproxyReplicationServiceImpl {
         }
         trace!("EndpointMap: {:?}", object_endpoint_map);
 
-        // 2. check if proxy has permissions to pull everything
-        if let Some(auth) = self.cache.auth.read().await.as_ref() {
-            // Returns claims.sub as id -> Can return UserIds or DataproxyIds
-            // -> UserIds cannot be found in object.endpoints, so this should be safe
-            let (dataproxy_id, _) = auth.check_permissions(&token).map_err(|_| {
-                error!(error = "DataProxy not authenticated");
-                tonic::Status::unauthenticated("DataProxy not authenticated")
-            })?;
-            if !object_endpoint_map.iter().all(|map| {
-                let (_, eps) = map.pair();
-                eps.iter().any(|ep| ep.id == dataproxy_id)
-            }) {
-                error!("Unauthorized DataProxy request");
-                return Err(tonic::Status::unauthenticated(
-                    "DataProxy is not allowed to access requested objects",
-                ));
-            };
-        } else {
-            error!("authentication handler not available");
+        if !object_endpoint_map.iter().all(|map| {
+            let (_, eps) = map.pair();
+            eps.iter().any(|ep| ep.id == endpoint_id)
+        }) {
+            error!("Unauthorized DataProxy request");
             return Err(tonic::Status::unauthenticated(
-                "Unable to authenticate user",
+                "DataProxy is not allowed to access requested objects",
             ));
         };
         Ok(objects)
@@ -494,6 +515,7 @@ impl DataproxyReplicationServiceImpl {
     async fn send_object(
         &self,
         object_id: String,
+        pubkey: String,
         location: ObjectLocation,
         sender: tokio::sync::mpsc::Sender<Result<PullReplicationResponse, tonic::Status>>,
         error_rcv: Receiver<Option<(i64, String)>>, // contains chunk_idx and object_id
@@ -503,12 +525,20 @@ impl DataproxyReplicationServiceImpl {
         // Create channel for get_object
         let (object_sender, object_receiver) = async_channel::bounded(255);
 
+        let footer = if location.is_pithos() {
+            Some(self.get_footer(location.clone()).await?)
+        } else {
+            None
+        };
+
+        let location_clone = location.clone();
+
         // Spawn get_object
         let backend = self.backend.clone();
         tokio::spawn(
             async move {
                 backend
-                    .get_object(location.clone(), None, object_sender)
+                    .get_object(location_clone, None, object_sender)
                     .await
                     .map_err(|e| {
                         tracing::error!(error = ?e, msg = e.to_string());
@@ -522,22 +552,47 @@ impl DataproxyReplicationServiceImpl {
         let _ = tokio::spawn(
             async move {
                 pin!(object_receiver);
-                let asrw = GenericStreamReadWriter::new_with_sink(
+                let mut asrw = GenericStreamReadWriter::new_with_sink(
                     // Receive get_object
                     object_receiver,
                     // ReplicationSink sends into stream via sender
-                    ReplicationSink::new(object_id, blocklist, sender.clone(), error_rcv),
+                    ReplicationSink::new(
+                        object_id,
+                        location.count_blocks(),
+                        sender.clone(),
+                        error_rcv,
+                    ),
                 );
 
-                // Add decryption transformer
+                if let Some(key) = location.get_encryption_key() {
+                    // Add decryption transformer
+                    if !location.is_pithos() {
+                        asrw = asrw.add_transformer(ChaCha20Dec::new_with_fixed(key).map_err(
+                            |e| {
+                                tracing::error!(error = ?e, msg = e.to_string());
+                                e
+                            },
+                        )?);
+                    }
+                }
 
-                asrw.add_transformer(ChaCha20Dec::new_with_fixed(key).map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
-                    e
-                })?)
-                .process()
-                .await
-                .map_err(|e| {
+                if location.is_compressed() && !location.is_pithos() {
+                    // Add decompression transformer
+                    asrw = asrw.add_transformer(ZstdDec::new());
+                }
+
+                if let Some(footer) = footer {
+                    // Add footer transformer
+                    asrw = asrw.add_transformer(FooterUpdater::new(
+                        vec![pubkey.as_bytes().try_into()?],
+                        footer,
+                    ));
+                } else {
+                    asrw = asrw.add_transformer(FooterGenerator::new(None));
+                }
+
+                // Add decryption transformer
+                asrw.process().await.map_err(|e| {
                     tracing::error!(error = ?e, msg = e.to_string());
                     e
                 })?;
@@ -553,5 +608,24 @@ impl DataproxyReplicationServiceImpl {
         })?;
 
         Ok(())
+    }
+
+    async fn get_footer(&self, location: ObjectLocation) -> Result<Footer, anyhow::Error> {
+        let (footer_sender, footer_receiver) = async_channel::unbounded();
+        self.backend
+            .get_object(location.clone(), Some("-131072".to_string()), footer_sender)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            });
+
+        let mut buf = BytesMut::new();
+        while let Ok(Ok(bytes)) = footer_receiver.try_recv() {
+            buf.put(bytes)
+        }
+
+        let parser: Footer = FooterParser::new(&buf)?.parse()?.try_into()?;
+        Ok(parser)
     }
 }

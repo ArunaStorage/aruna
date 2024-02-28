@@ -80,7 +80,7 @@ impl DataHandler {
                 asr = asr.add_transformer(uncompressed_probe);
 
                 let (sha_transformer, sha_recv) =
-                    HashingTransformer::new_with_backchannel(Sha256::new(), "sha256");
+                    new_with_backchannel::new_with_backchannel(Sha256::new(), "sha256");
                 let (md5_transformer, md5_recv) =
                     HashingTransformer::new_with_backchannel(Md5::new(), "md5");
 

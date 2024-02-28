@@ -207,10 +207,28 @@ impl ObjectLocation {
 
     pub fn count_blocks(&self) -> usize {
         match &self.file_format {
-            FileFormat::RawCompressed | FileFormat::Raw => (self.raw_content_len as usize / 65536) + 1,
+            FileFormat::RawCompressed | FileFormat::Raw => {
+                (self.raw_content_len as usize / 65536) + 1
+            }
             FileFormat::RawEncrypted(_)
             | FileFormat::RawEncryptedCompressed(_)
             | FileFormat::Pithos(_) => ((self.raw_content_len as usize + 109) / (65536 + 28)) + 1, // 109 is the overhead for a new key in footer
+        }
+    }
+
+    pub fn is_pithos(&self) -> bool {
+        match self.file_format {
+            FileFormat::Pithos(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_compressed(&self) -> bool {
+        match self.file_format {
+            FileFormat::RawCompressed
+            | FileFormat::RawEncryptedCompressed(_)
+            | FileFormat::Pithos(_) => true,
+            _ => false,
         }
     }
 }
