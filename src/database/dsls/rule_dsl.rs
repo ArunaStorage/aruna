@@ -6,7 +6,7 @@ use postgres_types::{FromSql, ToSql};
 use serde::{Deserialize, Serialize};
 use tokio_postgres::Client;
 
-#[derive(FromRow, FromSql, Debug, Clone, ToSql, Serialize, Deserialize)]
+#[derive(FromRow, FromSql, Debug, Clone, ToSql, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct RuleBinding {
     pub rule_id: DieselUlid,
     pub origin_id: DieselUlid,
@@ -65,7 +65,7 @@ impl CrudDb for Rule {
     async fn delete(&self, client: &Client) -> Result<()> {
         let query = "DELETE FROM rules WHERE rule_id = $1";
         let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[&self.id]).await?;
+        client.execute(&prepared, &[&self.rule_id]).await?;
         Ok(())
     }
 }

@@ -2,7 +2,8 @@ use crate::caching::structs::CachedRule;
 use crate::database::dsls::rule_dsl::RuleBinding;
 use crate::database::{crud::CrudDb, dsls::object_dsl::Object};
 use crate::middlelayer::rule_request_types::{CreateRuleBinding, DeleteRuleBinding, UpdateRule};
-use anyhow::{anyhow, Result};
+use ahash::HashSet;
+use anyhow::{anyhow, Ok, Result};
 use cel_interpreter::Value;
 use diesel_ulid::DieselUlid;
 use std::sync::Arc;
@@ -11,14 +12,50 @@ use tokio_postgres::Client;
 use super::{db_handler::DatabaseHandler, rule_request_types::CreateRule};
 
 impl DatabaseHandler {
-    pub async fn update_rules(&self, object_id: DieselUlid) -> Result<()> {
-        let client = self.database.get_client().await?;
-        let owr = Object::get_object_with_relations(&object_id, &client).await?;
-
-        todo!()
+    /// This function takes affected objects and the request object and collects all parent rules,
+    /// then evaluates all rules and updates every affected child resource including the request
+    /// object
+    pub async fn evaluate_and_update_rules(
+        &self,
+        affected: &Vec<DieselUlid>,
+        origin: &DieselUlid,
+        transaction_client: &Client,
+    ) -> Result<()> {
+        // 1. Collect additional bindings
+        let parents = Object::fetch_parents_by_id(origin, transaction_client).await?;
+        let mut children = Object::fetch_subresources_by_id(origin, transaction_client).await?;
+        let mut cascading = HashSet::default();
+        for parent in parents {
+            if let Some(bindings) = self.cache.get_rule_bindings(&parent) {
+                for binding in bindings.iter().filter(|b| b.cascading) {
+                    cascading.insert(binding.clone());
+                }
+            }
+        }
+        // 2. Evaluate rules
+        self.evaluate_rules(affected, transaction_client).await?;
+        // 3. Evaluate additional rules
+        self.evaluate_additional_rules(&children, &cascading, transaction_client)
+            .await?;
+        // 3. Update bindings
+        children.insert(0, *origin);
+        for child in children {
+            for binding in cascading.clone().into_iter() {
+                let mut new = RuleBinding {
+                    rule_id: binding.rule_id,
+                    origin_id: binding.origin_id,
+                    object_id: child,
+                    cascading: binding.cascading,
+                };
+                new.create(transaction_client).await?;
+                self.cache.insert_rule_binding(vec![child], new.clone());
+            }
+        }
+        Ok(())
     }
 
-    pub async fn evaluate_policies(
+    /// This function evaluates rules for a vec of object_ids
+    pub async fn evaluate_rules(
         &self,
         affected: &Vec<DieselUlid>,
         transaction_client: &Client,
@@ -27,24 +64,8 @@ impl DatabaseHandler {
         for id in affected {
             if let Some(bindings) = self.cache.get_rule_bindings(id).map(|b| b.clone()) {
                 for binding in bindings.clone().iter() {
-                    if let Some(rule) = self.cache.get_rule(&binding.rule_id) {
-                        let mut ctx = cel_interpreter::Context::default();
-                        let current_state =
-                            Object::get_object_with_relations(id, &transaction_client).await?;
-                        ctx.add_variable("object", current_state)
-                            .map_err(|e| anyhow!(e.to_string()))?;
-                        let value = rule.compiled.execute(&ctx).map_err(|e| {
-                            anyhow!(format!("Policy evaluation error: {}", e.to_string()))
-                        })?;
-                        if value != Value::Bool(true) {
-                            return Err(anyhow!(format!(
-                                "Policy {} evaluated false",
-                                rule.rule.rule_id
-                            )));
-                        }
-                    } else {
-                        return Err(anyhow!("Rules and Bindings are out of sync"));
-                    };
+                    self.evaluate_rule(&binding.rule_id, id, transaction_client)
+                        .await?
                 }
             }
         }
@@ -99,6 +120,46 @@ impl DatabaseHandler {
         let (resource_id, rule_id) = request.get_ids()?;
         RuleBinding::delete_by(resource_id, rule_id, &client).await?;
         self.cache.remove_rule_bindings(resource_id, rule_id);
+        Ok(())
+    }
+    async fn evaluate_additional_rules(
+        &self,
+        children: &Vec<DieselUlid>,
+        rules: &HashSet<RuleBinding>,
+        transaction_client: &Client,
+    ) -> Result<()> {
+        for child in children {
+            for rule in rules.iter().map(|r| r.rule_id) {
+                self.evaluate_rule(&rule, child, transaction_client).await?
+            }
+        }
+        Ok(())
+    }
+    async fn evaluate_rule(
+        &self,
+        rule_id: &DieselUlid,
+        object_id: &DieselUlid,
+        transaction_client: &Client,
+    ) -> Result<()> {
+        if let Some(rule) = self.cache.get_rule(rule_id) {
+            let mut ctx = cel_interpreter::Context::default();
+            let current_state =
+                Object::get_object_with_relations(object_id, &transaction_client).await?;
+            ctx.add_variable("object", current_state)
+                .map_err(|e| anyhow!(e.to_string()))?;
+            let value = rule
+                .compiled
+                .execute(&ctx)
+                .map_err(|e| anyhow!(format!("Policy evaluation error: {}", e.to_string())))?;
+            if value != Value::Bool(true) {
+                return Err(anyhow!(format!(
+                    "Policy {} evaluated false",
+                    rule.rule.rule_id
+                )));
+            }
+        } else {
+            return Err(anyhow!("Rules and Bindings are out of sync"));
+        }
         Ok(())
     }
 }

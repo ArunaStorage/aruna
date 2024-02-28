@@ -213,7 +213,7 @@ impl DatabaseHandler {
         // Evaluate rules
         let mut all: Vec<DieselUlid> = affected_resources.clone().into_iter().collect();
         all.push(id);
-        self.evaluate_policies(&all, transaction_client).await?;
+        self.evaluate_rules(&all, transaction_client).await?;
         // Commit transaction
         transaction.commit().await?;
 

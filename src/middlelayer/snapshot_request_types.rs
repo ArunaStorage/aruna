@@ -74,7 +74,7 @@ impl SnapshotResponse {
         let client = transaction.client();
         let objects = Object::archive(&project.resource_ids, client).await?;
         handler
-            .evaluate_policies(&project.resource_ids, client)
+            .evaluate_rules(&project.resource_ids, client)
             .await?;
         transaction.commit().await?;
         Ok(objects)
@@ -98,7 +98,7 @@ impl SnapshotResponse {
         Object::batch_create(&collection.datasets, transaction_client).await?;
         InternalRelation::batch_create(&collection.relations, transaction_client).await?;
         handler
-            .evaluate_policies(&updated, transaction_client)
+            .evaluate_rules(&updated, transaction_client)
             .await?;
         transaction.commit().await?;
         let results = Object::get_objects_with_relations(&updated, &client).await?;
@@ -117,7 +117,7 @@ impl SnapshotResponse {
             InternalRelation::batch_create(&dataset.relations, transaction_client).await?;
         }
         handler
-            .evaluate_policies(&vec![dataset.dataset.id], transaction_client)
+            .evaluate_rules(&vec![dataset.dataset.id], transaction_client)
             .await?;
         transaction.commit().await?;
         Ok(vec![

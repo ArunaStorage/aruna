@@ -60,8 +60,9 @@ impl DatabaseHandler {
             .await?;
         }
 
-        self.evaluate_policies(
+        self.evaluate_and_update_rules(
             &affected_objects.clone().into_iter().collect(),
+            &resource.id,
             transaction_client,
         )
         .await?;

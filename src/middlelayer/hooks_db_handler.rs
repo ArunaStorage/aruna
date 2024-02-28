@@ -130,7 +130,7 @@ impl DatabaseHandler {
             None => return Err(anyhow!("No status provided")),
         };
         let kvs = if let Err(e) = self
-            .evaluate_policies(&vec![object_id], transaction_client)
+            .evaluate_rules(&vec![object_id], transaction_client)
             .await
         {
             transaction.rollback().await?;

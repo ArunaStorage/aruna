@@ -237,7 +237,7 @@ impl DatabaseHandler {
         all_updated.append(&mut partial_synced_objects);
         all_updated.append(&mut partial_synced_hierarchy);
 
-        self.evaluate_policies(&all_updated, transaction_client)
+        self.evaluate_rules(&all_updated, transaction_client)
             .await?;
         transaction.commit().await?;
         let mut all = Object::get_objects_with_relations(&all_updated, &client).await?;
@@ -424,7 +424,7 @@ impl DatabaseHandler {
             object.object.update(transaction_client).await?;
             ids.push(object.object.id);
         }
-        self.evaluate_policies(&ids, transaction_client).await?;
+        self.evaluate_rules(&ids, transaction_client).await?;
         transaction.commit().await?;
 
         for object in &updated_objects {
