@@ -19,10 +19,7 @@ use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use md5::{Digest, Md5};
 use pithos_lib::transformers::footer_extractor::FooterExtractor;
-use pithos_lib::{
-    streamreadwrite::GenericStreamReadWriter,
-    transformer::ReadWriter
-};
+use pithos_lib::{streamreadwrite::GenericStreamReadWriter, transformer::ReadWriter};
 use std::{str::FromStr, sync::Arc};
 use tokio::pin;
 use tracing::trace;
@@ -422,7 +419,12 @@ impl ReplicationHandler {
                                     continue;
                                 } else {
                                     backend
-                                        .initialize_location(&object, Some(raw_size), cache.get_single_parent(&object.id).await?, false)
+                                        .initialize_location(
+                                            &object,
+                                            Some(raw_size),
+                                            cache.get_single_parent(&object.id).await?,
+                                            false,
+                                        )
                                         .await
                                         .map_err(|e| {
                                             tracing::error!(error = ?e, msg = e.to_string());
@@ -766,7 +768,14 @@ impl ReplicationHandler {
             .0,
         );
 
-        let (extractor, rx) = FooterExtractor::new(CONFIG.proxy.private_key.try_into());
+        let (extractor, rx) = FooterExtractor::new(
+            CONFIG
+                .proxy
+                .private_key
+                .as_ref()
+                .map(|x| x.as_bytes().try_into().ok())
+                .flatten(),
+        );
 
         awr = awr.add_transformer(extractor);
 

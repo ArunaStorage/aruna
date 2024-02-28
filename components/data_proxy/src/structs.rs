@@ -118,6 +118,34 @@ pub enum ObjectType {
     Object,
 }
 
+impl TryFrom<ResourceVariant> for ObjectType {
+    type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(value))]
+    fn try_from(value: ResourceVariant) -> Result<Self> {
+        match value {
+            ResourceVariant::Project => Ok(ObjectType::Project),
+            ResourceVariant::Collection => Ok(ObjectType::Collection),
+            ResourceVariant::Dataset => Ok(ObjectType::Dataset),
+            ResourceVariant::Object => Ok(ObjectType::Object),
+            _ => Err(anyhow!("Invalid resource variant")),
+        }
+    }
+}
+
+impl TryFrom<&ResourceVariant> for ObjectType {
+    type Error = anyhow::Error;
+    #[tracing::instrument(level = "trace", skip(value))]
+    fn try_from(value: &ResourceVariant) -> Result<Self> {
+        match value {
+            &ResourceVariant::Project => Ok(ObjectType::Project),
+            &ResourceVariant::Collection => Ok(ObjectType::Collection),
+            &ResourceVariant::Dataset => Ok(ObjectType::Dataset),
+            &ResourceVariant::Object => Ok(ObjectType::Object),
+            _ => Err(anyhow!("Invalid resource variant")),
+        }
+    }
+}
+
 #[derive(Hash, Debug, Clone, PartialEq, Serialize, Deserialize, Eq, PartialOrd, Ord)]
 pub enum TypedRelation {
     Project(DieselUlid),
@@ -251,6 +279,40 @@ pub struct Object {
     pub synced: bool,
     pub endpoints: Vec<Endpoint>, // TODO
     pub created_at: Option<NaiveDateTime>,
+}
+
+impl Object {
+    pub fn initialize_now(
+        name: String,
+        object_type: ObjectType,
+        parent: Option<TypedRelation>,
+    ) -> Self {
+        let object_status = if object_type == ObjectType::Object {
+            Status::Initializing
+        } else {
+            Status::Available
+        };
+
+        Self {
+            id: DieselUlid::generate(),
+            title: "".to_string(),
+            name,
+            key_values: vec![],
+            object_status: object_status,
+            data_class: DataClass::Private,
+            object_type,
+            hashes: HashMap::default(),
+            metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+            data_license: ALL_RIGHTS_RESERVED.to_string(),
+            dynamic: true,
+            children: None,
+            parents: parent.map(|p| HashSet::from([p])),
+            synced: false,
+            endpoints: vec![], // Can be empty, as long as create_object overwrites this
+            // object with gRPC response
+            created_at: Some(chrono::Utc::now().naive_utc()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1129,6 +1191,13 @@ impl ResourceState {
     }
 }
 
+pub enum NewOrExistingObject {
+    Missing(Object),
+    Existing(Object),
+    None,
+}
+
+#[derive(Debug, Clone)]
 pub struct ResourceStates {
     objects: [ResourceState; 4],
 }
@@ -1174,6 +1243,42 @@ impl ResourceStates {
             return Err(s3_error!(NoSuchKey, "Resource not found"));
         }
         Ok(())
+    }
+
+    pub fn get_missing_collection(&self, parent: Option<TypedRelation>) -> Option<Object> {
+        if let ResourceState::Missing { name, variant } = &self.objects[1] {
+            Some(Object::initialize_now(
+                name.clone(),
+                variant.try_into().ok()?,
+                parent,
+            ))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_missing_dataset(&self, parent: Option<TypedRelation>) -> Option<Object> {
+        if let ResourceState::Missing { name, variant } = &self.objects[2] {
+            Some(Object::initialize_now(
+                name.clone(),
+                variant.try_into().ok()?,
+                parent,
+            ))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_missing_object(&self, parent: Option<TypedRelation>) -> Option<Object> {
+        if let ResourceState::Missing { name, variant } = &self.objects[3] {
+            Some(Object::initialize_now(
+                name.clone(),
+                variant.try_into().ok()?,
+                parent,
+            ))
+        } else {
+            None
+        }
     }
 
     pub fn set_project(&mut self, project: Object) {
@@ -1289,8 +1394,114 @@ impl ResourceStates {
             self.objects[3].as_ref().map(|x| (x.id, x.name.clone())),
         ]
     }
+
+    pub fn into_new_or_existing(
+        &self,
+    ) -> Result<
+        (
+            NewOrExistingObject,
+            NewOrExistingObject,
+            NewOrExistingObject,
+            NewOrExistingObject,
+            [Option<(DieselUlid, String)>; 4],
+        ),
+        S3Error,
+    > {
+        let project = self.require_project()?;
+
+        let project_tag = Some((project.id, project.name.clone()));
+
+        let collection = match self.objects[1] {
+            ResourceState::None => NewOrExistingObject::None,
+            ResourceState::Found { object } => NewOrExistingObject::Existing(object),
+            ResourceState::Missing { .. } => {
+                let collection = self
+                    .get_missing_collection(Some(TypedRelation::Project(project.id)))
+                    .ok_or_else(|| {
+                        error!("Collection not found");
+                        s3_error!(NoSuchKey, "Collection not found")
+                    })?;
+                NewOrExistingObject::Missing(collection)
+            }
+        };
+
+        let collection_tag = match collection {
+            NewOrExistingObject::Existing(collection)
+            | NewOrExistingObject::Missing(collection) => {
+                Some((collection.id, collection.name.clone()))
+            }
+            _ => None,
+        };
+
+        let dataset = match self.objects[2] {
+            ResourceState::None => NewOrExistingObject::None,
+            ResourceState::Found { object } => NewOrExistingObject::Existing(object),
+            ResourceState::Missing { .. } => {
+                let relation = match collection {
+                    NewOrExistingObject::Existing(collection)
+                    | NewOrExistingObject::Missing(collection) => {
+                        Some(TypedRelation::Collection(collection.id))
+                    }
+                    _ => Some(TypedRelation::Project(project.id)),
+                };
+                let dataset = self.get_missing_dataset(relation).ok_or_else(|| {
+                    error!("Dataset not found");
+                    s3_error!(NoSuchKey, "Dataset not found")
+                })?;
+                NewOrExistingObject::Missing(dataset)
+            }
+        };
+
+        let dataset_tag = match dataset {
+            NewOrExistingObject::Existing(dataset) | NewOrExistingObject::Missing(dataset) => {
+                Some((dataset.id, dataset.name.clone()))
+            }
+            _ => None,
+        };
+
+        let object = match self.objects[3] {
+            ResourceState::None => NewOrExistingObject::None,
+            ResourceState::Found { object } => NewOrExistingObject::Existing(object),
+            ResourceState::Missing { .. } => {
+                let relation = match dataset {
+                    NewOrExistingObject::Existing(dataset)
+                    | NewOrExistingObject::Missing(dataset) => {
+                        Some(TypedRelation::Dataset(dataset.id))
+                    }
+                    _ => match collection {
+                        NewOrExistingObject::Existing(collection)
+                        | NewOrExistingObject::Missing(collection) => {
+                            Some(TypedRelation::Collection(collection.id))
+                        }
+                        _ => Some(TypedRelation::Project(project.id)),
+                    },
+                };
+                let object = self.get_missing_object(relation).ok_or_else(|| {
+                    error!("Object not found");
+                    s3_error!(NoSuchKey, "Object not found")
+                })?;
+                NewOrExistingObject::Missing(object)
+            }
+        };
+
+        let object_tag = match object {
+            NewOrExistingObject::Existing(object) | NewOrExistingObject::Missing(object) => {
+                Some((object.id, object.name.clone()))
+            }
+            _ => None,
+        };
+
+        Ok((
+            NewOrExistingObject::Existing(project.clone()),
+            collection,
+            dataset,
+            object,
+            [project_tag, collection_tag, dataset_tag, object_tag],
+        ))
+    }
 }
 
+#[derive(Debug, Clone)]
 pub enum ObjectsState {
     Regular {
         states: ResourceStates,
@@ -1349,7 +1560,7 @@ impl ObjectsState {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 pub enum UserState {
     #[default]
     Anonymous,

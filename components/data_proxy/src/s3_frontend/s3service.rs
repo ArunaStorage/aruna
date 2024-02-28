@@ -8,6 +8,7 @@ use crate::data_backends::storage_backend::StorageBackend;
 use crate::s3_frontend::utils::list_objects::list_response;
 use crate::s3_frontend::utils::ranges::aruna_range_from_s3range;
 use crate::structs::CheckAccessResult;
+use crate::structs::NewOrExistingObject;
 use crate::structs::Object as ProxyObject;
 use crate::structs::ObjectType;
 use crate::structs::PartETag;
@@ -280,20 +281,21 @@ impl S3 for ArunaS3Service {
 
         let (states, locations) = objects_state.require_regular()?;
 
-        let mut new_object = if let Some((o, _)) = object {
-            if o.object_type == crate::structs::ObjectType::Object {
-                if o.object_status == Status::Initializing {
+        let (project, collection, dataset, object, location_state) =
+            states.into_new_or_existing()?;
+
+        let new_object = match object {
+            NewOrExistingObject::Existing(ob) => {
+                if ob.object_status == Status::Initializing {
                     trace!("Object is initializing");
-                    o
+                    ob
                 } else {
-                    trace!("object is not initializing, force update");
-                    // Force Object update with new revision in ArunaServer
-                    let new_revision = if let Some(handler) =
+                    let mut new_revision = if let Some(handler) =
                         self.cache.aruna_client.read().await.as_ref()
                     {
                         if let Some(token) = &impersonating_token {
                             handler
-                                .init_object_update(o, token, true)
+                                .init_object_update(ob, token, true)
                                 .await
                                 .map_err(|_| {
                                     error!(error = "Object update failed");
@@ -308,96 +310,27 @@ impl S3 for ArunaS3Service {
                         error!("ArunaServer client not available");
                         return Err(s3_error!(InternalError, "ArunaServer client not available"));
                     };
-
-                    ProxyObject {
-                        id: new_revision.id,
-                        name: new_revision.name,
-                        key_values: new_revision.key_values,
-                        object_status: Status::Initializing,
-                        data_class: new_revision.data_class,
-                        object_type: crate::structs::ObjectType::Object,
-                        hashes: HashMap::default(),
-                        metadata_license: new_revision.metadata_license,
-                        data_license: new_revision.data_license,
-                        dynamic: false,
-                        children: None,
-                        parents: new_revision.parents,
-                        synced: false,
-                        endpoints: new_revision.endpoints,
-                        created_at: new_revision.created_at,
-                    }
-                }
-            } else {
-                let missing_object_name = missing_resources
-                    .clone()
-                    .ok_or_else(|| {
-                        error!(error = "Invalid object path");
-                        s3_error!(InvalidArgument, "Invalid object path")
-                    })?
-                    .o
-                    .ok_or_else(|| {
-                        error!(error = "Invalid object path");
-                        s3_error!(InvalidArgument, "Invalid object path")
-                    })?;
-
-                trace!(?missing_object_name, "missing_object_name");
-
-                ProxyObject {
-                    id: DieselUlid::generate(),
-                    name: missing_object_name.to_string(),
-                    key_values: vec![],
-                    object_status: Status::Initializing,
-                    data_class: DataClass::Private,
-                    object_type: crate::structs::ObjectType::Object,
-                    hashes: HashMap::default(),
-                    metadata_license: ALL_RIGHTS_RESERVED.to_string(),
-                    data_license: ALL_RIGHTS_RESERVED.to_string(),
-                    dynamic: false,
-                    children: None,
-                    parents: None,
-                    synced: false,
-                    endpoints: vec![], // Can be empty, as long as create_object overwrites this
-                    // object with gRPC response
-                    created_at: Some(chrono::Utc::now().naive_utc()),
+                    new_revision.hashes = HashMap::default();
+                    new_revision.synced = false;
+                    new_revision.children = None;
+                    new_revision.dynamic = false;
+                    new_revision
                 }
             }
-        } else {
-            let missing_object_name = missing_resources
-                .clone()
-                .ok_or_else(|| {
-                    error!(error = "Invalid object path");
-                    s3_error!(InvalidArgument, "Invalid object path")
-                })?
-                .o
-                .ok_or_else(|| {
-                    error!(error = "Invalid object path");
-                    s3_error!(InvalidArgument, "Invalid object path")
-                })?;
-
-            ProxyObject {
-                id: DieselUlid::generate(),
-                name: missing_object_name.to_string(),
-                key_values: vec![],
-                object_status: Status::Initializing,
-                data_class: DataClass::Private,
-                object_type: crate::structs::ObjectType::Object,
-                hashes: HashMap::default(),
-                metadata_license: ALL_RIGHTS_RESERVED.to_string(),
-                data_license: ALL_RIGHTS_RESERVED.to_string(),
-                dynamic: false,
-                children: None,
-                parents: None,
-                synced: false,
-                endpoints: vec![], // Can be empty, as long as create_object overwrites this
-                // object with gRPC response
-                created_at: Some(chrono::Utc::now().naive_utc()),
+            NewOrExistingObject::Missing(object) => object,
+            NewOrExistingObject::None => {
+                return Err(s3_error!(
+                    InvalidObjectState,
+                    "Object in invalid state: None"
+                ))
             }
         };
+
         trace!(?new_object);
 
         let mut location = self
             .backend
-            .initialize_location(&new_object, None, None, true)
+            .initialize_location(&new_object, None, location_state, true)
             .await
             .map_err(|_| {
                 error!(error = "Unable to create object_location");
@@ -417,128 +350,43 @@ impl S3 for ArunaS3Service {
 
         location.upload_id = Some(init_response.to_string());
 
-        if let Some(missing) = missing_resources {
-            trace!(?missing, "missing parent resources");
-            let collection_id = if let Some(collection) = missing.c {
-                let col = ProxyObject {
-                    id: DieselUlid::generate(),
-                    name: collection,
-                    key_values: vec![],
-                    object_status: Status::Available,
-                    data_class: DataClass::Private,
-                    object_type: crate::structs::ObjectType::Collection,
-                    hashes: HashMap::default(),
-                    metadata_license: ALL_RIGHTS_RESERVED.to_string(),
-                    data_license: ALL_RIGHTS_RESERVED.to_string(),
-                    dynamic: true,
-                    children: None,
-                    parents: Some(HashSet::from([TypedRelation::Project(
-                        res_ids.get_project(),
-                    )])),
-                    synced: false,
-                    endpoints: vec![], // Can be empty, as long as create_object overwrites this
-                    // object with gRPC response
-                    created_at: Some(chrono::Utc::now().naive_utc()),
-                };
-
-                if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
-                    if let Some(token) = &impersonating_token {
-                        let col = handler.create_collection(col, token).await.map_err(|_| {
+        if let NewOrExistingObject::Missing(collection) = collection {
+            if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
+                if let Some(token) = &impersonating_token {
+                    let col = handler
+                        .create_collection(collection, token)
+                        .await
+                        .map_err(|_| {
                             error!(error = "Unable to create collection");
                             s3_error!(InternalError, "Unable to create collection")
                         })?;
-                        Some(col.id)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
                 }
-            } else {
-                res_ids.get_collection()
-            };
-
-            let dataset_id = if let Some(dataset) = missing.d {
-                let parent = if let Some(collection_id) = collection_id {
-                    TypedRelation::Collection(collection_id)
-                } else {
-                    TypedRelation::Project(res_ids.get_project())
-                };
-
-                let dataset = ProxyObject {
-                    id: DieselUlid::generate(),
-                    name: dataset,
-                    key_values: vec![],
-                    object_status: Status::Available,
-                    data_class: DataClass::Private,
-                    object_type: crate::structs::ObjectType::Dataset,
-                    hashes: HashMap::default(),
-                    metadata_license: ALL_RIGHTS_RESERVED.to_string(),
-                    data_license: ALL_RIGHTS_RESERVED.to_string(),
-                    dynamic: true,
-                    children: None,
-                    parents: Some(HashSet::from([parent])),
-                    synced: false,
-                    endpoints: vec![], // Can be empty, as long as create_object overwrites this
-                    // object with gRPC response
-                    created_at: Some(chrono::Utc::now().naive_utc()),
-                };
-
-                if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
-                    if let Some(token) = &impersonating_token {
-                        let dataset =
-                            handler.create_dataset(dataset, token).await.map_err(|_| {
-                                error!(error = "Unable to create dataset");
-                                s3_error!(InternalError, "Unable to create dataset")
-                            })?;
-
-                        Some(dataset.id)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                res_ids.get_dataset()
-            };
-
-            trace!("updating parents");
-            if let Some(ds_id) = dataset_id {
-                new_object.parents = Some(HashSet::from([TypedRelation::Dataset(ds_id)]));
-            } else if let Some(col_id) = collection_id {
-                new_object.parents = Some(HashSet::from([TypedRelation::Collection(col_id)]));
-            } else {
-                new_object.parents = Some(HashSet::from([TypedRelation::Project(
-                    res_ids.get_project(),
-                )]));
             }
+        }
 
-            // This creates the object and a location
-            // but only when missing parents are found
-            // --> object location never gets updated when objects exist
-            trace!("finishing object");
+        if let NewOrExistingObject::Missing(dataset) = dataset {
             if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                 if let Some(token) = &impersonating_token {
-                    handler
-                        // Overwrites endpoints with gRPC response
-                        .create_object(new_object.clone(), Some(location), token)
-                        .await
-                        .map_err(|_| {
-                            error!(error = "Unable to create object");
-                            s3_error!(InternalError, "Unable to create object")
-                        })?;
+                    let dataset = handler.create_dataset(dataset, token).await.map_err(|_| {
+                        error!(error = "Unable to create dataset");
+                        s3_error!(InternalError, "Unable to create dataset")
+                    })?;
                 }
             }
-        } else {
-            self.cache
-                .upsert_object(new_object, Some(location.clone()))
-                .await
-                .map_err(|_| {
-                    error!(error = "Unable to update object location");
-                    s3_error!(InternalError, "Unable to update object location")
-                })?;
         }
+
+        if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
+            if let Some(token) = &impersonating_token {
+                let dataset = handler
+                    .create_object(new_object.clone(), Some(location), token)
+                    .await
+                    .map_err(|_| {
+                        error!(error = "Unable to create dataset");
+                        s3_error!(InternalError, "Unable to create dataset")
+                    })?;
+            }
+        }
+
         let output = CreateMultipartUploadOutput {
             key: Some(req.input.key),
             bucket: Some(req.input.bucket),

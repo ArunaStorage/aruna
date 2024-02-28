@@ -9,8 +9,8 @@ use crate::{
     structs::{Object, ObjectLocation, PubKey},
 };
 use ahash::RandomState;
-use anyhow::{anyhow, bail};
 use anyhow::Result;
+use anyhow::{anyhow, bail};
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
 use async_channel::Sender;
 use crossbeam_skiplist::SkipMap;

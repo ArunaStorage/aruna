@@ -413,7 +413,6 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                     }
                 };
             }
-            Ok::<(), anyhow::Error>(())
         });
 
         let grpc_response: tonic::Response<
@@ -520,8 +519,6 @@ impl DataproxyReplicationServiceImpl {
         sender: tokio::sync::mpsc::Sender<Result<PullReplicationResponse, tonic::Status>>,
         error_rcv: Receiver<Option<(i64, String)>>, // contains chunk_idx and object_id
     ) -> Result<()> {
-        // Get encryption_key
-        let key = location.get_encryption_key();
         // Create channel for get_object
         let (object_sender, object_receiver) = async_channel::bounded(255);
 

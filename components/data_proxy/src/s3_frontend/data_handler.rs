@@ -45,6 +45,7 @@ impl DataHandler {
         let before_location = before_location.clone();
         let backend_clone = backend.clone();
         let new_location_clone = new_location.clone();
+        let is_compressed = before_location.file_format.is_compressed();
 
         let aswr_handle = tokio::spawn(
             async move {
@@ -71,7 +72,7 @@ impl DataHandler {
                     })?);
                 }
 
-                if before_location.file_format.is_compressed() {
+                if is_compressed {
                     asr = asr.add_transformer(ZstdDec::new());
                 }
 
@@ -80,9 +81,9 @@ impl DataHandler {
                 asr = asr.add_transformer(uncompressed_probe);
 
                 let (sha_transformer, sha_recv) =
-                    new_with_backchannel::new_with_backchannel(Sha256::new(), "sha256");
+                    HashingTransformer::new_with_backchannel(Sha256::new(), "sha256".to_string());
                 let (md5_transformer, md5_recv) =
-                    HashingTransformer::new_with_backchannel(Md5::new(), "md5");
+                    HashingTransformer::new_with_backchannel(Md5::new(), "md5".to_string());
 
                 asr = asr.add_transformer(sha_transformer);
                 asr = asr.add_transformer(md5_transformer);
@@ -93,7 +94,7 @@ impl DataHandler {
                 )?);
 
                 let (final_sha, final_sha_recv) =
-                    HashingTransformer::new_with_backchannel(Sha256::new(), "sha256");
+                    HashingTransformer::new_with_backchannel(Sha256::new(), "sha256".to_string());
 
                 asr = asr.add_transformer(final_sha);
                 asr.process().await.map_err(|e| {
