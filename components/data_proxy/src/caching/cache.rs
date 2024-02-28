@@ -816,9 +816,9 @@ impl Cache {
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn get_resource_name(&self, id: &DieselUlid) -> Option<String> {
-        self.resources
-            .get(id)
-            .map(|e| e.value().0.blocking_read().name.clone())
+        let (res, _) = self.get_resource(id).await.ok()?;
+        let res = res.read().await.name.clone();
+        Some(res)
     }
 
     #[tracing::instrument(level = "trace", skip(self, id))]
@@ -859,5 +859,31 @@ impl Cache {
             }
         }
         Ok(result)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, id))]
+    pub async fn get_location_cloned(&self, id: &DieselUlid) -> Option<ObjectLocation> {
+        let (_, loc) = self.get_resource(id).await.ok()?;
+        let loc = loc.read().await.clone();
+        loc
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, starting_points))]
+    pub async fn get_path_levels(
+        &self,
+        starting_points: &[DieselUlid],
+    ) -> Result<Vec<(String, Option<ObjectLocation>)>> {
+        let mut results = Vec::new();
+        for id in starting_points {
+            let suffixes = self.get_suffixes(&TypedId::Unknown(*id), true).await;
+            for (id, name) in suffixes {
+                if let TypedId::Object(id) = id {
+                    results.push((name, self.get_location_cloned(&id).await));
+                } else {
+                    results.push((format!("{}/", name), None))
+                }
+            }
+        }
+        Ok(results)
     }
 }

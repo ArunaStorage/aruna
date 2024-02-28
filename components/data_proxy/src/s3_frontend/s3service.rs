@@ -11,6 +11,7 @@ use crate::structs::CheckAccessResult;
 use crate::structs::NewOrExistingObject;
 use crate::structs::Object as ProxyObject;
 use crate::structs::ObjectType;
+use crate::structs::ObjectsState;
 use crate::structs::PartETag;
 use crate::structs::TypedRelation;
 use crate::structs::ALL_RIGHTS_RESERVED;
@@ -403,8 +404,8 @@ impl S3 for ArunaS3Service {
         req: S3Request<GetObjectInput>,
     ) -> S3Result<S3Response<GetObjectOutput>> {
         let CheckAccessResult {
-            object,
-            bundle,
+            objects_state,
+            user_state,
             headers,
             ..
         } = req
@@ -416,22 +417,22 @@ impl S3 for ArunaS3Service {
                 s3_error!(InternalError, "No context found")
             })?;
 
-        if let Some(_bundle) = bundle {
-            let id = match object {
-                Some((obj, _)) => obj.id,
-                None => return Err(s3_error!(NoSuchKey, "Object not found")),
-            };
-            let levels = self.cache.get_path_levels(id).map_err(|_| {
-                error!(error = "Unable to get path levels");
-                s3_error!(InternalError, "Unable to get path levels")
-            })?;
+        if let ObjectsState::Bundle { bundle, filename } = objects_state {
+            let levels = self
+                .cache
+                .get_path_levels(bundle.ids.as_slice())
+                .await
+                .map_err(|_| {
+                    error!(error = "Unable to get path levels");
+                    s3_error!(InternalError, "Unable to get path levels")
+                })?;
 
             let body = get_bundle(levels, self.backend.clone()).await;
 
             let mut resp = S3Response::new(GetObjectOutput {
                 body,
                 last_modified: None,
-                e_tag: Some(format!("-{}", id)),
+                e_tag: Some(format!("-{}", bundle.id)),
                 ..Default::default()
             });
 
@@ -448,28 +449,23 @@ impl S3 for ArunaS3Service {
             return Ok(resp);
         }
 
-        let id = match object {
-            Some((obj, _)) => obj.id,
-            None => {
-                error!("Object not found");
-                return Err(s3_error!(NoSuchKey, "Object not found"));
-            }
+        let ObjectsState::Regular { states, location } = objects_state else {
+            return Err(s3_error!(
+                InternalError,
+                "Invalid object state, missing location"
+            ));
         };
 
-        let (_, location) = self.cache.get_resource(&id).ok_or_else(|| {
+        let location = location.ok_or_else(|| {
             error!(error = "Unable to get resource");
             s3_error!(NoSuchKey, "Object not found")
         })?;
         let content_length = location.raw_content_len;
-        let encryption_key = location
-            .clone()
-            .encryption_key
-            .map(|k| k.as_bytes().to_vec());
+        let encryption_key = location.get_encryption_key();
 
         let (sender, receiver) = async_channel::bounded(10);
 
         // Gets 128 kb chunks (last 2)
-
         let footer_limit = 5242880 + 80 * 28;
         let mut footer_parser: Option<FooterParser> = if content_length > footer_limit {
             trace!("getting footer");
@@ -553,7 +549,6 @@ impl S3 for ArunaS3Service {
         });
         trace!(?dbg);
 
-        // Needed for final part
         trace!("calculating ranges");
         let (query_ranges, filter_ranges, actual_from) =
             match calculate_ranges(req.input.range, content_length as u64, footer_parser) {
