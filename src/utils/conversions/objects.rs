@@ -35,7 +35,7 @@ impl From<ObjectWrapper> for generic_resource::Resource {
             .rules
             .into_iter()
             .map(|r| RuleBinding {
-                rule_id: r.rule_id.to_string(),
+                rule_id: r.id.to_string(),
                 origin: r.origin_id.to_string(),
             })
             .collect::<Vec<RuleBinding>>();

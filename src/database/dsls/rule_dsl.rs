@@ -8,7 +8,7 @@ use tokio_postgres::Client;
 
 #[derive(FromRow, FromSql, Debug, Clone, ToSql, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct RuleBinding {
-    pub rule_id: DieselUlid,
+    pub id: DieselUlid,
     pub origin_id: DieselUlid,
     pub object_id: DieselUlid,
     pub cascading: bool,
@@ -104,7 +104,7 @@ impl CrudDb for RuleBinding {
             .query_one(
                 &prepared,
                 &[
-                    &self.rule_id,
+                    &self.id,
                     &self.origin_id,
                     &self.object_id,
                     &self.cascading,
@@ -128,7 +128,7 @@ impl CrudDb for RuleBinding {
         let query = "DELETE FROM rule_bindings WHERE rule_id = $1, origin_id = $2";
         let prepared = client.prepare(query).await?;
         client
-            .execute(&prepared, &[&self.rule_id, &self.origin_id])
+            .execute(&prepared, &[&self.id, &self.origin_id])
             .await?;
         Ok(())
     }

@@ -58,7 +58,7 @@ impl CreateRuleBinding {
     pub fn get_binding(&self) -> Result<RuleBinding> {
         let origin_id = self.get_resource_id()?;
         Ok(RuleBinding {
-            rule_id: self.get_rule_id()?,
+            id: self.get_rule_id()?,
             origin_id,
             object_id: origin_id,
             cascading: self.0.cascading,

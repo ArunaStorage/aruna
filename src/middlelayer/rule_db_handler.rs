@@ -42,7 +42,7 @@ impl DatabaseHandler {
         for child in children {
             for binding in cascading.clone().into_iter() {
                 let mut new = RuleBinding {
-                    rule_id: binding.rule_id,
+                    id: binding.id,
                     origin_id: binding.origin_id,
                     object_id: child,
                     cascading: binding.cascading,
@@ -64,7 +64,7 @@ impl DatabaseHandler {
         for id in affected {
             if let Some(bindings) = self.cache.get_rule_bindings(id).map(|b| b.clone()) {
                 for binding in bindings.clone().iter() {
-                    self.evaluate_rule(&binding.rule_id, id, transaction_client)
+                    self.evaluate_rule(&binding.id, id, transaction_client)
                         .await?
                 }
             }
@@ -129,7 +129,7 @@ impl DatabaseHandler {
         transaction_client: &Client,
     ) -> Result<()> {
         for child in children {
-            for rule in rules.iter().map(|r| r.rule_id) {
+            for rule in rules.iter().map(|r| r.id) {
                 self.evaluate_rule(&rule, child, transaction_client).await?
             }
         }

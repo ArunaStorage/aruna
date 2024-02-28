@@ -237,7 +237,7 @@ impl Cache {
         self.check_lock();
         self.object_rule_bindings.alter_all(|_, bindings| {
             let mut updated = bindings.to_vec();
-            updated.retain(|b| (b.rule_id != rule_id) && (b.origin_id != resource_id));
+            updated.retain(|b| (b.id != rule_id) && (b.origin_id != resource_id));
             Arc::new(updated)
         });
         self.object_rule_bindings.retain(|k, v| !v.is_empty());
@@ -258,7 +258,7 @@ impl Cache {
         self.object_rules.remove(id);
         self.object_rule_bindings.alter_all(|_, v| {
             let mut updated = v.to_vec();
-            updated.retain(|binding| &binding.rule_id == id);
+            updated.retain(|binding| &binding.id == id);
             Arc::new(updated)
         });
     }
