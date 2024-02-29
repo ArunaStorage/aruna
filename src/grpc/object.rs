@@ -93,11 +93,11 @@ impl ObjectService for ObjectServiceImpl {
         .await;
 
         let generic_object: generic_resource::Resource = ObjectWrapper {
-            object_with_relations: object_plus,
+            object_with_relations: object_plus.clone(),
             rules: self
                 .cache
                 .get_rule_bindings(&object_plus.object.id)
-                .ok_or_else(|| tonic::Status::not_found("Object not found"))?,
+                .ok_or_else(|| Status::not_found("Object not found"))?,
         }
         .into();
 
@@ -256,11 +256,11 @@ impl ObjectService for ObjectServiceImpl {
         .await;
 
         let object: generic_resource::Resource = ObjectWrapper {
-            object_with_relations: object,
+            object_with_relations: object.clone(),
             rules: self
                 .cache
                 .get_rule_bindings(&object.object.id)
-                .ok_or_else(|| tonic::Status::not_found("Object not found"))?,
+                .ok_or_else(|| Status::not_found("Object not found"))?,
         }
         .into();
         let response = FinishObjectStagingResponse {
@@ -316,11 +316,11 @@ impl ObjectService for ObjectServiceImpl {
         .await;
 
         let object: generic_resource::Resource = ObjectWrapper {
-            object_with_relations: object,
+            object_with_relations: object.clone(),
             rules: self
                 .cache
                 .get_rule_bindings(&object.object.id)
-                .ok_or_else(|| tonic::Status::not_found("Object not found"))?,
+                .ok_or_else(|| Status::not_found("Object not found"))?,
         }
         .into();
         let response = UpdateObjectResponse {
@@ -366,11 +366,11 @@ impl ObjectService for ObjectServiceImpl {
         .await;
 
         let converted: generic_resource::Resource = ObjectWrapper {
-            object_with_relations: new,
+            object_with_relations: new.clone(),
             rules: self
                 .cache
                 .get_rule_bindings(&new.object.id)
-                .ok_or_else(|| tonic::Status::not_found("Object not found"))?,
+                .ok_or_else(|| Status::not_found("Object not found"))?,
         }
         .into();
         let response = CloneObjectResponse {
@@ -497,16 +497,16 @@ impl ObjectService for ObjectServiceImpl {
         request: Request<UpdateObjectAuthorsRequest>,
     ) -> Result<Response<UpdateObjectAuthorsResponse>> {
         // TODO
-        Err(tonic::Status::unimplemented(
+        Err(Status::unimplemented(
             "Updating object authors is not yet implemented",
         ))
     }
     async fn update_object_title(
         &self,
-        request: Request<UpdateObjectTitleRequest>,
+        _request: Request<UpdateObjectTitleRequest>,
     ) -> Result<Response<UpdateObjectTitleResponse>> {
         // TODO
-        Err(tonic::Status::unimplemented(
+        Err(Status::unimplemented(
             "Updating object titles is not yet implemented",
         ))
     }

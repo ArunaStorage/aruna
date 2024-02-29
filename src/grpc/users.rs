@@ -65,10 +65,10 @@ impl UserService for UserServiceImpl {
 
         // Validate display name and email is filled
         if request.get_display_name().is_empty() {
-            return Err(tonic::Status::invalid_argument("Display name is mandatory"));
+            return Err(Status::invalid_argument("Display name is mandatory"));
         }
         if request.get_email().is_empty() {
-            return Err(tonic::Status::invalid_argument("Email is mandatory"));
+            return Err(Status::invalid_argument("Email is mandatory"));
         }
 
         let external_id = tonic_auth!(
@@ -757,8 +757,8 @@ impl UserService for UserServiceImpl {
 
     async fn add_oidc_provider(
         &self,
-        request: tonic::Request<AddOidcProviderRequest>,
-    ) -> std::result::Result<tonic::Response<AddOidcProviderResponse>, tonic::Status> {
+        request: Request<AddOidcProviderRequest>,
+    ) -> Result<Response<AddOidcProviderResponse>, Status> {
         log_received!(&request);
 
         // Consume gRPC request into its parts
@@ -800,8 +800,8 @@ impl UserService for UserServiceImpl {
 
     async fn remove_oidc_provider(
         &self,
-        request: tonic::Request<RemoveOidcProviderRequest>,
-    ) -> std::result::Result<tonic::Response<RemoveOidcProviderResponse>, tonic::Status> {
+        request: Request<RemoveOidcProviderRequest>,
+    ) -> Result<Response<RemoveOidcProviderResponse>, Status> {
         log_received!(&request);
 
         // Consume gRPC request into its parts
@@ -837,68 +837,64 @@ impl UserService for UserServiceImpl {
     // !!!!! TODO!!!!!
     async fn add_pubkey_user(
         &self,
-        request: tonic::Request<AddPubkeyUserRequest>,
-    ) -> std::result::Result<tonic::Response<AddPubkeyUserResponse>, tonic::Status> {
+        _request: Request<AddPubkeyUserRequest>,
+    ) -> Result<Response<AddPubkeyUserResponse>, Status> {
         //TODO
-        Err(tonic::Status::unimplemented(
+        Err(Status::unimplemented(
             "Adding pubkeys is currently unimplemented",
         ))
     }
     async fn add_trusted_endpoints_user(
         &self,
-        request: tonic::Request<AddTrustedEndpointsUserRequest>,
-    ) -> std::result::Result<tonic::Response<AddTrustedEndpointsUserResponse>, tonic::Status> {
+        _request: Request<AddTrustedEndpointsUserRequest>,
+    ) -> Result<Response<AddTrustedEndpointsUserResponse>, Status> {
         //TODO
-        Err(tonic::Status::unimplemented(
+        Err(Status::unimplemented(
             "Adding trusted endpoints is currently unimplemented",
         ))
     }
     async fn remove_trusted_endpoints_user(
         &self,
-        request: tonic::Request<RemoveTrustedEndpointsUserRequest>,
-    ) -> std::result::Result<tonic::Response<RemoveTrustedEndpointsUserResponse>, tonic::Status>
-    {
+        _request: Request<RemoveTrustedEndpointsUserRequest>,
+    ) -> Result<Response<RemoveTrustedEndpointsUserResponse>, Status> {
         //TODO
-        Err(tonic::Status::unimplemented(
+        Err(Status::unimplemented(
             "Removing trusted endpoints is currently unimplemented",
         ))
     }
     async fn add_data_proxy_attribute_user(
         &self,
-        request: tonic::Request<AddDataProxyAttributeUserRequest>,
-    ) -> std::result::Result<tonic::Response<AddDataProxyAttributeUserResponse>, tonic::Status>
-    {
+        _request: Request<AddDataProxyAttributeUserRequest>,
+    ) -> Result<Response<AddDataProxyAttributeUserResponse>, Status> {
         //TODO
-        Err(tonic::Status::unimplemented(
+        Err(Status::unimplemented(
             "Adding data proxy attributes is currently unimplemented",
         ))
     }
     async fn remove_data_proxy_attribute_user(
         &self,
-        request: tonic::Request<RemoveDataProxyAttributeUserRequest>,
-    ) -> std::result::Result<tonic::Response<RemoveDataProxyAttributeUserResponse>, tonic::Status>
-    {
+        _request: Request<RemoveDataProxyAttributeUserRequest>,
+    ) -> Result<Response<RemoveDataProxyAttributeUserResponse>, Status> {
         //TODO
-        Err(tonic::Status::unimplemented(
+        Err(Status::unimplemented(
             "Removing data proxy attributes is currently unimplemented",
         ))
     }
     async fn create_s3_credentials_user_token(
         &self,
-        request: tonic::Request<CreateS3CredentialsUserTokenRequest>,
-    ) -> std::result::Result<tonic::Response<CreateS3CredentialsUserTokenResponse>, tonic::Status>
-    {
+        _request: Request<CreateS3CredentialsUserTokenRequest>,
+    ) -> Result<Response<CreateS3CredentialsUserTokenResponse>, Status> {
         //TODO
-        Err(tonic::Status::unimplemented(
+        Err(Status::unimplemented(
             "Removing data proxy attributes is currently unimplemented",
         ))
     }
     async fn delete_s3_credentials_user_token(
         &self,
-        request: tonic::Request<DeleteS3CredentialsUserTokenRequest>,
-    ) -> std::result::Result<tonic::Response<DeleteS3CredentialsUserResponse>, tonic::Status> {
+        _request: Request<DeleteS3CredentialsUserTokenRequest>,
+    ) -> Result<Response<DeleteS3CredentialsUserResponse>, Status> {
         //TODO
-        Err(tonic::Status::unimplemented(
+        Err(Status::unimplemented(
             "Removing data proxy attributes is currently unimplemented",
         ))
     }

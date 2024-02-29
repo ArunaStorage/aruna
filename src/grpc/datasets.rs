@@ -31,6 +31,7 @@ use itertools::Itertools;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Request, Response, Result};
+use crate::caching::structs::ObjectWrapper;
 
 crate::impl_grpc_server!(DatasetServiceImpl, search_client: Arc<MeilisearchClient>);
 
@@ -97,7 +98,11 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let generic_dataset: generic_resource::Resource = dataset.into();
+        let rules = self.cache.get_rule_bindings(&dataset.object.id).unwrap_or_default();
+        let generic_dataset: generic_resource::Resource = ObjectWrapper{
+            object_with_relations: dataset,
+            rules
+        }.into();
 
         let response = CreateDatasetResponse {
             dataset: Some(generic_dataset.into_inner()?),
@@ -245,7 +250,11 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let dataset: generic_resource::Resource = dataset.into();
+        let rules = self.cache.get_rule_bindings(&dataset_id).unwrap_or_default();
+        let dataset: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: dataset,
+            rules,
+        }.into();
 
         let response = UpdateDatasetNameResponse {
             dataset: Some(dataset.into_inner()?),
@@ -289,7 +298,11 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let dataset: generic_resource::Resource = dataset.into();
+        let rules = self.cache.get_rule_bindings(&dataset_id).unwrap_or_default();
+        let dataset: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: dataset,
+            rules,
+        }.into();
 
         let response = UpdateDatasetDescriptionResponse {
             dataset: Some(dataset.into_inner()?),
@@ -333,7 +346,11 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let dataset: generic_resource::Resource = dataset.into();
+        let rules = self.cache.get_rule_bindings(&dataset_id).unwrap_or_default();
+        let dataset: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: dataset,
+            rules,
+        }.into();
 
         let response = UpdateDatasetKeyValuesResponse {
             dataset: Some(dataset.into_inner()?),
@@ -378,7 +395,11 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let dataset: generic_resource::Resource = dataset.into();
+        let rules = self.cache.get_rule_bindings(&dataset_id).unwrap_or_default();
+        let dataset: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: dataset,
+            rules,
+        }.into();
 
         let response = UpdateDatasetDataClassResponse {
             dataset: Some(dataset.into_inner()?),
@@ -470,7 +491,11 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let generic_resource: generic_resource::Resource = dataset.into();
+        let rules = self.cache.get_rule_bindings(&dataset_id).unwrap_or_default();
+        let generic_resource: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: dataset,
+            rules,
+        }.into();
         let response = UpdateDatasetLicensesResponse {
             dataset: Some(generic_resource.into_inner()?),
         };
@@ -479,7 +504,7 @@ impl DatasetService for DatasetServiceImpl {
 
     async fn update_dataset_authors(
         &self,
-        request: Request<UpdateDatasetAuthorsRequest>,
+        _request: Request<UpdateDatasetAuthorsRequest>,
     ) -> Result<Response<UpdateDatasetAuthorsResponse>> {
         // TODO
         Err(tonic::Status::unimplemented(
@@ -488,7 +513,7 @@ impl DatasetService for DatasetServiceImpl {
     }
     async fn update_dataset_title(
         &self,
-        request: Request<UpdateDatasetTitleRequest>,
+        _request: Request<UpdateDatasetTitleRequest>,
     ) -> Result<Response<UpdateDatasetTitleResponse>> {
         // TODO
         Err(tonic::Status::unimplemented(

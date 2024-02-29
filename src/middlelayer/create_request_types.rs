@@ -13,8 +13,8 @@ use crate::database::enums::{
 use crate::utils::conversions::relations::ContextContainer;
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::storage::models::v2::relation::Relation as RelationEnum;
 use aruna_rust_api::api::storage::models::v2::Hash;
+use aruna_rust_api::api::storage::models::v2::{relation::Relation as RelationEnum, Relation};
 use aruna_rust_api::api::storage::{
     models::v2::{ExternalRelation, KeyValue},
     services::v2::{
@@ -154,21 +154,25 @@ impl CreateRequest {
             CreateRequest::Project(req, _) => req
                 .relations
                 .iter()
+                .filter_map(filter_relations)
                 .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
             CreateRequest::Collection(req) => req
                 .relations
                 .iter()
+                .filter_map(filter_relations)
                 .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
             CreateRequest::Dataset(req) => req
                 .relations
                 .iter()
+                .filter_map(filter_relations)
                 .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
             CreateRequest::Object(req) => req
                 .relations
                 .iter()
+                .filter_map(filter_relations)
                 .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
                 .collect::<Result<Vec<InternalRelation>>>(),
         }
@@ -269,7 +273,7 @@ impl CreateRequest {
                     Ok(DashMap::from_iter([(
                         DieselUlid::from_str(default_endpoint)?,
                         EndpointInfo {
-                            replication: crate::database::enums::ReplicationType::FullSync, // at least one full sync endpoint is needed for projects
+                            replication: ReplicationType::FullSync, // at least one full sync endpoint is needed for projects
                             status: None,
                         },
                     )]))
@@ -280,7 +284,7 @@ impl CreateRequest {
                         Some(_) => Ok(DashMap::from_iter([(
                             endpoint_id,
                             EndpointInfo {
-                                replication: crate::database::enums::ReplicationType::FullSync,
+                                replication: ReplicationType::FullSync,
                                 status: None,
                             }, // at least one full sync endpoint is needed for projects
                         )])),
@@ -517,5 +521,14 @@ impl CreateRequest {
                 }
             }
         }
+    }
+}
+
+fn filter_relations(
+    relation: &Relation,
+) -> Option<&aruna_rust_api::api::storage::models::v2::InternalRelation> {
+    match &relation.relation {
+        Some(RelationEnum::Internal(internal)) => Some(internal),
+        _ => None,
     }
 }

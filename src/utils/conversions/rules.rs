@@ -5,7 +5,7 @@ use crate::caching::structs::CachedRule;
 impl From<&CachedRule> for Rule {
     fn from(value: &CachedRule) -> Self {
         Rule {
-            id: value.rule.rule_id.to_string(),
+            id: value.rule.id.to_string(),
             rule: value.rule.rule_expressions.to_string(),
             description: value.rule.description.to_string(),
             public: value.rule.is_public,

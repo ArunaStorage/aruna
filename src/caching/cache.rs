@@ -178,10 +178,11 @@ impl Cache {
         let rules = Rule::all(&client).await?;
         for r in rules {
             self.object_rules.insert(
-                r.rule_id.clone(),
+                r.id.clone(),
                 Arc::new(CachedRule {
                     rule: r.clone(),
-                    compiled: cel_interpreter::Program::compile(&r.rule_expressions)?,
+                    compiled: cel_parser::parse(&r.rule_expressions)
+                        .map_err(|e| anyhow!(e.to_string()))?,
                 }),
             );
         }
@@ -224,11 +225,11 @@ impl Cache {
         for id in resource_ids {
             if let Some(bindings) = self.get_rule_bindings(&id) {
                 let mut updated = bindings.to_vec();
-                updated.push(binding);
-                self.object_rule_bindings.insert(&id, Arc::new(updated));
+                updated.push(binding.clone());
+                self.object_rule_bindings.insert(id, Arc::new(updated));
             } else {
                 self.object_rule_bindings
-                    .insert(&id, Arc::new(vec![binding]));
+                    .insert(id, Arc::new(vec![binding.clone()]));
             }
         }
     }
@@ -237,10 +238,10 @@ impl Cache {
         self.check_lock();
         self.object_rule_bindings.alter_all(|_, bindings| {
             let mut updated = bindings.to_vec();
-            updated.retain(|b| (b.id != rule_id) && (b.origin_id != resource_id));
+            updated.retain(|b| (b.rule_id != rule_id) && (b.origin_id != resource_id));
             Arc::new(updated)
         });
-        self.object_rule_bindings.retain(|k, v| !v.is_empty());
+        self.object_rule_bindings.retain(|_, v| !v.is_empty());
     }
 
     pub fn get_rule(&self, id: &DieselUlid) -> Option<Arc<CachedRule>> {
@@ -258,7 +259,7 @@ impl Cache {
         self.object_rules.remove(id);
         self.object_rule_bindings.alter_all(|_, v| {
             let mut updated = v.to_vec();
-            updated.retain(|binding| &binding.id == id);
+            updated.retain(|binding| &binding.rule_id == id);
             Arc::new(updated)
         });
     }
@@ -862,13 +863,15 @@ impl Cache {
         Ok(())
     }
 
-    pub fn get_proxy_cache_iterator(&self, endpoint_id: &DieselUlid) -> ProxyCacheIterator {
-        ProxyCacheIterator::new(
-            Box::new(self.object_cache.iter()),
-            Box::new(self.user_cache.iter()),
-            Box::new(self.pubkeys.iter()),
-            *endpoint_id,
-        )
+    pub fn get_proxy_cache_iterator(
+        &self,
+        endpoint_id: &DieselUlid,
+        cache: Arc<Cache>,
+    ) -> ProxyCacheIterator {
+        let object_cache = Box::new(self.object_cache.iter());
+        let user = Box::new(self.user_cache.iter());
+        let pubkeys = Box::new(self.pubkeys.iter());
+        ProxyCacheIterator::new(object_cache, user, pubkeys, *endpoint_id, cache)
     }
 
     pub fn oidc_mapping_exists(&self, mapping: &OIDCMapping) -> bool {
@@ -882,7 +885,6 @@ impl Cache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diesel_ulid::DieselUlid;
 
     #[tokio::test]
     async fn test_remove_object() {

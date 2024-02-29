@@ -1,6 +1,7 @@
 use crate::auth::permission_handler::{PermissionCheck, PermissionHandler};
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
+use crate::caching::structs::ObjectWrapper;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
@@ -87,7 +88,8 @@ impl CollectionService for CollectionServiceImpl {
             "Internal database error"
         );
 
-        self.cache.add_object(collection.clone());
+        // Already done in create_resource
+        // self.cache.add_object(collection.clone());
 
         // Add or update collection in search index
         search_utils::update_search_index(
@@ -97,7 +99,14 @@ impl CollectionService for CollectionServiceImpl {
         )
         .await;
 
-        let generic_collection: generic_resource::Resource = collection.into();
+        let wrapped = ObjectWrapper {
+            object_with_relations: collection.clone(),
+            rules: self
+                .cache
+                .get_rule_bindings(&collection.object.id)
+                .ok_or_else(|| tonic::Status::not_found("Object not found"))?,
+        };
+        let generic_collection: generic_resource::Resource = wrapped.into();
 
         let response = CreateCollectionResponse {
             collection: Some(generic_collection.into_inner()?),
@@ -243,7 +252,12 @@ impl CollectionService for CollectionServiceImpl {
         )
         .await;
 
-        let collection: generic_resource::Resource = collection.into();
+        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+
+        let collection: generic_resource::Resource = ObjectWrapper{
+            object_with_relations:collection,
+            rules,
+        }.into();
 
         let response = UpdateCollectionNameResponse {
             collection: Some(collection.into_inner()?),
@@ -287,7 +301,12 @@ impl CollectionService for CollectionServiceImpl {
         )
         .await;
 
-        let collection: generic_resource::Resource = collection.into();
+        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+
+        let collection: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: collection,
+            rules,
+        }.into();
 
         let response = UpdateCollectionDescriptionResponse {
             collection: Some(collection.into_inner()?),
@@ -331,7 +350,11 @@ impl CollectionService for CollectionServiceImpl {
         )
         .await;
 
-        let collection: generic_resource::Resource = collection.into();
+        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let collection: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: collection,
+            rules,
+        }.into();
         let response = UpdateCollectionKeyValuesResponse {
             collection: Some(collection.into_inner()?),
         };
@@ -375,7 +398,11 @@ impl CollectionService for CollectionServiceImpl {
         )
         .await;
 
-        let collection: generic_resource::Resource = collection.into();
+        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let collection: generic_resource::Resource = ObjectWrapper{
+            object_with_relations: collection,
+            rules,
+        }.into();
         let response = UpdateCollectionDataClassResponse {
             collection: Some(collection.into_inner()?),
         };
@@ -464,7 +491,11 @@ impl CollectionService for CollectionServiceImpl {
         )
         .await;
 
-        let generic_resource: generic_resource::Resource = collection.into();
+        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let generic_resource: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: collection,
+            rules,
+        }.into();
         let response = UpdateCollectionLicensesResponse {
             collection: Some(generic_resource.into_inner()?),
         };
@@ -473,7 +504,7 @@ impl CollectionService for CollectionServiceImpl {
 
     async fn update_collection_authors(
         &self,
-        request: Request<UpdateCollectionAuthorsRequest>,
+        _request: Request<UpdateCollectionAuthorsRequest>,
     ) -> Result<Response<UpdateCollectionAuthorsResponse>> {
         // TODO
         Err(tonic::Status::unimplemented(
@@ -482,7 +513,7 @@ impl CollectionService for CollectionServiceImpl {
     }
     async fn update_collection_title(
         &self,
-        request: Request<UpdateCollectionTitleRequest>,
+        _request: Request<UpdateCollectionTitleRequest>,
     ) -> Result<Response<UpdateCollectionTitleResponse>> {
         // TODO
         Err(tonic::Status::unimplemented(

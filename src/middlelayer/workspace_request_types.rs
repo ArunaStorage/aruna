@@ -104,6 +104,8 @@ impl CreateWorkspace {
         User {
             id: user_id,
             display_name: format!("SERVICE_ACCOUNT#{}", user_id),
+            first_name: "".to_string(),
+            last_name: "".to_string(),
             email: String::new(),
             attributes: Json(UserAttributes {
                 global_admin: false,
@@ -112,10 +114,12 @@ impl CreateWorkspace {
                 trusted_endpoints: DashMap::from_iter(endpoints),
                 custom_attributes: vec![],
                 external_ids: vec![],
+                pubkey: "".to_string(),
                 permissions: DashMap::from_iter(vec![(
                     workspace_id,
                     ObjectMapping::PROJECT(crate::database::enums::DbPermissionLevel::APPEND),
                 )]),
+                data_proxy_attribute: Default::default(),
             }),
             active: true,
         }

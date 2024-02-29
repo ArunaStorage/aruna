@@ -29,6 +29,8 @@ use crate::{
     search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument},
     utils::grpc_utils::get_token_from_md,
 };
+use crate::caching::structs::ObjectWrapper;
+use crate::database::dsls::rule_dsl::RuleBinding;
 
 crate::impl_grpc_server!(SearchServiceImpl, search_client: Arc<MeilisearchClient>);
 
@@ -121,7 +123,7 @@ impl SearchService for SearchServiceImpl {
         } else {
             None
         };
-        let (mut object_plus, permission) = if let Some(user) = user {
+        let (mut object_plus, permission, bindings) = if let Some(user) = user {
             let object = self
                 .cache
                 .get_object_with_stats(&resource_ulid)
@@ -136,6 +138,7 @@ impl SearchService for SearchServiceImpl {
                 .permissions
                 .get(&resource_ulid)
                 .ok_or_else(|| Status::not_found("Permissions not found"));
+            let bindings = self.cache.get_rule_bindings(&resource_ulid).unwrap_or_default();
             match mapping_perm {
                 Ok(perm) => {
                     let permission = match *perm {
@@ -144,7 +147,7 @@ impl SearchService for SearchServiceImpl {
                         ObjectMapping::DATASET(perm) => perm.into(),
                         ObjectMapping::PROJECT(perm) => perm.into(),
                     };
-                    (object, permission)
+                    (object, permission, bindings)
                 }
                 Err(_) => {
                     let mut permission = PermissionLevel::Read;
@@ -161,7 +164,7 @@ impl SearchService for SearchServiceImpl {
                             break;
                         }
                     }
-                    (object, permission)
+                    (object, permission, bindings)
                 }
             }
         } else {
@@ -172,17 +175,18 @@ impl SearchService for SearchServiceImpl {
                 .ok_or_else(|| Status::not_found("Object not found"))?;
 
             // Check if object metadata is publicly available
-            match object_plus.object.data_class {
-                DataClass::PUBLIC => {}
+            let bindings = match object_plus.object.data_class {
+                DataClass::PUBLIC => {self.cache.get_rule_bindings(&resource_ulid).unwrap_or_default()}
                 DataClass::PRIVATE => {
                     // SPECIFIC private operations OTHER THAN strip labels
                     // Remove created by
                     object_plus.object.created_by = DieselUlid::default();
                     // Endpoint redaction
                     object_plus.object.endpoints = Json(DashMap::default());
+                    Arc::new(vec![])
                 }
                 _ => return Err(Status::invalid_argument("Resource is not public")),
-            }
+            };
 
             // Strip infos
             let stripped_labels = object_plus
@@ -196,12 +200,12 @@ impl SearchService for SearchServiceImpl {
                 .collect::<Vec<_>>();
 
             object_plus.object.key_values = Json(KeyValues(stripped_labels));
-            (object_plus, PermissionLevel::Read)
+            (object_plus, PermissionLevel::Read, bindings)
         };
         self.cache.add_stats_to_object(&mut object_plus);
 
         // Convert to proto resource
-        let generic_object: Resource = object_plus.into();
+        let generic_object: Resource = ObjectWrapper{object_with_relations: object_plus, rules: bindings}.into();
 
         // Create response and return with log
         let response = GetResourceResponse {
@@ -255,7 +259,7 @@ impl SearchService for SearchServiceImpl {
             None
         };
         let objects = if let Some(user) = user {
-            let mut objects: Vec<(ObjectWithRelations, PermissionLevel)> = Vec::new();
+            let mut objects: Vec<(ObjectWithRelations, PermissionLevel, Arc<Vec<RuleBinding>>)> = Vec::new();
             for id in resource_ids {
                 let object = self
                     .cache
@@ -272,6 +276,7 @@ impl SearchService for SearchServiceImpl {
                     .permissions
                     .get(&id)
                     .ok_or_else(|| Status::not_found("No permissions found"));
+                let bindings = self.cache.get_rule_bindings(&id).unwrap_or_default();
                 match mapping_perm {
                     Ok(explicit_perms) => {
                         let permission = match *explicit_perms {
@@ -280,7 +285,7 @@ impl SearchService for SearchServiceImpl {
                             ObjectMapping::DATASET(perm) => perm.into(),
                             ObjectMapping::PROJECT(perm) => perm.into(),
                         };
-                        objects.push((object, permission));
+                        objects.push((object, permission, bindings));
                     }
                     Err(_) => {
                         let mut permission = PermissionLevel::Read;
@@ -297,13 +302,13 @@ impl SearchService for SearchServiceImpl {
                                 break;
                             }
                         }
-                        objects.push((object, permission));
+                        objects.push((object, permission, bindings));
                     }
                 };
             }
             objects
         } else {
-            let mut objects: Vec<(ObjectWithRelations, PermissionLevel)> = Vec::new();
+            let mut objects: Vec<(ObjectWithRelations, PermissionLevel, Arc<Vec<RuleBinding>>)> = Vec::new();
             for id in resource_ids {
                 // Get Object from cache
                 let mut object_plus = self
@@ -312,17 +317,18 @@ impl SearchService for SearchServiceImpl {
                     .ok_or_else(|| Status::not_found("Object not found"))?;
 
                 // Check if object metadata is publicly available
-                match object_plus.object.data_class {
-                    DataClass::PUBLIC => {}
+                let bindings = match object_plus.object.data_class {
+                    DataClass::PUBLIC => {self.cache.get_rule_bindings(&id).unwrap_or_default()}
                     DataClass::PRIVATE => {
                         // SPECIFIC private operations OTHER THAN strip labels
                         // Remove created by
                         object_plus.object.created_by = DieselUlid::default();
                         // Endpoint redaction
                         object_plus.object.endpoints = Json(DashMap::default());
+                        Arc::new(Vec::new())
                     }
                     _ => return Err(Status::invalid_argument("Resource is not public")),
-                }
+                };
 
                 // Strip infos
                 let stripped_labels = object_plus
@@ -336,7 +342,7 @@ impl SearchService for SearchServiceImpl {
                     .collect::<Vec<_>>();
 
                 object_plus.object.key_values = Json(KeyValues(stripped_labels));
-                objects.push((object_plus, PermissionLevel::Read));
+                objects.push((object_plus, PermissionLevel::Read, bindings));
             }
             objects
         };
@@ -344,10 +350,13 @@ impl SearchService for SearchServiceImpl {
         // Convert resources
         let resources = objects
             .into_iter()
-            .map(|(object, permission)| {
+            .map(|(object, permission, bindings)| {
                 Ok::<ResourceWithPermission, Status>(ResourceWithPermission {
                     resource: Some(GenericResource {
-                        resource: Some(object.into()),
+                        resource: Some(ObjectWrapper{
+                            object_with_relations: object,
+                            rules: bindings,
+                        }.into()),
                     }),
                     permission: permission.into(),
                 })

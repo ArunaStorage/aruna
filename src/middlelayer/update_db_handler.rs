@@ -41,8 +41,7 @@ impl DatabaseHandler {
 
         Object::update_dataclass(id, dataclass, transaction_client).await?;
 
-        self.evaluate_rules(&vec![id], transaction_client)
-            .await?;
+        self.evaluate_rules(&vec![id], transaction_client).await?;
         transaction.commit().await?;
 
         // Fetch hierarchies and object relations for notifications
@@ -77,8 +76,7 @@ impl DatabaseHandler {
         let name = request.get_name()?;
         let id = request.get_id()?;
         Object::update_name(id, name, transaction_client).await?;
-        self.evaluate_rules(&vec![id], transaction_client)
-            .await?;
+        self.evaluate_rules(&vec![id], transaction_client).await?;
         transaction.commit().await?;
 
         // Fetch hierarchies and object relations for notifications
@@ -117,8 +115,7 @@ impl DatabaseHandler {
         let description = request.get_description();
         let id = request.get_id()?;
         Object::update_description(id, description, transaction_client).await?;
-        self.evaluate_rules(&vec![id], transaction_client)
-            .await?;
+        self.evaluate_rules(&vec![id], transaction_client).await?;
         transaction.commit().await?;
 
         // Fetch hierarchies and object relations for notifications
@@ -198,8 +195,7 @@ impl DatabaseHandler {
                 object.remove_key_value(transaction_client, kv).await?;
             }
         }
-        self.evaluate_rules(&vec![id], transaction_client)
-            .await?;
+        self.evaluate_rules(&vec![id], transaction_client).await?;
         transaction.commit().await?;
 
         // Trigger hook
@@ -253,8 +249,7 @@ impl DatabaseHandler {
             .ok_or_else(|| anyhow!("Resource not found"))?;
         let (metadata_tag, data_tag) = request.get_licenses(&old, transaction_client).await?;
         Object::update_licenses(id, data_tag, metadata_tag, transaction_client).await?;
-        self.evaluate_rules(&vec![id], transaction_client)
-            .await?;
+        self.evaluate_rules(&vec![id], transaction_client).await?;
         transaction.commit().await?;
 
         // Fetch hierarchies and object relations for notifications
@@ -301,8 +296,8 @@ impl DatabaseHandler {
 
         // If license is updated from all rights reserved to anything no new revision is triggered
         let license_triggers_new_revision = match (
-            (old.data_license == ALL_RIGHTS_RESERVED),
-            (old.metadata_license == ALL_RIGHTS_RESERVED),
+            old.data_license == ALL_RIGHTS_RESERVED,
+            old.metadata_license == ALL_RIGHTS_RESERVED,
         ) {
             (true, true) => false,
             (true, false) => request.metadata_license_tag.is_some(),
@@ -438,7 +433,8 @@ impl DatabaseHandler {
         };
         let mut all = vec![id];
         all.extend(&affected);
-        self.evaluate_and_update_rules(&all, &id, transaction_client).await?;
+        self.evaluate_and_update_rules(&all, &id, transaction_client)
+            .await?;
         transaction.commit().await?;
 
         // Cache sync of newly created object
@@ -618,8 +614,7 @@ impl DatabaseHandler {
         )
         .await?;
 
-        self.evaluate_rules(&vec![id], transaction_client)
-            .await?;
+        self.evaluate_rules(&vec![id], transaction_client).await?;
         transaction.commit().await?;
 
         let object = Object::get_object_with_relations(&id, &client).await?;

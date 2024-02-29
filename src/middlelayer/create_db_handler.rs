@@ -145,14 +145,12 @@ impl DatabaseHandler {
 
         transaction.commit().await?;
 
-        // TODO:
-        // - Update cache with affected objects
+        // Update cache with affected objects
         let affected_owrs = Object::get_objects_with_relations(&affected, &client).await?;
         for affected_owr in affected_owrs {
             self.cache
                 .upsert_object(&affected_owr.object.id, affected_owr.clone())
         }
-        // - Trigger hooks for all
 
         // Create DTO which combines the object and its internal relations
         let owr = ObjectWithRelations {

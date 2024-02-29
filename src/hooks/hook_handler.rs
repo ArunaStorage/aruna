@@ -1,3 +1,4 @@
+use crate::caching::structs::ObjectWrapper;
 use crate::database::dsls::hook_dsl::{
     BasicTemplate, Credentials, ExternalHook, TemplateVariant, TriggerVariant,
 };
@@ -193,7 +194,6 @@ impl HookHandler {
                 };
 
                 // Create & send request
-                //let client = reqwest::Client::new();
                 let base_request = match method {
                     crate::database::dsls::hook_dsl::Method::PUT => match credentials {
                         Some(Credentials { token }) => client.put(url).bearer_auth(token),
@@ -204,13 +204,22 @@ impl HookHandler {
                         None => client.post(url),
                     },
                 };
-                dbg!(&base_request);
+                // Query rule bindings from cache and build generic object
+                let object_wrapper = ObjectWrapper {
+                    object_with_relations: object.clone(),
+                    rules: self
+                        .database_handler
+                        .cache
+                        .get_rule_bindings(&object.object.id)
+                        .unwrap_or_default(),
+                };
+
                 // Put everything into template
                 let data_request = match template {
                     TemplateVariant::Basic => {
                         let json = serde_json::to_string(&BasicTemplate {
                             hook_id: hook.id,
-                            object: object.clone().into(),
+                            object: object_wrapper.into(),
                             secret,
                             download,
                             pubkey_serial: pubkey_serial.into(),

@@ -1,3 +1,4 @@
+use crate::database::dsls::object_dsl::Author;
 use crate::database::{
     dsls::object_dsl::{KeyValue, KeyValueVariant, Object as DbObject},
     enums::{DataClass, ObjectStatus, ObjectType},
@@ -44,7 +45,9 @@ pub struct ObjectDocument {
     pub object_type_id: u8, // 256 should be enough
     pub status: ObjectStatus,
     pub name: String,
+    pub title: String,
     pub description: String,
+    pub authors: Vec<Author>,
     pub count: i64,
     pub size: i64,
     pub labels: Vec<KeyValue>, // Without specific internal labels
@@ -74,7 +77,9 @@ impl From<DbObject> for ObjectDocument {
             object_type_id: db_object.object_type as u8,
             status: db_object.object_status,
             name: db_object.name,
+            title: db_object.title,
             description: db_object.description,
+            authors: db_object.authors.0,
             count: db_object.count,
             size: db_object.content_len,
             labels: filtered_labels,
@@ -118,6 +123,7 @@ impl From<ObjectDocument> for Project {
         Project {
             id: object_document.id.to_string(),
             name: object_document.name,
+            title: object_document.title,
             description: object_document.description,
             key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
@@ -132,11 +138,17 @@ impl From<ObjectDocument> for Project {
                 nanos: 0,
             }),
             created_by: "".to_string(),
+            authors: object_document
+                .authors
+                .into_iter()
+                .map(From::<Author>::from)
+                .collect(),
             status: Into::<ApiStatus>::into(object_document.status) as i32,
             dynamic: object_document.dynamic,
             endpoints: vec![],
             metadata_license_tag: object_document.metadata_license,
             default_data_license_tag: object_document.data_license,
+            rule_bindings: vec![],
         }
     }
 }
@@ -159,7 +171,9 @@ impl TryFrom<Project> for ObjectDocument {
             object_type_id: ObjectType::PROJECT as u8,
             status: ObjectStatus::try_from(project.status)?,
             name: project.name,
+            title: project.title,
             description: project.description,
+            authors: project.authors.iter().map(|a| -> Result<Author, anyhow::Error> {a.clone().try_into()}).collect::<Result<Vec<Author>, anyhow::Error>>()?,
             count: stats.count,
             size: stats.size,
             labels: convert_proto_to_key_value(project.key_values)?,
@@ -178,6 +192,7 @@ impl From<ObjectDocument> for Collection {
         Collection {
             id: object_document.id.to_string(),
             name: object_document.name,
+            title: object_document.title,
             description: object_document.description,
             key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
@@ -192,11 +207,17 @@ impl From<ObjectDocument> for Collection {
                 nanos: 0,
             }),
             created_by: "".to_string(),
+            authors: object_document
+                .authors
+                .into_iter()
+                .map(From::<Author>::from)
+                .collect(),
             status: Into::<ApiStatus>::into(object_document.status) as i32,
             dynamic: object_document.dynamic,
             endpoints: vec![],
             metadata_license_tag: object_document.metadata_license,
             default_data_license_tag: object_document.data_license,
+            rule_bindings: vec![],
         }
     }
 }
@@ -219,6 +240,12 @@ impl TryFrom<Collection> for ObjectDocument {
             object_type_id: ObjectType::COLLECTION as u8,
             status: ObjectStatus::try_from(collection.status)?,
             name: collection.name,
+            title: collection.title,
+            authors: collection
+                .authors
+                .iter()
+                .map(|a| -> Result<Author, anyhow::Error> {a.clone().try_into()})
+                .collect::<Result<Vec<Author>, anyhow::Error>>()?,
             description: collection.description,
             count: stats.count,
             size: stats.size,
@@ -238,6 +265,7 @@ impl From<ObjectDocument> for Dataset {
         Dataset {
             id: object_document.id.to_string(),
             name: object_document.name,
+            title: object_document.title,
             description: object_document.description,
             key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
@@ -252,11 +280,17 @@ impl From<ObjectDocument> for Dataset {
                 nanos: 0,
             }),
             created_by: "".to_string(),
+            authors: object_document
+                .authors
+                .into_iter()
+                .map(From::<Author>::from)
+                .collect(),
             status: Into::<ApiStatus>::into(object_document.status) as i32,
             dynamic: object_document.dynamic,
             endpoints: vec![],
             metadata_license_tag: object_document.metadata_license,
             default_data_license_tag: object_document.data_license,
+            rule_bindings: vec![],
         }
     }
 }
@@ -279,12 +313,17 @@ impl TryFrom<Dataset> for ObjectDocument {
             object_type_id: ObjectType::DATASET as u8,
             status: ObjectStatus::try_from(dataset.status)?,
             name: dataset.name,
+            title: dataset.title,
             description: dataset.description,
             count: stats.count,
             size: stats.size,
             labels: convert_proto_to_key_value(dataset.key_values)?,
             data_class: DataClass::try_from(dataset.data_class)?,
             created_at: dataset.created_at.unwrap_or_default().seconds,
+            authors: dataset.authors
+                .iter()
+                .map(|a| -> Result<Author, anyhow::Error> {a.clone().try_into()})
+                .collect::<Result<Vec<Author>, anyhow::Error>>()?,
             dynamic: dataset.dynamic,
             metadata_license: dataset.metadata_license_tag,
             data_license: dataset.default_data_license_tag,
@@ -298,6 +337,7 @@ impl From<ObjectDocument> for Object {
         Object {
             id: object_document.id.to_string(),
             name: object_document.name,
+            title: object_document.title,
             description: object_document.description,
             key_values: convert_labels_to_proto(object_document.labels),
             relations: vec![],
@@ -308,12 +348,18 @@ impl From<ObjectDocument> for Object {
                 nanos: 0,
             }),
             created_by: "".to_string(),
+            authors: object_document
+                .authors
+                .into_iter()
+                .map(From::<Author>::from)
+                .collect(),
             status: Into::<ApiStatus>::into(object_document.status) as i32,
-            dynamic: false, // Objects are alywas persistent
+            dynamic: false, // Objects are always persistent
             hashes: vec![],
             endpoints: vec![],
             metadata_license_tag: object_document.metadata_license,
             data_license_tag: object_document.data_license,
+            rule_bindings: vec![],
         }
     }
 }
@@ -329,12 +375,18 @@ impl TryFrom<Object> for ObjectDocument {
             object_type_id: ObjectType::OBJECT as u8,
             status: ObjectStatus::try_from(object.status)?,
             name: object.name,
+            title: object.title,
             description: object.description,
             count: 1,
             size: object.content_len,
             labels: convert_proto_to_key_value(object.key_values)?,
             data_class: DataClass::try_from(object.data_class)?,
             created_at: object.created_at.unwrap_or_default().seconds,
+            authors: object
+                .authors
+                .iter()
+                .map(|a| -> Result<Author, anyhow::Error> {a.clone().try_into()})
+                .collect::<Result<Vec<Author>, anyhow::Error>>()?,
             dynamic: object.dynamic,
             metadata_license: object.metadata_license_tag,
             data_license: object.data_license_tag,
@@ -421,14 +473,12 @@ impl MeilisearchClient {
             {
                 Ok(index) => index,
                 Err(err) => match &err {
-                    meilisearch_sdk::tasks::Task::Failed { content } => {
-                        match content.error.error_code {
-                            meilisearch_sdk::errors::ErrorCode::IndexAlreadyExists => {
-                                self.client.get_index(index_name).await?
-                            }
-                            _ => bail!("Index creation failed: {:#?}", err),
+                    Task::Failed { content } => match content.error.error_code {
+                        meilisearch_sdk::errors::ErrorCode::IndexAlreadyExists => {
+                            self.client.get_index(index_name).await?
                         }
-                    }
+                        _ => bail!("Index creation failed: {:#?}", err),
+                    },
                     _ => bail!("Index creation failed: {:#?}", err),
                 },
             };
@@ -477,7 +527,7 @@ impl MeilisearchClient {
             // Set pagination configuration
             match index
                 .set_pagination(PaginationSetting {
-                    max_total_hits: std::u32::MAX as usize,
+                    max_total_hits: u32::MAX as usize,
                 })
                 .await?
                 .wait_for_completion(&self.client, None, None)

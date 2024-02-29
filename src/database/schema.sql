@@ -118,6 +118,8 @@ $$;
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY,
     display_name TEXT NOT NULL DEFAULT '',
+    first_name TEXT NOT NULL DEFAULT '',
+    last_name TEXT NOT NULL DEFAULT '',
     email VARCHAR(511) NOT NULL DEFAULT '',
     attributes JSONB NOT NULL,
     active BOOL NOT NULL DEFAULT FALSE

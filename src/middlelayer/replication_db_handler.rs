@@ -39,11 +39,11 @@ impl DatabaseHandler {
                     };
                     let proxy_id = DieselUlid::from_str(&request.endpoint_id)?;
                     let endpoint_status_objects = EndpointInfo {
-                        replication: crate::database::enums::ReplicationType::FullSync,
+                        replication: ReplicationType::FullSync,
                         status: Some(ReplicationStatus::Waiting),
                     };
                     let endpoint_status_hierarchy = EndpointInfo {
-                        replication: crate::database::enums::ReplicationType::FullSync,
+                        replication: ReplicationType::FullSync,
                         status: None,
                     };
 
@@ -88,11 +88,11 @@ impl DatabaseHandler {
                     }
                     let proxy_id = DieselUlid::from_str(&request.endpoint_id)?;
                     let endpoint_status_objects = EndpointInfo {
-                        replication: crate::database::enums::ReplicationType::PartialSync(true),
+                        replication: ReplicationType::PartialSync(true),
                         status: Some(ReplicationStatus::Waiting),
                     };
                     let endpoint_status_hierarchy = EndpointInfo {
-                        replication: crate::database::enums::ReplicationType::PartialSync(true),
+                        replication: ReplicationType::PartialSync(true),
                         status: None,
                     };
 
@@ -197,13 +197,11 @@ impl DatabaseHandler {
         // Update not-explicit synced with PartialSyncInfo
         if !partial_synced_hierarchy.is_empty() {
             let ep_status_hierarchy = match endpoint_status_hierarchy.replication {
-                crate::database::enums::ReplicationType::FullSync => EndpointInfo {
-                    replication: crate::database::enums::ReplicationType::PartialSync(false),
+                ReplicationType::FullSync => EndpointInfo {
+                    replication: ReplicationType::PartialSync(false),
                     status: None,
                 },
-                crate::database::enums::ReplicationType::PartialSync(_) => {
-                    endpoint_status_hierarchy
-                }
+                ReplicationType::PartialSync(_) => endpoint_status_hierarchy,
             };
             Object::update_endpoints(
                 proxy_id,
@@ -216,11 +214,11 @@ impl DatabaseHandler {
 
         if !partial_synced_objects.is_empty() {
             let ep_status_objects = match endpoint_status_objects.replication {
-                crate::database::enums::ReplicationType::FullSync => EndpointInfo {
-                    replication: crate::database::enums::ReplicationType::PartialSync(false),
+                ReplicationType::FullSync => EndpointInfo {
+                    replication: ReplicationType::PartialSync(false),
                     status: Some(ReplicationStatus::Waiting),
                 },
-                crate::database::enums::ReplicationType::PartialSync(_) => endpoint_status_objects,
+                ReplicationType::PartialSync(_) => endpoint_status_objects,
             };
             Object::update_endpoints(
                 proxy_id,

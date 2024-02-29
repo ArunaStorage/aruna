@@ -446,7 +446,7 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     // !!!!! TODO!!!!!
     async fn add_pubkey_svc_account(
         &self,
-        request: Request<AddPubkeySvcAccountRequest>,
+        _request: Request<AddPubkeySvcAccountRequest>,
     ) -> Result<Response<AddPubkeySvcAccountResponse>, tonic::Status> {
         //TODO
         Err(tonic::Status::unimplemented(
@@ -455,7 +455,7 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     }
     async fn add_trusted_endpoints_svc_account(
         &self,
-        request: Request<AddTrustedEndpointsSvcAccountRequest>,
+        _request: Request<AddTrustedEndpointsSvcAccountRequest>,
     ) -> Result<Response<AddTrustedEndpointsSvcAccountResponse>, tonic::Status> {
         //TODO
         Err(tonic::Status::unimplemented(
@@ -464,7 +464,7 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     }
     async fn remove_trusted_endpoints_svc_account(
         &self,
-        request: Request<RemoveTrustedEndpointsSvcAccountRequest>,
+        _request: Request<RemoveTrustedEndpointsSvcAccountRequest>,
     ) -> Result<Response<RemoveTrustedEndpointsSvcAccountResponse>, tonic::Status> {
         //TODO
         Err(tonic::Status::unimplemented(
@@ -473,7 +473,7 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     }
     async fn add_data_proxy_attribute_svc_account(
         &self,
-        request: Request<AddDataProxyAttributeSvcAccountRequest>,
+        _request: Request<AddDataProxyAttributeSvcAccountRequest>,
     ) -> Result<Response<AddDataProxyAttributeSvcAccountResponse>, tonic::Status> {
         //TODO
         Err(tonic::Status::unimplemented(
@@ -482,7 +482,7 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     }
     async fn remove_data_proxy_attribute_svc_account(
         &self,
-        request: Request<RemoveDataProxyAttributeSvcAccountRequest>,
+        _request: Request<RemoveDataProxyAttributeSvcAccountRequest>,
     ) -> Result<Response<RemoveDataProxyAttributeSvcAccountResponse>, tonic::Status> {
         //TODO
         Err(tonic::Status::unimplemented(
@@ -491,7 +491,7 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     }
     async fn create_s3_credentials_svc_account(
         &self,
-        request: Request<CreateS3CredentialsSvcAccountRequest>,
+        _request: Request<CreateS3CredentialsSvcAccountRequest>,
     ) -> Result<Response<CreateS3CredentialsSvcAccountResponse>> {
         Err(tonic::Status::unimplemented(
             "Creating s3 credentials for service accounts is currently unimplemented",
@@ -499,7 +499,7 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     }
     async fn delete_s3_credentials_svc_account(
         &self,
-        request: Request<DeleteS3CredentialsSvcAccountRequest>,
+        _request: Request<DeleteS3CredentialsSvcAccountRequest>,
     ) -> Result<Response<DeleteS3CredentialsSvcAccountResponse>> {
         Err(tonic::Status::unimplemented(
             "Deleting s3 credentials for service accounts is currently unimplemented",

@@ -165,13 +165,12 @@ pub async fn main() -> Result<()> {
     .await?;
 
     // Init object stats loop
-    let refresh_interval = match dotenvy::var("REFRESH_INTERVAL")?.parse::<i64>() {
-        Ok(interval) => interval,
-        Err(err) => {
+    let refresh_interval = dotenvy::var("REFRESH_INTERVAL")?
+        .parse::<i64>()
+        .unwrap_or_else(|err| {
             error!("Could not parse refresh interval: {}", err);
             300000 // 5 minutes is default
-        }
-    };
+        });
 
     start_refresh_loop(
         db_arc.clone(),

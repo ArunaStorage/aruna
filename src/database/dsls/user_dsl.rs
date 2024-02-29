@@ -19,6 +19,8 @@ use super::{
 pub struct User {
     pub id: DieselUlid,
     pub display_name: String,
+    pub first_name: String,
+    pub last_name: String,
     pub email: String,
     pub attributes: Json<UserAttributes>,
     pub active: bool,
@@ -49,6 +51,8 @@ pub struct UserAttributes {
     pub custom_attributes: Vec<CustomAttributes>,
     pub permissions: DashMap<DieselUlid, ObjectMapping<DbPermissionLevel>, RandomState>,
     pub external_ids: Vec<OIDCMapping>,
+    pub pubkey: String,
+    pub data_proxy_attribute: DashMap<DieselUlid, DataProxyAttribute>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
@@ -57,14 +61,22 @@ pub struct CustomAttributes {
     pub attribute_value: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
+pub struct DataProxyAttribute {
+    pub attribute_name: String,
+    pub attribute_value: String,
+    pub signature: String,
+    pub proxy_id: DieselUlid,
+}
+
 #[async_trait::async_trait]
 impl CrudDb for User {
     //ToDo: Rust Doc
     async fn create(&mut self, client: &Client) -> Result<()> {
         let query = "INSERT INTO users 
-          (id, display_name, email, attributes, active) 
+          (id, display_name, first_name, last_name, email, attributes, active) 
         VALUES 
-          ($1, $2, $3, $4, $5);";
+          ($1, $2, $3, $4, $5, $6, $7);";
 
         let prepared = client.prepare(query).await?;
 
@@ -74,6 +86,8 @@ impl CrudDb for User {
                 &[
                     &self.id,
                     &self.display_name,
+                    &self.first_name,
+                    &self.last_name,
                     &self.email,
                     &self.attributes,
                     &self.active,

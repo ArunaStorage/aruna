@@ -9,7 +9,6 @@ use crate::{
 use anyhow::anyhow;
 use anyhow::Result;
 use base64::{engine::general_purpose, Engine};
-use cel_interpreter::{extractors::This, Program};
 use diesel_ulid::DieselUlid;
 use log::error;
 use std::sync::Arc;

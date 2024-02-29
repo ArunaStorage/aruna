@@ -42,7 +42,7 @@ impl DatabaseHandler {
         for child in children {
             for binding in cascading.clone().into_iter() {
                 let mut new = RuleBinding {
-                    id: binding.id,
+                    rule_id: binding.rule_id,
                     origin_id: binding.origin_id,
                     object_id: child,
                     cascading: binding.cascading,
@@ -64,7 +64,7 @@ impl DatabaseHandler {
         for id in affected {
             if let Some(bindings) = self.cache.get_rule_bindings(id).map(|b| b.clone()) {
                 for binding in bindings.clone().iter() {
-                    self.evaluate_rule(&binding.id, id, transaction_client)
+                    self.evaluate_rule(&binding.rule_id, id, transaction_client)
                         .await?
                 }
             }
@@ -79,7 +79,7 @@ impl DatabaseHandler {
     ) -> Result<DieselUlid> {
         let client = self.database.get_client().await?;
         let mut rule = request.build_rule(user_id)?;
-        let id = rule.rule.rule_id;
+        let id = rule.rule.id;
         rule.rule.create(&client).await?;
         self.cache.insert_rule(&id, rule.clone());
         Ok(id)
@@ -93,13 +93,14 @@ impl DatabaseHandler {
         let client = self.database.get_client().await?;
         let updated = request.merge(&rule)?;
         updated.rule.update(&client).await?;
+        self.cache.insert_rule(&updated.rule.id, updated.clone());
         Ok(updated)
     }
 
     pub async fn delete_rule(&self, rule: &CachedRule) -> Result<()> {
         let client = self.database.get_client().await?;
         rule.rule.delete(&client).await?;
-        self.cache.delete_rule(&rule.rule.rule_id);
+        self.cache.delete_rule(&rule.rule.id);
         Ok(())
     }
 
@@ -129,7 +130,7 @@ impl DatabaseHandler {
         transaction_client: &Client,
     ) -> Result<()> {
         for child in children {
-            for rule in rules.iter().map(|r| r.id) {
+            for rule in rules.iter().map(|r| r.rule_id) {
                 self.evaluate_rule(&rule, child, transaction_client).await?
             }
         }
@@ -142,19 +143,18 @@ impl DatabaseHandler {
         transaction_client: &Client,
     ) -> Result<()> {
         if let Some(rule) = self.cache.get_rule(rule_id) {
-            let mut ctx = cel_interpreter::Context::default();
             let current_state =
                 Object::get_object_with_relations(object_id, &transaction_client).await?;
-            ctx.add_variable("object", current_state)
+
+            let mut ctx = cel_interpreter::Context::default();
+            ctx.add_variable("object", current_state.clone())
                 .map_err(|e| anyhow!(e.to_string()))?;
-            let value = rule
-                .compiled
-                .execute(&ctx)
+            let value = Value::resolve(&rule.compiled, &ctx)
                 .map_err(|e| anyhow!(format!("Policy evaluation error: {}", e.to_string())))?;
             if value != Value::Bool(true) {
                 return Err(anyhow!(format!(
                     "Policy {} evaluated false",
-                    rule.rule.rule_id
+                    rule.rule.id
                 )));
             }
         } else {

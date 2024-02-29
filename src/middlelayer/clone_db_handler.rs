@@ -54,8 +54,12 @@ impl DatabaseHandler {
         let transaction_client = transaction.client();
         clone.create(transaction_client).await?;
         relation.create(transaction_client).await?;
-        self.evaluate_and_update_rules(&vec![new_id, relation.origin_pid], &new_id, transaction_client)
-            .await?;
+        self.evaluate_and_update_rules(
+            &vec![new_id, relation.origin_pid],
+            &new_id,
+            transaction_client,
+        )
+        .await?;
         transaction.commit().await?;
 
         // Fetch object DTOs for cloned object and parent

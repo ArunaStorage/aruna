@@ -48,6 +48,8 @@ impl DatabaseHandler {
         let mut user = User {
             id: user_id,
             display_name: format!("SERVICE_ACCOUNT#{}", user_id),
+            first_name: "".to_string(),
+            last_name: "".to_string(),
             email: String::new(),
             attributes: Json(UserAttributes {
                 global_admin: false,
@@ -56,7 +58,9 @@ impl DatabaseHandler {
                 trusted_endpoints: DashMap::default(),
                 custom_attributes: vec![],
                 external_ids: vec![],
+                pubkey: "".to_string(),
                 permissions: DashMap::from_iter([(res_id, perm)]),
+                data_proxy_attribute: Default::default(),
             }),
             active: true,
         };
@@ -70,7 +74,7 @@ impl DatabaseHandler {
         authorizer: Arc<PermissionHandler>,
         request: CreateServiceAccountToken,
     ) -> Result<(Option<Token>, String)> {
-        let id = <DieselUlid as std::str::FromStr>::from_str(&request.0.svc_account_id)?;
+        let id = <DieselUlid as FromStr>::from_str(&request.0.svc_account_id)?;
         let client = self.database.get_client().await?;
         let service_account = User::get(id, &client)
             .await?

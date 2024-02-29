@@ -1,83 +1,32 @@
 use crate::database::{
     dsls::user_dsl::{
-        APIToken, CustomAttributes as DBCustomAttributes, User as DBUser,
+        APIToken, CustomAttributes as DBCustomAttributes,
+        DataProxyAttribute as DBDataProxyAttribute, User as DBUser,
         UserAttributes as DBUserAttributes,
     },
     enums::{DbPermissionLevel, ObjectMapping},
 };
 use aruna_rust_api::api::storage::{
     models::v2::{
-        permission::ResourceId, CustomAttribute, OidcMapping, Permission, PermissionLevel, Token,
-        User, UserAttributes,
+        permission::ResourceId, CustomAttribute, DataProxyAttribute, OidcMapping, Permission,
+        PermissionLevel, Token, User, UserAttributes,
     },
     services::v2::ServiceAccount,
 };
 use diesel_ulid::DieselUlid;
+
 // Conversion from database model user token to proto user
 impl From<DBUser> for User {
     fn from(db_user: DBUser) -> Self {
-        // Convert and collect tokens
-        let api_tokens = db_user
-            .attributes
-            .0
-            .tokens
-            .into_iter()
-            .map(|(token_id, token)| convert_token_to_proto(&token_id, token))
-            .collect::<Vec<_>>();
-
-        // Collect custom attributes
-        let api_custom_attributes = db_user
-            .attributes
-            .0
-            .custom_attributes
-            .into_iter()
-            .map(|ca| CustomAttribute {
-                attribute_name: ca.attribute_name,
-                attribute_value: ca.attribute_value,
-            })
-            .collect::<Vec<_>>();
-
-        // Collect personal permissions
-        let api_permissions = db_user
-            .attributes
-            .0
-            .permissions
-            .into_iter()
-            .map(|(resource_id, resource_mapping)| {
-                convert_permission_to_proto(resource_id, resource_mapping)
-            })
-            .collect::<Vec<_>>();
-
         // Return proto user
         User {
             id: db_user.id.to_string(),
             display_name: db_user.display_name,
             active: db_user.active,
             email: db_user.email,
-            attributes: Some(UserAttributes {
-                global_admin: db_user.attributes.0.global_admin,
-                service_account: db_user.attributes.0.service_account,
-                tokens: api_tokens,
-                custom_attributes: api_custom_attributes,
-                personal_permissions: api_permissions,
-                trusted_endpoints: db_user
-                    .attributes
-                    .0
-                    .trusted_endpoints
-                    .iter()
-                    .map(|e| e.key().to_string())
-                    .collect(),
-                external_ids: db_user
-                    .attributes
-                    .0
-                    .external_ids
-                    .iter()
-                    .map(|e| OidcMapping {
-                        external_id: e.external_id.to_string(),
-                        oidc_url: e.oidc_name.to_string(),
-                    })
-                    .collect(),
-            }),
+            attributes: Some(db_user.attributes.0.into()),
+            first_name: db_user.first_name,
+            last_name: db_user.last_name,
         }
     }
 }
@@ -181,13 +130,30 @@ impl From<DBUserAttributes> for UserAttributes {
                     oidc_url: a.oidc_name.to_string(),
                 })
                 .collect(),
+            pubkey: attr.pubkey,
+            data_proxy_attributes: attr
+                .data_proxy_attribute
+                .into_iter()
+                .map(|(_, a)| a.into())
+                .collect(),
         }
     }
 }
 
-impl From<DBCustomAttributes> for CustomAttributes {
+impl From<DBDataProxyAttribute> for DataProxyAttribute {
+    fn from(value: DBDataProxyAttribute) -> Self {
+        DataProxyAttribute {
+            attribute_name: value.attribute_name,
+            attribute_value: value.attribute_value,
+            signature: value.signature,
+            proxy_id: value.proxy_id.to_string(),
+        }
+    }
+}
+
+impl From<DBCustomAttributes> for CustomAttribute {
     fn from(attr: DBCustomAttributes) -> Self {
-        CustomAttributes {
+        CustomAttribute {
             attribute_name: attr.attribute_name,
             attribute_value: attr.attribute_value,
         }

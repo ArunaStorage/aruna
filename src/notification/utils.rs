@@ -55,18 +55,9 @@ pub fn generate_resource_message_subjects(hierarchies: Vec<Hierarchy>) -> Vec<St
         subjects.push(format!(
             "AOS.RESOURCE._.{}._.{}._.{}._.{}._",
             hierarchy.project_id,
-            match hierarchy.collection_id {
-                Some(id) => id,
-                None => "*".to_string(),
-            },
-            match hierarchy.dataset_id {
-                Some(id) => id,
-                None => "*".to_string(),
-            },
-            match hierarchy.object_id {
-                Some(id) => id,
-                None => "*".to_string(),
-            },
+            hierarchy.collection_id.unwrap_or_else(|| "*".to_string()),
+            hierarchy.dataset_id.unwrap_or_else(|| "*".to_string()),
+            hierarchy.object_id.unwrap_or_else(|| "*".to_string()),
         ))
     }
 

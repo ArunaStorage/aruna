@@ -262,7 +262,7 @@ impl RulesService for RuleServiceImpl {
 
         let request = DeleteRuleBinding(request.into_inner());
         let (resource_id, rule_id) = tonic_invalid!(request.get_ids(), "Invalid ids provided");
-        let user_id = tonic_auth!(
+        tonic_auth!(
             self.authorizer
                 .check_permissions(
                     &token,
@@ -283,6 +283,6 @@ impl RulesService for RuleServiceImpl {
             self.database_handler.delete_rule_binding(request).await,
             "Invalid request"
         );
-        return_with_log!(DeleteRuleBinding);
+        return_with_log!(DeleteRuleBindingResponse {});
     }
 }

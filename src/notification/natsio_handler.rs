@@ -253,10 +253,7 @@ impl NatsIoHandler {
         let jetstream_context = async_nats::jetstream::new(nats_client);
 
         // Evaluate stream name
-        let stream_name = match stream_name {
-            Some(value) => value,
-            None => STREAM_NAME.to_string(),
-        };
+        let stream_name = stream_name.unwrap_or_else(|| STREAM_NAME.to_string());
 
         // Create minimalistic stream config
         let stream_config = async_nats::jetstream::stream::Config {

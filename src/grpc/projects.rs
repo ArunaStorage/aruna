@@ -244,7 +244,7 @@ impl ProjectService for ProjectServiceImpl {
         .await;
 
         let project: generic_resource::Resource = ObjectWrapper {
-            object_with_relations: project,
+            object_with_relations: project.clone(),
             rules: self
                 .cache
                 .get_rule_bindings(&project.object.id)
@@ -294,7 +294,7 @@ impl ProjectService for ProjectServiceImpl {
         .await;
 
         let project: generic_resource::Resource = ObjectWrapper {
-            object_with_relations: project,
+            object_with_relations: project.clone(),
             rules: self
                 .cache
                 .get_rule_bindings(&project.object.id)
@@ -345,7 +345,7 @@ impl ProjectService for ProjectServiceImpl {
         .await;
 
         let project: generic_resource::Resource = ObjectWrapper {
-            object_with_relations: project,
+            object_with_relations: project.clone(),
             rules: self
                 .cache
                 .get_rule_bindings(&project.object.id)
@@ -397,7 +397,7 @@ impl ProjectService for ProjectServiceImpl {
         .await;
 
         let project: generic_resource::Resource = ObjectWrapper {
-            object_with_relations: project,
+            object_with_relations: project.clone(),
             rules: self
                 .cache
                 .get_rule_bindings(&project.object.id)
@@ -494,7 +494,7 @@ impl ProjectService for ProjectServiceImpl {
         .await;
 
         let generic_resource: generic_resource::Resource = ObjectWrapper {
-            object_with_relations: project,
+            object_with_relations: project.clone(),
             rules: self
                 .cache
                 .get_rule_bindings(&project.object.id)

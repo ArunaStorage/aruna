@@ -11,7 +11,7 @@ use crate::database::dsls::{
 use crate::database::enums::ObjectType;
 use crate::middlelayer::create_request_types::Parent;
 use crate::utils::conversions::relations::from_db_internal_relation;
-use anyhow::Result;
+use anyhow::{Result};
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, relation::Relation as RelationEnum, Collection as GRPCCollection,
     Dataset as GRPCDataset, Hash, License as APILicense, Object as GRPCObject,
@@ -27,15 +27,16 @@ use aruna_rust_api::api::storage::services::v2::{
 use diesel_ulid::DieselUlid;
 use serde::ser::SerializeStruct;
 use serde::Serialize;
+use std::str::FromStr;
 
 impl From<ObjectWrapper> for generic_resource::Resource {
     fn from(wrapped: ObjectWrapper) -> generic_resource::Resource {
         let object_with_relations = wrapped.object_with_relations;
         let rules = wrapped
             .rules
-            .into_iter()
+            .iter()
             .map(|r| RuleBinding {
-                rule_id: r.id.to_string(),
+                rule_id: r.rule_id.to_string(),
                 origin: r.origin_id.to_string(),
             })
             .collect::<Vec<RuleBinding>>();
@@ -230,128 +231,6 @@ impl From<ObjectWrapper> for generic_resource::Resource {
     }
 }
 
-// pub fn from_db_object(
-//     internal: Option<InternalRelation>,
-//     object: Object,
-// ) -> Result<generic_resource::Resource> {
-//     let mut relations: Vec<Relation> = object
-//         .external_relations
-//         .0
-//          .0
-//         .into_iter()
-//         .map(|r| Relation {
-//             relation: Some(RelationEnum::External(r.1.into())),
-//         })
-//         .collect();
-//     if let Some(i) = internal {
-//         relations.push(from_db_internal_relation(i.clone(), false))
-//     };
-//
-//     match object.object_type {
-//         ObjectType::PROJECT => Ok(generic_resource::Resource::Project(GRPCProject {
-//             id: object.id.to_string(),
-//             name: object.name,
-//             description: object.description,
-//             key_values: object.key_values.0.into(),
-//             stats: None,
-//             relations,
-//             data_class: object.data_class.into(),
-//             created_at: object.created_at.map(|t| t.into()),
-//             created_by: object.created_by.to_string(),
-//             status: object.object_status.into(),
-//             dynamic: object.dynamic,
-//             endpoints: object
-//                 .endpoints
-//                 .0
-//                 .iter()
-//                 .map(|e| DataEndpoint {
-//                     id: e.key().to_string(),
-//                     variant: Some(e.replication.into()),
-//                     status: None,
-//                 })
-//                 .collect(),
-//             metadata_license_tag: object.metadata_license,
-//             default_data_license_tag: object.data_license,
-//         })),
-//         ObjectType::COLLECTION => Ok(generic_resource::Resource::Collection(GRPCCollection {
-//             id: object.id.to_string(),
-//             name: object.name,
-//             description: object.description,
-//             key_values: object.key_values.0.into(),
-//             stats: None,
-//             relations,
-//             data_class: object.data_class.into(),
-//             created_at: object.created_at.map(|t| t.into()),
-//             created_by: object.created_by.to_string(),
-//             status: object.object_status.into(),
-//             dynamic: object.dynamic,
-//             endpoints: object
-//                 .endpoints
-//                 .0
-//                 .iter()
-//                 .map(|e| DataEndpoint {
-//                     id: e.key().to_string(),
-//                     variant: Some(e.replication.into()),
-//                     status: None,
-//                 })
-//                 .collect(),
-//             metadata_license_tag: object.metadata_license,
-//             default_data_license_tag: object.data_license,
-//         })),
-//         ObjectType::DATASET => Ok(generic_resource::Resource::Dataset(GRPCDataset {
-//             id: object.id.to_string(),
-//             name: object.name,
-//             description: object.description,
-//             key_values: object.key_values.0.into(),
-//             stats: None,
-//             relations,
-//             data_class: object.data_class.into(),
-//             created_at: object.created_at.map(|t| t.into()),
-//             created_by: object.created_by.to_string(),
-//             status: object.object_status.into(),
-//             dynamic: object.dynamic,
-//             endpoints: object
-//                 .endpoints
-//                 .0
-//                 .iter()
-//                 .map(|e| DataEndpoint {
-//                     id: e.key().to_string(),
-//                     variant: Some(e.replication.into()),
-//                     status: None,
-//                 })
-//                 .collect(),
-//             metadata_license_tag: object.metadata_license,
-//             default_data_license_tag: object.data_license,
-//         })),
-//         ObjectType::OBJECT => Ok(generic_resource::Resource::Object(GRPCObject {
-//             id: object.id.to_string(),
-//             name: object.name,
-//             description: object.description,
-//             key_values: object.key_values.0.into(),
-//             relations,
-//             content_len: object.content_len,
-//             data_class: object.data_class.into(),
-//             created_at: object.created_at.map(|t| t.into()),
-//             created_by: object.created_by.to_string(),
-//             status: object.object_status.into(),
-//             dynamic: object.dynamic,
-//             hashes: object.hashes.0.into(),
-//             endpoints: object
-//                 .endpoints
-//                 .0
-//                 .iter()
-//                 .map(|e| DataEndpoint {
-//                     id: e.key().to_string(),
-//                     variant: Some(e.replication.into()),
-//                     status: e.status.map(|s| APIReplicationStatus::from(s) as i32),
-//                 })
-//                 .collect(),
-//             metadata_license_tag: object.metadata_license,
-//             data_license_tag: object.data_license,
-//         })),
-//     }
-// }
-
 impl From<create_collection_request::Parent> for Parent {
     fn from(value: create_collection_request::Parent) -> Self {
         match value {
@@ -529,5 +408,23 @@ impl From<DBAuthor> for Author {
             orcid: value.orcid.map(|o| o.to_string()),
             id: value.user_id.map(|o| o.to_string()),
         }
+    }
+}
+
+impl TryFrom<Author> for DBAuthor {
+    type Error = anyhow::Error;
+    fn try_from(value: Author) -> Result<Self> {
+        let user_id = if let Some(user_id) = value.id {
+            Some(DieselUlid::from_str(&user_id)?)
+        } else {
+            None
+        };
+        Ok(DBAuthor {
+            first_name: value.first_name,
+            last_name: value.last_name,
+            email: value.email,
+            orcid: value.orcid,
+            user_id,
+        })
     }
 }

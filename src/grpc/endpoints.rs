@@ -98,7 +98,7 @@ impl EndpointService for EndpointServiceImpl {
         // Send messages in batches if present
         let cache_clone = self.cache.clone();
         tokio::spawn(async move {
-            for item in cache_clone.get_proxy_cache_iterator(&user) {
+            for item in cache_clone.get_proxy_cache_iterator(&user, cache_clone.clone()) {
                 match tx.send(Ok(item.into())).await {
                     Ok(_) => {
                         log::info!("Successfully send stream response")
@@ -157,7 +157,7 @@ impl EndpointService for EndpointServiceImpl {
         );
 
         if !ep.is_public && !is_admin {
-            return Err(tonic::Status::unauthenticated(
+            return Err(Status::unauthenticated(
                 "Privat endpoint info can only be fetched by administrators",
             ));
         }
@@ -278,7 +278,7 @@ impl EndpointService for EndpointServiceImpl {
         &self,
         _request: Request<SetEndpointStatusRequest>,
     ) -> Result<Response<SetEndpointStatusResponse>> {
-        Err(tonic::Status::unimplemented(
+        Err(Status::unimplemented(
             "SetEndpointStatus is currently not implemented",
         ))
     }

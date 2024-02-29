@@ -116,7 +116,7 @@ impl DatabaseHandler {
                                 // Check if parents are all already marked for deletion (except root)
                                 if resource.object.id != root_object.object.id {
                                     for parent_id in resource.get_parents() {
-                                        if !(ids_to_delete.contains(&parent_id)) {
+                                        if !ids_to_delete.contains(&parent_id) {
                                             bail!("Resource {} still has parents in multiple hierarchies", resource.object.id)
                                         }
                                     }

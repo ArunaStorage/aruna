@@ -8,7 +8,7 @@ use tokio_postgres::Client;
 
 #[derive(FromRow, FromSql, Debug, Clone, ToSql, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct RuleBinding {
-    pub id: DieselUlid,
+    pub rule_id: DieselUlid,
     pub origin_id: DieselUlid,
     pub object_id: DieselUlid,
     pub cascading: bool,
@@ -16,7 +16,7 @@ pub struct RuleBinding {
 
 #[derive(FromRow, FromSql, Debug, Clone, ToSql)]
 pub struct Rule {
-    pub rule_id: DieselUlid,
+    pub id: DieselUlid,
     pub rule_expressions: String,
     pub description: String,
     pub owner_id: DieselUlid,
@@ -36,7 +36,7 @@ impl CrudDb for Rule {
             .query_one(
                 &prepared,
                 &[
-                    &self.rule_id,
+                    &self.id,
                     &self.rule_expressions,
                     &self.description,
                     &self.owner_id,
@@ -65,7 +65,7 @@ impl CrudDb for Rule {
     async fn delete(&self, client: &Client) -> Result<()> {
         let query = "DELETE FROM rules WHERE rule_id = $1";
         let prepared = client.prepare(query).await?;
-        client.execute(&prepared, &[&self.rule_id]).await?;
+        client.execute(&prepared, &[&self.id]).await?;
         Ok(())
     }
 }
@@ -79,7 +79,7 @@ impl Rule {
             .execute(
                 &prepared,
                 &[
-                    &self.rule_id,
+                    &self.id,
                     &self.rule_expressions,
                     &self.description,
                     &self.owner_id,
@@ -103,19 +103,14 @@ impl CrudDb for RuleBinding {
         let row = client
             .query_one(
                 &prepared,
-                &[
-                    &self.id,
-                    &self.origin_id,
-                    &self.object_id,
-                    &self.cascading,
-                ],
+                &[&self.rule_id, &self.origin_id, &self.object_id, &self.cascading],
             )
             .await?;
 
         *self = RuleBinding::from_row(&row);
         Ok(())
     }
-    async fn get(id: impl PrimaryKey, client: &Client) -> Result<Option<Self>> {
+    async fn get(_id: impl PrimaryKey, _client: &Client) -> Result<Option<Self>> {
         Err(anyhow!("Cannot get unique entry"))
     }
     async fn all(client: &Client) -> Result<Vec<Self>> {
@@ -128,7 +123,7 @@ impl CrudDb for RuleBinding {
         let query = "DELETE FROM rule_bindings WHERE rule_id = $1, origin_id = $2";
         let prepared = client.prepare(query).await?;
         client
-            .execute(&prepared, &[&self.id, &self.origin_id])
+            .execute(&prepared, &[&self.rule_id, &self.origin_id])
             .await?;
         Ok(())
     }

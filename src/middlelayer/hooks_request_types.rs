@@ -347,10 +347,7 @@ impl CustomTemplate {
             Some(creds) => (creds.access_key, creds.secret_key),
             None => (String::new(), String::new()),
         };
-        let download_url = match download_url {
-            Some(download) => download,
-            None => String::new(),
-        };
+        let download_url = download_url.unwrap_or_else(|| String::new());
         let replacement_pairs = [
             (r"\{\{secret\}\}", secret),
             (r"\{\{object_id\}\}", object.id.to_string()),

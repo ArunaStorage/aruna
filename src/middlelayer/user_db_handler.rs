@@ -36,10 +36,14 @@ impl DatabaseHandler {
             custom_attributes: vec![],
             permissions: Default::default(),
             external_ids: vec![external_id],
+            pubkey: "".to_string(),
+            data_proxy_attribute: Default::default(),
         };
         let mut user = User {
             id: user_id,
             display_name: request.get_display_name(),
+            first_name: "".to_string(),
+            last_name: "".to_string(),
             email: request.get_email(),
             attributes: Json(new_attributes),
             active: false,

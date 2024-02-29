@@ -3,6 +3,7 @@ use crate::database::crud::{CrudDb, PrimaryKey};
 use crate::database::dsls::object_dsl::KeyValue;
 use anyhow::anyhow;
 use anyhow::Result;
+use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
 use aruna_rust_api::api::storage::models::v2::relation::Relation;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
@@ -10,8 +11,6 @@ use postgres_from_row::FromRow;
 use postgres_types::{FromSql, Json};
 use serde::{Deserialize, Serialize};
 use tokio_postgres::Client;
-
-use super::object_dsl::ObjectWithRelations;
 
 #[derive(FromRow, Debug, Clone, PartialEq)]
 pub struct Hook {
@@ -89,7 +88,7 @@ pub enum TemplateVariant {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct BasicTemplate {
     pub hook_id: DieselUlid,
-    pub object: ObjectWithRelations,
+    pub object: Resource,
     pub secret: String,
     pub download: Option<String>,
     pub pubkey_serial: i32,

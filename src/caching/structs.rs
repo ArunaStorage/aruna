@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::caching::cache::Cache;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::dsls::pub_key_dsl::PubKey;
 use crate::database::dsls::rule_dsl::Rule;
@@ -35,7 +36,7 @@ pub struct ObjectWrapper {
 #[derive(Clone)]
 pub struct CachedRule {
     pub rule: Rule,
-    pub compiled: cel_interpreter::Program,
+    pub compiled: cel_parser::Expression,
 }
 
 impl PubKeyEnum {
@@ -146,6 +147,7 @@ pub struct ProxyCacheIterator<'a> {
     pub_key_iter:
         Box<(dyn Iterator<Item = RefMulti<'a, i16, PubKeyEnum, RandomState>> + 'a + Send + Sync)>,
     endpoint_id: DieselUlid,
+    cache: Arc<Cache>,
 }
 
 impl<'a> ProxyCacheIterator<'a> {
@@ -163,12 +165,14 @@ impl<'a> ProxyCacheIterator<'a> {
             (dyn Iterator<Item = RefMulti<'a, i16, PubKeyEnum, RandomState>> + 'a + Send + Sync),
         >,
         endpoint_id: DieselUlid,
+        cache: Arc<Cache>,
     ) -> ProxyCacheIterator<'a> {
         ProxyCacheIterator {
             resource_iter,
             user_iter,
             pub_key_iter,
             endpoint_id,
+            cache,
         }
     }
 }
@@ -177,11 +181,18 @@ impl<'a> Iterator for ProxyCacheIterator<'a> {
     type Item = GrpcProxyInfos;
     fn next(&mut self) -> Option<Self::Item> {
         for res in self.resource_iter.by_ref() {
-            let res = res.value();
+            let bindings = self.cache.get_rule_bindings(res.key()).unwrap_or_default();
+            let res = res.value().clone();
             if res.object.object_status != ObjectStatus::DELETED
                 && res.object.endpoints.0.contains_key(&self.endpoint_id)
             {
-                return Some(GrpcProxyInfos::Resource(res.clone().into()));
+                return Some(GrpcProxyInfos::Resource(
+                    ObjectWrapper {
+                        object_with_relations: res,
+                        rules: bindings,
+                    }
+                    .into(),
+                ));
             }
         }
         for res in self.user_iter.by_ref() {
