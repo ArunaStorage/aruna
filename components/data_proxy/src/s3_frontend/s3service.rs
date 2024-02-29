@@ -15,18 +15,22 @@ use crate::structs::ObjectsState;
 use crate::structs::PartETag;
 use crate::structs::TypedRelation;
 use crate::structs::ALL_RIGHTS_RESERVED;
+use crate::CONFIG;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Hashalgorithm;
 use aruna_rust_api::api::storage::models::v2::{DataClass, Status};
 use base64::engine::general_purpose;
 use base64::Engine;
+use bytes::BufMut;
+use bytes::BytesMut;
 use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use futures_util::TryStreamExt;
 use http::HeaderName;
 use http::HeaderValue;
 use md5::{Digest, Md5};
+use pithos_lib::helpers::footer_parser::Footer;
 use pithos_lib::helpers::footer_parser::FooterParser;
 use pithos_lib::streamreadwrite::GenericStreamReadWriter;
 use pithos_lib::transformer::ReadWriter;
@@ -464,130 +468,79 @@ impl S3 for ArunaS3Service {
         let encryption_key = location.get_encryption_key();
 
         let (sender, receiver) = async_channel::bounded(10);
+        let object = states.require_object()?;
 
         // Gets 128 kb chunks (last 2)
-        let footer_limit = 5242880 + 80 * 28;
-        let mut footer_parser: Option<FooterParser> = if content_length > footer_limit {
-            trace!("getting footer");
-            // Without encryption block because this is already checked inside
+
+        let footer: Option<Footer> = if location.is_pithos() {
             let (footer_sender, footer_receiver) = async_channel::unbounded();
             pin!(footer_receiver);
+            self.backend
+                .get_object(
+                    location.clone(),
+                    Some(format!("bytes=-{}", (65536 + 28) * 2)),
+                    footer_sender,
+                )
+                .await
+                .map_err(|_| {
+                    error!(error = "Unable to get encryption_footer");
+                    s3_error!(InternalError, "Unable to get encryption_footer")
+                })?;
+            let mut output = BytesMut::with_capacity((65536 + 28) * 2);
+            while let Ok(Ok(bytes)) = footer_receiver.recv().await {
+                output.put(bytes);
+            }
 
-            let parser = match encryption_key.clone() {
-                Some(key) => {
-                    self.backend
-                        .get_object(
-                            location.clone(),
-                            Some(format!("bytes=-{}", (65536 + 28) * 2)),
-                            // "-" means last (2) chunks
-                            // when encrypted + 28 for encryption information (16 bytes nonce, 12 bytes checksum)
-                            // Encrypted chunk = | 16 b nonce | 65536 b data | 12 b checksum |
-                            footer_sender,
-                        )
-                        .await
-                        .map_err(|_| {
-                            error!(error = "Unable to get encryption_footer");
-                            s3_error!(InternalError, "Unable to get encryption_footer")
-                        })?;
+            let mut parser = FooterParser::new(&output).unwrap();
+            parser = parser.add_recipient(
+                CONFIG
+                    .proxy
+                    .private_key
+                    .map(|k| k.as_bytes().try_into().ok())
+                    .flatten()
+                    .ok_or_else(|| {
+                        error!(error = "Unable to get private key");
+                        s3_error!(InternalError, "Unable to get private key")
+                    })?,
+            );
+            parser = parser.parse().map_err(|_| {
+                error!(error = "Unable to parse footer");
+                s3_error!(InternalError, "Unable to parse footer")
+            })?;
 
-                    // Stream takes receiver chunks und them into vec
-                    let mut output = Vec::with_capacity(131_128);
-                    let mut arsw =
-                        GenericStreamReadWriter::new_with_writer(footer_receiver, &mut output);
-
-                    // processes chunks and puts them into output
-                    arsw.process().await.map_err(|_| {
-                        error!(error = "Unable to get footer");
-                        s3_error!(InternalError, "Unable to get footer")
-                    })?;
-                    drop(arsw);
-
-                    match output.try_into() {
-                        Ok(i) => match FooterParser::from_encrypted(&i, &key) {
-                            Ok(p) => Some(p),
-                            Err(_) => None,
-                        },
-                        Err(_) => None,
-                    }
-                }
-                None => {
-                    self.backend
-                        .get_object(
-                            location.clone(),
-                            Some(format!("bytes=-{}", 65536 * 2)),
-                            // when not encrypted without 28
-                            footer_sender,
-                        )
-                        .await
-                        .map_err(|_| {
-                            error!(error = "Unable to get compression_footer");
-                            s3_error!(InternalError, "Unable to get compression footer")
-                        })?;
-                    let mut output = Vec::with_capacity(131_128);
-                    let mut arsw =
-                        GenericStreamReadWriter::new_with_writer(footer_receiver, &mut output);
-
-                    arsw.process().await.map_err(|_| {
-                        error!(error = "Unable to get footer");
-                        s3_error!(InternalError, "Unable to get footer")
-                    })?;
-                    drop(arsw);
-
-                    match output.try_into() {
-                        Ok(i) => Some(FooterParser::new(&i)),
-                        Err(_) => None,
-                    }
-                }
-            };
-            parser
+            Some(parser.try_into().map_err(|_| {
+                error!(error = "Unable to convert footer");
+                s3_error!(InternalError, "Unable to convert footer")
+            })?)
         } else {
             None
         };
-        let dbg = footer_parser.as_mut().map(|p| {
-            p.parse().unwrap();
-            p.get_blocklist()
-        });
-        trace!(?dbg);
 
         trace!("calculating ranges");
-        let (query_ranges, filter_ranges, actual_from) =
-            match calculate_ranges(req.input.range, content_length as u64, footer_parser) {
-                Ok((query_ranges, filter_ranges, actual_from)) => {
-                    (query_ranges, filter_ranges, actual_from)
+        let (query_ranges, edit_list, actual_range) =
+            match calculate_ranges(req.input.range, content_length as u64, footer, &location) {
+                Ok((query_ranges, edit_list, _, actual_range)) => {
+                    (query_ranges, edit_list, actual_range)
                 }
                 Err(err) => {
-                    warn!("Error while parsing ranges: {}", err);
-                    if let Some(range) = req.input.range {
-                        let mut aruna_range =
-                            aruna_range_from_s3range(range, content_length as u64);
-                        aruna_range.to += 1;
-                        (None, Some(aruna_range), aruna_range.from)
-                    } else {
-                        (None, None, 0)
-                    }
+                    error!(error = ?err, "Unable to calculate ranges");
+                    return Err(s3_error!(InternalError, "Unable to calculate ranges"));
                 }
             };
 
-        let (content_length, accept_ranges, content_range) = match filter_ranges {
-            Some(filter_range) => (
-                calculate_content_length_from_range(filter_range),
+        let (accept_ranges, content_range) = if let Some(query_range) = actual_range {
+            (
                 Some("bytes".to_string()),
                 Some(format!(
                     "bytes {}-{}/{}",
-                    actual_from + filter_range.from,
-                    actual_from + filter_range.to - 1,
+                    query_range.from,
+                    query_range.to,
                     content_length
                 )),
-            ),
-            None => (content_length, None, None),
+            )
+        }else{
+            (None, None)
         };
-        debug!(
-            ?content_length,
-            ?query_ranges,
-            ?filter_ranges,
-            ?accept_ranges,
-            ?content_range
-        );
 
         // Spawn get_object to fetch bytes from storage storage
         let backend = self.backend.clone();
@@ -601,6 +554,11 @@ impl S3 for ArunaS3Service {
         );
         let (final_send, final_rcv) = async_channel::unbounded();
 
+        let decryption_key = location.get_encryption_key().ok_or_else(|| {
+            error!(error = "Unable to get encryption key");
+            s3_error!(InternalError, "Unable to get encryption key")
+        })?;
+
         // Spawn final part
         let cloned_key = encryption_key.clone();
         tokio::spawn(
@@ -611,15 +569,20 @@ impl S3 for ArunaS3Service {
                     AsyncSenderSink::new(final_send),
                 );
 
-                asrw = asrw
-                    .add_transformer(ChaCha20Dec::new(cloned_key).map_err(|_| {
-                        error!(error = "Unable to initialize ChaCha20Dec");
-                        s3_error!(InternalError, "Internal notifier error")
-                    })?)
-                    .add_transformer(ZstdDec::new());
+                if location.get_encryption_key().is_some() {
+                    asrw = asrw
+                        .add_transformer(ChaCha20Dec::new_with_fixed(decryption_key).map_err(|_| {
+                            error!(error = "Unable to initialize ChaCha20Dec");
+                            s3_error!(InternalError, "Internal notifier error")
+                        })?);
+                }
 
-                if let Some(filter_range) = filter_ranges {
-                    asrw = asrw.add_transformer(Filter::new(filter_range));
+                if location.is_compressed() {
+                    asrw = asrw.add_transformer(ZstdDec::new());
+                }
+
+                if let Some(edit_list) = edit_list {
+                    asrw = asrw.add_transformer(Filter::new_with_edit_list(Some(edit_list)));
                 };
 
                 asrw.process().await.map_err(|_| {
@@ -632,10 +595,10 @@ impl S3 for ArunaS3Service {
             .instrument(info_span!("query_data")),
         );
 
-        let body = Some(StreamingBlob::wrap(final_rcv).map_err(|_| {
+        let body = Some(StreamingBlob::wrap(final_rcv.map_err(|_| {
             error!(error = "Unable to wrap final_rcv");
             s3_error!(InternalError, "Internal processing error")
-        }));
+        })));
 
         let output = GetObjectOutput {
             body,
@@ -643,7 +606,7 @@ impl S3 for ArunaS3Service {
             content_range,
             content_length,
             last_modified: None,
-            e_tag: Some(format!("-{}", id)),
+            e_tag: Some(format!("-{}", object.id)),
             version_id: None,
             ..Default::default()
         };
@@ -669,8 +632,8 @@ impl S3 for ArunaS3Service {
         req: S3Request<HeadObjectInput>,
     ) -> S3Result<S3Response<HeadObjectOutput>> {
         let CheckAccessResult {
-            object,
-            bundle,
+            objects_state,
+            user_state,
             headers,
             ..
         } = req
@@ -682,56 +645,49 @@ impl S3 for ArunaS3Service {
                 s3_error!(InternalError, "No context found")
             })?;
 
-        trace!(?object, ?bundle);
-
-        if let Some(_bundle) = bundle {
-            let id = match object {
-                Some((obj, _)) => obj.id,
-                None => {
-                    trace!("Object not found");
-                    return Err(s3_error!(NoSuchKey, "Object not found"));
-                }
-            };
-            let _levels = self.cache.get_path_levels(id).map_err(|_| {
-                error!(error = "Unable to get path levels");
-                s3_error!(InternalError, "Unable to get path levels")
-            })?;
+        if let ObjectsState::Bundle { bundle, .. } = objects_state {
 
             return Ok(S3Response::new(HeadObjectOutput {
                 content_length: -1,
                 last_modified: Some(
-                    // FIXME: Real time ...
-                    time::OffsetDateTime::from_unix_timestamp(Utc::now().timestamp())
-                        .unwrap()
+                    time::OffsetDateTime::from_unix_timestamp(bundle.id.timestamp() as i64)
+                        .map_err(|_| {
+                            error!(error = "Unable to parse timestamp");
+                            s3_error!(InternalError, "Unable to parse timestamp")
+                        })?
                         .into(),
                 ),
-                e_tag: Some(format!("-{}", id)),
+                e_tag: Some(format!("-{}", bundle.id)),
                 ..Default::default()
             }));
         }
 
-        let (object, location) = object.ok_or_else(|| {
-            error!(error = "No object found");
-            s3_error!(NoSuchKey, "No object found")
-        })?;
+
+        let (object, location) = objects_state.extract_object()?;
 
         let content_len = location.map(|l| l.raw_content_len).unwrap_or_default();
+
+        let mime = mime_guess::from_path(object.name.as_str()).first();
 
         let output = HeadObjectOutput {
             content_length: content_len,
             last_modified: Some(
-                // FIXME: Real time ...
-                time::OffsetDateTime::from_unix_timestamp(Utc::now().timestamp())
-                    .unwrap()
-                    .into(),
+                time::OffsetDateTime::from_unix_timestamp(object.id.timestamp() as i64)
+                        .map_err(|_| {
+                            error!(error = "Unable to parse timestamp");
+                            s3_error!(InternalError, "Unable to parse timestamp")
+                        })?
+                        .into(),
             ),
             e_tag: Some(object.id.to_string()),
+            content_type: mime,
             ..Default::default()
         };
 
         debug!(?output);
 
         debug!(?headers);
+
 
         let mut resp = S3Response::new(output);
         if let Some(headers) = headers {

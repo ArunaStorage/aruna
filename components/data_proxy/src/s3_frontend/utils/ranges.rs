@@ -8,15 +8,18 @@ use s3s::dto::Range::{Int, Suffix};
 
 use crate::structs::ObjectLocation;
 
+const RAW_CHUNK: u64 = 65536;
+const ENCRYTPION_CHUNK: u64 = RAW_CHUNK + 28;
+
 #[tracing::instrument(level = "trace", skip(input_range, content_length, footer))]
 pub fn calculate_ranges(
     input_range: Option<S3Range>,
     content_length: u64,
     footer: Option<Footer>,
     location: &ObjectLocation,
-) -> Result<(Option<String>, Option<Vec<u64>>, u64)> {
+) -> Result<(Option<String>, Option<Vec<u64>>, u64, Option<ArunaRange>)> {
     let Some(range) = input_range else {
-        return Ok((None, None, content_length));
+        return Ok((None, None, content_length, None));
     };
     let aruna_range = aruna_range_from_s3range(range, content_length);
     if location.is_pithos() {
@@ -35,18 +38,38 @@ pub fn calculate_ranges(
             from: aruna_range.from as u64,
             to: aruna_range.to as u64,
         });
+
         return Ok((
             Some(format!("bytes={}-{}", a.from, a.to)),
             Some(b),
             calculate_content_length_from_range(a),
+            Some(aruna_range),
         ));
     }
 
-    if location.is_compressed() || location.get_encryption_key().is_some() {
+    if location.is_compressed() {
         return Ok((
             None,
-            Some(vec![aruna_range.from, aruna_range.to]),
+            Some(vec![aruna_range.from, aruna_range.to - aruna_range.from]),
             aruna_range.to - aruna_range.from,
+            Some(aruna_range),
+        ));
+    }
+
+    if location.get_encryption_key().is_some() {
+        let start = aruna_range.from / RAW_CHUNK;
+        let start_skip = aruna_range.from % RAW_CHUNK;
+        let end = (aruna_range.to / RAW_CHUNK) + 1;
+
+        return Ok((
+            Some(format!(
+                "bytes={}-{}",
+                start * ENCRYTPION_CHUNK,
+                end * ENCRYTPION_CHUNK
+            )),
+            Some(vec![aruna_range.from, aruna_range.to - aruna_range.from]),
+            aruna_range.to - aruna_range.from,
+            Some(aruna_range),
         ));
     }
 
@@ -54,6 +77,7 @@ pub fn calculate_ranges(
         Some(format!("bytes={}-{}", aruna_range.from, aruna_range.to)),
         None,
         aruna_range.to - aruna_range.from,
+        Some(aruna_range),
     ));
 }
 
