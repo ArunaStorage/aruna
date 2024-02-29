@@ -94,7 +94,8 @@ async fn main() -> Result<()> {
         CONFIG.persistence.is_some(),
         CONFIG.proxy.endpoint_id,
         CONFIG
-            .proxy.clone()
+            .proxy
+            .clone()
             .private_key
             .ok_or_else(|| anyhow!("Private key not set"))?,
         CONFIG.proxy.serial,
@@ -136,35 +137,36 @@ async fn main() -> Result<()> {
 
     let proxy_grpc_addr = CONFIG.proxy.grpc_server.parse::<SocketAddr>()?;
 
-    let grpc_server_handle =
-        tokio::spawn(
-            async move {
-                let mut builder = Server::builder()
-                    .add_service(DataproxyReplicationServiceServer::new(
-                        DataproxyReplicationServiceImpl::new(
-                            cache_clone.clone(),
-                            sender,
-                            storage_backend,
-                        ),
-                    ))
-                    .add_service(DataproxyUserServiceServer::new(
-                        DataproxyUserServiceImpl::new(cache_clone.clone()),
-                    ));
+    let grpc_server_handle = tokio::spawn(
+        async move {
+            let mut builder = Server::builder()
+                .add_service(DataproxyReplicationServiceServer::new(
+                    DataproxyReplicationServiceImpl::new(
+                        cache_clone.clone(),
+                        sender,
+                        storage_backend,
+                    ),
+                ))
+                .add_service(DataproxyUserServiceServer::new(
+                    DataproxyUserServiceImpl::new(cache_clone.clone()),
+                ));
 
-                if let Some(frontend) = &CONFIG.frontend {
-                    builder = builder.add_service(BundlerServiceServer::new(
-                        BundlerServiceImpl::new(cache_clone.clone(), frontend.hostname.to_string(), true),
-                    ));
-                };
+            if let Some(frontend) = &CONFIG.frontend {
+                builder = builder.add_service(BundlerServiceServer::new(BundlerServiceImpl::new(
+                    cache_clone.clone(),
+                    frontend.hostname.to_string(),
+                    true,
+                )));
+            };
 
-                builder.serve(proxy_grpc_addr).await
-            }
-            .instrument(info_span!("grpc_server_run")),
-        )
-        .map_err(|e| {
-            error!(error = ?e, msg = e.to_string());
-            anyhow!("an error occured {e}")
-        });
+            builder.serve(proxy_grpc_addr).await
+        }
+        .instrument(info_span!("grpc_server_run")),
+    )
+    .map_err(|e| {
+        error!(error = ?e, msg = e.to_string());
+        anyhow!("an error occured {e}")
+    });
 
     if let Some(s3_server) = s3_server {
         match try_join!(s3_server.run(), grpc_server_handle) {

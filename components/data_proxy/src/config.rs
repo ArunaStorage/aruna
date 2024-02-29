@@ -43,12 +43,12 @@ pub struct Proxy {
 impl Proxy {
     pub fn validate(&mut self) -> Result<()> {
         let Proxy {
-            endpoint_id,
+            
             private_key,
             serial,
-            remote_synced,
-            enable_ingest,
-            grpc_server,
+            
+            
+            
             ..
         } = self;
 

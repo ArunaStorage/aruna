@@ -398,10 +398,15 @@ impl TryFrom<GrpcUser> for User {
         Ok(User {
             user_id: DieselUlid::from_str(&value.id)?,
             personal_permissions: perm_convert(
-                value.attributes.as_ref().map(|e| e.personal_permissions.clone()).unwrap_or_default(),
+                value
+                    .attributes
+                    .as_ref()
+                    .map(|e| e.personal_permissions.clone())
+                    .unwrap_or_default(),
             ),
             tokens: value
-                .attributes.as_ref()
+                .attributes
+                .as_ref()
                 .ok_or_else(|| {
                     error!("No tokens found");
                     anyhow!("No tokens found")
@@ -1367,7 +1372,7 @@ impl ResourceStates {
         perm: DbPermissionLevel,
     ) -> Result<(), S3Error> {
         for res in self.objects.iter() {
-            let ResourceState::Found { object } = res else{
+            let ResourceState::Found { object } = res else {
                 continue;
             };
             if let Some(q_perm) = key_info.permissions.get(&object.id) {
@@ -1383,7 +1388,7 @@ impl ResourceStates {
     #[tracing::instrument(level = "trace", skip(self, ep_id))]
     pub fn fail_partial_sync(&self, ep_id: &DieselUlid) -> Result<(), S3Error> {
         for res in self.objects.iter().rev() {
-            let ResourceState::Found { object } = res else{
+            let ResourceState::Found { object } = res else {
                 continue;
             };
             object.fail_partial_sync(ep_id)?;
@@ -1459,9 +1464,8 @@ impl ResourceStates {
         };
 
         let dataset_tag = match dataset {
-            NewOrExistingObject::Existing(ref dataset) | NewOrExistingObject::Missing(ref dataset) => {
-                Some((dataset.id, dataset.name.clone()))
-            }
+            NewOrExistingObject::Existing(ref dataset)
+            | NewOrExistingObject::Missing(ref dataset) => Some((dataset.id, dataset.name.clone())),
             _ => None,
         };
 
@@ -1491,9 +1495,8 @@ impl ResourceStates {
         };
 
         let object_tag = match object {
-            NewOrExistingObject::Existing(ref object) | NewOrExistingObject::Missing(ref object) => {
-                Some((object.id, object.name.clone()))
-            }
+            NewOrExistingObject::Existing(ref object)
+            | NewOrExistingObject::Missing(ref object) => Some((object.id, object.name.clone())),
             _ => None,
         };
 

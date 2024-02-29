@@ -72,16 +72,18 @@ impl RuleEngine {
                     );
                 }
                 RuleTarget::REPLICATIONIN => {
-                    replication_inbound_expressions = replication_inbound_expressions.add_expression(
-                        cel_parser::parse(rule.rule.as_str())
-                            .map_err(|e| anyhow!("error parsing rule: {}", e))?,
-                    );
+                    replication_inbound_expressions = replication_inbound_expressions
+                        .add_expression(
+                            cel_parser::parse(rule.rule.as_str())
+                                .map_err(|e| anyhow!("error parsing rule: {}", e))?,
+                        );
                 }
                 RuleTarget::REPLICATIONOUT => {
-                    replication_outbound_expressions = replication_outbound_expressions.add_expression(
-                        cel_parser::parse(rule.rule.as_str())
-                            .map_err(|e| anyhow!("error parsing rule: {}", e))?,
-                    );
+                    replication_outbound_expressions = replication_outbound_expressions
+                        .add_expression(
+                            cel_parser::parse(rule.rule.as_str())
+                                .map_err(|e| anyhow!("error parsing rule: {}", e))?,
+                        );
                 }
             }
         }
@@ -187,7 +189,10 @@ impl RuleEngine {
         }
     }
 
-    pub fn _evaluate_incoming_replication(&self, ctx: ReplicationIncomingRuleInput) -> Result<bool> {
+    pub fn _evaluate_incoming_replication(
+        &self,
+        ctx: ReplicationIncomingRuleInput,
+    ) -> Result<bool> {
         let mut context = Context::default();
         context.add_variable("input", ctx).map_err(|e| {
             error!(error = ?e, "error adding variable");
@@ -203,7 +208,10 @@ impl RuleEngine {
         }
     }
 
-    pub fn _evaluate_outgoing_replication(&self, ctx: ReplicationOutgoingRuleInput) -> Result<bool> {
+    pub fn _evaluate_outgoing_replication(
+        &self,
+        ctx: ReplicationOutgoingRuleInput,
+    ) -> Result<bool> {
         let mut context = Context::default();
         context.add_variable("input", ctx).map_err(|e| {
             error!(error = ?e, "error adding variable");

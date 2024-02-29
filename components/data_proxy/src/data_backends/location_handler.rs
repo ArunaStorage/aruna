@@ -32,8 +32,17 @@ pub enum Arguments {
 impl Arguments {
     pub fn with_hierarchy(&self, hierarchy: &[Option<(DieselUlid, String)>; 4]) -> String {
         match self {
-            Arguments::Project => hierarchy.get(0).cloned().flatten().unwrap_or_default().1.clone(),
-            Arguments::ProjectId => hierarchy.get(0).cloned().flatten()
+            Arguments::Project => hierarchy
+                .get(0)
+                .cloned()
+                .flatten()
+                .unwrap_or_default()
+                .1
+                .clone(),
+            Arguments::ProjectId => hierarchy
+                .get(0)
+                .cloned()
+                .flatten()
                 .unwrap_or_default()
                 .0
                 .to_string()
@@ -62,8 +71,17 @@ impl Arguments {
                 .flatten()
                 .map(|(a, _)| a.to_string().to_ascii_lowercase())
                 .unwrap_or_default(),
-            Arguments::Object => hierarchy.get(3).cloned().flatten().unwrap_or_default().1.clone(),
-            Arguments::ObjectId => hierarchy.get(3).cloned().flatten()
+            Arguments::Object => hierarchy
+                .get(3)
+                .cloned()
+                .flatten()
+                .unwrap_or_default()
+                .1
+                .clone(),
+            Arguments::ObjectId => hierarchy
+                .get(3)
+                .cloned()
+                .flatten()
                 .unwrap_or_default()
                 .0
                 .to_string()

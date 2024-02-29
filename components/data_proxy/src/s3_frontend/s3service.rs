@@ -279,8 +279,7 @@ impl S3 for ArunaS3Service {
 
         let (states, _) = objects_state.require_regular()?;
 
-        let (_, collection, dataset, object, location_state) =
-            states.into_new_or_existing()?;
+        let (_, collection, dataset, object, location_state) = states.into_new_or_existing()?;
 
         let new_object = match object {
             NewOrExistingObject::Existing(ob) => {
@@ -485,14 +484,15 @@ impl S3 for ArunaS3Service {
             let mut parser = FooterParser::new(&output).unwrap();
 
             let key = CONFIG
-            .proxy.clone()
-            .private_key
-            .map(|k| k.clone().as_bytes().try_into().ok())
-            .flatten()
-            .ok_or_else(|| {
-                error!(error = "Unable to get private key");
-                s3_error!(InternalError, "Unable to get private key")
-            })?;
+                .proxy
+                .clone()
+                .private_key
+                .map(|k| k.clone().as_bytes().try_into().ok())
+                .flatten()
+                .ok_or_else(|| {
+                    error!(error = "Unable to get private key");
+                    s3_error!(InternalError, "Unable to get private key")
+                })?;
             parser = parser.add_recipient(&key);
             parser = parser.parse().map_err(|_| {
                 error!(error = "Unable to parse footer");
@@ -535,12 +535,8 @@ impl S3 for ArunaS3Service {
         let backend = self.backend.clone();
         let loc_clone = location.clone();
         tokio::spawn(
-            async move {
-                backend
-                    .get_object(loc_clone, query_ranges, sender)
-                    .await
-            }
-            .instrument(info_span!("get_object")),
+            async move { backend.get_object(loc_clone, query_ranges, sender).await }
+                .instrument(info_span!("get_object")),
         );
         let (final_send, final_rcv) = async_channel::unbounded();
 
@@ -950,7 +946,8 @@ impl S3 for ArunaS3Service {
         let bucket_obj = object.require_project()?;
 
         let cors = bucket_obj
-            .key_values.clone()
+            .key_values
+            .clone()
             .into_iter()
             .find(|kv| kv.key == "app.aruna-storage.org/cors")
             .map(|kv| kv.value);
@@ -1037,7 +1034,7 @@ impl S3 for ArunaS3Service {
         let CheckAccessResult {
             objects_state,
             user_state,
-            headers,
+            
             ..
         } = req
             .extensions
@@ -1053,8 +1050,7 @@ impl S3 for ArunaS3Service {
 
         let (states, _) = objects_state.require_regular()?;
 
-        let (_, collection, dataset, object, location_state) =
-            states.into_new_or_existing()?;
+        let (_, collection, dataset, object, location_state) = states.into_new_or_existing()?;
 
         let (mut new_object, was_init) = match object {
             NewOrExistingObject::Existing(ob) => {
@@ -1182,7 +1178,7 @@ impl S3 for ArunaS3Service {
         if let NewOrExistingObject::Missing(collection) = collection {
             if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                 if let Some(token) = &impersonating_token {
-                    let col = handler
+                    let _col = handler
                         .create_collection(collection, token)
                         .await
                         .map_err(|_| {
@@ -1327,9 +1323,9 @@ impl S3 for ArunaS3Service {
             .get::<CheckAccessResult>()
             .cloned()
             .ok_or_else(|| {
-            error!(error = "Missing data context");
-            s3_error!(UnexpectedContent, "Missing data context")
-        })?;
+                error!(error = "Missing data context");
+                s3_error!(UnexpectedContent, "Missing data context")
+            })?;
 
         // If the object exists and the signatures match -> Skip the download
 
@@ -1363,12 +1359,12 @@ impl S3 for ArunaS3Service {
 
                 if let Some(enc_key) = &location.get_encryption_key() {
                     trace!("adding chacha20 encryption");
-                    awr = awr.add_transformer(
-                        ChaCha20Enc::new_with_fixed(*enc_key).map_err(|_| {
+                    awr = awr.add_transformer(ChaCha20Enc::new_with_fixed(*enc_key).map_err(
+                        |_| {
                             error!(error = "Unable to initialize ChaCha20Enc");
                             s3_error!(InternalError, "Internal data transformer encryption error")
-                        })?,
-                    );
+                        },
+                    )?);
                 }
 
                 awr.process().await.map_err(|_| {
