@@ -67,7 +67,7 @@ pub fn calculate_ranges(
                 start * ENCRYTPION_CHUNK,
                 end * ENCRYTPION_CHUNK
             )),
-            Some(vec![aruna_range.from, aruna_range.to - aruna_range.from]),
+            Some(vec![start_skip, aruna_range.to - aruna_range.from]),
             aruna_range.to - aruna_range.from,
             Some(aruna_range),
         ));

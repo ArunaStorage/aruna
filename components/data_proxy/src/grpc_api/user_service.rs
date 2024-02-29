@@ -90,9 +90,9 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
     /// Revokes the current credentials
     async fn revoke_credentials(
         &self,
-        request: tonic::Request<RevokeCredentialsRequest>,
+        _request: tonic::Request<RevokeCredentialsRequest>,
     ) -> std::result::Result<tonic::Response<RevokeCredentialsResponse>, tonic::Status> {
-        todo!()
+        Err(tonic::Status::unimplemented("Not implemented"))
     }
 
     /// CreateOrUpdateCredentials
@@ -103,11 +103,11 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
     /// specific S3AccessKey and S3SecretKey
     async fn create_or_update_credentials(
         &self,
-        request: tonic::Request<CreateOrUpdateCredentialsRequest>,
+        _request: tonic::Request<CreateOrUpdateCredentialsRequest>,
     ) -> std::result::Result<tonic::Response<CreateOrUpdateCredentialsResponse>, tonic::Status>
     {
         // TODO: Implement this method
-        todo!()
+        Err(tonic::Status::unimplemented("Not implemented"))
     }
 
     #[tracing::instrument(level = "trace", skip(self, _request))]

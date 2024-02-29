@@ -265,9 +265,9 @@ impl AuthHandler {
         headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult, S3Error> {
         if let Some((
-            a @ AccessKeyPermissions {
-                user_id,
-                access_key,
+            ref a @ AccessKeyPermissions {
+                ref user_id,
+                ref permissions,
                 ..
             },
             attributes,
@@ -277,14 +277,16 @@ impl AuthHandler {
                 .evaluate_root(
                     RootRuleInputBuilder::new(&self.rule_engine)
                         .attributes(&attributes)
+                        .permissions(permissions)
+                        .user_id(&user_id.to_string())
                         .method(method)
                         .headers(headers)
                         .build()
-                        .map_err(|e| s3_error!(MalformedACLError, "Rule has wrong context"))?,
+                        .map_err(|_| s3_error!(MalformedACLError, "Rule has wrong context"))?,
                 )
-                .map_err(|e| s3_error!(AccessDenied, "Forbidden by rule"))?;
+                .map_err(|_| s3_error!(AccessDenied, "Forbidden by rule"))?;
             return Ok(CheckAccessResult {
-                user_state: Some(a).into(),
+                user_state: Some(a.clone()).into(),
                 ..Default::default()
             });
         }
@@ -687,10 +689,6 @@ impl AuthHandler {
                 }
                 ObjectType::Object => {
                     resource_states.set_object(obj);
-                }
-                _ => {
-                    error!("Invalid object type");
-                    return Err(s3_error!(NoSuchKey, "No such object"));
                 }
             }
         }

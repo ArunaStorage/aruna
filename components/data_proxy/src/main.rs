@@ -90,11 +90,11 @@ async fn main() -> Result<()> {
     trace!("init cache");
     let (sender, receiver) = async_channel::unbounded();
     let cache = Cache::new(
-        CONFIG.proxy.aruna_url,
+        CONFIG.proxy.aruna_url.clone(),
         CONFIG.persistence.is_some(),
         CONFIG.proxy.endpoint_id,
         CONFIG
-            .proxy
+            .proxy.clone()
             .private_key
             .ok_or_else(|| anyhow!("Private key not set"))?,
         CONFIG.proxy.serial,
@@ -119,11 +119,11 @@ async fn main() -> Result<()> {
 
     trace!("init s3 server");
     let cache_clone = cache.clone();
-    let s3_server = if let Some(frontend) = CONFIG.frontend {
+    let s3_server = if let Some(frontend) = &CONFIG.frontend {
         Some(
             s3_frontend::s3server::S3Server::new(
                 &frontend.server,
-                frontend.hostname,
+                frontend.hostname.to_string(),
                 storage_backend.clone(),
                 cache,
             )
@@ -151,9 +151,9 @@ async fn main() -> Result<()> {
                         DataproxyUserServiceImpl::new(cache_clone.clone()),
                     ));
 
-                if let Some(frontend) = CONFIG.frontend {
+                if let Some(frontend) = &CONFIG.frontend {
                     builder = builder.add_service(BundlerServiceServer::new(
-                        BundlerServiceImpl::new(cache_clone.clone(), frontend.hostname, true),
+                        BundlerServiceImpl::new(cache_clone.clone(), frontend.hostname.to_string(), true),
                     ));
                 };
 

@@ -357,7 +357,7 @@ pub fn perm_convert(perms: Vec<Permission>) -> HashMap<DieselUlid, DbPermissionL
     perms
         .iter()
         .filter_map(|p| {
-            if let Some(id) = p.resource_id {
+            if let Some(id) = &p.resource_id {
                 match id {
                     ResourceId::ProjectId(id)
                     | ResourceId::CollectionId(id)
@@ -379,7 +379,7 @@ impl TryFrom<GrpcUser> for User {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: GrpcUser) -> Result<Self> {
-        let mut attributes = if let Some(attr) = value.attributes {
+        let attributes = if let Some(attr) = &value.attributes {
             let mut map = attr
                 .data_proxy_attributes
                 .iter()
@@ -398,10 +398,10 @@ impl TryFrom<GrpcUser> for User {
         Ok(User {
             user_id: DieselUlid::from_str(&value.id)?,
             personal_permissions: perm_convert(
-                value.attributes.unwrap_or_default().personal_permissions,
+                value.attributes.as_ref().map(|e| e.personal_permissions.clone()).unwrap_or_default(),
             ),
             tokens: value
-                .attributes
+                .attributes.as_ref()
                 .ok_or_else(|| {
                     error!("No tokens found");
                     anyhow!("No tokens found")
@@ -411,8 +411,8 @@ impl TryFrom<GrpcUser> for User {
                 .map(|t| {
                     Ok((
                         DieselUlid::from_str(&t.id)?,
-                        if let Some(perm) = t.permission {
-                            match perm.resource_id {
+                        if let Some(perm) = &t.permission {
+                            match &perm.resource_id {
                                 Some(ResourceId::ProjectId(id))
                                 | Some(ResourceId::CollectionId(id))
                                 | Some(ResourceId::DatasetId(id))
@@ -1366,9 +1366,12 @@ impl ResourceStates {
         key_info: &AccessKeyPermissions,
         perm: DbPermissionLevel,
     ) -> Result<(), S3Error> {
-        for ResourceState::Found { object } in self.objects.iter() {
-            if let Some(perm) = key_info.permissions.get(&object.id) {
-                if perm >= &perm {
+        for res in self.objects.iter() {
+            let ResourceState::Found { object } = res else{
+                continue;
+            };
+            if let Some(q_perm) = key_info.permissions.get(&object.id) {
+                if q_perm >= &perm {
                     return Ok(());
                 }
             }
@@ -1379,7 +1382,10 @@ impl ResourceStates {
 
     #[tracing::instrument(level = "trace", skip(self, ep_id))]
     pub fn fail_partial_sync(&self, ep_id: &DieselUlid) -> Result<(), S3Error> {
-        for ResourceState::Found { object } in self.objects.iter().rev() {
+        for res in self.objects.iter().rev() {
+            let ResourceState::Found { object } = res else{
+                continue;
+            };
             object.fail_partial_sync(ep_id)?;
             break; // Only check the last Found object
         }
@@ -1411,9 +1417,9 @@ impl ResourceStates {
 
         let project_tag = Some((project.id, project.name.clone()));
 
-        let collection = match self.objects[1] {
+        let collection = match &self.objects[1] {
             ResourceState::None => NewOrExistingObject::None,
-            ResourceState::Found { object } => NewOrExistingObject::Existing(object),
+            ResourceState::Found { object } => NewOrExistingObject::Existing(object.clone()),
             ResourceState::Missing { .. } => {
                 let collection = self
                     .get_missing_collection(Some(TypedRelation::Project(project.id)))
@@ -1426,20 +1432,20 @@ impl ResourceStates {
         };
 
         let collection_tag = match collection {
-            NewOrExistingObject::Existing(collection)
-            | NewOrExistingObject::Missing(collection) => {
+            NewOrExistingObject::Existing(ref collection)
+            | NewOrExistingObject::Missing(ref collection) => {
                 Some((collection.id, collection.name.clone()))
             }
             _ => None,
         };
 
-        let dataset = match self.objects[2] {
+        let dataset = match &self.objects[2] {
             ResourceState::None => NewOrExistingObject::None,
-            ResourceState::Found { object } => NewOrExistingObject::Existing(object),
+            ResourceState::Found { object } => NewOrExistingObject::Existing(object.clone()),
             ResourceState::Missing { .. } => {
                 let relation = match collection {
-                    NewOrExistingObject::Existing(collection)
-                    | NewOrExistingObject::Missing(collection) => {
+                    NewOrExistingObject::Existing(ref collection)
+                    | NewOrExistingObject::Missing(ref collection) => {
                         Some(TypedRelation::Collection(collection.id))
                     }
                     _ => Some(TypedRelation::Project(project.id)),
@@ -1453,24 +1459,24 @@ impl ResourceStates {
         };
 
         let dataset_tag = match dataset {
-            NewOrExistingObject::Existing(dataset) | NewOrExistingObject::Missing(dataset) => {
+            NewOrExistingObject::Existing(ref dataset) | NewOrExistingObject::Missing(ref dataset) => {
                 Some((dataset.id, dataset.name.clone()))
             }
             _ => None,
         };
 
-        let object = match self.objects[3] {
+        let object = match &self.objects[3] {
             ResourceState::None => NewOrExistingObject::None,
-            ResourceState::Found { object } => NewOrExistingObject::Existing(object),
+            ResourceState::Found { object } => NewOrExistingObject::Existing(object.clone()),
             ResourceState::Missing { .. } => {
                 let relation = match dataset {
-                    NewOrExistingObject::Existing(dataset)
-                    | NewOrExistingObject::Missing(dataset) => {
+                    NewOrExistingObject::Existing(ref dataset)
+                    | NewOrExistingObject::Missing(ref dataset) => {
                         Some(TypedRelation::Dataset(dataset.id))
                     }
                     _ => match collection {
-                        NewOrExistingObject::Existing(collection)
-                        | NewOrExistingObject::Missing(collection) => {
+                        NewOrExistingObject::Existing(ref collection)
+                        | NewOrExistingObject::Missing(ref collection) => {
                             Some(TypedRelation::Collection(collection.id))
                         }
                         _ => Some(TypedRelation::Project(project.id)),
@@ -1485,7 +1491,7 @@ impl ResourceStates {
         };
 
         let object_tag = match object {
-            NewOrExistingObject::Existing(object) | NewOrExistingObject::Missing(object) => {
+            NewOrExistingObject::Existing(ref object) | NewOrExistingObject::Missing(ref object) => {
                 Some((object.id, object.name.clone()))
             }
             _ => None,
@@ -1578,6 +1584,14 @@ impl UserState {
         match self {
             UserState::Token { access_key, .. } => Some(access_key.to_string()),
             UserState::Personal { user_id } => Some(user_id.to_string()),
+            _ => None,
+        }
+    }
+
+    pub fn get_user_id(&self) -> Option<DieselUlid> {
+        match self {
+            UserState::Token { user_id, .. } => Some(user_id.clone()),
+            UserState::Personal { user_id } => Some(user_id.clone()),
             _ => None,
         }
     }

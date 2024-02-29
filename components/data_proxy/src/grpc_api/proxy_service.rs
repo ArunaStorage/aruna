@@ -300,7 +300,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
         // Responding loop
         let proxy_replication_service = self.clone();
 
-        let mut pubkey = pk.key.to_string();
+        let pubkey = pk.key.to_string();
         tokio::spawn(async move {
             loop {
                 match object_input_rcv.recv().await {

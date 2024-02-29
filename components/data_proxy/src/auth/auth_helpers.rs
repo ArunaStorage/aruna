@@ -48,8 +48,8 @@ pub(super) fn check_multi_permissions(
     perm: DbPermissionLevel,
 ) -> Result<(), S3Error> {
     for id in resource_ids {
-        if let Some(perm) = key_info.permissions.get(&id.id) {
-            if perm >= &perm {
+        if let Some(q_perm) = key_info.permissions.get(&id.id) {
+            if q_perm >= &perm {
                 return Ok(());
             }
         }

@@ -3,7 +3,7 @@ use crate::auth::auth::AuthHandler;
 use crate::caching::grpc_query_handler::sort_objects;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::replication::replication_handler::ReplicationMessage;
-use crate::structs::{AccessKeyPermissions, Bundle, DbPermissionLevel, TypedId, User};
+use crate::structs::{AccessKeyPermissions, Bundle, DbPermissionLevel, ObjectType, TypedId, User};
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
     structs::{Object, ObjectLocation, PubKey},
@@ -881,6 +881,27 @@ impl Cache {
                     results.push((name, self.get_location_cloned(&id).await));
                 } else {
                     results.push((format!("{}/", name), None))
+                }
+            }
+        }
+        Ok(results)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, user_id))]
+    pub async fn get_personal_projects(&self, user_id: &DieselUlid) -> Result<Vec<Object>> {
+        let mut results = Vec::new();
+
+        let user = self
+            .users
+            .get(user_id)
+            .ok_or_else(|| anyhow!("User not found"))?;
+        let user = user.value().read().await;
+
+        for (id, _) in user.0.personal_permissions.iter() {
+            if let Some(project) = self.resources.get(id) {
+                let maybe_project = project.value().0.read().await.clone();
+                if maybe_project.object_type == ObjectType::Project {
+                    results.push(maybe_project);
                 }
             }
         }

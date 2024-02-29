@@ -29,7 +29,7 @@ impl Config {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Proxy {
     pub endpoint_id: DieselUlid,
     pub private_key: Option<String>,

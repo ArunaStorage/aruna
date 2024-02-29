@@ -46,7 +46,7 @@ impl RuleEngine {
         let mut object_package_expressions = Expression::Atom(cel_parser::Atom::Bool(true));
         let mut replication_inbound_expressions = Expression::Atom(cel_parser::Atom::Bool(true));
         let mut replication_outbound_expressions = Expression::Atom(cel_parser::Atom::Bool(true));
-        for rule in CONFIG.rules {
+        for rule in CONFIG.rules.iter() {
             match rule.target {
                 RuleTarget::ROOT => {
                     let expr = cel_parser::parse(rule.rule.as_str())
@@ -54,31 +54,31 @@ impl RuleEngine {
                     root_expressions = root_expressions.add_expression(expr);
                 }
                 RuleTarget::OBJECT => {
-                    object_expressions.add_expression(
+                    object_expressions = object_expressions.add_expression(
                         cel_parser::parse(rule.rule.as_str())
                             .map_err(|e| anyhow!("error parsing rule: {}", e))?,
                     );
                 }
                 RuleTarget::BUNDLE => {
-                    bundle_expressions.add_expression(
+                    bundle_expressions = bundle_expressions.add_expression(
                         cel_parser::parse(rule.rule.as_str())
                             .map_err(|e| anyhow!("error parsing rule: {}", e))?,
                     );
                 }
                 RuleTarget::OBJECTPACKAGE => {
-                    object_package_expressions.add_expression(
+                    object_package_expressions = object_package_expressions.add_expression(
                         cel_parser::parse(rule.rule.as_str())
                             .map_err(|e| anyhow!("error parsing rule: {}", e))?,
                     );
                 }
                 RuleTarget::REPLICATIONIN => {
-                    replication_inbound_expressions.add_expression(
+                    replication_inbound_expressions = replication_inbound_expressions.add_expression(
                         cel_parser::parse(rule.rule.as_str())
                             .map_err(|e| anyhow!("error parsing rule: {}", e))?,
                     );
                 }
                 RuleTarget::REPLICATIONOUT => {
-                    replication_outbound_expressions.add_expression(
+                    replication_outbound_expressions = replication_outbound_expressions.add_expression(
                         cel_parser::parse(rule.rule.as_str())
                             .map_err(|e| anyhow!("error parsing rule: {}", e))?,
                     );
@@ -187,7 +187,7 @@ impl RuleEngine {
         }
     }
 
-    pub fn evaluate_incoming_replication(&self, ctx: ReplicationIncomingRuleInput) -> Result<bool> {
+    pub fn _evaluate_incoming_replication(&self, ctx: ReplicationIncomingRuleInput) -> Result<bool> {
         let mut context = Context::default();
         context.add_variable("input", ctx).map_err(|e| {
             error!(error = ?e, "error adding variable");
@@ -203,7 +203,7 @@ impl RuleEngine {
         }
     }
 
-    pub fn evaluate_outgoing_replication(&self, ctx: ReplicationOutgoingRuleInput) -> Result<bool> {
+    pub fn _evaluate_outgoing_replication(&self, ctx: ReplicationOutgoingRuleInput) -> Result<bool> {
         let mut context = Context::default();
         context.add_variable("input", ctx).map_err(|e| {
             error!(error = ?e, "error adding variable");

@@ -78,7 +78,7 @@ impl BundlerService for BundlerServiceImpl {
                     })?;
             }
 
-            let mut bundle_id = DieselUlid::generate();
+            let bundle_id = DieselUlid::generate();
             let bundle = Bundle {
                 id: bundle_id,
                 owner_access_key: access_key.clone(),
