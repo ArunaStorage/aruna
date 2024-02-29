@@ -609,13 +609,13 @@ impl DataproxyReplicationServiceImpl {
 
     async fn get_footer(&self, location: ObjectLocation) -> Result<Footer, anyhow::Error> {
         let (footer_sender, footer_receiver) = async_channel::unbounded();
-        self.backend
+        let _ = self.backend
             .get_object(location.clone(), Some("-131072".to_string()), footer_sender)
             .await
             .map_err(|e| {
                 tracing::error!(error = ?e, msg = e.to_string());
                 e
-            });
+            })?;
 
         let mut buf = BytesMut::new();
         while let Ok(Ok(bytes)) = footer_receiver.try_recv() {

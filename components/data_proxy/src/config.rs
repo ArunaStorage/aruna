@@ -96,10 +96,7 @@ impl Persistence {
             password,
             database,
             schema,
-        } = self
-        else {
-            return Ok(());
-        };
+        } = self;
 
         if host.is_empty() {
             return Err(anyhow::anyhow!("host cannot be empty"));
@@ -181,7 +178,7 @@ impl Backend {
 
                 if let None = access_key {
                     let env_var = dotenvy::var("AWS_ACCESS_KEY_ID").map_err(|e| {
-                        tracing::error!(error = ?e, msg = e.to_string());
+                        tracing::error!(error = ?e, msg = e.to_string(), "AWS_ACCESS_KEY_ID");
                         e
                     })?;
                     *access_key = Some(env_var);
@@ -189,7 +186,7 @@ impl Backend {
 
                 if let None = secret_key {
                     let env_var = dotenvy::var("AWS_SECRET_ACCESS").map_err(|e| {
-                        tracing::error!(error = ?e, msg = e.to_string());
+                        tracing::error!(error = ?e, msg = e.to_string(), "AWS_SECRET_ACCESS");
                         e
                     })?;
                     *secret_key = Some(env_var);

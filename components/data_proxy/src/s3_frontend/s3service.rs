@@ -1315,7 +1315,15 @@ impl S3 for ArunaS3Service {
                     "Missing or invalid (0) content-length"
                 ));
             }
-            _ => {}
+            Some(bytes) => {
+                if bytes < 5 * 1024 * 1024 {
+                    error!("Content-Length exceeds 5GB");
+                    return Err(s3_error!(
+                        EntityTooSmall,
+                        "Content-Length smaller 5Mib"
+                    ));
+                }
+            }
         };
 
         let CheckAccessResult { objects_state, .. } = req
@@ -1352,10 +1360,10 @@ impl S3 for ArunaS3Service {
 
                 let mut awr = GenericStreamReadWriter::new_with_sink(data, sink);
 
-                if location.is_compressed() {
-                    trace!("adding zstd compressor");
-                    awr = awr.add_transformer(ZstdEnc::new());
-                }
+                // if location.is_compressed() {
+                //     trace!("adding zstd compressor");
+                //     awr = awr.add_transformer(ZstdEnc::new());
+                // }
 
                 if let Some(enc_key) = &location.get_encryption_key() {
                     trace!("adding chacha20 encryption");

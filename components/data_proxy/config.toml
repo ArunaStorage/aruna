@@ -9,16 +9,18 @@ serial=1337
 aruna_url="http://localhost:50051"
 enable_ingest=false # Set to true to enable the ingest service
 grpc_server="0.0.0.0:50052"
+remote_synced=true
 
 [persistence.postgres]
 host = "localhost"
 port = 5433
 user = "yugabyte"
+database = "proxy"
 # Can also be provided via env-var POSTGRES_PASSWORD
 password = "yugabyte"
 schema = './src/database/schema.sql'
 
-[frontend.s3]
+[frontend]
 server="localhost:1337"
 hostname="localhost:1337"
 
@@ -49,5 +51,5 @@ dropbox_bucket="" # Set value to set a dropbox bucket
 backend_scheme="s3://{{PROJECT_NAME}}-{{RANDOM:10}}/{{COLLECTION_NAME}}/{{DATASET_NAME}}/{{RANDOM:10}}_{{OBJECT_NAME}}" 
 
 [[rules]]
-target="ALL" # ALL, OBJECT, BUNDLE, REPLICATION
+target="OBJECT" # ROOT, OBJECT, OBJECTPACKAGE, BUNDLE, REPLICATIONIN, REPLICATIONOUT,
 rule = "user.attributes.age > 18" # Example rule: Only allow users older than 18 to interact
