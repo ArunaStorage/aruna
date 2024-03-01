@@ -1,4 +1,4 @@
-use super::update_request_types::{LicenseUpdate, UpdateObject};
+use super::update_request_types::{LicenseUpdate, UpdateAuthor, UpdateObject, UpdateTitle};
 use crate::database::crud::CrudDb;
 use crate::database::dsls::hook_dsl::TriggerVariant;
 use crate::database::dsls::internal_relation_dsl::{
@@ -18,6 +18,7 @@ use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use postgres_types::Json;
 use std::str::FromStr;
+use deadpool_postgres::GenericClient;
 
 impl DatabaseHandler {
     pub async fn update_dataclass(&self, request: DataClassUpdate) -> Result<ObjectWithRelations> {
@@ -602,7 +603,7 @@ impl DatabaseHandler {
             content_len,
             ObjectStatus::AVAILABLE,
         )
-        .await?;
+            .await?;
         Object::update_endpoints(
             endpoint_id,
             crate::database::dsls::object_dsl::EndpointInfo {
@@ -612,7 +613,7 @@ impl DatabaseHandler {
             vec![id],
             transaction_client,
         )
-        .await?;
+            .await?;
 
         self.evaluate_rules(&vec![id], transaction_client).await?;
         transaction.commit().await?;
@@ -654,5 +655,29 @@ impl DatabaseHandler {
             //transaction.commit().await?;
             Ok(object)
         }
+    }
+    pub async fn update_title(
+        &self,
+        request: UpdateTitle,
+        ) -> Result<ObjectWithRelations> {
+        let id = request.get_id()?;
+        let mut client = self.database.get_client().await?;
+        let transaction = client.transaction().await?;
+        let transaction_client = transaction.client();
+
+        Object::update_title(&id, request.get_title(), transaction_client).await?;
+        self.evaluate_rules(&vec![id], transaction_client).await?;
+
+        transaction.commit().await?;
+        let updated = Object::get_object_with_relations(&id, &client).await?;
+        self.cache.upsert_object(&id, updated.clone());
+        Ok(updated)
+    }
+
+    pub async fn update_author(
+        &self,
+        request: UpdateAuthor
+    ) -> Result<ObjectWithRelations> {
+        todo!()
     }
 }

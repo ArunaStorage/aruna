@@ -10,14 +10,7 @@ use crate::database::enums::{DataClass, ObjectType, ReplicationStatus};
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::services::v2::update_object_request::Parent as UpdateParent;
-use aruna_rust_api::api::storage::services::v2::{
-    UpdateCollectionDataClassRequest, UpdateCollectionDescriptionRequest,
-    UpdateCollectionKeyValuesRequest, UpdateCollectionLicensesRequest, UpdateCollectionNameRequest,
-    UpdateDatasetDataClassRequest, UpdateDatasetDescriptionRequest, UpdateDatasetKeyValuesRequest,
-    UpdateDatasetLicensesRequest, UpdateDatasetNameRequest, UpdateObjectRequest,
-    UpdateProjectDataClassRequest, UpdateProjectDescriptionRequest, UpdateProjectKeyValuesRequest,
-    UpdateProjectLicensesRequest, UpdateProjectNameRequest,
-};
+use aruna_rust_api::api::storage::services::v2::{UpdateCollectionAuthorsRequest, UpdateCollectionDataClassRequest, UpdateCollectionDescriptionRequest, UpdateCollectionKeyValuesRequest, UpdateCollectionLicensesRequest, UpdateCollectionNameRequest, UpdateCollectionTitleRequest, UpdateDatasetAuthorsRequest, UpdateDatasetDataClassRequest, UpdateDatasetDescriptionRequest, UpdateDatasetKeyValuesRequest, UpdateDatasetLicensesRequest, UpdateDatasetNameRequest, UpdateDatasetTitleRequest, UpdateObjectAuthorsRequest, UpdateObjectRequest, UpdateObjectTitleRequest, UpdateProjectAuthorsRequest, UpdateProjectDataClassRequest, UpdateProjectDescriptionRequest, UpdateProjectKeyValuesRequest, UpdateProjectLicensesRequest, UpdateProjectNameRequest, UpdateProjectTitleRequest};
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -53,6 +46,19 @@ pub enum LicenseUpdate {
     Project(UpdateProjectLicensesRequest),
     Collection(UpdateCollectionLicensesRequest),
     Dataset(UpdateDatasetLicensesRequest),
+}
+
+pub enum UpdateTitle{
+    Project(UpdateProjectTitleRequest),
+    Collection(UpdateCollectionTitleRequest),
+    Dataset(UpdateDatasetTitleRequest),
+    Object(UpdateObjectTitleRequest)
+}
+pub enum UpdateAuthor{
+    Project(UpdateProjectAuthorsRequest),
+    Collection(UpdateCollectionAuthorsRequest),
+    Dataset(UpdateDatasetAuthorsRequest),
+    Object(UpdateObjectAuthorsRequest)
 }
 
 impl DataClassUpdate {
@@ -461,5 +467,39 @@ impl UpdateObject {
 
     async fn check_license(tag: &str, client: &Client) -> Result<bool> {
         Ok(License::get(tag.to_string(), client).await?.is_some())
+    }
+}
+
+impl UpdateTitle {
+    pub fn get_id(&self) -> Result<DieselUlid> {
+        Ok(DieselUlid::from_str(match self {
+            UpdateTitle::Project(req) => {
+                &req.project_id
+            }
+            UpdateTitle::Collection(req) => {&req.collection_id}
+            UpdateTitle::Dataset(req) => {&req.dataset_id}
+            UpdateTitle::Object(req) => {&req.object_id}
+        })?)
+    }
+
+    pub fn get_title(&self) -> String {
+        match self {
+            UpdateTitle::Project(req) => {req.title.to_string()}
+            UpdateTitle::Collection(req) => {req.title.to_string()}
+            UpdateTitle::Dataset(req) => {req.title.to_string()}
+            UpdateTitle::Object(req) => {req.title.to_string()}
+        }
+    }
+}
+impl UpdateAuthor {
+    pub fn get_id(&self) -> Result<DieselUlid> {
+        Ok(DieselUlid::from_str(match self {
+            UpdateAuthor::Project(req) => {
+                &req.project_id
+            }
+            UpdateAuthor::Collection(req) => { &req.collection_id }
+            UpdateAuthor::Dataset(req) => { &req.dataset_id }
+            UpdateAuthor::Object(req) => { &req.object_id }
+        })?)
     }
 }

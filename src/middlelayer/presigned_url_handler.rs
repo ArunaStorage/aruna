@@ -30,7 +30,7 @@ use url::Url;
 pub struct PresignedUpload(pub GetUploadUrlRequest);
 pub struct PresignedDownload(pub GetDownloadUrlRequest);
 impl DatabaseHandler {
-    pub async fn get_s3_credentials(
+    pub async fn create_and_add_s3_credentials(
         &self,
         cache: Arc<Cache>,
         authorizer: Arc<PermissionHandler>,

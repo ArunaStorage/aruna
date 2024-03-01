@@ -463,7 +463,7 @@ impl HookHandler {
                     // Create download url for response
                     let upload_credentials = self
                         .database_handler
-                        .get_s3_credentials(
+                        .create_and_add_s3_credentials(
                             self.database_handler.cache.clone(),
                             self.authorizer.clone(),
                             object_id,

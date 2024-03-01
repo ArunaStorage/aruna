@@ -8,9 +8,7 @@ use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::snapshot_request_types::SnapshotRequest;
-use crate::middlelayer::update_request_types::{
-    DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate,
-};
+use crate::middlelayer::update_request_types::{DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate, UpdateAuthor, UpdateTitle};
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::grpc_utils::{get_id_and_ctx, get_token_from_md, query, IntoGenericInner};
 use crate::utils::search_utils;
@@ -504,20 +502,90 @@ impl CollectionService for CollectionServiceImpl {
 
     async fn update_collection_authors(
         &self,
-        _request: Request<UpdateCollectionAuthorsRequest>,
+        request: Request<UpdateCollectionAuthorsRequest>,
     ) -> Result<Response<UpdateCollectionAuthorsResponse>> {
-        // TODO
-        Err(tonic::Status::unimplemented(
-            "Updating collection authors is not yet implemented",
-        ))
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = UpdateAuthor::Collection(request.into_inner());
+        let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id");
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, false);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        let mut collection = tonic_invalid!(
+            self.database_handler.update_author(request).await,
+            "Invalid update license request"
+        );
+        self.cache.add_stats_to_object(&mut collection);
+
+        // Add or update collection in search index
+        search_utils::update_search_index(
+            &self.search_client,
+            &self.cache,
+            vec![ObjectDocument::from(collection.object.clone())],
+        )
+            .await;
+
+        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let generic_resource: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: collection,
+            rules,
+        }.into();
+        let response = UpdateCollectionAuthorsResponse {
+            collection: Some(generic_resource.into_inner()?),
+        };
+        return_with_log!(response);
     }
     async fn update_collection_title(
         &self,
-        _request: Request<UpdateCollectionTitleRequest>,
+        request: Request<UpdateCollectionTitleRequest>,
     ) -> Result<Response<UpdateCollectionTitleResponse>> {
-        // TODO
-        Err(tonic::Status::unimplemented(
-            "Updating collection titles is not yet implemented",
-        ))
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = UpdateTitle::Collection(request.into_inner());
+        let collection_id = tonic_invalid!(request.get_id(), "Invalid collection id");
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, false);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        let mut collection = tonic_invalid!(
+            self.database_handler.update_title(request).await,
+            "Invalid update license request"
+        );
+        self.cache.add_stats_to_object(&mut collection);
+
+        // Add or update collection in search index
+        search_utils::update_search_index(
+            &self.search_client,
+            &self.cache,
+            vec![ObjectDocument::from(collection.object.clone())],
+        )
+            .await;
+
+        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let generic_resource: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: collection,
+            rules,
+        }.into();
+        let response = UpdateCollectionTitleResponse {
+            collection: Some(generic_resource.into_inner()?),
+        };
+        return_with_log!(response);
     }
 }
