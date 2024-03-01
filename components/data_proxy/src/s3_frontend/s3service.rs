@@ -132,36 +132,38 @@ impl S3 for ArunaS3Service {
             })
             .collect::<Result<Vec<PartETag>, S3Error>>()?;
 
+        let upload_id = old_location
+            .upload_id
+            .as_ref()
+            .ok_or_else(|| {
+                error!(error = "Upload id must be specified");
+                s3_error!(InvalidPart, "Upload id must be specified")
+            })?
+            .to_string();
+
+        let parts = self.cache.get_parts(&upload_id);
+
+        let mut size_list = vec![];
+        let mut cumulative_size = 0;
+        for part in parts {
+            for etag in etag_parts.iter() {
+                if part.part_number == etag.part_number as u64 {
+                    size_list.push(part.size);
+                    cumulative_size += part.raw_size;
+                    break;
+                }
+            }
+        }
+
         // Does this object exists (including object id etc)
         //req.input.multipart_upload.unwrap().
         self.backend
             .clone()
-            .finish_multipart_upload(
-                old_location.clone(),
-                etag_parts,
-                old_location
-                    .upload_id
-                    .as_ref()
-                    .ok_or_else(|| {
-                        error!(error = "Upload id must be specified");
-                        s3_error!(InvalidPart, "Upload id must be specified")
-                    })?
-                    .to_string(),
-            )
+            .finish_multipart_upload(old_location.clone(), etag_parts, upload_id.to_string())
             .await
             .map_err(|_| {
                 error!(error = "Unable to finish upload");
                 s3_error!(InternalError, "Unable to finish upload")
-            })?;
-
-        let size = self
-            .backend
-            .clone()
-            .head_object(old_location.clone())
-            .await
-            .map_err(|_| {
-                error!(error = "Unable to get object size");
-                s3_error!(InternalError, "Unable to get object size")
             })?;
 
         let response = CompleteMultipartUploadOutput {
@@ -189,7 +191,7 @@ impl S3 for ArunaS3Service {
             if let Some(token) = &impersonating_token {
                 // Set id of new location to object id to satisfy FK constraint
                 let _ = handler
-                    .finish_object(object.id, new_location.raw_content_len, vec![], None, token)
+                    .finish_object(object.id, cumulative_size as i64, vec![], None, token)
                     .await
                     .map_err(|_| {
                         error!(error = "Unable to finish object");
@@ -210,6 +212,7 @@ impl S3 for ArunaS3Service {
             self.backend.clone(),
             ctx,
             old_location,
+            size_list,
             new_location,
         ));
         debug!(?response);

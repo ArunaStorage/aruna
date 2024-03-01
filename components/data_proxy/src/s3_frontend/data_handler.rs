@@ -11,7 +11,7 @@ use md5::{Digest, Md5};
 use pithos_lib::helpers::structs::FileContext;
 use pithos_lib::streamreadwrite::GenericStreamReadWriter;
 use pithos_lib::transformer::ReadWriter;
-use pithos_lib::transformers::decrypt::ChaCha20Dec;
+use pithos_lib::transformers::decrypt_with_parts::ChaCha20DecParts;
 use pithos_lib::transformers::encrypt::ChaCha20Enc;
 use pithos_lib::transformers::footer::FooterGenerator;
 use pithos_lib::transformers::hashing_transformer::HashingTransformer;
@@ -39,6 +39,7 @@ impl DataHandler {
         backend: Arc<Box<dyn StorageBackend>>,
         ctx: FileContext,
         before_location: ObjectLocation,
+        part_lens: Vec<u64>,
         mut new_location: ObjectLocation,
     ) -> Result<()> {
         debug!(?before_location, ?new_location, "Finalizing location");
@@ -79,10 +80,7 @@ impl DataHandler {
                 .await?;
 
                 if let Some(key) = clone_key.clone() {
-                    asr = asr.add_transformer(ChaCha20Dec::new_with_fixed(key).map_err(|e| {
-                        error!(error = ?e, msg = e.to_string());
-                        tonic::Status::unauthenticated(e.to_string())
-                    })?);
+                    asr = asr.add_transformer(ChaCha20DecParts::new_with_lengths(key, part_lens));
                 }
 
                 if is_compressed {
@@ -193,7 +191,14 @@ impl DataHandler {
 
             cache.update_location(object_id, new_location).await?;
 
+            let upload_id = before_location
+                .upload_id
+                .as_ref()
+                .ok_or_else(|| anyhow!("Missing upload_id"))?
+                .to_string();
             backend.delete_object(before_location).await?;
+
+            cache.delete_parts_by_upload_id(upload_id).await?;
         }
 
         Ok(())

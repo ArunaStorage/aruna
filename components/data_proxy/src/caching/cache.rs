@@ -1002,9 +1002,9 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self, upload_id))]
-    pub fn get_parts(&self, upload_id: String) -> Vec<UploadPart> {
+    pub fn get_parts(&self, upload_id: &str) -> Vec<UploadPart> {
         self.multi_parts
-            .get(&upload_id)
+            .get(upload_id)
             .map(|e| e.value().clone())
             .unwrap_or_default()
     }
