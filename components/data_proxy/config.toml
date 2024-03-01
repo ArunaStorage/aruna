@@ -52,4 +52,4 @@ backend_scheme="s3://{{PROJECT_NAME}}-{{RANDOM:10}}/{{COLLECTION_NAME}}/{{DATASE
 
 [[rules]]
 target="OBJECT" # ROOT, OBJECT, OBJECTPACKAGE, BUNDLE, REPLICATIONIN, REPLICATIONOUT,
-rule = "user.attributes.age > 18" # Example rule: Only allow users older than 18 to interact
+rule = 'input.object_hierarchy.project.name != "test"' # Example rule: Only allow projects that are not named "test"

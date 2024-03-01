@@ -31,57 +31,56 @@ impl AddExpression for Expression {
 
 #[allow(dead_code)]
 pub(super) struct RuleEngine {
-    root: Expression,
-    obj: Expression,
-    bundle: Expression,
-    obj_package: Expression,
-    repl_in: Expression,
-    repl_out: Expression,
+    root: Vec<Expression>,
+    obj: Vec<Expression>,
+    bundle: Vec<Expression>,
+    obj_package: Vec<Expression>,
+    repl_in: Vec<Expression>,
+    repl_out: Vec<Expression>,
 }
 
 impl RuleEngine {
     pub fn new() -> Result<Self> {
-        let mut root_expressions = Expression::Atom(cel_parser::Atom::Bool(true));
-        let mut object_expressions = Expression::Atom(cel_parser::Atom::Bool(true));
-        let mut bundle_expressions = Expression::Atom(cel_parser::Atom::Bool(true));
-        let mut object_package_expressions = Expression::Atom(cel_parser::Atom::Bool(true));
-        let mut replication_inbound_expressions = Expression::Atom(cel_parser::Atom::Bool(true));
-        let mut replication_outbound_expressions = Expression::Atom(cel_parser::Atom::Bool(true));
+        let mut root_expressions = vec![];
+        let mut object_expressions = vec![];
+        let mut bundle_expressions = vec![];
+        let mut object_package_expressions = vec![];
+        let mut replication_inbound_expressions = vec![];
+        let mut replication_outbound_expressions = vec![];
         for rule in CONFIG.rules.iter() {
             match rule.target {
                 RuleTarget::ROOT => {
-                    let expr = cel_parser::parse(rule.rule.as_str())
-                        .map_err(|e| anyhow!("error parsing rule: {}", e))?;
-                    root_expressions = root_expressions.add_expression(expr);
+                    root_expressions.push( cel_parser::parse(rule.rule.as_str())
+                        .map_err(|e| anyhow!("error parsing rule: {}", e))?);
                 }
                 RuleTarget::OBJECT => {
-                    object_expressions = object_expressions.add_expression(
+                    object_expressions.push(
                         cel_parser::parse(rule.rule.as_str())
                             .map_err(|e| anyhow!("error parsing rule: {}", e))?,
                     );
                 }
                 RuleTarget::BUNDLE => {
-                    bundle_expressions = bundle_expressions.add_expression(
+                    bundle_expressions.push(
                         cel_parser::parse(rule.rule.as_str())
                             .map_err(|e| anyhow!("error parsing rule: {}", e))?,
                     );
                 }
                 RuleTarget::OBJECTPACKAGE => {
-                    object_package_expressions = object_package_expressions.add_expression(
+                    object_package_expressions.push(
                         cel_parser::parse(rule.rule.as_str())
                             .map_err(|e| anyhow!("error parsing rule: {}", e))?,
                     );
                 }
                 RuleTarget::REPLICATIONIN => {
-                    replication_inbound_expressions = replication_inbound_expressions
-                        .add_expression(
+                    replication_inbound_expressions
+                        .push(
                             cel_parser::parse(rule.rule.as_str())
                                 .map_err(|e| anyhow!("error parsing rule: {}", e))?,
                         );
                 }
                 RuleTarget::REPLICATIONOUT => {
-                    replication_outbound_expressions = replication_outbound_expressions
-                        .add_expression(
+                    replication_outbound_expressions
+                        .push(
                             cel_parser::parse(rule.rule.as_str())
                                 .map_err(|e| anyhow!("error parsing rule: {}", e))?,
                         );
@@ -99,29 +98,29 @@ impl RuleEngine {
     }
 
     pub fn has_root(&self) -> bool {
-        self.root != Expression::Atom(cel_parser::Atom::Bool(true))
+        !self.root.is_empty()
     }
 
     pub fn has_object(&self) -> bool {
-        self.obj != Expression::Atom(cel_parser::Atom::Bool(true))
+        !self.obj.is_empty()
     }
 
     pub fn has_bundle(&self) -> bool {
-        self.bundle != Expression::Atom(cel_parser::Atom::Bool(true))
+        !self.bundle.is_empty()
     }
 
     pub fn has_object_package(&self) -> bool {
-        self.obj_package != Expression::Atom(cel_parser::Atom::Bool(true))
+        !self.obj_package.is_empty()
     }
 
     #[allow(dead_code)]
     pub fn has_replication_in(&self) -> bool {
-        self.repl_in != Expression::Atom(cel_parser::Atom::Bool(true))
+        !self.repl_in.is_empty()
     }
 
     #[allow(dead_code)]
     pub fn has_replication_out(&self) -> bool {
-        self.repl_out != Expression::Atom(cel_parser::Atom::Bool(true))
+        !self.repl_out.is_empty()
     }
 
     #[tracing::instrument(level = "trace", skip(self, ctx))]
@@ -131,16 +130,18 @@ impl RuleEngine {
             error!(error = ?e, "error adding variable");
             anyhow!("error adding variable: {}", e)
         })?;
-        let result = self.root.run(&context).map_err(|e| {
+        let result = Value::resolve_all(&self.root, &context).map_err(|e| {
             error!(error = ?e, "error running context");
             anyhow!("error running context: {}", e)
         })?;
         match result {
-            Value::Bool(b) => Ok(b),
-            _ => {
-                error!("expected bool, got {:?}", result);
-                Err(anyhow!("expected bool, got {:?}", result))
-            }
+            Value::List(b) => Ok(b.iter().all(
+                |x| match x {
+                    Value::Bool(b) => *b,
+                    _ => false,
+                },
+            )),
+            _ => Err(anyhow!("expected bool, got {:?}", result)),
         }
     }
 
@@ -150,12 +151,17 @@ impl RuleEngine {
             error!(error = ?e, "error adding variable");
             anyhow!("error adding variable: {}", e)
         })?;
-        let result = self.obj.run(&context).map_err(|e| {
+        let result = Value::resolve_all(&self.obj, &context).map_err(|e| {
             error!(error = ?e, "error running context");
             anyhow!("error running context: {}", e)
         })?;
         match result {
-            Value::Bool(b) => Ok(b),
+            Value::List(b) => Ok(b.iter().all(
+                |x| match x {
+                    Value::Bool(b) => *b,
+                    _ => false,
+                },
+            )),
             _ => Err(anyhow!("expected bool, got {:?}", result)),
         }
     }
@@ -166,12 +172,17 @@ impl RuleEngine {
             error!(error = ?e, "error adding variable");
             anyhow!("error adding variable: {}", e)
         })?;
-        let result = self.obj_package.run(&context).map_err(|e| {
+        let result = Value::resolve_all(&self.obj_package, &context).map_err(|e| {
             error!(error = ?e, "error running context");
             anyhow!("error running context: {}", e)
         })?;
         match result {
-            Value::Bool(b) => Ok(b),
+            Value::List(b) => Ok(b.iter().all(
+                |x| match x {
+                    Value::Bool(b) => *b,
+                    _ => false,
+                },
+            )),
             _ => Err(anyhow!("expected bool, got {:?}", result)),
         }
     }
@@ -182,12 +193,17 @@ impl RuleEngine {
             error!(error = ?e, "error adding variable");
             anyhow!("error adding variable: {}", e)
         })?;
-        let result = self.bundle.run(&context).map_err(|e| {
+        let result = Value::resolve_all(&self.bundle, &context).map_err(|e| {
             error!(error = ?e, "error running context");
             anyhow!("error running context: {}", e)
         })?;
         match result {
-            Value::Bool(b) => Ok(b),
+            Value::List(b) => Ok(b.iter().all(
+                |x| match x {
+                    Value::Bool(b) => *b,
+                    _ => false,
+                },
+            )),
             _ => Err(anyhow!("expected bool, got {:?}", result)),
         }
     }
@@ -201,12 +217,17 @@ impl RuleEngine {
             error!(error = ?e, "error adding variable");
             anyhow!("error adding variable: {}", e)
         })?;
-        let result = self.bundle.run(&context).map_err(|e| {
+        let result = Value::resolve_all(&self.repl_in, &context).map_err(|e| {
             error!(error = ?e, "error running context");
             anyhow!("error running context: {}", e)
         })?;
         match result {
-            Value::Bool(b) => Ok(b),
+            Value::List(b) => Ok(b.iter().all(
+                |x| match x {
+                    Value::Bool(b) => *b,
+                    _ => false,
+                },
+            )),
             _ => Err(anyhow!("expected bool, got {:?}", result)),
         }
     }
@@ -220,12 +241,17 @@ impl RuleEngine {
             error!(error = ?e, "error adding variable");
             anyhow!("error adding variable: {}", e)
         })?;
-        let result = self.bundle.run(&context).map_err(|e| {
+        let result = Value::resolve_all(&self.repl_out, &context).map_err(|e| {
             error!(error = ?e, "error running context");
             anyhow!("error running context: {}", e)
         })?;
         match result {
-            Value::Bool(b) => Ok(b),
+            Value::List(b) => Ok(b.iter().all(
+                |x| match x {
+                    Value::Bool(b) => *b,
+                    _ => false,
+                },
+            )),
             _ => Err(anyhow!("expected bool, got {:?}", result)),
         }
     }
