@@ -2,8 +2,11 @@ use super::grpc_query_handler::GrpcQueryHandler;
 use crate::auth::auth::AuthHandler;
 use crate::caching::grpc_query_handler::sort_objects;
 use crate::data_backends::storage_backend::StorageBackend;
+use crate::database::persistence::delete_parts_by_upload_id;
 use crate::replication::replication_handler::ReplicationMessage;
-use crate::structs::{AccessKeyPermissions, Bundle, DbPermissionLevel, ObjectType, TypedId, User};
+use crate::structs::{
+    AccessKeyPermissions, Bundle, DbPermissionLevel, ObjectType, TypedId, UploadPart, User,
+};
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
     structs::{Object, ObjectLocation, PubKey},
@@ -21,6 +24,7 @@ use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use s3s::auth::SecretKey;
 use std::collections::{HashMap, VecDeque};
 use std::ops::Deref;
+use std::time::Duration;
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::RwLock;
 use tokio_postgres::GenericClient;
@@ -39,6 +43,10 @@ pub struct Cache {
     >,
     // Map with bundle id as key and (access_key, Vec<ObjectId>, Timestamp<u64>) as value
     bundles: DashMap<DieselUlid, Bundle>,
+
+    // Parts sorted by upload_id
+    multi_parts: DashMap<String, Vec<UploadPart>>,
+
     // Maps with path / key as key and set of all ObjectIds as value
     // /project1/collection1/dataset1 -> ObjectID
     // /project1/collection1/exaset1/object1 -> ObjectID
@@ -56,6 +64,7 @@ pub struct Cache {
     //}
     // Pubkeys; TODO: Expand to endpoint ?
     pubkeys: DashMap<i32, (PubKey, DecodingKey), RandomState>,
+
     // Persistence layer
     persistence: RwLock<Option<Database>>,
     pub(crate) aruna_client: RwLock<Option<Arc<GrpcQueryHandler>>>,
@@ -91,6 +100,7 @@ impl Cache {
             access_keys: DashMap::default(),
             resources: DashMap::default(),
             bundles: DashMap::default(),
+            multi_parts: DashMap::default(),
             paths: SkipMap::new(),
             pubkeys: DashMap::default(),
             persistence: RwLock::new(None),
@@ -930,6 +940,71 @@ impl Cache {
             let (_, loc) = resource.value();
             *loc.write().await = Some(location);
         }
+        Ok(())
+    }
+
+    #[tracing::instrument(
+        level = "trace",
+        skip(self, upload_id, object_id, part_number, raw_size, final_size)
+    )]
+    pub async fn create_multipart_upload(
+        &self,
+        upload_id: String,
+        object_id: DieselUlid,
+        part_number: u64,
+        raw_size: u64,
+        final_size: u64,
+    ) -> Result<()> {
+        let part = UploadPart {
+            id: DieselUlid::generate(),
+            part_number,
+            size: final_size,
+            object_id,
+            upload_id: upload_id.clone(),
+            raw_size,
+        };
+        if let Some(persistence) = self.persistence.read().await.as_ref() {
+            part.upsert(persistence.get_client().await?.client())
+                .await?;
+        }
+        let mut counter = 0;
+        loop {
+            let upload_id = upload_id.clone();
+            let Some(entry) = self.multi_parts.try_entry(upload_id) else {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                counter += 1;
+                continue;
+            };
+
+            if counter > 10 {
+                return Err(anyhow!("Failed to create multipart upload"));
+            }
+
+            let mut entry = entry.or_insert(Vec::new());
+            entry.value_mut().push(part);
+            break;
+        }
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, upload_id))]
+    pub fn get_parts(&self, upload_id: String) -> Vec<UploadPart> {
+        self.multi_parts
+            .get(&upload_id)
+            .map(|e| e.value().clone())
+            .unwrap_or_default()
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, upload_id))]
+    pub async fn delete_parts_by_upload_id(&self, upload_id: String) -> Result<()> {
+        if let Some(persistence) = self.persistence.read().await.as_ref() {
+            delete_parts_by_upload_id(
+                persistence.get_client().await?.client(),
+                upload_id.to_string(),
+            )
+            .await?;
+        }
+        self.multi_parts.remove(&upload_id);
         Ok(())
     }
 }

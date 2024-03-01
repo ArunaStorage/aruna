@@ -1855,10 +1855,11 @@ impl From<&Object> for TypedId {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UploadPart {
     pub id: DieselUlid,
-    pub upload_id: DieselUlid,
+    pub object_id: DieselUlid,
+    pub upload_id: String,
     pub part_number: u64,
     pub raw_size: u64,
     pub size: u64,

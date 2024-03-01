@@ -195,21 +195,22 @@ pub trait WithGenericBytes<
     }
 }
 
-
 pub async fn get_parts_by_upload_id(client: &Client, upload_id: String) -> Result<Vec<UploadPart>> {
     let query = "SELECT * FROM multiparts WHERE data->>'upload_id' = $1;";
     let prepared = client.prepare(query).await?;
     let rows = client.query(&prepared, &[&upload_id]).await?;
-    Ok(rows.iter().map(|row| {
-        let data: tokio_postgres::types::Json<UploadPart> = row.get(1);
-        data.0
-    }).collect())
+    Ok(rows
+        .iter()
+        .map(|row| {
+            let data: tokio_postgres::types::Json<UploadPart> = row.get(1);
+            data.0
+        })
+        .collect())
 }
-
 
 pub async fn delete_parts_by_upload_id(client: &Client, upload_id: String) -> Result<()> {
     let query = "DELETE FROM multiparts WHERE data->>'upload_id' = $1;";
     let prepared = client.prepare(query).await?;
     client.execute(&prepared, &[&upload_id]).await?;
     Ok(())
-} 
+}
