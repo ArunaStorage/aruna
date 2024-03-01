@@ -39,14 +39,7 @@ impl S3Auth for AuthProvider {
             Some(auth) => {
                 let result = auth
                     .check_access(cx.credentials(), cx.method(), cx.s3_path(), cx.headers())
-                    .await
-                    .map_err(|err| {
-                        if err.to_string().contains("not found") {
-                            s3_error!(NoSuchKey, "{}", err)
-                        } else {
-                            s3_error!(AccessDenied, "Access denied")
-                        }
-                    })?;
+                    .await?;
 
                 cx.extensions_mut().insert(result);
                 Ok(())

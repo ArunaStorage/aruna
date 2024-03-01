@@ -306,18 +306,20 @@ impl AuthHandler {
         let (access_key_info, attributes) =
             self.extract_access_key_perms(creds).await.ok_or_else(|| {
                 error!("No such user");
-                s3_error!(AccessDenied, "Access Denied")
+                s3_error!(AccessDenied, "No such user")
             })?;
 
-        let allow_create = method == Method::POST || method == Method::PUT;
         // Query the project and extract the headers
         let resource_states = self
-            .prefix_into_resource_states(&[(bucket_name.to_string(), bucket_name.to_string())], allow_create).await?;
+            .prefix_into_resource_states(&[(bucket_name.to_string(), bucket_name.to_string())], true).await?;
 
         // Extract the permission level from the method READ == "GET" and friends, WRITE == "POST" and friends
         // Check if the user has the required permissions
 
-        let cors_headers = if allow_create && resource_states.get_project().is_none() {
+        let cors_headers = if resource_states.get_project().is_none() {
+            if Method::GET == *method {
+                return Err(s3_error!(NoSuchBucket, "No such bucket"));
+            }
             None
         }else{
             resource_states.check_permissions(&access_key_info, DbPermissionLevel::from(method))?;
@@ -339,6 +341,7 @@ impl AuthHandler {
             )
             .map_err(|_| s3_error!(AccessDenied, "Forbidden by rule"))?;
 
+        dbg!("Bucket access granted");
         Ok(CheckAccessResult::new(
             ObjectsState::new_regular(resource_states, None),
             Some(access_key_info).into(),

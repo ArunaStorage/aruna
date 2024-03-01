@@ -820,6 +820,7 @@ impl Cache {
             if bundle.owner_access_key == access_key {
                 Ok(())
             } else {
+                error!("Unable to delete bundle");
                 Err(anyhow!("Access denied"))
             }
         } else {
