@@ -254,7 +254,8 @@ impl Cache {
         let parts = UploadPart::get_all(&client).await?;
 
         for part in parts {
-            let part_vec: &mut Vec<UploadPart> = parts_map.entry(part.upload_id.clone()).or_default();
+            let part_vec: &mut Vec<UploadPart> =
+                parts_map.entry(part.upload_id.clone()).or_default();
             part_vec.push(part);
         }
 

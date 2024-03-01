@@ -1362,7 +1362,8 @@ impl S3 for ArunaS3Service {
 
         // If the object exists and the signatures match -> Skip the download
 
-        let (_, location) = objects_state.require_regular()?;
+        let (object, location) = objects_state.require_regular()?;
+        let object = object.require_object()?;
 
         let location = location.ok_or_else(|| {
             error!(error = "Unable to get resource");
@@ -1385,10 +1386,10 @@ impl S3 for ArunaS3Service {
 
                 let mut awr = GenericStreamReadWriter::new_with_sink(data, sink);
 
-                // if location.is_compressed() {
-                //     trace!("adding zstd compressor");
-                //     awr = awr.add_transformer(ZstdEnc::new());
-                // }
+                let (before_probe, before_receiver) = SizeProbe::new();
+                awr = awr.add_transformer(before_probe);
+
+                let (after_probe, after_receiver) = SizeProbe::new();
 
                 if let Some(enc_key) = &location.get_encryption_key() {
                     trace!("adding chacha20 encryption");
@@ -1400,10 +1401,39 @@ impl S3 for ArunaS3Service {
                     )?);
                 }
 
+                awr = awr.add_transformer(after_probe);
+
                 awr.process().await.map_err(|_| {
                     error!(error = "Internal data transformer processing error");
                     s3_error!(InternalError, "Internal data transformer processing error")
                 })?;
+
+                let before_size = before_receiver.try_recv().map_err(|_| {
+                    error!(error = "Unable to get size");
+                    s3_error!(InternalError, "Unable to get size")
+                })?;
+
+                let after_size = after_receiver.try_recv().map_err(|_| {
+                    error!(error = "Unable to get size");
+                    s3_error!(InternalError, "Unable to get size")
+                })?;
+
+                self.cache
+                    .create_multipart_upload(
+                        location.upload_id.ok_or_else(|| {
+                            error!(error = "Unable to get upload_id");
+                            s3_error!(InternalError, "Unable to get upload_id")
+                        })?,
+                        object.id,
+                        req.input.part_number as u64,
+                        before_size,
+                        after_size,
+                    )
+                    .await
+                    .map_err(|_| {
+                        error!(error = "Unable to create multipart upload");
+                        s3_error!(InternalError, "Unable to create multipart upload")
+                    })?;
 
                 if let Some(r) = receiver {
                     r.recv().await.map_err(|_| {
