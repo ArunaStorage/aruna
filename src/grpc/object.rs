@@ -9,21 +9,14 @@ use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::presigned_url_handler::{PresignedDownload, PresignedUpload};
-use crate::middlelayer::update_request_types::UpdateObject;
+use crate::middlelayer::update_request_types::{UpdateAuthor, UpdateObject, UpdateTitle};
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::grpc_utils::get_token_from_md;
 use crate::utils::grpc_utils::{get_id_and_ctx, IntoGenericInner};
 use crate::utils::search_utils;
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Object};
 use aruna_rust_api::api::storage::services::v2::object_service_server::ObjectService;
-use aruna_rust_api::api::storage::services::v2::{
-    CloneObjectRequest, CloneObjectResponse, CreateObjectRequest, CreateObjectResponse,
-    DeleteObjectRequest, DeleteObjectResponse, FinishObjectStagingRequest,
-    FinishObjectStagingResponse, GetDownloadUrlRequest, GetDownloadUrlResponse, GetObjectRequest,
-    GetObjectResponse, GetObjectsRequest, GetObjectsResponse, GetUploadUrlRequest,
-    GetUploadUrlResponse, UpdateObjectAuthorsRequest, UpdateObjectAuthorsResponse,
-    UpdateObjectRequest, UpdateObjectResponse, UpdateObjectTitleRequest, UpdateObjectTitleResponse,
-};
+use aruna_rust_api::api::storage::services::v2::{CloneObjectRequest, CloneObjectResponse, CreateObjectRequest, CreateObjectResponse, DeleteObjectRequest, DeleteObjectResponse, FinishObjectStagingRequest, FinishObjectStagingResponse, GetDownloadUrlRequest, GetDownloadUrlResponse, GetObjectRequest, GetObjectResponse, GetObjectsRequest, GetObjectsResponse, GetUploadUrlRequest, GetUploadUrlResponse, UpdateCollectionAuthorsResponse, UpdateCollectionTitleResponse, UpdateObjectAuthorsRequest, UpdateObjectAuthorsResponse, UpdateObjectRequest, UpdateObjectResponse, UpdateObjectTitleRequest, UpdateObjectTitleResponse};
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use std::str::FromStr;
@@ -496,18 +489,87 @@ impl ObjectService for ObjectServiceImpl {
         &self,
         request: Request<UpdateObjectAuthorsRequest>,
     ) -> Result<Response<UpdateObjectAuthorsResponse>> {
-        // TODO
-        Err(Status::unimplemented(
-            "Updating object authors is not yet implemented",
-        ))
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = UpdateAuthor::Object(request.into_inner());
+        let collection_id = tonic_invalid!(request.get_id(), "Invalid object id");
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, false);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        let mut object = tonic_invalid!(
+            self.database_handler.update_author(request).await,
+            "Invalid update license request"
+        );
+        self.cache.add_stats_to_object(&mut object);
+
+        // Add or update collection in search index
+        search_utils::update_search_index(
+            &self.search_client,
+            &self.cache,
+            vec![ObjectDocument::from(object.object.clone())],
+        )
+            .await;
+
+        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let generic_resource: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: object,
+            rules,
+        }.into();
+        let response = UpdateObjectAuthorsResponse {
+            object: Some(generic_resource.into_inner()?),
+        };
+        return_with_log!(response);
     }
     async fn update_object_title(
         &self,
-        _request: Request<UpdateObjectTitleRequest>,
+        request: Request<UpdateObjectTitleRequest>,
     ) -> Result<Response<UpdateObjectTitleResponse>> {
-        // TODO
-        Err(Status::unimplemented(
-            "Updating object titles is not yet implemented",
-        ))
-    }
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = UpdateTitle::Object(request.into_inner());
+        let collection_id = tonic_invalid!(request.get_id(), "Invalid object id");
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, false);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        let mut object = tonic_invalid!(
+            self.database_handler.update_title(request).await,
+            "Invalid update license request"
+        );
+        self.cache.add_stats_to_object(&mut object);
+
+        // Add or update collection in search index
+        search_utils::update_search_index(
+            &self.search_client,
+            &self.cache,
+            vec![ObjectDocument::from(object.object.clone())],
+        )
+            .await;
+
+        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let generic_resource: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: object,
+            rules,
+        }.into();
+        let response = UpdateObjectTitleResponse {
+            object: Some(generic_resource.into_inner()?),
+        };
+        return_with_log!(response);}
 }

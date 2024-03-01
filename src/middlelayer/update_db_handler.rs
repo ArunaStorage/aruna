@@ -660,24 +660,82 @@ impl DatabaseHandler {
         &self,
         request: UpdateTitle,
         ) -> Result<ObjectWithRelations> {
+        // Init
         let id = request.get_id()?;
         let mut client = self.database.get_client().await?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
 
+        // update object
         Object::update_title(&id, request.get_title(), transaction_client).await?;
         self.evaluate_rules(&vec![id], transaction_client).await?;
 
+        // commit and update cache
         transaction.commit().await?;
         let updated = Object::get_object_with_relations(&id, &client).await?;
         self.cache.upsert_object(&id, updated.clone());
-        Ok(updated)
+
+        // Try to emit object updated notification(s) and return
+        let hierarchies = updated.object.fetch_object_hierarchies(&client).await?;
+        if let Err(err) = self
+            .natsio_handler
+            .register_resource_event(
+                &updated,
+                hierarchies,
+                EventVariant::Updated,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
+            .await
+        {
+            // Log error, rollback transaction and return
+            log::error!("{}", err);
+            Err(anyhow::anyhow!("Notification emission failed"))
+        } else {
+            Ok(updated)
+        }
     }
 
     pub async fn update_author(
         &self,
         request: UpdateAuthor
     ) -> Result<ObjectWithRelations> {
-        todo!()
+        // Get Object
+        let id = request.get_id()?;
+        let mut client = self.database.get_client().await?;
+        let mut object = Object::get_object_with_relations(&id, &client).await?;;
+        let (to_remove, mut to_add) = request.get_authors()?;
+        object.object.authors.0.retain(|a| !to_remove.contains(a));
+        object.object.authors.0.append(&mut to_add);
+
+        // Create transaction
+        let transaction = client.transaction().await?;
+        let transaction_client = transaction.client();
+
+        // Update object & Evaluate Rules
+        object.object.update(transaction_client).await?;
+        self.evaluate_rules(&vec![object.object.id], transaction_client).await?;
+
+        // Commit & update cache
+        transaction.commit().await?;
+        self.cache.upsert_object(&object.object.id, object.clone());
+
+        // Try to emit object updated notification(s) and return
+        let hierarchies = object.object.fetch_object_hierarchies(&client).await?;
+        if let Err(err) = self
+            .natsio_handler
+            .register_resource_event(
+                &object,
+                hierarchies,
+                EventVariant::Updated,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
+            .await
+        {
+            // Log error, rollback transaction and return
+            log::error!("{}", err);
+            Err(anyhow::anyhow!("Notification emission failed"))
+        } else {
+            Ok(object)
+        }
     }
 }

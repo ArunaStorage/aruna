@@ -7,25 +7,14 @@ use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::snapshot_request_types::SnapshotRequest;
-use crate::middlelayer::update_request_types::{
-    DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate,
-};
+use crate::middlelayer::update_request_types::{DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate, UpdateAuthor, UpdateTitle};
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::grpc_utils::get_token_from_md;
 use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
 use crate::utils::search_utils;
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Dataset};
 use aruna_rust_api::api::storage::services::v2::dataset_service_server::DatasetService;
-use aruna_rust_api::api::storage::services::v2::{
-    CreateDatasetRequest, CreateDatasetResponse, DeleteDatasetRequest, DeleteDatasetResponse,
-    GetDatasetRequest, GetDatasetResponse, GetDatasetsRequest, GetDatasetsResponse,
-    SnapshotDatasetRequest, SnapshotDatasetResponse, UpdateDatasetAuthorsRequest,
-    UpdateDatasetAuthorsResponse, UpdateDatasetDataClassRequest, UpdateDatasetDataClassResponse,
-    UpdateDatasetDescriptionRequest, UpdateDatasetDescriptionResponse,
-    UpdateDatasetKeyValuesRequest, UpdateDatasetKeyValuesResponse, UpdateDatasetLicensesRequest,
-    UpdateDatasetLicensesResponse, UpdateDatasetNameRequest, UpdateDatasetNameResponse,
-    UpdateDatasetTitleRequest, UpdateDatasetTitleResponse,
-};
+use aruna_rust_api::api::storage::services::v2::{CreateDatasetRequest, CreateDatasetResponse, DeleteDatasetRequest, DeleteDatasetResponse, GetDatasetRequest, GetDatasetResponse, GetDatasetsRequest, GetDatasetsResponse, SnapshotDatasetRequest, SnapshotDatasetResponse, UpdateCollectionAuthorsResponse, UpdateCollectionTitleResponse, UpdateDatasetAuthorsRequest, UpdateDatasetAuthorsResponse, UpdateDatasetDataClassRequest, UpdateDatasetDataClassResponse, UpdateDatasetDescriptionRequest, UpdateDatasetDescriptionResponse, UpdateDatasetKeyValuesRequest, UpdateDatasetKeyValuesResponse, UpdateDatasetLicensesRequest, UpdateDatasetLicensesResponse, UpdateDatasetNameRequest, UpdateDatasetNameResponse, UpdateDatasetTitleRequest, UpdateDatasetTitleResponse};
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use std::str::FromStr;
@@ -504,20 +493,90 @@ impl DatasetService for DatasetServiceImpl {
 
     async fn update_dataset_authors(
         &self,
-        _request: Request<UpdateDatasetAuthorsRequest>,
+        request: Request<UpdateDatasetAuthorsRequest>,
     ) -> Result<Response<UpdateDatasetAuthorsResponse>> {
-        // TODO
-        Err(tonic::Status::unimplemented(
-            "Updating dataset authors is not yet implemented",
-        ))
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = UpdateAuthor::Dataset(request.into_inner());
+        let collection_id = tonic_invalid!(request.get_id(), "Invalid dataset id");
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, false);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        let mut dataset = tonic_invalid!(
+            self.database_handler.update_author(request).await,
+            "Invalid update license request"
+        );
+        self.cache.add_stats_to_object(&mut dataset);
+
+        // Add or update collection in search index
+        search_utils::update_search_index(
+            &self.search_client,
+            &self.cache,
+            vec![ObjectDocument::from(dataset.object.clone())],
+        )
+            .await;
+
+        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let generic_resource: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: dataset,
+            rules,
+        }.into();
+        let response = UpdateDatasetAuthorsResponse {
+            dataset: Some(generic_resource.into_inner()?),
+        };
+        return_with_log!(response);
     }
     async fn update_dataset_title(
         &self,
-        _request: Request<UpdateDatasetTitleRequest>,
+        request: Request<UpdateDatasetTitleRequest>,
     ) -> Result<Response<UpdateDatasetTitleResponse>> {
-        // TODO
-        Err(tonic::Status::unimplemented(
-            "Updating dataset titles is not yet implemented",
-        ))
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = UpdateTitle::Dataset(request.into_inner());
+        let collection_id = tonic_invalid!(request.get_id(), "Invalid dataset id");
+        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, false);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        let mut dataset = tonic_invalid!(
+            self.database_handler.update_title(request).await,
+            "Invalid update license request"
+        );
+        self.cache.add_stats_to_object(&mut dataset);
+
+        // Add or update collection in search index
+        search_utils::update_search_index(
+            &self.search_client,
+            &self.cache,
+            vec![ObjectDocument::from(dataset.object.clone())],
+        )
+            .await;
+
+        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let generic_resource: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: dataset,
+            rules,
+        }.into();
+        let response = UpdateDatasetTitleResponse {
+            dataset: Some(generic_resource.into_inner()?),
+        };
+        return_with_log!(response);
     }
 }

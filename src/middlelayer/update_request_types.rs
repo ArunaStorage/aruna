@@ -3,9 +3,7 @@ use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO,
 };
 use crate::database::dsls::license_dsl::License;
-use crate::database::dsls::object_dsl::{
-    EndpointInfo, Hashes, KeyValue as DBKeyValue, KeyValues, Object, ObjectWithRelations,
-};
+use crate::database::dsls::object_dsl::{Author, EndpointInfo, Hashes, KeyValue as DBKeyValue, KeyValues, Object, ObjectWithRelations};
 use crate::database::enums::{DataClass, ObjectType, ReplicationStatus};
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
@@ -501,5 +499,30 @@ impl UpdateAuthor {
             UpdateAuthor::Dataset(req) => { &req.dataset_id }
             UpdateAuthor::Object(req) => { &req.object_id }
         })?)
+    }
+    
+    pub fn get_authors(&self) -> Result<(Vec<Author>, Vec<Author>)> {
+        match self {
+            UpdateAuthor::Project(req) => {
+                let remove = req.clone().remove_authors.into_iter().map(|a|a.try_into()).collect::<Result<Vec<Author>>>()?;
+                let add =  req.clone().add_authors.into_iter().map(|a|a.try_into()).collect::<Result<Vec<Author>>>()?;
+                Ok((remove, add))
+            }
+            UpdateAuthor::Collection(req) => {
+                let remove = req.clone().remove_authors.into_iter().map(|a|a.try_into()).collect::<Result<Vec<Author>>>()?;
+                let add =  req.clone().add_authors.into_iter().map(|a|a.try_into()).collect::<Result<Vec<Author>>>()?;
+                Ok((remove, add))
+            }
+            UpdateAuthor::Dataset(req) => {
+                let remove = req.clone().remove_authors.into_iter().map(|a|a.try_into()).collect::<Result<Vec<Author>>>()?;
+                let add =  req.clone().add_authors.into_iter().map(|a|a.try_into()).collect::<Result<Vec<Author>>>()?;
+                Ok((remove, add))
+            }
+            UpdateAuthor::Object(req) => {
+                let remove = req.clone().remove_authors.into_iter().map(|a|a.try_into()).collect::<Result<Vec<Author>>>()?;
+                let add =  req.clone().add_authors.into_iter().map(|a|a.try_into()).collect::<Result<Vec<Author>>>()?;
+                Ok((remove, add))
+            }
+        }
     }
 }
