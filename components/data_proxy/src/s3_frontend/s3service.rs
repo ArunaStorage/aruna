@@ -25,6 +25,7 @@ use http::HeaderValue;
 use md5::{Digest, Md5};
 use pithos_lib::helpers::footer_parser::Footer;
 use pithos_lib::helpers::footer_parser::FooterParser;
+use pithos_lib::helpers::notifications::Message as PithosMessage;
 use pithos_lib::streamreadwrite::GenericStreamReadWriter;
 use pithos_lib::transformer::ReadWriter;
 use pithos_lib::transformers::async_sender_sink::AsyncSenderSink;
@@ -1034,7 +1035,6 @@ impl S3 for ArunaS3Service {
         let CheckAccessResult {
             objects_state,
             user_state,
-            
             ..
         } = req
             .extensions
@@ -1120,6 +1120,8 @@ impl S3 for ArunaS3Service {
 
         match req.input.body {
             Some(data) => {
+                let (tx, rx) = async_channel::bounded(10);
+
                 let mut awr = GenericStreamReadWriter::new_with_sink(
                     data,
                     BufferedS3Sink::new(
@@ -1133,6 +1135,11 @@ impl S3 for ArunaS3Service {
                     )
                     .0,
                 );
+
+                awr.add_message_receiver(rx).await.map_err(|_| {
+                    error!(error = "Internal notifier error");
+                    s3_error!(InternalError, "Internal notifier error")
+                })?;
 
                 awr = awr.add_transformer(initial_sha_trans);
                 awr = awr.add_transformer(initial_md5_trans);
@@ -1158,6 +1165,16 @@ impl S3 for ArunaS3Service {
                 }
 
                 if location.is_pithos() {
+                    let ctx = new_object.get_file_context(Some(location.clone())).map_err(|_| {
+                        error!(error = "Unable to get file context");
+                        s3_error!(InternalError, "Unable to get file context")
+                    })?;
+                    tx.send(PithosMessage::FileContext(ctx))
+                        .await
+                        .map_err(|_| {
+                            error!(error = "Internal notifier error");
+                            s3_error!(InternalError, "Internal notifier error")
+                        })?;
                     awr = awr.add_transformer(PithosTransformer::new());
                     awr = awr.add_transformer(FooterGenerator::new(None));
                 }
@@ -1178,13 +1195,14 @@ impl S3 for ArunaS3Service {
         if let NewOrExistingObject::Missing(collection) = collection {
             if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                 if let Some(token) = &impersonating_token {
-                    let _col = handler
-                        .create_collection(collection, token)
-                        .await
-                        .map_err(|_| {
-                            error!(error = "Unable to create collection");
-                            s3_error!(InternalError, "Unable to create collection")
-                        })?;
+                    let _col =
+                        handler
+                            .create_collection(collection, token)
+                            .await
+                            .map_err(|_| {
+                                error!(error = "Unable to create collection");
+                                s3_error!(InternalError, "Unable to create collection")
+                            })?;
                 }
             }
         }
@@ -1318,10 +1336,7 @@ impl S3 for ArunaS3Service {
             Some(bytes) => {
                 if bytes < 5 * 1024 * 1024 {
                     error!("Content-Length exceeds 5GB");
-                    return Err(s3_error!(
-                        EntityTooSmall,
-                        "Content-Length smaller 5Mib"
-                    ));
+                    return Err(s3_error!(EntityTooSmall, "Content-Length smaller 5Mib"));
                 }
             }
         };

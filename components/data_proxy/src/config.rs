@@ -43,12 +43,8 @@ pub struct Proxy {
 impl Proxy {
     pub fn validate(&mut self) -> Result<()> {
         let Proxy {
-            
             private_key,
             serial,
-            
-            
-            
             ..
         } = self;
 

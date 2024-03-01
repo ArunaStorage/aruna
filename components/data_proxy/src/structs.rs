@@ -21,7 +21,7 @@ use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use diesel_ulid::DieselUlid;
 use http::{HeaderValue, Method};
-use pithos_lib::helpers::structs::EncryptionKey;
+use pithos_lib::helpers::structs::{EncryptionKey, FileContext};
 use rand::RngCore;
 use s3s::dto::CreateBucketInput;
 use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
@@ -34,6 +34,7 @@ use std::{
 use tracing::{debug, error};
 
 use crate::auth::auth::AuthHandler;
+use crate::CONFIG;
 
 /* ----- Constants ----- */
 pub const ALL_RIGHTS_RESERVED: &str = "AllRightsReserved";
@@ -312,6 +313,47 @@ impl Object {
             // object with gRPC response
             created_at: Some(chrono::Utc::now().naive_utc()),
         }
+    }
+
+    pub fn get_file_context(&self, location: Option<ObjectLocation>) -> Result<FileContext> {
+        // TODO: Maybe hashes
+        Ok(FileContext {
+            idx: 0,
+            file_path: self.name.clone(),
+            compressed_size: location
+                .as_ref()
+                .map(|l| l.disk_content_len as u64)
+                .unwrap_or_default(),
+            decompressed_size: location
+                .as_ref()
+                .map(|l| l.raw_content_len as u64)
+                .unwrap_or_default(),
+            compression: location
+                .as_ref()
+                .map(|l| l.is_compressed())
+                .unwrap_or_default(),
+            encryption_key: location
+                .as_ref()
+                .map(|l| {
+                    if let Some(key) = l.get_encryption_key() {
+                        EncryptionKey::new_same_key(key.clone())
+                    } else {
+                        EncryptionKey::default()
+                    }
+                })
+                .unwrap_or_default(),
+            recipients_pubkeys: vec![CONFIG
+                .proxy
+                .private_key
+                .as_ref()
+                .map(|x| x.as_bytes().try_into().ok())
+                .flatten()
+                .ok_or_else(|| {
+                    error!("No private key found");
+                    anyhow!("No private key found")
+                })?],
+            ..Default::default()
+        })
     }
 }
 
