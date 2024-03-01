@@ -174,7 +174,6 @@ impl HooksService for HookServiceImpl {
             request.verify_secret(self.authorizer.clone(), self.cache.clone()),
             "Unauthorized"
         );
-        dbg!("Verified secret");
 
         tonic_internal!(
             self.database_handler.hook_callback(request).await,

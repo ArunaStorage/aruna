@@ -226,7 +226,6 @@ impl HookHandler {
                             access_key,
                             secret_key,
                         })?;
-                        dbg!("[HookHandler] BasicTemplate: {:?}", &json);
                         base_request.json(&json)
                     }
                     TemplateVariant::Custom(template) => {
@@ -239,14 +238,12 @@ impl HookHandler {
                             upload_credentials,
                             pubkey_serial.into(),
                         )?;
-                        dbg!("[HookHandler] Template: {:?}", &template);
                         base_request
                             .header(CONTENT_TYPE, "text/plain")
                             .body(template)
                     }
                 };
                 let response = data_request.send().await?;
-                dbg!("[HookHandler] ExternalHook response: {:?}", &response);
             }
         };
         Ok(())
@@ -355,7 +352,6 @@ impl HookHandler {
             value: serde_json::to_string(&status_value)?,
             variant: KeyValueVariant::HOOK_STATUS,
         };
-        dbg!("HookStatus: {:?}", &hook_status);
         object.object.key_values.0 .0.push(hook_status.clone());
         Object::add_key_value(&object.object.id, &client, hook_status.clone()).await?;
         self.database_handler

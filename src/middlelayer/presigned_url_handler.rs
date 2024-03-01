@@ -40,7 +40,6 @@ impl DatabaseHandler {
     ) -> Result<GetCredentialsResponse> {
         let (project_id, ..) = DatabaseHandler::get_path(object_id, cache.clone()).await?;
         let endpoint = self.get_project_endpoint(project_id, cache.clone()).await?;
-        dbg!("endpoint");
 
         // Not sure if this is needed
         // Check if user trusts endpoint
@@ -72,19 +71,16 @@ impl DatabaseHandler {
         user_id: DieselUlid,
         token_id: Option<DieselUlid>,
     ) -> Result<(String, Option<GetCredentialsResponse>)> {
-        dbg!("Starting ");
         let object_id = request.get_id()?;
         let (project_id, bucket_name, key) =
             DatabaseHandler::get_path(object_id, cache.clone()).await?;
         let endpoint = self.get_project_endpoint(project_id, cache.clone()).await?;
-        dbg!("endpoint");
 
         // Not sure if this is needed
         // Check if user trusts endpoint
         let user = cache
             .get_user(&user_id)
             .ok_or_else(|| anyhow!("User not found"))?;
-        dbg!("user");
         if !user
             .attributes
             .0
@@ -99,7 +95,6 @@ impl DatabaseHandler {
             DatabaseHandler::get_credentials(authorizer.clone(), user_id, None, endpoint.clone())
                 .await?;
 
-        dbg!("nearly done");
         let url = sign_download_url(
             &credentials.access_key,
             &credentials.secret_key,
@@ -121,7 +116,6 @@ impl DatabaseHandler {
             }
             None => None,
         };
-        dbg!("done");
         Ok((url, credentials))
     }
     pub async fn get_presigned_download(
@@ -176,14 +170,7 @@ impl DatabaseHandler {
         let (project_id, bucket_name, key) =
             DatabaseHandler::get_path(object_id, cache.clone()).await?;
 
-        dbg!(
-            "Id: {}, bucket: {}, key: {}",
-            &project_id,
-            &bucket_name,
-            &key
-        );
         let endpoint = self.get_project_endpoint(project_id, cache.clone()).await?;
-        dbg!("Endpoint: {}", &endpoint);
         let (endpoint_host_url, endpoint_s3_url, ssl, credentials) =
             DatabaseHandler::get_credentials(authorizer, user_id, None, endpoint).await?;
         let upload_id = if multipart {
@@ -198,8 +185,6 @@ impl DatabaseHandler {
         } else {
             None
         };
-
-        dbg!("Upload id: {}", &upload_id);
 
         let signed_url = sign_url(
             Method::PUT,
@@ -319,7 +304,6 @@ impl DatabaseHandler {
                 action: Action::CreateSecrets,
             }),
         )?;
-        dbg!("SLT: {:?}", &slt);
 
         // 2. Request S3 credentials from Dataproxy
         let mut ssl: bool = true;

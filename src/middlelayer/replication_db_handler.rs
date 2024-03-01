@@ -163,10 +163,6 @@ impl DatabaseHandler {
                 }
             }
         }
-        dbg!(&objects);
-        dbg!(&hierarchy_resources);
-        dbg!(&partial_synced_hierarchy);
-        dbg!(&partial_synced_objects);
 
         // Create transaction for status & endpoint updates
         let transaction = client.transaction().await?;
@@ -241,7 +237,6 @@ impl DatabaseHandler {
         let mut all = Object::get_objects_with_relations(&all_updated, &client).await?;
 
         sort_objects(&mut all);
-        dbg!(&all);
         for owr in all {
             self.cache.upsert_object(&owr.object.id, owr.clone());
             if let Err(err) = self
@@ -308,7 +303,6 @@ impl DatabaseHandler {
             if let Some(resource) = self.cache.get_object(&id) {
                 let endpoint_info = if let Some(ep) = resource.object.endpoints.0.get(&endpoint_id)
                 {
-                    dbg!(ep.status);
                     Some(DataEndpoint {
                         id: endpoint_id.to_string(),
                         variant: Some(ep.replication.into()),

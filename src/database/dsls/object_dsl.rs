@@ -212,7 +212,6 @@ impl Object {
 
         let prepared = client.prepare(query).await?;
         let execute = client.execute(&prepared, &[&element, &self.id]).await?;
-        dbg!(execute);
         Ok(())
     }
 
@@ -756,7 +755,6 @@ impl Object {
         }
         let query_insert = create_multi_query(&inserts);
         let query = format!("{query_one}{query_insert}{query_three}{query_insert}{query_five}");
-        dbg!(&query);
         let prepared = client.prepare(&query).await?;
         let result: Vec<ObjectWithRelations> = client
             .query(&prepared, &inserts)

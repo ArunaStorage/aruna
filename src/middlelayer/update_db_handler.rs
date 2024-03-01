@@ -446,7 +446,6 @@ impl DatabaseHandler {
         if !affected.is_empty() {
             let affected = Object::get_objects_with_relations(&affected, &client).await?;
             for o in affected {
-                dbg!(&o);
                 self.cache.upsert_object(&o.object.id.clone(), o);
             }
         }
@@ -461,7 +460,6 @@ impl DatabaseHandler {
 
         let object = owr.clone();
         if !req.0.add_key_values.is_empty() && !is_new {
-            dbg!("TRIGGER");
             let kvs: Vec<KeyValue> = req
                 .0
                 .add_key_values

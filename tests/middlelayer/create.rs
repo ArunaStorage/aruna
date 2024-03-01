@@ -302,7 +302,6 @@ async fn create_object() {
         .create_resource(request, user.id, false)
         .await
         .unwrap();
-    dbg!(&obj);
 
     assert_eq!(obj.object.created_by, user.id);
     assert_eq!(obj.object.object_type, ObjectType::OBJECT);

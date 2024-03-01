@@ -71,7 +71,6 @@ impl DatabaseHandler {
     pub async fn hook_callback(&self, request: Callback) -> Result<()> {
         // Parsing
         let (_, object_id) = request.get_ids()?;
-        dbg!(&object_id);
 
         // Client creation
         let mut client = self.database.get_client().await?;
@@ -80,7 +79,6 @@ impl DatabaseHandler {
             .await?
             .ok_or_else(|| anyhow!("Object not found"))?;
 
-        dbg!(&object);
         let status = object
             .key_values
             .0
@@ -89,7 +87,6 @@ impl DatabaseHandler {
             .find(|kv| kv.key == request.0.hook_id)
             .ok_or_else(|| anyhow!("Hook status not found"))?
             .clone();
-        dbg!("HOOK_STATUS: {:?}", &status);
         let mut value: HookStatusValues = serde_json::from_str(&status.value)?;
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
@@ -181,7 +178,6 @@ impl DatabaseHandler {
         };
         // Update object in cache
         let owr = Object::get_object_with_relations(&object_id, &client).await?;
-        dbg!(&owr);
         self.cache.upsert_object(&object_id, owr.clone());
 
         // Send HookStatusChanged trigger to hook handler

@@ -202,7 +202,6 @@ impl PermissionHandler {
                     //Case 1: Impersonate
                     //  - Check if provided contexts are proxy/self/resource only
                     for ctx in &ctxs {
-                        dbg!(&ctx);
                         match ctx.variant {
                             ContextVariant::SelfUser
                             | ContextVariant::Registered
@@ -217,7 +216,6 @@ impl PermissionHandler {
                     //Case 2: FetchInfo
                     //  - Only get functions -> DbPermissionLevel::READ in contexts
                     for ctx in &ctxs {
-                        dbg!(&ctx);
                         match ctx.variant {
                             ContextVariant::SelfUser
                             | ContextVariant::Registered

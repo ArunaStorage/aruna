@@ -146,9 +146,7 @@ impl From<DBCustomAttributes> for CustomAttribute {
 }
 impl DBUser {
     pub fn into_redacted(self) -> User {
-        dbg!(&self);
         let mut user: User = self.into();
-        dbg!(&user);
         user.email = String::new();
         user.display_name = String::new();
         if let Some(attr) = user.attributes.as_mut() {

@@ -291,14 +291,9 @@ impl Callback {
         authorizer: Arc<PermissionHandler>,
         cache: Arc<Cache>,
     ) -> Result<()> {
-        dbg!(&self);
         let (hook_id, object_id) = self.get_ids()?;
-        dbg!(&hook_id);
-        dbg!(&object_id);
         let pubkey_serial = self.0.pubkey_serial;
-        dbg!(&pubkey_serial);
         let secret = self.0.secret.clone();
-        dbg!(&secret);
         authorizer.token_handler.verify_hook_secret(
             cache.clone(),
             secret,
