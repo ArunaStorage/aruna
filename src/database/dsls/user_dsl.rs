@@ -74,7 +74,7 @@ impl CrudDb for User {
     //ToDo: Rust Doc
     async fn create(&mut self, client: &Client) -> Result<()> {
         let query = "INSERT INTO users 
-          (id, display_name, first_name, last_name, email, attributes, active) 
+          (id, display_name, first_name, last_name, email, attributes, active)
         VALUES 
           ($1, $2, $3, $4, $5, $6, $7);";
 

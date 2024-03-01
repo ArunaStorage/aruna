@@ -4,7 +4,7 @@ VALUES
 (
     '018A0298-0FF4-995A-C4DC-B6685154E7AB', --01H819G3ZMK5DC9Q5PD18N9SXB
     'test-admin',
-    '{"global_admin": true, "service_account": false, "tokens": {}, "trusted_endpoints": {}, "custom_attributes": [], "permissions": {}, "external_ids": [{ "external_id": "14f0e7bf-0947-4aa1-a8cd-337ddeff4573", "oidc_name":"http://localhost:1998/realms/test"}]}',
+    '{"global_admin": true, "service_account": false, "tokens": {}, "trusted_endpoints": {}, "custom_attributes": [], "permissions": {}, "external_ids": [{ "external_id": "14f0e7bf-0947-4aa1-a8cd-337ddeff4573", "oidc_name":"http://localhost:1998/realms/test"}], "pubkey": "", "data_proxy_attribute": {}}',
     true
 );
 
@@ -13,7 +13,7 @@ VALUES
 (
     '018A27CF-78B4-D2A2-1F7E-16F6F27B5F8D', --01H8KWYY5MTAH1YZGPYVS7PQWD
     'test-user',
-    '{"global_admin": false, "service_account": false, "tokens": {}, "trusted_endpoints": {}, "custom_attributes": [], "permissions": {}, "external_ids": [{ "external_id": "8dbee009-a3e8-4664-8856-14173d9abd5b", "oidc_name":"http://localhost:1998/realms/test"}]}',
+    '{"global_admin": false, "service_account": false, "tokens": {}, "trusted_endpoints": {}, "custom_attributes": [], "permissions": {}, "external_ids": [{ "external_id": "8dbee009-a3e8-4664-8856-14173d9abd5b", "oidc_name":"http://localhost:1998/realms/test"}], "pubkey": "", "data_proxy_attribute": {}}',
     true
 );
 
@@ -22,7 +22,7 @@ VALUES
 (
     '018AE07D-5F28-8EB6-3A0A-D37CE945E645', --01HBG7TQS8HTV3M2PKFKMMBSJ5
     'another-test-user',
-    '{"global_admin": false, "service_account": false, "tokens": {}, "trusted_endpoints": {}, "custom_attributes": [], "permissions": {}, "external_ids": [{ "external_id": "21e87c60-b05c-40b1-ac5c-982b52ab2865", "oidc_name":"http://localhost:1998/realms/test"}]}',
+    '{"global_admin": false, "service_account": false, "tokens": {}, "trusted_endpoints": {}, "custom_attributes": [], "permissions": {}, "external_ids": [{ "external_id": "21e87c60-b05c-40b1-ac5c-982b52ab2865", "oidc_name":"http://localhost:1998/realms/test"}], "pubkey": "", "data_proxy_attribute": {}}',
     true
 );
 

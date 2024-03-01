@@ -24,7 +24,7 @@ use aruna_rust_api::api::storage::services::v2::{
     DeleteApiTokensRequest, DeleteApiTokensResponse, DeleteS3CredentialsUserResponse,
     DeleteS3CredentialsUserTokenRequest, GetAllUsersRequest, GetAllUsersResponse,
     GetApiTokenRequest, GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse,
-    GetDataproxyTokenUserRequest, GetDataproxyTokenUserResponse, GetEndpointRequest,
+    GetDataproxyTokenUserRequest, GetDataproxyTokenUserResponse,
     GetNotActivatedUsersRequest, GetNotActivatedUsersResponse, GetPersonalNotificationsRequest,
     GetPersonalNotificationsResponse, GetS3CredentialsUserTokenRequest,
     GetS3CredentialsUserTokenResponse, GetUserRedactedRequest, GetUserRedactedResponse,
