@@ -311,7 +311,11 @@ impl AuthHandler {
 
         // Query the project and extract the headers
         let resource_states = self
-            .prefix_into_resource_states(&[(bucket_name.to_string(), bucket_name.to_string())], true).await?;
+            .prefix_into_resource_states(
+                &[(bucket_name.to_string(), bucket_name.to_string())],
+                true,
+            )
+            .await?;
 
         // Extract the permission level from the method READ == "GET" and friends, WRITE == "POST" and friends
         // Check if the user has the required permissions
@@ -321,23 +325,27 @@ impl AuthHandler {
                 return Err(s3_error!(NoSuchBucket, "No such bucket"));
             }
             None
-        }else{
+        } else {
             resource_states.check_permissions(&access_key_info, DbPermissionLevel::from(method))?;
             resource_states
-            .require_project()?
-            .project_get_headers(method, headers)
+                .require_project()?
+                .project_get_headers(method, headers)
         };
 
         self.rule_engine
             .evaluate_object(
                 ObjectRuleInputBuilder::new(&self.rule_engine)
+                    .user_id(&access_key_info.user_id.to_string())
                     .attributes(&attributes)
                     .method(method)
                     .permissions(&access_key_info.permissions)
                     .headers(headers)
                     .add_resource_states(&resource_states)
                     .build()
-                    .map_err(|_| s3_error!(MalformedACLError, "Rule has wrong context"))?,
+                    .map_err(|e| {
+                        error!(error = ?e, msg = e.to_string(), "Error in building rule");
+                        s3_error!(MalformedACLError, "Rule has wrong context")
+                    })?,
             )
             .map_err(|_| s3_error!(AccessDenied, "Forbidden by rule"))?;
 

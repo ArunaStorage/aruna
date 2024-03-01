@@ -184,7 +184,7 @@ pub struct ObjectRuleInputBuilder {
 impl ObjectRuleInputBuilder {
     pub fn new(rule_engine: &RuleEngine) -> Self {
         Self {
-            skip: rule_engine.has_object(),
+            skip: !rule_engine.has_object(),
             ..Self::default()
         }
     }
@@ -285,22 +285,23 @@ impl ObjectRuleInputBuilder {
         if self.skip {
             return self;
         }
-        if let Some(project) = resource_states.get_project() {
-            self.project = Some(project.clone());
+        if let Some(project) = resource_states.get_project_or_missing() {
+            self.project = Some(project);
         }
-        if let Some(collection) = resource_states.get_collection() {
-            self.collection = Some(collection.clone());
+        if let Some(collection) = resource_states.get_collection_or_missing() {
+            self.collection = Some(collection);
         }
-        if let Some(dataset) = resource_states.get_dataset() {
-            self.dataset = Some(dataset.clone());
+        if let Some(dataset) = resource_states.get_dataset_or_missing() {
+            self.dataset = Some(dataset);
         }
-        if let Some(object) = resource_states.get_object() {
-            self.object = Some(object.clone());
+        if let Some(object) = resource_states.get_object_or_missing() {
+            self.object = Some(object);
         }
         self
     }
 
     pub fn build(self) -> Result<ObjectRuleInput> {
+        dbg!(&self);
         if !self.skip && self.method.is_empty() {
             return Err(anyhow!("method is required"));
         }
@@ -354,7 +355,7 @@ pub struct PackageObjectRuleInputBuilder {
 impl PackageObjectRuleInputBuilder {
     pub fn new(rule_engine: &RuleEngine) -> Self {
         Self {
-            skip: rule_engine.has_object_package(),
+            skip: !rule_engine.has_object_package(),
             ..Self::default()
         }
     }
@@ -461,7 +462,7 @@ pub struct BundleRuleInputBuilder {
 impl BundleRuleInputBuilder {
     pub fn new(rule_engine: &RuleEngine) -> Self {
         Self {
-            skip: rule_engine.has_bundle(),
+            skip: !rule_engine.has_bundle(),
             ..Self::default()
         }
     }
@@ -577,7 +578,7 @@ impl ReplicationIncomingRuleInputBuilder {
     #[allow(dead_code)]
     pub fn new(rule_engine: &RuleEngine) -> Self {
         Self {
-            skip: rule_engine.has_replication_in(),
+            skip: !rule_engine.has_replication_in(),
             ..Self::default()
         }
     }
@@ -629,7 +630,7 @@ impl ReplicationOutgoingRuleInputBuilder {
     #[allow(dead_code)]
     pub fn new(rule_engine: &RuleEngine) -> Self {
         Self {
-            skip: rule_engine.has_replication_out(),
+            skip: !rule_engine.has_replication_out(),
             ..Self::default()
         }
     }

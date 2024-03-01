@@ -1240,6 +1240,14 @@ impl ResourceState {
             _ => None,
         }
     }
+
+    pub fn _as_name(&self) -> Option<String> {
+        match self {
+            ResourceState::Missing { name, .. } => Some(name.clone()),
+            ResourceState::Found { object } => Some(object.name.clone()),
+            _ => None,
+        }
+    }
 }
 
 pub enum NewOrExistingObject {
@@ -1272,7 +1280,6 @@ impl ResourceStates {
     }
 
     pub fn validate(&self, allow_create_project: bool) -> Result<()> {
-
         let project = if allow_create_project && self.objects[0].is_missing() {
             false
         } else {
@@ -1371,6 +1378,54 @@ impl ResourceStates {
 
     pub fn get_object(&self) -> Option<&Object> {
         self.objects[3].as_ref()
+    }
+
+    pub fn get_project_or_missing(&self) -> Option<Object> {
+        match &self.objects[0] {
+            x @ ResourceState::Found { .. } => x.as_ref().cloned(),
+            ResourceState::Missing { name, .. } => Some(Object::initialize_now(
+                name.to_string(),
+                ObjectType::Project,
+                None,
+            )),
+            _ => None,
+        }
+    }
+
+    pub fn get_collection_or_missing(&self) -> Option<Object> {
+        match &self.objects[1] {
+            x @ ResourceState::Found { .. } => x.as_ref().cloned(),
+            ResourceState::Missing { name, .. } => Some(Object::initialize_now(
+                name.to_string(),
+                ObjectType::Collection,
+                None,
+            )),
+            _ => None,
+        }
+    }
+
+    pub fn get_dataset_or_missing(&self) -> Option<Object> {
+        match &self.objects[2] {
+            x @ ResourceState::Found { .. } => x.as_ref().cloned(),
+            ResourceState::Missing { name, .. } => Some(Object::initialize_now(
+                name.to_string(),
+                ObjectType::Dataset,
+                None,
+            )),
+            _ => None,
+        }
+    }
+
+    pub fn get_object_or_missing(&self) -> Option<Object> {
+        match &self.objects[3] {
+            x @ ResourceState::Found { .. } => x.as_ref().cloned(),
+            ResourceState::Missing { name, .. } => Some(Object::initialize_now(
+                name.to_string(),
+                ObjectType::Object,
+                None,
+            )),
+            _ => None,
+        }
     }
 
     pub fn set_missing(&mut self, idx: usize, len: usize, name: String) -> Result<()> {
