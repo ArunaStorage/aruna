@@ -6,7 +6,10 @@ use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::snapshot_request_types::SnapshotRequest;
-use crate::middlelayer::update_request_types::{DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate, UpdateAuthor, UpdateTitle};
+use crate::middlelayer::update_request_types::{
+    DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate, UpdateAuthor,
+    UpdateTitle,
+};
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::grpc_utils::get_token_from_md;
 use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
@@ -16,7 +19,17 @@ use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::utils::search_utils;
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Project};
 use aruna_rust_api::api::storage::services::v2::project_service_server::ProjectService;
-use aruna_rust_api::api::storage::services::v2::{ArchiveProjectRequest, ArchiveProjectResponse, CreateProjectRequest, CreateProjectResponse, DeleteProjectRequest, DeleteProjectResponse, GetProjectRequest, GetProjectResponse, GetProjectsRequest, GetProjectsResponse, UpdateCollectionAuthorsResponse, UpdateCollectionTitleResponse, UpdateProjectAuthorsRequest, UpdateProjectAuthorsResponse, UpdateProjectDataClassRequest, UpdateProjectDataClassResponse, UpdateProjectDescriptionRequest, UpdateProjectDescriptionResponse, UpdateProjectKeyValuesRequest, UpdateProjectKeyValuesResponse, UpdateProjectLicensesRequest, UpdateProjectLicensesResponse, UpdateProjectNameRequest, UpdateProjectNameResponse, UpdateProjectTitleRequest, UpdateProjectTitleResponse};
+use aruna_rust_api::api::storage::services::v2::{
+    ArchiveProjectRequest, ArchiveProjectResponse, CreateProjectRequest, CreateProjectResponse,
+    DeleteProjectRequest, DeleteProjectResponse, GetProjectRequest, GetProjectResponse,
+    GetProjectsRequest, GetProjectsResponse, UpdateCollectionAuthorsResponse,
+    UpdateCollectionTitleResponse, UpdateProjectAuthorsRequest, UpdateProjectAuthorsResponse,
+    UpdateProjectDataClassRequest, UpdateProjectDataClassResponse, UpdateProjectDescriptionRequest,
+    UpdateProjectDescriptionResponse, UpdateProjectKeyValuesRequest,
+    UpdateProjectKeyValuesResponse, UpdateProjectLicensesRequest, UpdateProjectLicensesResponse,
+    UpdateProjectNameRequest, UpdateProjectNameResponse, UpdateProjectTitleRequest,
+    UpdateProjectTitleResponse,
+};
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use std::str::FromStr;
@@ -527,13 +540,17 @@ impl ProjectService for ProjectServiceImpl {
             &self.cache,
             vec![ObjectDocument::from(project.object.clone())],
         )
-            .await;
+        .await;
 
-        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let rules = self
+            .cache
+            .get_rule_bindings(&collection_id)
+            .unwrap_or_default();
         let generic_resource: generic_resource::Resource = ObjectWrapper {
             object_with_relations: project,
             rules,
-        }.into();
+        }
+        .into();
         let response = UpdateProjectAuthorsResponse {
             project: Some(generic_resource.into_inner()?),
         };
@@ -571,13 +588,17 @@ impl ProjectService for ProjectServiceImpl {
             &self.cache,
             vec![ObjectDocument::from(project.object.clone())],
         )
-            .await;
+        .await;
 
-        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let rules = self
+            .cache
+            .get_rule_bindings(&collection_id)
+            .unwrap_or_default();
         let generic_resource: generic_resource::Resource = ObjectWrapper {
             object_with_relations: project,
             rules,
-        }.into();
+        }
+        .into();
         let response = UpdateProjectTitleResponse {
             project: Some(generic_resource.into_inner()?),
         };

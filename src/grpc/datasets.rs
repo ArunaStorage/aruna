@@ -1,26 +1,39 @@
 use crate::auth::permission_handler::{PermissionCheck, PermissionHandler};
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
+use crate::caching::structs::ObjectWrapper;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::snapshot_request_types::SnapshotRequest;
-use crate::middlelayer::update_request_types::{DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate, UpdateAuthor, UpdateTitle};
+use crate::middlelayer::update_request_types::{
+    DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate, UpdateAuthor,
+    UpdateTitle,
+};
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::grpc_utils::get_token_from_md;
 use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
 use crate::utils::search_utils;
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Dataset};
 use aruna_rust_api::api::storage::services::v2::dataset_service_server::DatasetService;
-use aruna_rust_api::api::storage::services::v2::{CreateDatasetRequest, CreateDatasetResponse, DeleteDatasetRequest, DeleteDatasetResponse, GetDatasetRequest, GetDatasetResponse, GetDatasetsRequest, GetDatasetsResponse, SnapshotDatasetRequest, SnapshotDatasetResponse, UpdateCollectionAuthorsResponse, UpdateCollectionTitleResponse, UpdateDatasetAuthorsRequest, UpdateDatasetAuthorsResponse, UpdateDatasetDataClassRequest, UpdateDatasetDataClassResponse, UpdateDatasetDescriptionRequest, UpdateDatasetDescriptionResponse, UpdateDatasetKeyValuesRequest, UpdateDatasetKeyValuesResponse, UpdateDatasetLicensesRequest, UpdateDatasetLicensesResponse, UpdateDatasetNameRequest, UpdateDatasetNameResponse, UpdateDatasetTitleRequest, UpdateDatasetTitleResponse};
+use aruna_rust_api::api::storage::services::v2::{
+    CreateDatasetRequest, CreateDatasetResponse, DeleteDatasetRequest, DeleteDatasetResponse,
+    GetDatasetRequest, GetDatasetResponse, GetDatasetsRequest, GetDatasetsResponse,
+    SnapshotDatasetRequest, SnapshotDatasetResponse, UpdateCollectionAuthorsResponse,
+    UpdateCollectionTitleResponse, UpdateDatasetAuthorsRequest, UpdateDatasetAuthorsResponse,
+    UpdateDatasetDataClassRequest, UpdateDatasetDataClassResponse, UpdateDatasetDescriptionRequest,
+    UpdateDatasetDescriptionResponse, UpdateDatasetKeyValuesRequest,
+    UpdateDatasetKeyValuesResponse, UpdateDatasetLicensesRequest, UpdateDatasetLicensesResponse,
+    UpdateDatasetNameRequest, UpdateDatasetNameResponse, UpdateDatasetTitleRequest,
+    UpdateDatasetTitleResponse,
+};
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Request, Response, Result};
-use crate::caching::structs::ObjectWrapper;
 
 crate::impl_grpc_server!(DatasetServiceImpl, search_client: Arc<MeilisearchClient>);
 
@@ -87,11 +100,15 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let rules = self.cache.get_rule_bindings(&dataset.object.id).unwrap_or_default();
-        let generic_dataset: generic_resource::Resource = ObjectWrapper{
+        let rules = self
+            .cache
+            .get_rule_bindings(&dataset.object.id)
+            .unwrap_or_default();
+        let generic_dataset: generic_resource::Resource = ObjectWrapper {
             object_with_relations: dataset,
-            rules
-        }.into();
+            rules,
+        }
+        .into();
 
         let response = CreateDatasetResponse {
             dataset: Some(generic_dataset.into_inner()?),
@@ -239,11 +256,15 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let rules = self.cache.get_rule_bindings(&dataset_id).unwrap_or_default();
+        let rules = self
+            .cache
+            .get_rule_bindings(&dataset_id)
+            .unwrap_or_default();
         let dataset: generic_resource::Resource = ObjectWrapper {
             object_with_relations: dataset,
             rules,
-        }.into();
+        }
+        .into();
 
         let response = UpdateDatasetNameResponse {
             dataset: Some(dataset.into_inner()?),
@@ -287,11 +308,15 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let rules = self.cache.get_rule_bindings(&dataset_id).unwrap_or_default();
+        let rules = self
+            .cache
+            .get_rule_bindings(&dataset_id)
+            .unwrap_or_default();
         let dataset: generic_resource::Resource = ObjectWrapper {
             object_with_relations: dataset,
             rules,
-        }.into();
+        }
+        .into();
 
         let response = UpdateDatasetDescriptionResponse {
             dataset: Some(dataset.into_inner()?),
@@ -335,11 +360,15 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let rules = self.cache.get_rule_bindings(&dataset_id).unwrap_or_default();
+        let rules = self
+            .cache
+            .get_rule_bindings(&dataset_id)
+            .unwrap_or_default();
         let dataset: generic_resource::Resource = ObjectWrapper {
             object_with_relations: dataset,
             rules,
-        }.into();
+        }
+        .into();
 
         let response = UpdateDatasetKeyValuesResponse {
             dataset: Some(dataset.into_inner()?),
@@ -384,11 +413,15 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let rules = self.cache.get_rule_bindings(&dataset_id).unwrap_or_default();
+        let rules = self
+            .cache
+            .get_rule_bindings(&dataset_id)
+            .unwrap_or_default();
         let dataset: generic_resource::Resource = ObjectWrapper {
             object_with_relations: dataset,
             rules,
-        }.into();
+        }
+        .into();
 
         let response = UpdateDatasetDataClassResponse {
             dataset: Some(dataset.into_inner()?),
@@ -480,11 +513,15 @@ impl DatasetService for DatasetServiceImpl {
         )
         .await;
 
-        let rules = self.cache.get_rule_bindings(&dataset_id).unwrap_or_default();
+        let rules = self
+            .cache
+            .get_rule_bindings(&dataset_id)
+            .unwrap_or_default();
         let generic_resource: generic_resource::Resource = ObjectWrapper {
             object_with_relations: dataset,
             rules,
-        }.into();
+        }
+        .into();
         let response = UpdateDatasetLicensesResponse {
             dataset: Some(generic_resource.into_inner()?),
         };
@@ -523,13 +560,17 @@ impl DatasetService for DatasetServiceImpl {
             &self.cache,
             vec![ObjectDocument::from(dataset.object.clone())],
         )
-            .await;
+        .await;
 
-        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let rules = self
+            .cache
+            .get_rule_bindings(&collection_id)
+            .unwrap_or_default();
         let generic_resource: generic_resource::Resource = ObjectWrapper {
             object_with_relations: dataset,
             rules,
-        }.into();
+        }
+        .into();
         let response = UpdateDatasetAuthorsResponse {
             dataset: Some(generic_resource.into_inner()?),
         };
@@ -567,13 +608,17 @@ impl DatasetService for DatasetServiceImpl {
             &self.cache,
             vec![ObjectDocument::from(dataset.object.clone())],
         )
-            .await;
+        .await;
 
-        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let rules = self
+            .cache
+            .get_rule_bindings(&collection_id)
+            .unwrap_or_default();
         let generic_resource: generic_resource::Resource = ObjectWrapper {
             object_with_relations: dataset,
             rules,
-        }.into();
+        }
+        .into();
         let response = UpdateDatasetTitleResponse {
             dataset: Some(generic_resource.into_inner()?),
         };

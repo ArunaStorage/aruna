@@ -16,7 +16,15 @@ use crate::utils::grpc_utils::{get_id_and_ctx, IntoGenericInner};
 use crate::utils::search_utils;
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Object};
 use aruna_rust_api::api::storage::services::v2::object_service_server::ObjectService;
-use aruna_rust_api::api::storage::services::v2::{CloneObjectRequest, CloneObjectResponse, CreateObjectRequest, CreateObjectResponse, DeleteObjectRequest, DeleteObjectResponse, FinishObjectStagingRequest, FinishObjectStagingResponse, GetDownloadUrlRequest, GetDownloadUrlResponse, GetObjectRequest, GetObjectResponse, GetObjectsRequest, GetObjectsResponse, GetUploadUrlRequest, GetUploadUrlResponse, UpdateCollectionAuthorsResponse, UpdateCollectionTitleResponse, UpdateObjectAuthorsRequest, UpdateObjectAuthorsResponse, UpdateObjectRequest, UpdateObjectResponse, UpdateObjectTitleRequest, UpdateObjectTitleResponse};
+use aruna_rust_api::api::storage::services::v2::{
+    CloneObjectRequest, CloneObjectResponse, CreateObjectRequest, CreateObjectResponse,
+    DeleteObjectRequest, DeleteObjectResponse, FinishObjectStagingRequest,
+    FinishObjectStagingResponse, GetDownloadUrlRequest, GetDownloadUrlResponse, GetObjectRequest,
+    GetObjectResponse, GetObjectsRequest, GetObjectsResponse, GetUploadUrlRequest,
+    GetUploadUrlResponse, UpdateCollectionAuthorsResponse, UpdateCollectionTitleResponse,
+    UpdateObjectAuthorsRequest, UpdateObjectAuthorsResponse, UpdateObjectRequest,
+    UpdateObjectResponse, UpdateObjectTitleRequest, UpdateObjectTitleResponse,
+};
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use std::str::FromStr;
@@ -517,13 +525,17 @@ impl ObjectService for ObjectServiceImpl {
             &self.cache,
             vec![ObjectDocument::from(object.object.clone())],
         )
-            .await;
+        .await;
 
-        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let rules = self
+            .cache
+            .get_rule_bindings(&collection_id)
+            .unwrap_or_default();
         let generic_resource: generic_resource::Resource = ObjectWrapper {
             object_with_relations: object,
             rules,
-        }.into();
+        }
+        .into();
         let response = UpdateObjectAuthorsResponse {
             object: Some(generic_resource.into_inner()?),
         };
@@ -561,15 +573,20 @@ impl ObjectService for ObjectServiceImpl {
             &self.cache,
             vec![ObjectDocument::from(object.object.clone())],
         )
-            .await;
+        .await;
 
-        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let rules = self
+            .cache
+            .get_rule_bindings(&collection_id)
+            .unwrap_or_default();
         let generic_resource: generic_resource::Resource = ObjectWrapper {
             object_with_relations: object,
             rules,
-        }.into();
+        }
+        .into();
         let response = UpdateObjectTitleResponse {
             object: Some(generic_resource.into_inner()?),
         };
-        return_with_log!(response);}
+        return_with_log!(response);
+    }
 }

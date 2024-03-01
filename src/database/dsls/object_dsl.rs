@@ -580,15 +580,7 @@ impl Object {
 
         let prepared = client.prepare(query).await?;
 
-        client
-            .query(
-                &prepared,
-                &[
-                    id,
-                    &title,
-                ],
-            )
-            .await?;
+        client.query(&prepared, &[id, &title]).await?;
         Ok(())
     }
     pub async fn update(&self, client: &Client) -> Result<()> {

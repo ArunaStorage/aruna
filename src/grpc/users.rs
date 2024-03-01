@@ -2,7 +2,7 @@ use crate::auth::permission_handler::{PermissionCheck, PermissionHandler};
 use crate::auth::structs::Context;
 use crate::auth::token_handler::{Action, Intent, TokenHandler};
 use crate::caching::cache::Cache;
-use crate::database::enums::{DbPermissionLevel};
+use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::token_request_types::{CreateToken, DeleteToken, GetToken};
 use crate::middlelayer::user_request_types::{
@@ -24,8 +24,8 @@ use aruna_rust_api::api::storage::services::v2::{
     DeleteApiTokensRequest, DeleteApiTokensResponse, DeleteS3CredentialsUserResponse,
     DeleteS3CredentialsUserTokenRequest, GetAllUsersRequest, GetAllUsersResponse,
     GetApiTokenRequest, GetApiTokenResponse, GetApiTokensRequest, GetApiTokensResponse,
-    GetDataproxyTokenUserRequest, GetDataproxyTokenUserResponse,
-    GetNotActivatedUsersRequest, GetNotActivatedUsersResponse, GetPersonalNotificationsRequest,
+    GetDataproxyTokenUserRequest, GetDataproxyTokenUserResponse, GetNotActivatedUsersRequest,
+    GetNotActivatedUsersResponse, GetPersonalNotificationsRequest,
     GetPersonalNotificationsResponse, GetS3CredentialsUserTokenRequest,
     GetS3CredentialsUserTokenResponse, GetUserRedactedRequest, GetUserRedactedResponse,
     GetUserRequest, GetUserResponse, RegisterUserRequest, RegisterUserResponse,
@@ -484,7 +484,12 @@ impl UserService for UserServiceImpl {
         // Remove trusted endpoints from user
         let (s3_access_key, s3_secret_key, s3_endpoint_url) = tonic_internal!(
             self.database_handler
-                .get_s3_credentials(user_id, maybe_token, inner_request.endpoint_id, &self.authorizer.token_handler)
+                .get_s3_credentials(
+                    user_id,
+                    maybe_token,
+                    inner_request.endpoint_id,
+                    &self.authorizer.token_handler
+                )
                 .await,
             "Failed to add endpoint to user"
         );
@@ -847,15 +852,26 @@ impl UserService for UserServiceImpl {
         );
 
         let ctx = Context::self_ctx();
-        let PermissionCheck{user_id, token: token_id, ..} = tonic_auth!(
-            self.authorizer.check_permissions_verbose(&token, vec![ctx]).await,
+        let PermissionCheck {
+            user_id,
+            token: token_id,
+            ..
+        } = tonic_auth!(
+            self.authorizer
+                .check_permissions_verbose(&token, vec![ctx])
+                .await,
             "Unauthorized"
         );
 
         // Remove trusted endpoints from user
         let (s3_access_key, s3_secret_key, s3_endpoint_url) = tonic_internal!(
             self.database_handler
-                .create_s3_credentials_with_user_token(user_id, inner_request.endpoint_id, token_id, &self.authorizer.token_handler)
+                .create_s3_credentials_with_user_token(
+                    user_id,
+                    inner_request.endpoint_id,
+                    token_id,
+                    &self.authorizer.token_handler
+                )
                 .await,
             "Failed to add endpoint to user"
         );
@@ -884,20 +900,30 @@ impl UserService for UserServiceImpl {
         );
 
         let ctx = Context::self_ctx();
-        let PermissionCheck{user_id, token: token_id, ..} = tonic_auth!(
-            self.authorizer.check_permissions_verbose(&token, vec![ctx]).await,
+        let PermissionCheck {
+            user_id,
+            token: token_id,
+            ..
+        } = tonic_auth!(
+            self.authorizer
+                .check_permissions_verbose(&token, vec![ctx])
+                .await,
             "Unauthorized"
         );
 
         // Remove trusted endpoints from user
-         tonic_internal!(
+        tonic_internal!(
             self.database_handler
-                .delete_s3_credentials_with_user_token(user_id, inner_request.endpoint_id, token_id, &self.authorizer.token_handler)
+                .delete_s3_credentials_with_user_token(
+                    user_id,
+                    inner_request.endpoint_id,
+                    token_id,
+                    &self.authorizer.token_handler
+                )
                 .await,
             "Failed to add endpoint to user"
         );
 
-        return_with_log!(DeleteS3CredentialsUserResponse {
-        });
+        return_with_log!(DeleteS3CredentialsUserResponse {});
     }
 }

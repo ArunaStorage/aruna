@@ -103,7 +103,12 @@ impl CrudDb for RuleBinding {
         let row = client
             .query_one(
                 &prepared,
-                &[&self.rule_id, &self.origin_id, &self.object_id, &self.cascading],
+                &[
+                    &self.rule_id,
+                    &self.origin_id,
+                    &self.object_id,
+                    &self.cascading,
+                ],
             )
             .await?;
 

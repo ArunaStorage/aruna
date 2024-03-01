@@ -23,14 +23,14 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tonic::Status;
 
+use crate::caching::structs::ObjectWrapper;
+use crate::database::dsls::rule_dsl::RuleBinding;
 use crate::{
     auth::structs::Context,
     middlelayer::db_handler::DatabaseHandler,
     search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes, ObjectDocument},
     utils::grpc_utils::get_token_from_md,
 };
-use crate::caching::structs::ObjectWrapper;
-use crate::database::dsls::rule_dsl::RuleBinding;
 
 crate::impl_grpc_server!(SearchServiceImpl, search_client: Arc<MeilisearchClient>);
 
@@ -138,7 +138,10 @@ impl SearchService for SearchServiceImpl {
                 .permissions
                 .get(&resource_ulid)
                 .ok_or_else(|| Status::not_found("Permissions not found"));
-            let bindings = self.cache.get_rule_bindings(&resource_ulid).unwrap_or_default();
+            let bindings = self
+                .cache
+                .get_rule_bindings(&resource_ulid)
+                .unwrap_or_default();
             match mapping_perm {
                 Ok(perm) => {
                     let permission = match *perm {
@@ -176,7 +179,10 @@ impl SearchService for SearchServiceImpl {
 
             // Check if object metadata is publicly available
             let bindings = match object_plus.object.data_class {
-                DataClass::PUBLIC => {self.cache.get_rule_bindings(&resource_ulid).unwrap_or_default()}
+                DataClass::PUBLIC => self
+                    .cache
+                    .get_rule_bindings(&resource_ulid)
+                    .unwrap_or_default(),
                 DataClass::PRIVATE => {
                     // SPECIFIC private operations OTHER THAN strip labels
                     // Remove created by
@@ -205,7 +211,11 @@ impl SearchService for SearchServiceImpl {
         self.cache.add_stats_to_object(&mut object_plus);
 
         // Convert to proto resource
-        let generic_object: Resource = ObjectWrapper{object_with_relations: object_plus, rules: bindings}.into();
+        let generic_object: Resource = ObjectWrapper {
+            object_with_relations: object_plus,
+            rules: bindings,
+        }
+        .into();
 
         // Create response and return with log
         let response = GetResourceResponse {
@@ -259,7 +269,8 @@ impl SearchService for SearchServiceImpl {
             None
         };
         let objects = if let Some(user) = user {
-            let mut objects: Vec<(ObjectWithRelations, PermissionLevel, Arc<Vec<RuleBinding>>)> = Vec::new();
+            let mut objects: Vec<(ObjectWithRelations, PermissionLevel, Arc<Vec<RuleBinding>>)> =
+                Vec::new();
             for id in resource_ids {
                 let object = self
                     .cache
@@ -308,7 +319,8 @@ impl SearchService for SearchServiceImpl {
             }
             objects
         } else {
-            let mut objects: Vec<(ObjectWithRelations, PermissionLevel, Arc<Vec<RuleBinding>>)> = Vec::new();
+            let mut objects: Vec<(ObjectWithRelations, PermissionLevel, Arc<Vec<RuleBinding>>)> =
+                Vec::new();
             for id in resource_ids {
                 // Get Object from cache
                 let mut object_plus = self
@@ -318,7 +330,7 @@ impl SearchService for SearchServiceImpl {
 
                 // Check if object metadata is publicly available
                 let bindings = match object_plus.object.data_class {
-                    DataClass::PUBLIC => {self.cache.get_rule_bindings(&id).unwrap_or_default()}
+                    DataClass::PUBLIC => self.cache.get_rule_bindings(&id).unwrap_or_default(),
                     DataClass::PRIVATE => {
                         // SPECIFIC private operations OTHER THAN strip labels
                         // Remove created by
@@ -353,10 +365,13 @@ impl SearchService for SearchServiceImpl {
             .map(|(object, permission, bindings)| {
                 Ok::<ResourceWithPermission, Status>(ResourceWithPermission {
                     resource: Some(GenericResource {
-                        resource: Some(ObjectWrapper{
-                            object_with_relations: object,
-                            rules: bindings,
-                        }.into()),
+                        resource: Some(
+                            ObjectWrapper {
+                                object_with_relations: object,
+                                rules: bindings,
+                            }
+                            .into(),
+                        ),
                     }),
                     permission: permission.into(),
                 })

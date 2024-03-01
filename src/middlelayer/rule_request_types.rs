@@ -49,7 +49,7 @@ impl UpdateRule {
             existing.rule.description.clone()
         };
         let is_public = self.0.public;
-        let compiled =  cel_parser::parse(&rule_expressions).map_err(|e| anyhow!(e.to_string()))?;
+        let compiled = cel_parser::parse(&rule_expressions).map_err(|e| anyhow!(e.to_string()))?;
         let rule = Rule {
             id: existing.rule.id,
             rule_expressions,
@@ -57,10 +57,7 @@ impl UpdateRule {
             owner_id: existing.rule.owner_id,
             is_public,
         };
-        Ok(CachedRule {
-            rule,
-            compiled,
-        })
+        Ok(CachedRule { rule, compiled })
     }
 }
 

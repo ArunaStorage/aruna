@@ -3,12 +3,24 @@ use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO,
 };
 use crate::database::dsls::license_dsl::License;
-use crate::database::dsls::object_dsl::{Author, EndpointInfo, Hashes, KeyValue as DBKeyValue, KeyValues, Object, ObjectWithRelations};
+use crate::database::dsls::object_dsl::{
+    Author, EndpointInfo, Hashes, KeyValue as DBKeyValue, KeyValues, Object, ObjectWithRelations,
+};
 use crate::database::enums::{DataClass, ObjectType, ReplicationStatus};
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::services::v2::update_object_request::Parent as UpdateParent;
-use aruna_rust_api::api::storage::services::v2::{UpdateCollectionAuthorsRequest, UpdateCollectionDataClassRequest, UpdateCollectionDescriptionRequest, UpdateCollectionKeyValuesRequest, UpdateCollectionLicensesRequest, UpdateCollectionNameRequest, UpdateCollectionTitleRequest, UpdateDatasetAuthorsRequest, UpdateDatasetDataClassRequest, UpdateDatasetDescriptionRequest, UpdateDatasetKeyValuesRequest, UpdateDatasetLicensesRequest, UpdateDatasetNameRequest, UpdateDatasetTitleRequest, UpdateObjectAuthorsRequest, UpdateObjectRequest, UpdateObjectTitleRequest, UpdateProjectAuthorsRequest, UpdateProjectDataClassRequest, UpdateProjectDescriptionRequest, UpdateProjectKeyValuesRequest, UpdateProjectLicensesRequest, UpdateProjectNameRequest, UpdateProjectTitleRequest};
+use aruna_rust_api::api::storage::services::v2::{
+    UpdateCollectionAuthorsRequest, UpdateCollectionDataClassRequest,
+    UpdateCollectionDescriptionRequest, UpdateCollectionKeyValuesRequest,
+    UpdateCollectionLicensesRequest, UpdateCollectionNameRequest, UpdateCollectionTitleRequest,
+    UpdateDatasetAuthorsRequest, UpdateDatasetDataClassRequest, UpdateDatasetDescriptionRequest,
+    UpdateDatasetKeyValuesRequest, UpdateDatasetLicensesRequest, UpdateDatasetNameRequest,
+    UpdateDatasetTitleRequest, UpdateObjectAuthorsRequest, UpdateObjectRequest,
+    UpdateObjectTitleRequest, UpdateProjectAuthorsRequest, UpdateProjectDataClassRequest,
+    UpdateProjectDescriptionRequest, UpdateProjectKeyValuesRequest, UpdateProjectLicensesRequest,
+    UpdateProjectNameRequest, UpdateProjectTitleRequest,
+};
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -46,17 +58,17 @@ pub enum LicenseUpdate {
     Dataset(UpdateDatasetLicensesRequest),
 }
 
-pub enum UpdateTitle{
+pub enum UpdateTitle {
     Project(UpdateProjectTitleRequest),
     Collection(UpdateCollectionTitleRequest),
     Dataset(UpdateDatasetTitleRequest),
-    Object(UpdateObjectTitleRequest)
+    Object(UpdateObjectTitleRequest),
 }
-pub enum UpdateAuthor{
+pub enum UpdateAuthor {
     Project(UpdateProjectAuthorsRequest),
     Collection(UpdateCollectionAuthorsRequest),
     Dataset(UpdateDatasetAuthorsRequest),
-    Object(UpdateObjectAuthorsRequest)
+    Object(UpdateObjectAuthorsRequest),
 }
 
 impl DataClassUpdate {
@@ -471,56 +483,92 @@ impl UpdateObject {
 impl UpdateTitle {
     pub fn get_id(&self) -> Result<DieselUlid> {
         Ok(DieselUlid::from_str(match self {
-            UpdateTitle::Project(req) => {
-                &req.project_id
-            }
-            UpdateTitle::Collection(req) => {&req.collection_id}
-            UpdateTitle::Dataset(req) => {&req.dataset_id}
-            UpdateTitle::Object(req) => {&req.object_id}
+            UpdateTitle::Project(req) => &req.project_id,
+            UpdateTitle::Collection(req) => &req.collection_id,
+            UpdateTitle::Dataset(req) => &req.dataset_id,
+            UpdateTitle::Object(req) => &req.object_id,
         })?)
     }
 
     pub fn get_title(&self) -> String {
         match self {
-            UpdateTitle::Project(req) => {req.title.to_string()}
-            UpdateTitle::Collection(req) => {req.title.to_string()}
-            UpdateTitle::Dataset(req) => {req.title.to_string()}
-            UpdateTitle::Object(req) => {req.title.to_string()}
+            UpdateTitle::Project(req) => req.title.to_string(),
+            UpdateTitle::Collection(req) => req.title.to_string(),
+            UpdateTitle::Dataset(req) => req.title.to_string(),
+            UpdateTitle::Object(req) => req.title.to_string(),
         }
     }
 }
 impl UpdateAuthor {
     pub fn get_id(&self) -> Result<DieselUlid> {
         Ok(DieselUlid::from_str(match self {
-            UpdateAuthor::Project(req) => {
-                &req.project_id
-            }
-            UpdateAuthor::Collection(req) => { &req.collection_id }
-            UpdateAuthor::Dataset(req) => { &req.dataset_id }
-            UpdateAuthor::Object(req) => { &req.object_id }
+            UpdateAuthor::Project(req) => &req.project_id,
+            UpdateAuthor::Collection(req) => &req.collection_id,
+            UpdateAuthor::Dataset(req) => &req.dataset_id,
+            UpdateAuthor::Object(req) => &req.object_id,
         })?)
     }
-    
+
     pub fn get_authors(&self) -> Result<(Vec<Author>, Vec<Author>)> {
         match self {
             UpdateAuthor::Project(req) => {
-                let remove = req.clone().remove_authors.into_iter().map(|a|a.try_into()).collect::<Result<Vec<Author>>>()?;
-                let add =  req.clone().add_authors.into_iter().map(|a|a.try_into()).collect::<Result<Vec<Author>>>()?;
+                let remove = req
+                    .clone()
+                    .remove_authors
+                    .into_iter()
+                    .map(|a| a.try_into())
+                    .collect::<Result<Vec<Author>>>()?;
+                let add = req
+                    .clone()
+                    .add_authors
+                    .into_iter()
+                    .map(|a| a.try_into())
+                    .collect::<Result<Vec<Author>>>()?;
                 Ok((remove, add))
             }
             UpdateAuthor::Collection(req) => {
-                let remove = req.clone().remove_authors.into_iter().map(|a|a.try_into()).collect::<Result<Vec<Author>>>()?;
-                let add =  req.clone().add_authors.into_iter().map(|a|a.try_into()).collect::<Result<Vec<Author>>>()?;
+                let remove = req
+                    .clone()
+                    .remove_authors
+                    .into_iter()
+                    .map(|a| a.try_into())
+                    .collect::<Result<Vec<Author>>>()?;
+                let add = req
+                    .clone()
+                    .add_authors
+                    .into_iter()
+                    .map(|a| a.try_into())
+                    .collect::<Result<Vec<Author>>>()?;
                 Ok((remove, add))
             }
             UpdateAuthor::Dataset(req) => {
-                let remove = req.clone().remove_authors.into_iter().map(|a|a.try_into()).collect::<Result<Vec<Author>>>()?;
-                let add =  req.clone().add_authors.into_iter().map(|a|a.try_into()).collect::<Result<Vec<Author>>>()?;
+                let remove = req
+                    .clone()
+                    .remove_authors
+                    .into_iter()
+                    .map(|a| a.try_into())
+                    .collect::<Result<Vec<Author>>>()?;
+                let add = req
+                    .clone()
+                    .add_authors
+                    .into_iter()
+                    .map(|a| a.try_into())
+                    .collect::<Result<Vec<Author>>>()?;
                 Ok((remove, add))
             }
             UpdateAuthor::Object(req) => {
-                let remove = req.clone().remove_authors.into_iter().map(|a|a.try_into()).collect::<Result<Vec<Author>>>()?;
-                let add =  req.clone().add_authors.into_iter().map(|a|a.try_into()).collect::<Result<Vec<Author>>>()?;
+                let remove = req
+                    .clone()
+                    .remove_authors
+                    .into_iter()
+                    .map(|a| a.try_into())
+                    .collect::<Result<Vec<Author>>>()?;
+                let add = req
+                    .clone()
+                    .add_authors
+                    .into_iter()
+                    .map(|a| a.try_into())
+                    .collect::<Result<Vec<Author>>>()?;
                 Ok((remove, add))
             }
         }

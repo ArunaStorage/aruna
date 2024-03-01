@@ -150,6 +150,7 @@ CREATE TABLE IF NOT EXISTS objects (
     description VARCHAR(1023) NOT NULL,                 
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     created_by UUID NOT NULL REFERENCES users(id),
+    authors JSONB NOT NULL DEFAULT '[]',
     content_len BIGINT NOT NULL DEFAULT 0,
     count BIGINT NOT NULL DEFAULT 0,
     key_values JSONB NOT NULL,

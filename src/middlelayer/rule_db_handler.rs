@@ -152,10 +152,7 @@ impl DatabaseHandler {
             let value = Value::resolve(&rule.compiled, &ctx)
                 .map_err(|e| anyhow!(format!("Policy evaluation error: {}", e.to_string())))?;
             if value != Value::Bool(true) {
-                return Err(anyhow!(format!(
-                    "Policy {} evaluated false",
-                    rule.rule.id
-                )));
+                return Err(anyhow!(format!("Policy {} evaluated false", rule.rule.id)));
             }
         } else {
             return Err(anyhow!("Rules and Bindings are out of sync"));

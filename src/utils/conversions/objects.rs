@@ -11,7 +11,7 @@ use crate::database::dsls::{
 use crate::database::enums::ObjectType;
 use crate::middlelayer::create_request_types::Parent;
 use crate::utils::conversions::relations::from_db_internal_relation;
-use anyhow::{Result};
+use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::{
     generic_resource, relation::Relation as RelationEnum, Collection as GRPCCollection,
     Dataset as GRPCDataset, Hash, License as APILicense, Object as GRPCObject,

@@ -14,11 +14,11 @@ use crate::middlelayer::update_request_types::{
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::notification::services::v2::EventVariant;
 use aruna_rust_api::api::storage::services::v2::{FinishObjectStagingRequest, UpdateObjectRequest};
+use deadpool_postgres::GenericClient;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use postgres_types::Json;
 use std::str::FromStr;
-use deadpool_postgres::GenericClient;
 
 impl DatabaseHandler {
     pub async fn update_dataclass(&self, request: DataClassUpdate) -> Result<ObjectWithRelations> {
@@ -603,7 +603,7 @@ impl DatabaseHandler {
             content_len,
             ObjectStatus::AVAILABLE,
         )
-            .await?;
+        .await?;
         Object::update_endpoints(
             endpoint_id,
             crate::database::dsls::object_dsl::EndpointInfo {
@@ -613,7 +613,7 @@ impl DatabaseHandler {
             vec![id],
             transaction_client,
         )
-            .await?;
+        .await?;
 
         self.evaluate_rules(&vec![id], transaction_client).await?;
         transaction.commit().await?;
@@ -656,10 +656,7 @@ impl DatabaseHandler {
             Ok(object)
         }
     }
-    pub async fn update_title(
-        &self,
-        request: UpdateTitle,
-        ) -> Result<ObjectWithRelations> {
+    pub async fn update_title(&self, request: UpdateTitle) -> Result<ObjectWithRelations> {
         // Init
         let id = request.get_id()?;
         let mut client = self.database.get_client().await?;
@@ -695,14 +692,11 @@ impl DatabaseHandler {
         }
     }
 
-    pub async fn update_author(
-        &self,
-        request: UpdateAuthor
-    ) -> Result<ObjectWithRelations> {
+    pub async fn update_author(&self, request: UpdateAuthor) -> Result<ObjectWithRelations> {
         // Get Object
         let id = request.get_id()?;
         let mut client = self.database.get_client().await?;
-        let mut object = Object::get_object_with_relations(&id, &client).await?;;
+        let mut object = Object::get_object_with_relations(&id, &client).await?;
         let (to_remove, mut to_add) = request.get_authors()?;
         object.object.authors.0.retain(|a| !to_remove.contains(a));
         object.object.authors.0.append(&mut to_add);
@@ -713,7 +707,8 @@ impl DatabaseHandler {
 
         // Update object & Evaluate Rules
         object.object.update(transaction_client).await?;
-        self.evaluate_rules(&vec![object.object.id], transaction_client).await?;
+        self.evaluate_rules(&vec![object.object.id], transaction_client)
+            .await?;
 
         // Commit & update cache
         transaction.commit().await?;

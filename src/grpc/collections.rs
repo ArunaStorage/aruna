@@ -8,7 +8,10 @@ use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::snapshot_request_types::SnapshotRequest;
-use crate::middlelayer::update_request_types::{DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate, UpdateAuthor, UpdateTitle};
+use crate::middlelayer::update_request_types::{
+    DataClassUpdate, DescriptionUpdate, KeyValueUpdate, LicenseUpdate, NameUpdate, UpdateAuthor,
+    UpdateTitle,
+};
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::grpc_utils::{get_id_and_ctx, get_token_from_md, query, IntoGenericInner};
 use crate::utils::search_utils;
@@ -250,12 +253,16 @@ impl CollectionService for CollectionServiceImpl {
         )
         .await;
 
-        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let rules = self
+            .cache
+            .get_rule_bindings(&collection_id)
+            .unwrap_or_default();
 
-        let collection: generic_resource::Resource = ObjectWrapper{
-            object_with_relations:collection,
+        let collection: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: collection,
             rules,
-        }.into();
+        }
+        .into();
 
         let response = UpdateCollectionNameResponse {
             collection: Some(collection.into_inner()?),
@@ -299,12 +306,16 @@ impl CollectionService for CollectionServiceImpl {
         )
         .await;
 
-        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let rules = self
+            .cache
+            .get_rule_bindings(&collection_id)
+            .unwrap_or_default();
 
         let collection: generic_resource::Resource = ObjectWrapper {
             object_with_relations: collection,
             rules,
-        }.into();
+        }
+        .into();
 
         let response = UpdateCollectionDescriptionResponse {
             collection: Some(collection.into_inner()?),
@@ -348,11 +359,15 @@ impl CollectionService for CollectionServiceImpl {
         )
         .await;
 
-        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let rules = self
+            .cache
+            .get_rule_bindings(&collection_id)
+            .unwrap_or_default();
         let collection: generic_resource::Resource = ObjectWrapper {
             object_with_relations: collection,
             rules,
-        }.into();
+        }
+        .into();
         let response = UpdateCollectionKeyValuesResponse {
             collection: Some(collection.into_inner()?),
         };
@@ -396,11 +411,15 @@ impl CollectionService for CollectionServiceImpl {
         )
         .await;
 
-        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
-        let collection: generic_resource::Resource = ObjectWrapper{
+        let rules = self
+            .cache
+            .get_rule_bindings(&collection_id)
+            .unwrap_or_default();
+        let collection: generic_resource::Resource = ObjectWrapper {
             object_with_relations: collection,
             rules,
-        }.into();
+        }
+        .into();
         let response = UpdateCollectionDataClassResponse {
             collection: Some(collection.into_inner()?),
         };
@@ -489,11 +508,15 @@ impl CollectionService for CollectionServiceImpl {
         )
         .await;
 
-        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let rules = self
+            .cache
+            .get_rule_bindings(&collection_id)
+            .unwrap_or_default();
         let generic_resource: generic_resource::Resource = ObjectWrapper {
             object_with_relations: collection,
             rules,
-        }.into();
+        }
+        .into();
         let response = UpdateCollectionLicensesResponse {
             collection: Some(generic_resource.into_inner()?),
         };
@@ -532,13 +555,17 @@ impl CollectionService for CollectionServiceImpl {
             &self.cache,
             vec![ObjectDocument::from(collection.object.clone())],
         )
-            .await;
+        .await;
 
-        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let rules = self
+            .cache
+            .get_rule_bindings(&collection_id)
+            .unwrap_or_default();
         let generic_resource: generic_resource::Resource = ObjectWrapper {
             object_with_relations: collection,
             rules,
-        }.into();
+        }
+        .into();
         let response = UpdateCollectionAuthorsResponse {
             collection: Some(generic_resource.into_inner()?),
         };
@@ -576,13 +603,17 @@ impl CollectionService for CollectionServiceImpl {
             &self.cache,
             vec![ObjectDocument::from(collection.object.clone())],
         )
-            .await;
+        .await;
 
-        let rules = self.cache.get_rule_bindings(&collection_id).unwrap_or_default();
+        let rules = self
+            .cache
+            .get_rule_bindings(&collection_id)
+            .unwrap_or_default();
         let generic_resource: generic_resource::Resource = ObjectWrapper {
             object_with_relations: collection,
             rules,
-        }.into();
+        }
+        .into();
         let response = UpdateCollectionTitleResponse {
             collection: Some(generic_resource.into_inner()?),
         };

@@ -173,7 +173,11 @@ impl TryFrom<Project> for ObjectDocument {
             name: project.name,
             title: project.title,
             description: project.description,
-            authors: project.authors.iter().map(|a| -> Result<Author, anyhow::Error> {a.clone().try_into()}).collect::<Result<Vec<Author>, anyhow::Error>>()?,
+            authors: project
+                .authors
+                .iter()
+                .map(|a| -> Result<Author, anyhow::Error> { a.clone().try_into() })
+                .collect::<Result<Vec<Author>, anyhow::Error>>()?,
             count: stats.count,
             size: stats.size,
             labels: convert_proto_to_key_value(project.key_values)?,
@@ -244,7 +248,7 @@ impl TryFrom<Collection> for ObjectDocument {
             authors: collection
                 .authors
                 .iter()
-                .map(|a| -> Result<Author, anyhow::Error> {a.clone().try_into()})
+                .map(|a| -> Result<Author, anyhow::Error> { a.clone().try_into() })
                 .collect::<Result<Vec<Author>, anyhow::Error>>()?,
             description: collection.description,
             count: stats.count,
@@ -320,9 +324,10 @@ impl TryFrom<Dataset> for ObjectDocument {
             labels: convert_proto_to_key_value(dataset.key_values)?,
             data_class: DataClass::try_from(dataset.data_class)?,
             created_at: dataset.created_at.unwrap_or_default().seconds,
-            authors: dataset.authors
+            authors: dataset
+                .authors
                 .iter()
-                .map(|a| -> Result<Author, anyhow::Error> {a.clone().try_into()})
+                .map(|a| -> Result<Author, anyhow::Error> { a.clone().try_into() })
                 .collect::<Result<Vec<Author>, anyhow::Error>>()?,
             dynamic: dataset.dynamic,
             metadata_license: dataset.metadata_license_tag,
@@ -385,7 +390,7 @@ impl TryFrom<Object> for ObjectDocument {
             authors: object
                 .authors
                 .iter()
-                .map(|a| -> Result<Author, anyhow::Error> {a.clone().try_into()})
+                .map(|a| -> Result<Author, anyhow::Error> { a.clone().try_into() })
                 .collect::<Result<Vec<Author>, anyhow::Error>>()?,
             dynamic: object.dynamic,
             metadata_license: object.metadata_license_tag,

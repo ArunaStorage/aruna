@@ -1,30 +1,38 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
+use crate::auth::token_handler::{Action, Intent, TokenHandler};
 use crate::database::crud::CrudDb;
 use crate::database::dsls::persistent_notification_dsl::{
     NotificationReference, NotificationReferences, PersistentNotification,
 };
 use crate::database::dsls::user_dsl::{OIDCMapping, User, UserAttributes};
-use crate::database::enums::{DataProxyFeature, DbPermissionLevel, NotificationReferenceType, ObjectMapping, PersistentNotificationVariant};
+use crate::database::enums::{
+    DataProxyFeature, DbPermissionLevel, NotificationReferenceType, ObjectMapping,
+    PersistentNotificationVariant,
+};
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::middlelayer::endpoints_request_types::GetEP;
 use crate::middlelayer::user_request_types::{
     ActivateUser, DeactivateUser, RegisterUser, UpdateUserEmail, UpdateUserName,
 };
 use anyhow::{anyhow, bail, Result};
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_client::DataproxyUserServiceClient;
-use aruna_rust_api::api::dataproxy::services::v2::{CreateOrUpdateCredentialsRequest, GetCredentialsRequest, RevokeCredentialsRequest};
+use aruna_rust_api::api::dataproxy::services::v2::{
+    CreateOrUpdateCredentialsRequest, GetCredentialsRequest, RevokeCredentialsRequest,
+};
 use aruna_rust_api::api::notification::services::v2::EventVariant;
-use aruna_rust_api::api::storage::services::v2::{AddTrustedEndpointsUserRequest, GetEndpointRequest, PersonalNotification, RemoveTrustedEndpointsUserRequest};
 use aruna_rust_api::api::storage::services::v2::get_endpoint_request::Endpoint;
+use aruna_rust_api::api::storage::services::v2::{
+    AddTrustedEndpointsUserRequest, GetEndpointRequest, PersonalNotification,
+    RemoveTrustedEndpointsUserRequest,
+};
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use tokio_postgres::GenericClient;
-use tonic::{Request, Status};
 use tonic::metadata::{AsciiMetadataKey, AsciiMetadataValue};
 use tonic::transport::{Channel, ClientTlsConfig};
-use crate::auth::token_handler::{Action, Intent, TokenHandler};
-use crate::middlelayer::endpoints_request_types::GetEP;
+use tonic::{Request, Status};
 
 impl DatabaseHandler {
     pub async fn register_user(
@@ -511,9 +519,7 @@ impl DatabaseHandler {
         endpoint_id: String,
         token_id: Option<DieselUlid>,
         token_handler: &TokenHandler,
-    )
-        // Returns (access_key, secret_key, endpoint_s3_url)
-        -> Result<(String,String,String)> {
+    ) -> Result<(String, String, String)> {
         let endpoint_ulid = DieselUlid::from_str(&endpoint_id)?;
         let user = self
             .cache
@@ -523,19 +529,30 @@ impl DatabaseHandler {
         // Service accounts are not allowed to get additional trusted endpoints
         if user.attributes.0.service_account
             && !user
-            .attributes
-            .0
-            .trusted_endpoints
-            .contains_key(&endpoint_ulid)
+                .attributes
+                .0
+                .trusted_endpoints
+                .contains_key(&endpoint_ulid)
         {
             return Err(anyhow!(
                 "Service accounts are not allowed to add non-predefined endpoints",
             ));
         }
-        let endpoint = self.get_endpoint(GetEP(GetEndpointRequest{endpoint: Some(Endpoint::EndpointId(endpoint_id))})).await?;
+        let endpoint = self
+            .get_endpoint(GetEP(GetEndpointRequest {
+                endpoint: Some(Endpoint::EndpointId(endpoint_id)),
+            }))
+            .await?;
 
         // Create slt for proxy interaction
-        let short_lived_token = token_handler.sign_dataproxy_slt(&user_id, token_id.map(|t|t.to_string()), Some(Intent{target:endpoint_ulid, action: Action::CreateSecrets}))?;
+        let short_lived_token = token_handler.sign_dataproxy_slt(
+            &user_id,
+            token_id.map(|t| t.to_string()),
+            Some(Intent {
+                target: endpoint_ulid,
+                action: Action::CreateSecrets,
+            }),
+        )?;
 
         // Add endpoint to user
         self.add_endpoint_to_user(user_id, endpoint.id).await?;
@@ -565,19 +582,24 @@ impl DatabaseHandler {
         };
 
         // Create dataproxy client
-        let mut dp_conn =
-            DataproxyUserServiceClient::connect(dp_endpoint).await?;
+        let mut dp_conn = DataproxyUserServiceClient::connect(dp_endpoint).await?;
 
         // Create GetCredentialsRequest with slt in header ...
         let mut credentials_request = Request::new(CreateOrUpdateCredentialsRequest {});
         credentials_request.metadata_mut().append(
-                AsciiMetadataKey::from_bytes("Authorization".as_bytes())?,
-                AsciiMetadataValue::try_from(format!("Bearer {}", short_lived_token))?
+            AsciiMetadataKey::from_bytes("Authorization".as_bytes())?,
+            AsciiMetadataValue::try_from(format!("Bearer {}", short_lived_token))?,
         );
 
-        let response =
-            dp_conn.create_or_update_credentials(credentials_request).await?.into_inner();
-        Ok((response.access_key, response.secret_key, endpoint_s3_url.to_string()))
+        let response = dp_conn
+            .create_or_update_credentials(credentials_request)
+            .await?
+            .into_inner();
+        Ok((
+            response.access_key,
+            response.secret_key,
+            endpoint_s3_url.to_string(),
+        ))
     }
 
     pub async fn get_s3_credentials(
@@ -586,15 +608,24 @@ impl DatabaseHandler {
         token_id: Option<DieselUlid>,
         endpoint_id: String,
         token_handler: &TokenHandler,
-    )
-        // Returns (access_key, secret_key, endpoint_s3_url)
-        -> Result<(String, String, String)> {
+    ) -> Result<(String, String, String)> {
         // Get endpoint
         let endpoint_ulid = DieselUlid::from_str(&endpoint_id)?;
-        let endpoint = self.get_endpoint(GetEP(GetEndpointRequest{endpoint: Some(Endpoint::EndpointId(endpoint_id))})).await?;
+        let endpoint = self
+            .get_endpoint(GetEP(GetEndpointRequest {
+                endpoint: Some(Endpoint::EndpointId(endpoint_id)),
+            }))
+            .await?;
 
         // Create slt for proxy interaction
-        let short_lived_token = token_handler.sign_dataproxy_slt(&user_id, token_id.map(|t|t.to_string()), Some(Intent{target:endpoint_ulid, action: Action::CreateSecrets}))?;
+        let short_lived_token = token_handler.sign_dataproxy_slt(
+            &user_id,
+            token_id.map(|t| t.to_string()),
+            Some(Intent {
+                target: endpoint_ulid,
+                action: Action::CreateSecrets,
+            }),
+        )?;
 
         // Get endpoint info
         let mut endpoint_host_url: String = String::new();
@@ -620,20 +651,25 @@ impl DatabaseHandler {
         };
 
         // Create dataproxy client
-        let mut dp_conn =
-            DataproxyUserServiceClient::connect(dp_endpoint).await?;
+        let mut dp_conn = DataproxyUserServiceClient::connect(dp_endpoint).await?;
 
         // Create GetCredentialsRequest with slt in header ...
         let mut credentials_request = Request::new(GetCredentialsRequest {});
         credentials_request.metadata_mut().append(
             AsciiMetadataKey::from_bytes("Authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", short_lived_token))?
+            AsciiMetadataValue::try_from(format!("Bearer {}", short_lived_token))?,
         );
 
         // Collect results
-        let response =
-            dp_conn.get_credentials(credentials_request).await?.into_inner();
-        Ok((response.access_key, response.secret_key, endpoint_s3_url.to_string()))
+        let response = dp_conn
+            .get_credentials(credentials_request)
+            .await?
+            .into_inner();
+        Ok((
+            response.access_key,
+            response.secret_key,
+            endpoint_s3_url.to_string(),
+        ))
     }
 
     pub async fn delete_s3_credentials_with_user_token(
@@ -642,9 +678,7 @@ impl DatabaseHandler {
         endpoint_id: String,
         token_id: Option<DieselUlid>,
         token_handler: &TokenHandler,
-    )
-    // Returns (access_key, secret_key, endpoint_s3_url)
-        -> Result<()> {
+    ) -> Result<()> {
         let endpoint_ulid = DieselUlid::from_str(&endpoint_id)?;
         let user = self
             .cache
@@ -654,19 +688,30 @@ impl DatabaseHandler {
         // Service accounts are not allowed to get additional trusted endpoints
         if user.attributes.0.service_account
             && !user
-            .attributes
-            .0
-            .trusted_endpoints
-            .contains_key(&endpoint_ulid)
+                .attributes
+                .0
+                .trusted_endpoints
+                .contains_key(&endpoint_ulid)
         {
             return Err(anyhow!(
                 "Service accounts are not allowed to remove predefined endpoints",
             ));
         }
-        let endpoint = self.get_endpoint(GetEP(GetEndpointRequest{endpoint: Some(Endpoint::EndpointId(endpoint_id))})).await?;
+        let endpoint = self
+            .get_endpoint(GetEP(GetEndpointRequest {
+                endpoint: Some(Endpoint::EndpointId(endpoint_id)),
+            }))
+            .await?;
 
         // Create slt for proxy interaction
-        let short_lived_token = token_handler.sign_dataproxy_slt(&user_id, token_id.map(|t|t.to_string()), Some(Intent{target:endpoint_ulid, action: Action::CreateSecrets}))?;
+        let short_lived_token = token_handler.sign_dataproxy_slt(
+            &user_id,
+            token_id.map(|t| t.to_string()),
+            Some(Intent {
+                target: endpoint_ulid,
+                action: Action::CreateSecrets,
+            }),
+        )?;
 
         // Collect endpoint info
         let mut endpoint_host_url: String = String::new();
@@ -693,14 +738,13 @@ impl DatabaseHandler {
         };
 
         // Create dataproxy client
-        let mut dp_conn =
-            DataproxyUserServiceClient::connect(dp_endpoint).await?;
+        let mut dp_conn = DataproxyUserServiceClient::connect(dp_endpoint).await?;
 
         // Create GetCredentialsRequest with slt in header ...
-        let mut credentials_request = Request::new(RevokeCredentialsRequest{});
+        let mut credentials_request = Request::new(RevokeCredentialsRequest {});
         credentials_request.metadata_mut().append(
             AsciiMetadataKey::from_bytes("Authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", short_lived_token))?
+            AsciiMetadataValue::try_from(format!("Bearer {}", short_lived_token))?,
         );
 
         dp_conn.revoke_credentials(credentials_request).await?;

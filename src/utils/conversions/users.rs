@@ -71,42 +71,27 @@ pub fn convert_token_to_proto(token_id: &DieselUlid, db_token: APIToken) -> Toke
 
 impl From<DBUserAttributes> for UserAttributes {
     fn from(attr: DBUserAttributes) -> Self {
-        let (tokens, personal_permissions): (Vec<Token>, Vec<Permission>) = attr
-            .tokens
+        let tokens: Vec<Token> = attr.tokens.into_iter().map(|t| Token {
+            id: t.0.to_string(),
+            name: t.1.name,
+            created_at: Some(t.1.created_at.into()),
+            expires_at: Some(t.1.expires_at.into()),
+            permission: Some(Permission {
+                permission_level: t.1.user_rights.into(),
+                resource_id: t.1.object_id.map(|resource| match resource {
+                    ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
+                    ObjectMapping::COLLECTION(id) => ResourceId::CollectionId(id.to_string()),
+                    ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
+                    ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
+                }),
+            }),
+        }).collect();
+
+        let personal_permissions: Vec<Permission> = attr
+            .permissions
             .into_iter()
-            .map(|t| {
-                (
-                    Token {
-                        id: t.0.to_string(),
-                        name: t.1.name,
-                        created_at: Some(t.1.created_at.into()),
-                        expires_at: Some(t.1.expires_at.into()),
-                        permission: Some(Permission {
-                            permission_level: t.1.user_rights.into(),
-                            resource_id: t.1.object_id.map(|resource| match resource {
-                                ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
-                                ObjectMapping::COLLECTION(id) => {
-                                    ResourceId::CollectionId(id.to_string())
-                                }
-                                ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
-                                ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
-                            }),
-                        }),
-                    },
-                    Permission {
-                        permission_level: t.1.user_rights.into(),
-                        resource_id: t.1.object_id.map(|resource| match resource {
-                            ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
-                            ObjectMapping::COLLECTION(id) => {
-                                ResourceId::CollectionId(id.to_string())
-                            }
-                            ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
-                            ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
-                        }),
-                    },
-                )
-            })
-            .unzip();
+            .map(|(id, perm)| convert_permission_to_proto(id, perm))
+            .collect();
         UserAttributes {
             global_admin: attr.global_admin,
             service_account: attr.service_account,
@@ -161,7 +146,9 @@ impl From<DBCustomAttributes> for CustomAttribute {
 }
 impl DBUser {
     pub fn into_redacted(self) -> User {
+        dbg!(&self);
         let mut user: User = self.into();
+        dbg!(&user);
         user.email = String::new();
         user.display_name = String::new();
         if let Some(attr) = user.attributes.as_mut() {
