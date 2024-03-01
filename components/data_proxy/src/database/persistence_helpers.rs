@@ -1,7 +1,7 @@
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 
-use crate::structs::{AccessKeyPermissions, Object, ObjectLocation, PubKey, User};
+use crate::structs::{AccessKeyPermissions, Object, ObjectLocation, PubKey, UploadPart, User};
 
 use super::persistence::{GenericBytes, Table, WithGenericBytes};
 
@@ -141,3 +141,31 @@ impl TryInto<GenericBytes<String, Self>> for AccessKeyPermissions {
         })
     }
 }
+
+impl WithGenericBytes<DieselUlid, Self> for UploadPart {
+    #[tracing::instrument(level = "trace", skip())]
+    fn get_table() -> Table {
+        Table::Multiparts
+    }
+}
+
+impl TryFrom<GenericBytes<DieselUlid, Self>> for UploadPart {
+    type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
+    #[tracing::instrument(level = "trace", skip(value))]
+    fn try_from(value: GenericBytes<DieselUlid, Self>) -> Result<Self, Self::Error> {
+        Ok(value.data.0)
+    }
+}
+
+impl TryInto<GenericBytes<DieselUlid, Self>> for UploadPart {
+    type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
+    #[tracing::instrument(level = "trace", skip(self))]
+    fn try_into(self) -> Result<GenericBytes<DieselUlid, Self>, Self::Error> {
+        Ok(GenericBytes {
+            id: self.id,
+            data: Json(self),
+            table: Self::get_table(),
+        })
+    }
+}
+
