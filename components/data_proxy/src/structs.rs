@@ -1267,17 +1267,17 @@ impl ResourceStates {
         Self::default()
     }
 
-    pub fn validate(&self) -> Result<()> {
+    pub fn validate(&self, allow_create_project: bool) -> Result<()> {
         match (
             self.objects[0].is_missing(),
             self.objects[1].is_missing(),
             self.objects[2].is_missing(),
             self.objects[3].is_missing(),
         ) {
-            (false, true, true, true)
-            | (false, false, true, true)
-            | (false, false, false, true)
-            | (false, false, false, false) => {}
+            (allow_create_project, true, true, true)
+            | (allow_create_project, false, true, true)
+            | (allow_create_project, false, false, true)
+            | (allow_create_project, false, false, false) => {}
             _ => {
                 bail!("Invalid resource state")
             }

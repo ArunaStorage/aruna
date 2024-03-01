@@ -309,9 +309,10 @@ impl AuthHandler {
                 s3_error!(AccessDenied, "Access Denied")
             })?;
 
+        let allow_create = method == Method::POST;
         // Query the project and extract the headers
         let resource_states = self
-            .prefix_into_resource_states(&[(bucket_name.to_string(), bucket_name.to_string())]).await?;
+            .prefix_into_resource_states(&[(bucket_name.to_string(), bucket_name.to_string())], allow_create).await?;
 
         // Extract the permission level from the method READ == "GET" and friends, WRITE == "POST" and friends
         // Check if the user has the required permissions
@@ -368,7 +369,7 @@ impl AuthHandler {
 
         let path = format!("{bucket_name}/{key_name}");
         let prefix: Vec<(String, String)> = auth_helpers::key_into_prefix(&path)?;
-        let resource_states = self.prefix_into_resource_states(&prefix).await?;
+        let resource_states = self.prefix_into_resource_states(&prefix, false).await?;
 
         if is_method_read(method) {
             // Fail if the object has missing parts
@@ -664,6 +665,7 @@ impl AuthHandler {
     pub async fn prefix_into_resource_states(
         &self,
         prefixes: &[(String, String)],
+        allow_create: bool,
     ) -> Result<ResourceStates, S3Error> {
         let mut resource_states: ResourceStates = ResourceStates::default();
         let len = prefixes.len();
@@ -692,7 +694,7 @@ impl AuthHandler {
                 }
             }
         }
-        resource_states.validate().map_err(|e| {
+        resource_states.validate(allow_create).map_err(|e| {
             error!(error = ?e, msg = e.to_string());
             s3_error!(InternalError, "Internal Error")
         })?;
