@@ -195,7 +195,10 @@ pub trait WithGenericBytes<
     }
 }
 
-pub async fn get_parts_by_upload_id(client: &Client, upload_id: String) -> Result<Vec<UploadPart>> {
+pub async fn _get_parts_by_upload_id(
+    client: &Client,
+    upload_id: String,
+) -> Result<Vec<UploadPart>> {
     let query = "SELECT * FROM multiparts WHERE data->>'upload_id' = $1;";
     let prepared = client.prepare(query).await?;
     let rows = client.query(&prepared, &[&upload_id]).await?;

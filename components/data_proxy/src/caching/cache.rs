@@ -249,6 +249,19 @@ impl Cache {
                 self.paths.insert(object.name.clone(), object.id);
             }
         }
+
+        let mut parts_map = HashMap::new();
+        let parts = UploadPart::get_all(&client).await?;
+
+        for part in parts {
+            let part_vec: &mut Vec<UploadPart> = parts_map.entry(part.upload_id.clone()).or_default();
+            part_vec.push(part);
+        }
+
+        for (upload_id, parts) in parts_map {
+            self.multi_parts.insert(upload_id, parts);
+        }
+
         debug!("synced objects");
         Ok(database)
     }
