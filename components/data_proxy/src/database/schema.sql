@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
+    id UUID PRIMARY KEY,
     data JSONB NOT NULL -- The actual data
 );
 
@@ -24,6 +24,11 @@ CREATE TABLE IF NOT EXISTS pub_keys (
 );
 
 CREATE TABLE IF NOT EXISTS multiparts (
-    id SMALLSERIAL NOT NULL PRIMARY KEY, 
+    id UUID NOT NULL PRIMARY KEY, 
+    data JSONB NOT NULL -- The actual data
+);
+
+CREATE TABLE IF NOT EXISTS permissions (
+    id TEXT NOT NULL PRIMARY KEY, 
     data JSONB NOT NULL -- The actual data
 );

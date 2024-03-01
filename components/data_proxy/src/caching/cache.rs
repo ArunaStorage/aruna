@@ -387,11 +387,12 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self, res))]
-    pub fn get_full_resource_by_path(&self, res: &str) -> Option<Object> {
+    pub async fn get_full_resource_by_path(&self, res: &str) -> Option<Object> {
         let id = self.get_resource_by_path(res)?;
-        self.resources
-            .get(&id)
-            .map(|e| e.value().0.blocking_read().clone())
+        let elem = self.resources
+            .get(&id)?;
+        let obj = elem.value().0.read().await.clone();
+        Some(obj)
     }
 
     #[tracing::instrument(level = "trace", skip(self, resource_id))]
@@ -776,10 +777,11 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_user_attributes(&self, resource_id: &DieselUlid) -> Option<HashMap<String, String>> {
-        self.users
-            .get(resource_id)
-            .map(|e| e.value().blocking_read().0.attributes.clone())
+    pub async fn get_user_attributes(&self, resource_id: &DieselUlid) -> Option<HashMap<String, String>> {
+        let user_reference = self.users
+            .get(resource_id)?;
+        let user = user_reference.value().read().await;
+        return Some(user.0.attributes.clone());
     }
 
     #[tracing::instrument(level = "trace", skip(self))]

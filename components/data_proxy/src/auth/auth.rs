@@ -245,7 +245,7 @@ impl AuthHandler {
         headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult, S3Error> {
         match path {
-            S3Path::Root => self.handle_root(method, creds, headers),
+            S3Path::Root => self.handle_root(method, creds, headers).await,
             S3Path::Bucket { bucket } => {
                 // Buckets are handled the same for GET and POST
                 self.handle_bucket(bucket, method, creds, headers).await
@@ -258,7 +258,7 @@ impl AuthHandler {
     }
 
     #[tracing::instrument(level = "trace", skip(self, creds))]
-    pub fn handle_root(
+    pub async fn handle_root(
         &self,
         method: &Method,
         creds: Option<&Credentials>,
@@ -271,7 +271,7 @@ impl AuthHandler {
                 ..
             },
             attributes,
-        )) = self.extract_access_key_perms(creds)
+        )) = self.extract_access_key_perms(creds).await
         {
             self.rule_engine
                 .evaluate_root(
@@ -304,14 +304,14 @@ impl AuthHandler {
         // TODO: Decide how to handle public bucket access
         // Query the User -> Must exist
         let (access_key_info, attributes) =
-            self.extract_access_key_perms(creds).ok_or_else(|| {
+            self.extract_access_key_perms(creds).await.ok_or_else(|| {
                 error!("No such user");
                 s3_error!(AccessDenied, "Access Denied")
             })?;
 
         // Query the project and extract the headers
         let resource_states = self
-            .prefix_into_resource_states(&[(bucket_name.to_string(), bucket_name.to_string())])?;
+            .prefix_into_resource_states(&[(bucket_name.to_string(), bucket_name.to_string())]).await?;
 
         // Extract the permission level from the method READ == "GET" and friends, WRITE == "POST" and friends
         // Check if the user has the required permissions
@@ -368,7 +368,7 @@ impl AuthHandler {
 
         let path = format!("{bucket_name}/{key_name}");
         let prefix: Vec<(String, String)> = auth_helpers::key_into_prefix(&path)?;
-        let resource_states = self.prefix_into_resource_states(&prefix)?;
+        let resource_states = self.prefix_into_resource_states(&prefix).await?;
 
         if is_method_read(method) {
             // Fail if the object has missing parts
@@ -389,7 +389,7 @@ impl AuthHandler {
 
         // Query the User
         let user_state: UserState =
-            if let Some((user, attributes)) = self.extract_access_key_perms(creds) {
+            if let Some((user, attributes)) = self.extract_access_key_perms(creds).await {
                 if resource_states.require_object()?.data_class != DataClass::Public {
                     // Extract the permission level from the method READ == "GET" and friends, WRITE == "POST" and friends
                     // Check if the user has the required permissions
@@ -460,7 +460,7 @@ impl AuthHandler {
             .headers(headers)
             .object(Some(object));
 
-        let user = match self.extract_access_key_perms(creds) {
+        let user = match self.extract_access_key_perms(creds).await {
             Some((user, attributes)) => {
                 if !is_public {
                     self.check_permission_list(
@@ -520,7 +520,7 @@ impl AuthHandler {
 
         let object_state = ObjectsState::new_bundle(bundle, path.to_string());
 
-        let user = match self.extract_access_key_perms(creds) {
+        let user = match self.extract_access_key_perms(creds).await {
             Some((user, attributes)) => {
                 rule_builder = rule_builder
                     .attributes(&attributes)
@@ -543,13 +543,13 @@ impl AuthHandler {
     // ----------------- HELPERS -----------------
 
     #[tracing::instrument(level = "trace", skip(self, creds))]
-    pub fn extract_access_key_perms(
+    pub async fn extract_access_key_perms(
         &self,
         creds: Option<&Credentials>,
     ) -> Option<(AccessKeyPermissions, HashMap<String, String>)> {
         if let Some(creds) = creds {
             if let Some(key) = self.cache.get_key_perms(&creds.access_key) {
-                if let Some(user) = self.cache.get_user_attributes(&key.user_id) {
+                if let Some(user) = self.cache.get_user_attributes(&key.user_id).await {
                     return Some((key, user));
                 }
             }
@@ -558,13 +558,13 @@ impl AuthHandler {
     }
 
     #[tracing::instrument(level = "trace", skip(self, bucket, method, headers))]
-    fn get_project_and_headers(
+    async fn get_project_and_headers(
         &self,
         bucket: &str,
         method: &Method,
         headers: &HeaderMap<HeaderValue>,
     ) -> Option<(Object, Option<HashMap<String, String>>)> {
-        let project = self.cache.get_full_resource_by_path(bucket)?;
+        let project = self.cache.get_full_resource_by_path(bucket).await?;
         let headers = project.project_get_headers(method, headers);
         Some((project, headers))
     }
@@ -661,14 +661,14 @@ impl AuthHandler {
     }
 
     #[tracing::instrument(level = "trace", skip(self, prefixes))]
-    pub fn prefix_into_resource_states(
+    pub async fn prefix_into_resource_states(
         &self,
         prefixes: &[(String, String)],
     ) -> Result<ResourceStates, S3Error> {
         let mut resource_states: ResourceStates = ResourceStates::default();
         let len = prefixes.len();
         for (idx, (prefix, name)) in prefixes.iter().enumerate() {
-            let Some(obj) = self.cache.get_full_resource_by_path(prefix) else {
+            let Some(obj) = self.cache.get_full_resource_by_path(prefix).await else {
                 resource_states
                     .set_missing(idx, len, name.to_string())
                     .map_err(|e| {
