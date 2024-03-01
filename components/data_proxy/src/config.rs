@@ -181,7 +181,7 @@ impl Backend {
                 }
 
                 if let None = secret_key {
-                    let env_var = dotenvy::var("AWS_SECRET_ACCESS").map_err(|e| {
+                    let env_var = dotenvy::var("AWS_SECRET_ACCESS_KEY").map_err(|e| {
                         tracing::error!(error = ?e, msg = e.to_string(), "AWS_SECRET_ACCESS");
                         e
                     })?;

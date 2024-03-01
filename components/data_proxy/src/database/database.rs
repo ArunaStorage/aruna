@@ -2,6 +2,8 @@ use anyhow::Result;
 use deadpool_postgres::{Client, Config, ManagerConfig, Pool, RecyclingMethod, Runtime};
 use tokio_postgres::NoTls;
 
+use crate::{config::Persistence, CONFIG};
+
 pub struct Database {
     connection_pool: Pool,
 }
@@ -9,39 +11,29 @@ pub struct Database {
 impl Database {
     #[tracing::instrument(level = "trace", skip())]
     pub async fn new() -> Result<Self> {
-        let database_host = dotenvy::var("PERSISTENCE_DB_HOST").map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
-        let database_port = dotenvy::var("PERSISTENCE_DB_PORT")
-            .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
-                e
-            })?
-            .parse::<u16>()
-            .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
-                e
-            })?;
-        let database_name = dotenvy::var("PERSISTENCE_DB_NAME").map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
-        let database_user = dotenvy::var("PERSISTENCE_DB_USER").map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
-        let database_password = dotenvy::var("PERSISTENCE_DB_PASSWORD").map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
+        let Persistence::Postgres {
+            host,
+            port,
+            user,
+            password,
+            database,
+            schema,
+        } = CONFIG
+            .persistence
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("persistence configuration not found"))?;
 
         let mut cfg = Config::new();
-        cfg.host = Some(database_host.to_string());
-        cfg.port = Some(database_port);
-        cfg.user = Some(database_user.to_string());
-        cfg.password = Some(database_password.to_string());
-        cfg.dbname = Some(database_name.to_string());
+        cfg.host = Some(host.to_string());
+        cfg.port = Some(*port);
+        cfg.user = Some(user.to_string());
+        cfg.password = Some(
+            password
+                .as_ref()
+                .map(|p| p.clone())
+                .ok_or_else(|| anyhow::anyhow!("password not found"))?,
+        );
+        cfg.dbname = Some(database.to_string());
         cfg.manager = Some(ManagerConfig {
             recycling_method: RecyclingMethod::Fast,
         });
@@ -50,10 +42,13 @@ impl Database {
             e
         })?;
 
-        Database::initialize_db(&pool.get().await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?)
+        Database::initialize_db(
+            &pool.get().await.map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?,
+            schema.to_string(),
+        )
         .await?;
 
         Ok(Database {
@@ -62,21 +57,11 @@ impl Database {
     }
 
     #[tracing::instrument(level = "trace", skip(client))]
-    pub async fn initialize_db(client: &Client) -> Result<()> {
-        dotenvy::from_filename(".env").map_err(|e| {
+    pub async fn initialize_db(client: &Client, schema: String) -> Result<()> {
+        let initial = tokio::fs::read_to_string(schema).await.map_err(|e| {
             tracing::error!(error = ?e, msg = e.to_string());
             e
         })?;
-        let initial =
-            tokio::fs::read_to_string(dotenvy::var("PERSISTENCE_DB_SCHEMA").map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
-                e
-            })?)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
-                e
-            })?;
         client.batch_execute(&initial).await.map_err(|e| {
             tracing::error!(error = ?e, msg = e.to_string());
             e
