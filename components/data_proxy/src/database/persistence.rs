@@ -1,14 +1,19 @@
 use anyhow::anyhow;
 use anyhow::Result;
 use postgres_types::{FromSql, ToSql};
+use serde::Deserialize;
+use serde::Serialize;
 use std::fmt::{Debug, Display, Formatter};
 use tokio_postgres::Client;
 use tracing::error;
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct GenericBytes<X: ToSql + for<'a> FromSql<'a> + Send + Sync> {
+pub struct GenericBytes<
+    X: ToSql + for<'a> FromSql<'a> + Send + Sync,
+    T: Serialize + for<'a> Deserialize<'a>,
+> {
     pub id: X,
-    pub data: Vec<u8>,
+    pub data: tokio_postgres::types::Json<T>,
     pub table: Table,
 }
 
@@ -19,6 +24,7 @@ pub enum Table {
     PubKeys,
     ObjectLocations,
     Permissions,
+    Multiparts,
 }
 
 impl Display for Table {
@@ -30,20 +36,22 @@ impl Display for Table {
             Table::PubKeys => write!(f, "pub_keys"),
             Table::ObjectLocations => write!(f, "object_locations"),
             Table::Permissions => write!(f, "permissions"),
+            Table::Multiparts => write!(f, "multiparts"),
         }
     }
 }
 
 #[async_trait::async_trait]
-pub trait WithGenericBytes<X: ToSql + for<'a> FromSql<'a> + Send + Sync>:
-    TryFrom<GenericBytes<X>> + TryInto<GenericBytes<X>> + Clone
-where
-    <Self as TryFrom<GenericBytes<X>>>::Error: Debug + Display,
-    <Self as TryInto<GenericBytes<X>>>::Error: Debug + Display,
+pub trait WithGenericBytes<
+    X: ToSql + for<'a> FromSql<'a> + Send + Sync,
+    T: Serialize + for<'a> Deserialize<'a> + Send + Sync + Debug,
+>: TryFrom<GenericBytes<X, T>> + TryInto<GenericBytes<X, T>> + Clone where
+    <Self as TryFrom<GenericBytes<X, T>>>::Error: Debug + Display,
+    <Self as TryInto<GenericBytes<X, T>>>::Error: Debug + Display,
 {
     fn get_table() -> Table;
     async fn upsert(&self, client: &Client) -> Result<()> {
-        let generic: GenericBytes<X> = match self.clone().try_into() {
+        let generic: GenericBytes<X, T> = match self.clone().try_into() {
             Ok(generic) => generic,
             Err(e) => {
                 error!(error = ?e, msg = e.to_string());
@@ -52,7 +60,7 @@ where
         };
 
         let query = format!(
-            "INSERT INTO {} (id, data) VALUES ($1, $2::BYTEA) ON CONFLICT (id) DO UPDATE SET data = $2;",
+            "INSERT INTO {} (id, data) VALUES ($1, $2::JSONB) ON CONFLICT (id) DO UPDATE SET data = $2;",
             Self::get_table()
         );
         let prepared = client.prepare(&query).await.map_err(|e| {
@@ -61,7 +69,7 @@ where
         })?;
 
         client
-            .query(&prepared, &[&generic.id, &generic.data.to_vec().as_slice()])
+            .query(&prepared, &[&generic.id, &generic.data])
             .await
             .map_err(|e| {
                 tracing::error!(error = ?e, msg = e.to_string());
@@ -72,7 +80,7 @@ where
 
     async fn get_all(client: &Client) -> Result<Vec<Self>>
     where
-        Self: WithGenericBytes<X>,
+        Self: WithGenericBytes<X, T>,
     {
         let query = format!("SELECT * FROM {};", Self::get_table());
         let prepared = client.prepare(&query).await.map_err(|e| {
@@ -102,7 +110,7 @@ where
     }
     async fn get(id: &X, client: &Client) -> Result<Self>
     where
-        Self: WithGenericBytes<X>,
+        Self: WithGenericBytes<X, T>,
     {
         let query = format!("SELECT * FROM {} WHERE id = $1;", Self::get_table());
         let prepared = client.prepare(&query).await.map_err(|e| {
@@ -128,7 +136,7 @@ where
 
     async fn get_opt(id: &X, client: &Client) -> Result<Option<Self>>
     where
-        Self: WithGenericBytes<X>,
+        Self: WithGenericBytes<X, T>,
     {
         let query = format!("SELECT * FROM {} WHERE id = $1;", Self::get_table());
         let prepared = client.prepare(&query).await.map_err(|e| {

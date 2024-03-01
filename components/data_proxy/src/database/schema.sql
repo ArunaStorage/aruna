@@ -22,3 +22,8 @@ CREATE TABLE IF NOT EXISTS pub_keys (
     id SMALLSERIAL NOT NULL PRIMARY KEY, 
     data JSONB NOT NULL -- The actual data
 );
+
+CREATE TABLE IF NOT EXISTS multiparts (
+    id SMALLSERIAL NOT NULL PRIMARY KEY, 
+    data JSONB NOT NULL -- The actual data
+);

@@ -293,15 +293,10 @@ impl Cache {
         Ok((access_key.to_string(), new_secret))
     }
 
-
     #[tracing::instrument(level = "trace", skip(self))]
     /// Requests a secret key from the cache
-    pub async fn revoke_secret(
-        &self,
-        access_key: &str,
-    ) -> Result<()> {
-        self.access_keys
-            .remove(access_key);
+    pub async fn revoke_secret(&self, access_key: &str) -> Result<()> {
+        self.access_keys.remove(access_key);
         Ok(())
     }
 

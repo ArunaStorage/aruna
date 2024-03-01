@@ -111,11 +111,10 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
 
                 let access_key = tid.unwrap_or_else(|| user.id.to_string());
 
-                self.cache.revoke_secret(&access_key).await
-                        .map_err(|_| {
-                            error!(error = "Unable to authenticate user");
-                            tonic::Status::unauthenticated("Unable to authenticate user")
-                        })?;
+                self.cache.revoke_secret(&access_key).await.map_err(|_| {
+                    error!(error = "Unable to authenticate user");
+                    tonic::Status::unauthenticated("Unable to authenticate user")
+                })?;
 
                 Ok(tonic::Response::new(RevokeCredentialsResponse {}))
             } else {
@@ -162,11 +161,14 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
 
                 let access_key = tid.unwrap_or_else(|| user.id.to_string());
 
-                let (access, secret) = self.cache.create_or_update_secret(&access_key, &u).await
-                        .map_err(|_| {
-                            error!(error = "Unable to authenticate user");
-                            tonic::Status::unauthenticated("Unable to authenticate user")
-                        })?;
+                let (access, secret) = self
+                    .cache
+                    .create_or_update_secret(&access_key, &u)
+                    .await
+                    .map_err(|_| {
+                        error!(error = "Unable to authenticate user");
+                        tonic::Status::unauthenticated("Unable to authenticate user")
+                    })?;
 
                 Ok(tonic::Response::new(CreateOrUpdateCredentialsResponse {
                     access_key: access,
