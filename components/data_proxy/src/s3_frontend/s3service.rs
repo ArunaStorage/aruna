@@ -168,42 +168,40 @@ impl S3 for ArunaS3Service {
                 s3_error!(InternalError, "Unable to create object_location")
             })?;
 
-        let hashes =
-            DataHandler::finalize_location(self.backend.clone(), &old_location, &mut new_location)
-                .await
-                .map_err(|_| {
-                    error!(error = "Unable to finalize location");
-                    s3_error!(InternalError, "Unable to finalize location")
-                })?;
+        let ctx = object
+            .get_file_context(Some(new_location.clone()))
+            .map_err(|_| {
+                error!(error = "Unable to get file context");
+                s3_error!(InternalError, "Unable to get file context")
+            })?;
 
         if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
             if let Some(token) = &impersonating_token {
                 // Set id of new location to object id to satisfy FK constraint
                 let object = handler
-                    .finish_object(object.id, new_location.raw_content_len, hashes, None, token)
+                    .finish_object(object.id, new_location.raw_content_len, vec![], None, token)
                     .await
                     .map_err(|_| {
                         error!(error = "Unable to finish object");
                         s3_error!(InternalError, "Unable to create object")
                     })?;
-
-                self.cache
-                    .upsert_object(object, Some(new_location))
-                    .await
-                    .map_err(|_| {
-                        error!(error = "Unable to update object location");
-                        s3_error!(InternalError, "Unable to cache object after finish")
-                    })?;
-
-                self.backend
-                    .delete_object(old_location)
-                    .await
-                    .map_err(|_| {
-                        error!(error = "Unable to delete old object");
-                        s3_error!(InternalError, "Unable to delete old object")
-                    })?;
             }
         }
+
+        let token = impersonating_token.ok_or_else(|| {
+            error!(error = "Unauthorized: Impersonating error");
+            s3_error!(NotSignedUp, "Unauthorized: Impersonating error")
+        })?;
+
+        tokio::spawn(DataHandler::finalize_location(
+            object.id,
+            self.cache.clone(),
+            token,
+            self.backend.clone(),
+            ctx,
+            old_location,
+            new_location,
+        ));
         debug!(?response);
         Ok(S3Response::new(response))
     }
@@ -1165,10 +1163,12 @@ impl S3 for ArunaS3Service {
                 }
 
                 if location.is_pithos() {
-                    let ctx = new_object.get_file_context(Some(location.clone())).map_err(|_| {
-                        error!(error = "Unable to get file context");
-                        s3_error!(InternalError, "Unable to get file context")
-                    })?;
+                    let ctx = new_object
+                        .get_file_context(Some(location.clone()))
+                        .map_err(|_| {
+                            error!(error = "Unable to get file context");
+                            s3_error!(InternalError, "Unable to get file context")
+                        })?;
                     tx.send(PithosMessage::FileContext(ctx))
                         .await
                         .map_err(|_| {

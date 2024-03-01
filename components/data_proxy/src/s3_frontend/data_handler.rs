@@ -1,3 +1,4 @@
+use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::s3_frontend::utils::buffered_s3_sink::BufferedS3Sink;
 use crate::structs::ObjectLocation;
@@ -5,7 +6,9 @@ use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Hashalgorithm;
+use diesel_ulid::DieselUlid;
 use md5::{Digest, Md5};
+use pithos_lib::helpers::structs::FileContext;
 use pithos_lib::streamreadwrite::GenericStreamReadWriter;
 use pithos_lib::transformer::ReadWriter;
 use pithos_lib::transformers::decrypt::ChaCha20Dec;
@@ -28,12 +31,16 @@ use tracing::Instrument;
 pub struct DataHandler {}
 
 impl DataHandler {
-    #[tracing::instrument(level = "trace", skip(backend, before_location, new_location))]
+    #[tracing::instrument(level = "trace", skip(cache, backend, before_location, new_location))]
     pub async fn finalize_location(
+        object_id: DieselUlid,
+        cache: Arc<Cache>,
+        token: String,
         backend: Arc<Box<dyn StorageBackend>>,
-        before_location: &ObjectLocation,
-        new_location: &mut ObjectLocation,
-    ) -> Result<Vec<Hash>> {
+        ctx: FileContext,
+        before_location: ObjectLocation,
+        mut new_location: ObjectLocation,
+    ) -> Result<()> {
         debug!(?before_location, ?new_location, "Finalizing location");
 
         let (tx_send, tx_receive) = async_channel::bounded(10);
@@ -49,6 +56,7 @@ impl DataHandler {
 
         let aswr_handle = tokio::spawn(
             async move {
+                let (tx, rx) = async_channel::bounded(10);
                 let (sink, _) = BufferedS3Sink::new(
                     backend_clone,
                     new_location_clone,
@@ -64,6 +72,11 @@ impl DataHandler {
                 let mut asr = GenericStreamReadWriter::new_with_sink(tx_receive, sink);
                 let (orig_probe, orig_size_stream) = SizeProbe::new();
                 asr = asr.add_transformer(orig_probe);
+                asr.add_message_receiver(rx).await?;
+                tx.send(pithos_lib::helpers::notifications::Message::FileContext(
+                    ctx,
+                ))
+                .await?;
 
                 if let Some(key) = clone_key.clone() {
                     asr = asr.add_transformer(ChaCha20Dec::new_with_fixed(key).map_err(|e| {
@@ -155,7 +168,7 @@ impl DataHandler {
         new_location.raw_content_len = after_size as i64;
         new_location.disk_hash = Some(final_sha);
 
-        Ok(vec![
+        let hashes = vec![
             Hash {
                 alg: Hashalgorithm::Sha256.into(),
                 hash: sha,
@@ -164,6 +177,19 @@ impl DataHandler {
                 alg: Hashalgorithm::Md5.into(),
                 hash: md5,
             },
-        ])
+        ];
+
+        if let Some(handler) = cache.aruna_client.read().await.as_ref() {
+            // Set id of new location to object id to satisfy FK constraint
+            let object = handler
+                .finish_object(object_id, new_location.raw_content_len, hashes, None, &token)
+                .await?;
+
+            cache.update_location(object_id, new_location).await?;
+
+            backend.delete_object(before_location).await?;
+        }
+
+        Ok(())
     }
 }

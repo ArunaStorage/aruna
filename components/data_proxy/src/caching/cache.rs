@@ -907,4 +907,19 @@ impl Cache {
         }
         Ok(results)
     }
+
+    #[tracing::instrument(level = "trace", skip(self, object_id, location))]
+    pub async fn update_location(&self, object_id: DieselUlid, location: ObjectLocation) -> Result<()>{
+        if let Some(persistence) = self.persistence.read().await.as_ref() {
+            location
+                .upsert(persistence.get_client().await?.client())
+                .await
+               ?;
+        }
+        if let Some(resource) = self.resources.get(&object_id) {
+            let (_, loc) = resource.value();
+            *loc.write().await = Some(location);
+        }
+        Ok(())
+    }
 }
