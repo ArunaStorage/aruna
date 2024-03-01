@@ -189,11 +189,13 @@ impl ObjectRuleInputBuilder {
         }
     }
 
+    #[allow(dead_code)]
     pub fn bucket(mut self, bucket: bool) -> Self {
         self.bucket = bucket;
         self
     }
 
+    #[allow(dead_code)]
     pub fn user_id(mut self, user_id: &str) -> Self {
         if self.skip {
             return self;
@@ -234,6 +236,7 @@ impl ObjectRuleInputBuilder {
         self
     }
 
+    #[allow(dead_code)]
     pub fn object(mut self, object: &Object) -> Result<Self> {
         if self.skip {
             return Ok(self);
@@ -245,6 +248,7 @@ impl ObjectRuleInputBuilder {
         Ok(self)
     }
 
+    #[allow(dead_code)]
     pub fn dataset(mut self, dataset: &Object) -> Result<Self> {
         if self.skip {
             return Ok(self);
@@ -256,6 +260,7 @@ impl ObjectRuleInputBuilder {
         Ok(self)
     }
 
+    #[allow(dead_code)]
     pub fn collection(mut self, collection: &Object) -> Result<Self> {
         if self.collection.is_some() {
             return Err(anyhow!("collection is already set"));
@@ -264,6 +269,7 @@ impl ObjectRuleInputBuilder {
         Ok(self)
     }
 
+    #[allow(dead_code)]
     pub fn project(mut self, project: &Object) -> Result<Self> {
         if self.skip {
             return Ok(self);
@@ -353,6 +359,7 @@ impl PackageObjectRuleInputBuilder {
         }
     }
 
+    #[allow(dead_code)]
     pub fn user_id(mut self, user_id: &str) -> Self {
         if self.skip {
             return self;
@@ -459,6 +466,7 @@ impl BundleRuleInputBuilder {
         }
     }
 
+    #[allow(dead_code)]
     pub fn user_id(mut self, user_id: &str) -> Self {
         if self.skip {
             return self;
@@ -499,6 +507,7 @@ impl BundleRuleInputBuilder {
         self
     }
 
+    #[allow(dead_code)]
     pub fn objects(mut self, objects: &[Object]) -> Self {
         if self.skip {
             return self;
@@ -556,6 +565,7 @@ impl BundleRuleInputBuilder {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Default)]
 pub struct ReplicationIncomingRuleInputBuilder {
     objects: Vec<Object>,
@@ -564,6 +574,7 @@ pub struct ReplicationIncomingRuleInputBuilder {
 }
 
 impl ReplicationIncomingRuleInputBuilder {
+    #[allow(dead_code)]
     pub fn new(rule_engine: &RuleEngine) -> Self {
         Self {
             skip: rule_engine.has_replication_in(),
@@ -571,6 +582,7 @@ impl ReplicationIncomingRuleInputBuilder {
         }
     }
 
+    #[allow(dead_code)]
     pub fn objects(mut self, objects: &[Object]) -> Self {
         if self.skip {
             return self;
@@ -579,6 +591,7 @@ impl ReplicationIncomingRuleInputBuilder {
         self
     }
 
+    #[allow(dead_code)]
     pub fn target_proxy_id(mut self, target_proxy_id: &str) -> Self {
         if self.skip {
             return self;
@@ -587,6 +600,7 @@ impl ReplicationIncomingRuleInputBuilder {
         self
     }
 
+    #[allow(dead_code)]
     pub fn build(self) -> Result<ReplicationIncomingRuleInput> {
         if !self.skip && self.objects.is_empty() {
             return Err(anyhow!("objects is required"));
@@ -603,6 +617,7 @@ impl ReplicationIncomingRuleInputBuilder {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Default)]
 pub struct ReplicationOutgoingRuleInputBuilder {
     object: Option<Object>,
@@ -611,6 +626,7 @@ pub struct ReplicationOutgoingRuleInputBuilder {
 }
 
 impl ReplicationOutgoingRuleInputBuilder {
+    #[allow(dead_code)]
     pub fn new(rule_engine: &RuleEngine) -> Self {
         Self {
             skip: rule_engine.has_replication_out(),
@@ -618,6 +634,7 @@ impl ReplicationOutgoingRuleInputBuilder {
         }
     }
 
+    #[allow(dead_code)]
     pub fn object(mut self, object: &Object) -> Self {
         if self.skip {
             return self;
@@ -626,6 +643,7 @@ impl ReplicationOutgoingRuleInputBuilder {
         self
     }
 
+    #[allow(dead_code)]
     pub fn target_proxy_id(mut self, target_proxy_id: &str) -> Self {
         if self.skip {
             return self;
@@ -634,6 +652,7 @@ impl ReplicationOutgoingRuleInputBuilder {
         self
     }
 
+    #[allow(dead_code)]
     pub fn build(self) -> Result<ReplicationOutgoingRuleInput> {
         if !self.skip && self.object.is_none() {
             return Err(anyhow!("objects is required"));

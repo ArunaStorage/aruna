@@ -22,6 +22,7 @@ use crate::{
 
 use super::{location_handler::CompiledVariant, storage_backend::StorageBackend};
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct FSBackend {
     _endpoint_id: String,

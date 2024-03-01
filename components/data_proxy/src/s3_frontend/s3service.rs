@@ -159,7 +159,7 @@ impl S3 for ArunaS3Service {
             ..Default::default()
         };
 
-        let mut new_location = self
+        let new_location = self
             .backend
             .initialize_location(&object, None, objects_state.try_slice()?, false)
             .await
@@ -178,7 +178,7 @@ impl S3 for ArunaS3Service {
         if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
             if let Some(token) = &impersonating_token {
                 // Set id of new location to object id to satisfy FK constraint
-                let object = handler
+                let _ = handler
                     .finish_object(object.id, new_location.raw_content_len, vec![], None, token)
                     .await
                     .map_err(|_| {

@@ -29,6 +29,7 @@ impl AddExpression for Expression {
     }
 }
 
+#[allow(dead_code)]
 pub(super) struct RuleEngine {
     root: Expression,
     obj: Expression,
@@ -113,10 +114,12 @@ impl RuleEngine {
         self.obj_package != Expression::Atom(cel_parser::Atom::Bool(true))
     }
 
+    #[allow(dead_code)]
     pub fn has_replication_in(&self) -> bool {
         self.repl_in != Expression::Atom(cel_parser::Atom::Bool(true))
     }
 
+    #[allow(dead_code)]
     pub fn has_replication_out(&self) -> bool {
         self.repl_out != Expression::Atom(cel_parser::Atom::Bool(true))
     }

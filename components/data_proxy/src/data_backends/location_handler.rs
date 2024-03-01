@@ -98,6 +98,7 @@ impl Arguments {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum SchemaVariant {
     S3,

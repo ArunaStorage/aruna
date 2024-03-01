@@ -194,6 +194,7 @@ impl Backend {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_tmp(&self) -> Option<String> {
         match self {
             Self::S3 { tmp, .. } => tmp.clone(),
@@ -201,6 +202,7 @@ impl Backend {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_encrypted(&self) -> bool {
         match self {
             Self::S3 { encryption, .. } => *encryption,
@@ -208,6 +210,7 @@ impl Backend {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_compressed(&self) -> bool {
         match self {
             Self::S3 { compression, .. } => *compression,

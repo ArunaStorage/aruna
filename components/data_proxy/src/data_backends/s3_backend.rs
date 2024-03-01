@@ -22,6 +22,7 @@ use rand::Rng;
 use tokio_stream::StreamExt;
 use tracing::error;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct S3Backend {
     pub s3_client: Client,
