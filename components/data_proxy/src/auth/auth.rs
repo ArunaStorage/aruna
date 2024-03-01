@@ -309,18 +309,22 @@ impl AuthHandler {
                 s3_error!(AccessDenied, "Access Denied")
             })?;
 
-        let allow_create = method == Method::POST;
+        let allow_create = method == Method::POST || method == Method::PUT;
         // Query the project and extract the headers
         let resource_states = self
             .prefix_into_resource_states(&[(bucket_name.to_string(), bucket_name.to_string())], allow_create).await?;
 
         // Extract the permission level from the method READ == "GET" and friends, WRITE == "POST" and friends
         // Check if the user has the required permissions
-        resource_states.check_permissions(&access_key_info, DbPermissionLevel::from(method))?;
 
-        let cors_headers = resource_states
+        let cors_headers = if allow_create && resource_states.get_project().is_none() {
+            None
+        }else{
+            resource_states.check_permissions(&access_key_info, DbPermissionLevel::from(method))?;
+            resource_states
             .require_project()?
-            .project_get_headers(method, headers);
+            .project_get_headers(method, headers)
+        };
 
         self.rule_engine
             .evaluate_object(

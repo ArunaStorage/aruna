@@ -1222,6 +1222,10 @@ impl ResourceState {
         matches!(self, ResourceState::Missing { .. })
     }
 
+    pub fn is_missing_or_none(&self) -> bool {
+        matches!(self, ResourceState::Missing { .. } | ResourceState::None)
+    }
+
     pub fn new_found(object: Object) -> Self {
         Self::Found { object }
     }
@@ -1268,16 +1272,25 @@ impl ResourceStates {
     }
 
     pub fn validate(&self, allow_create_project: bool) -> Result<()> {
+
+        let project = if allow_create_project && self.objects[0].is_missing() {
+            false
+        } else {
+            self.objects[0].is_missing()
+        };
+
+        dbg!(&self.objects);
+
         match (
-            self.objects[0].is_missing(),
-            self.objects[1].is_missing(),
-            self.objects[2].is_missing(),
-            self.objects[3].is_missing(),
+            project,
+            self.objects[1].is_missing_or_none(),
+            self.objects[2].is_missing_or_none(),
+            self.objects[3].is_missing_or_none(),
         ) {
-            (allow_create_project, true, true, true)
-            | (allow_create_project, false, true, true)
-            | (allow_create_project, false, false, true)
-            | (allow_create_project, false, false, false) => {}
+            (false, true, true, true)
+            | (false, false, true, true)
+            | (false, false, false, true)
+            | (false, false, false, false) => {}
             _ => {
                 bail!("Invalid resource state")
             }
