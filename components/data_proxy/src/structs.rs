@@ -1286,8 +1286,6 @@ impl ResourceStates {
             self.objects[0].is_missing()
         };
 
-        dbg!(&self.objects);
-
         match (
             project,
             self.objects[1].is_missing_or_none(),

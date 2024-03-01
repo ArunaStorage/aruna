@@ -117,7 +117,6 @@ impl CompiledVariant {
         match Self::compile(scheme) {
             Ok((_, x)) => Ok(x),
             Err(e) => {
-                dbg!(&e);
                 bail!("Error parsing scheme: {}", e)
             }
         }
@@ -143,7 +142,6 @@ impl CompiledVariant {
 
     pub fn compile_s3(scheme: &str) -> IResult<&str, Self> {
         let (input, _) = tag("s3://")(scheme)?;
-        dbg!(input);
         let (rest, args): (&str, Vec<Arguments>) = Self::compile_tags(input)?;
 
         let mut bucket = Vec::new();

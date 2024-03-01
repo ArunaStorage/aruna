@@ -273,7 +273,8 @@ impl AuthHandler {
             attributes,
         )) = self.extract_access_key_perms(creds).await
         {
-            self.rule_engine
+            let result = self
+                .rule_engine
                 .evaluate_root(
                     RootRuleInputBuilder::new(&self.rule_engine)
                         .attributes(&attributes)
@@ -285,6 +286,10 @@ impl AuthHandler {
                         .map_err(|_| s3_error!(MalformedACLError, "Rule has wrong context"))?,
                 )
                 .map_err(|_| s3_error!(AccessDenied, "Forbidden by rule"))?;
+
+            if !result {
+                return Err(s3_error!(InvalidObjectState, "Forbidden by rule"));
+            }
             return Ok(CheckAccessResult {
                 user_state: Some(a.clone()).into(),
                 ..Default::default()
@@ -332,7 +337,8 @@ impl AuthHandler {
                 .project_get_headers(method, headers)
         };
 
-        self.rule_engine
+        let result = self
+            .rule_engine
             .evaluate_object(
                 ObjectRuleInputBuilder::new(&self.rule_engine)
                     .user_id(&access_key_info.user_id.to_string())
@@ -349,7 +355,10 @@ impl AuthHandler {
             )
             .map_err(|_| s3_error!(AccessDenied, "Forbidden by rule"))?;
 
-        dbg!("Bucket access granted");
+        if !result {
+            return Err(s3_error!(InvalidObjectState, "Forbidden by rule"));
+        }
+
         Ok(CheckAccessResult::new(
             ObjectsState::new_regular(resource_states, None),
             Some(access_key_info).into(),
@@ -419,13 +428,18 @@ impl AuthHandler {
                 None.into()
             };
 
-        self.rule_engine
+        let result = self
+            .rule_engine
             .evaluate_object(
                 rule_builder
                     .build()
                     .map_err(|_| s3_error!(MalformedACLError, "Rule has wrong context"))?,
             )
             .map_err(|_| s3_error!(AccessDenied, "Forbidden by rule"))?;
+
+        if !result {
+            return Err(s3_error!(InvalidObjectState, "Forbidden by rule"));
+        }
 
         let location = if let Some(obj) = resource_states.get_object() {
             self.cache.get_location(&obj.id).await
@@ -495,13 +509,17 @@ impl AuthHandler {
         };
         rule_builder = rule_builder.parents(&self.get_parent_project_objects(&parents).await?);
 
-        self.rule_engine
+        let result = self
+            .rule_engine
             .evaluate_package(
                 rule_builder
                     .build()
                     .map_err(|_| s3_error!(MalformedACLError, "Rule has wrong context"))?,
             )
             .map_err(|_| s3_error!(AccessDenied, "Forbidden by rule"))?;
+        if !result {
+            return Err(s3_error!(InvalidObjectState, "Forbidden by rule"));
+        }
 
         Ok(CheckAccessResult::new(objects_state, user, None))
     }
@@ -545,13 +563,18 @@ impl AuthHandler {
             }
             None => UserState::Anonymous,
         };
-        self.rule_engine
+        let result = self
+            .rule_engine
             .evaluate_bundle(
                 rule_builder
                     .build()
                     .map_err(|_| s3_error!(MalformedACLError, "Rule has wrong context"))?,
             )
             .map_err(|_| s3_error!(AccessDenied, "Forbidden by rule"))?;
+
+        if !result {
+            return Err(s3_error!(InvalidObjectState, "Forbidden by rule"));
+        }
 
         Ok(CheckAccessResult::new(object_state, user, None))
     }

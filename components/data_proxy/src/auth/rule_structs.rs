@@ -301,7 +301,6 @@ impl ObjectRuleInputBuilder {
     }
 
     pub fn build(self) -> Result<ObjectRuleInput> {
-        dbg!(&self);
         if !self.skip && self.method.is_empty() {
             return Err(anyhow!("method is required"));
         }

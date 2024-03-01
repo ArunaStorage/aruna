@@ -566,7 +566,6 @@ impl Cache {
             e
         })?;
         let proxy_user = User::try_from(user)?;
-
         let (to_update, to_delete) = if let Some(user) = self.users.get(&user_id) {
             let mut user = user.value().write().await;
             let comparison = proxy_user.compare_permissions(&user.0);

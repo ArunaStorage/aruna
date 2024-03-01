@@ -50,8 +50,10 @@ impl RuleEngine {
         for rule in CONFIG.rules.iter() {
             match rule.target {
                 RuleTarget::ROOT => {
-                    root_expressions.push( cel_parser::parse(rule.rule.as_str())
-                        .map_err(|e| anyhow!("error parsing rule: {}", e))?);
+                    root_expressions.push(
+                        cel_parser::parse(rule.rule.as_str())
+                            .map_err(|e| anyhow!("error parsing rule: {}", e))?,
+                    );
                 }
                 RuleTarget::OBJECT => {
                     object_expressions.push(
@@ -72,18 +74,16 @@ impl RuleEngine {
                     );
                 }
                 RuleTarget::REPLICATIONIN => {
-                    replication_inbound_expressions
-                        .push(
-                            cel_parser::parse(rule.rule.as_str())
-                                .map_err(|e| anyhow!("error parsing rule: {}", e))?,
-                        );
+                    replication_inbound_expressions.push(
+                        cel_parser::parse(rule.rule.as_str())
+                            .map_err(|e| anyhow!("error parsing rule: {}", e))?,
+                    );
                 }
                 RuleTarget::REPLICATIONOUT => {
-                    replication_outbound_expressions
-                        .push(
-                            cel_parser::parse(rule.rule.as_str())
-                                .map_err(|e| anyhow!("error parsing rule: {}", e))?,
-                        );
+                    replication_outbound_expressions.push(
+                        cel_parser::parse(rule.rule.as_str())
+                            .map_err(|e| anyhow!("error parsing rule: {}", e))?,
+                    );
                 }
             }
         }
@@ -135,12 +135,10 @@ impl RuleEngine {
             anyhow!("error running context: {}", e)
         })?;
         match result {
-            Value::List(b) => Ok(b.iter().all(
-                |x| match x {
-                    Value::Bool(b) => *b,
-                    _ => false,
-                },
-            )),
+            Value::List(b) => Ok(b.iter().all(|x| match x {
+                Value::Bool(b) => *b,
+                _ => false,
+            })),
             _ => Err(anyhow!("expected bool, got {:?}", result)),
         }
     }
@@ -156,12 +154,13 @@ impl RuleEngine {
             anyhow!("error running context: {}", e)
         })?;
         match result {
-            Value::List(b) => Ok(b.iter().all(
-                |x| match x {
+            Value::List(b) => {
+                let result = b.iter().all(|x| match x {
                     Value::Bool(b) => *b,
                     _ => false,
-                },
-            )),
+                });
+                Ok(result)
+            }
             _ => Err(anyhow!("expected bool, got {:?}", result)),
         }
     }
@@ -177,12 +176,10 @@ impl RuleEngine {
             anyhow!("error running context: {}", e)
         })?;
         match result {
-            Value::List(b) => Ok(b.iter().all(
-                |x| match x {
-                    Value::Bool(b) => *b,
-                    _ => false,
-                },
-            )),
+            Value::List(b) => Ok(b.iter().all(|x| match x {
+                Value::Bool(b) => *b,
+                _ => false,
+            })),
             _ => Err(anyhow!("expected bool, got {:?}", result)),
         }
     }
@@ -198,12 +195,10 @@ impl RuleEngine {
             anyhow!("error running context: {}", e)
         })?;
         match result {
-            Value::List(b) => Ok(b.iter().all(
-                |x| match x {
-                    Value::Bool(b) => *b,
-                    _ => false,
-                },
-            )),
+            Value::List(b) => Ok(b.iter().all(|x| match x {
+                Value::Bool(b) => *b,
+                _ => false,
+            })),
             _ => Err(anyhow!("expected bool, got {:?}", result)),
         }
     }
@@ -222,12 +217,10 @@ impl RuleEngine {
             anyhow!("error running context: {}", e)
         })?;
         match result {
-            Value::List(b) => Ok(b.iter().all(
-                |x| match x {
-                    Value::Bool(b) => *b,
-                    _ => false,
-                },
-            )),
+            Value::List(b) => Ok(b.iter().all(|x| match x {
+                Value::Bool(b) => *b,
+                _ => false,
+            })),
             _ => Err(anyhow!("expected bool, got {:?}", result)),
         }
     }
@@ -246,12 +239,10 @@ impl RuleEngine {
             anyhow!("error running context: {}", e)
         })?;
         match result {
-            Value::List(b) => Ok(b.iter().all(
-                |x| match x {
-                    Value::Bool(b) => *b,
-                    _ => false,
-                },
-            )),
+            Value::List(b) => Ok(b.iter().all(|x| match x {
+                Value::Bool(b) => *b,
+                _ => false,
+            })),
             _ => Err(anyhow!("expected bool, got {:?}", result)),
         }
     }
