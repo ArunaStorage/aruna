@@ -293,6 +293,18 @@ impl Cache {
         Ok((access_key.to_string(), new_secret))
     }
 
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    /// Requests a secret key from the cache
+    pub async fn revoke_secret(
+        &self,
+        access_key: &str,
+    ) -> Result<()> {
+        self.access_keys
+            .remove(access_key);
+        Ok(())
+    }
+
     #[tracing::instrument(level = "trace", skip(self, pks))]
     pub async fn sync_pubkeys(&self, pks: Vec<PubKey>) -> Result<()> {
         for pk in pks.into_iter() {
@@ -909,12 +921,15 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self, object_id, location))]
-    pub async fn update_location(&self, object_id: DieselUlid, location: ObjectLocation) -> Result<()>{
+    pub async fn update_location(
+        &self,
+        object_id: DieselUlid,
+        location: ObjectLocation,
+    ) -> Result<()> {
         if let Some(persistence) = self.persistence.read().await.as_ref() {
             location
                 .upsert(persistence.get_client().await?.client())
-                .await
-               ?;
+                .await?;
         }
         if let Some(resource) = self.resources.get(&object_id) {
             let (_, loc) = resource.value();

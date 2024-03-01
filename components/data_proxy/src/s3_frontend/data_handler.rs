@@ -182,7 +182,13 @@ impl DataHandler {
         if let Some(handler) = cache.aruna_client.read().await.as_ref() {
             // Set id of new location to object id to satisfy FK constraint
             let _object = handler
-                .finish_object(object_id, new_location.raw_content_len, hashes, None, &token)
+                .finish_object(
+                    object_id,
+                    new_location.raw_content_len,
+                    hashes,
+                    None,
+                    &token,
+                )
                 .await?;
 
             cache.update_location(object_id, new_location).await?;

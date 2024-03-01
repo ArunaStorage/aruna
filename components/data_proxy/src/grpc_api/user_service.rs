@@ -90,9 +90,46 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
     /// Revokes the current credentials
     async fn revoke_credentials(
         &self,
-        _request: tonic::Request<RevokeCredentialsRequest>,
+        request: tonic::Request<RevokeCredentialsRequest>,
     ) -> std::result::Result<tonic::Response<RevokeCredentialsResponse>, tonic::Status> {
-        Err(tonic::Status::unimplemented("Not implemented"))
+        return if let Some(a) = self.cache.auth.read().await.as_ref() {
+            let token = get_token_from_md(request.metadata()).map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                tonic::Status::unauthenticated(e.to_string())
+            })?;
+
+            let (u, tid, _) = a.check_permissions(&token).map_err(|_| {
+                error!(error = "Unable to authenticate user");
+                tonic::Status::unauthenticated("Unable to authenticate user")
+            })?;
+
+            if let Some(q_handler) = self.cache.aruna_client.read().await.as_ref() {
+                let user = q_handler.get_user(u, "".to_string()).await.map_err(|_| {
+                    error!(error = "Unable to authenticate user");
+                    tonic::Status::unauthenticated("Unable to authenticate user")
+                })?;
+
+                let access_key = tid.unwrap_or_else(|| user.id.to_string());
+
+                self.cache.revoke_secret(&access_key).await
+                        .map_err(|_| {
+                            error!(error = "Unable to authenticate user");
+                            tonic::Status::unauthenticated("Unable to authenticate user")
+                        })?;
+
+                Ok(tonic::Response::new(RevokeCredentialsResponse {}))
+            } else {
+                error!("query handler not available");
+                Err(tonic::Status::unauthenticated(
+                    "Unable to authenticate user",
+                ))
+            }
+        } else {
+            error!("authentication handler not available");
+            Err(tonic::Status::unauthenticated(
+                "Unable to authenticate user",
+            ))
+        };
     }
 
     /// CreateOrUpdateCredentials
@@ -103,11 +140,50 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
     /// specific S3AccessKey and S3SecretKey
     async fn create_or_update_credentials(
         &self,
-        _request: tonic::Request<CreateOrUpdateCredentialsRequest>,
+        request: tonic::Request<CreateOrUpdateCredentialsRequest>,
     ) -> std::result::Result<tonic::Response<CreateOrUpdateCredentialsResponse>, tonic::Status>
     {
-        // TODO: Implement this method
-        Err(tonic::Status::unimplemented("Not implemented"))
+        return if let Some(a) = self.cache.auth.read().await.as_ref() {
+            let token = get_token_from_md(request.metadata()).map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                tonic::Status::unauthenticated(e.to_string())
+            })?;
+
+            let (u, tid, _) = a.check_permissions(&token).map_err(|_| {
+                error!(error = "Unable to authenticate user");
+                tonic::Status::unauthenticated("Unable to authenticate user")
+            })?;
+
+            if let Some(q_handler) = self.cache.aruna_client.read().await.as_ref() {
+                let user = q_handler.get_user(u, "".to_string()).await.map_err(|_| {
+                    error!(error = "Unable to authenticate user");
+                    tonic::Status::unauthenticated("Unable to authenticate user")
+                })?;
+
+                let access_key = tid.unwrap_or_else(|| user.id.to_string());
+
+                let (access, secret) = self.cache.create_or_update_secret(&access_key, &u).await
+                        .map_err(|_| {
+                            error!(error = "Unable to authenticate user");
+                            tonic::Status::unauthenticated("Unable to authenticate user")
+                        })?;
+
+                Ok(tonic::Response::new(CreateOrUpdateCredentialsResponse {
+                    access_key: access,
+                    secret_key: secret,
+                }))
+            } else {
+                error!("query handler not available");
+                Err(tonic::Status::unauthenticated(
+                    "Unable to authenticate user",
+                ))
+            }
+        } else {
+            error!("authentication handler not available");
+            Err(tonic::Status::unauthenticated(
+                "Unable to authenticate user",
+            ))
+        };
     }
 
     #[tracing::instrument(level = "trace", skip(self, _request))]

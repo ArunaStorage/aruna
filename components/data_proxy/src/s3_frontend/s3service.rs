@@ -154,6 +154,16 @@ impl S3 for ArunaS3Service {
                 s3_error!(InternalError, "Unable to finish upload")
             })?;
 
+        let size = self
+            .backend
+            .clone()
+            .head_object(old_location.clone())
+            .await
+            .map_err(|_| {
+                error!(error = "Unable to get object size");
+                s3_error!(InternalError, "Unable to get object size")
+            })?;
+
         let response = CompleteMultipartUploadOutput {
             e_tag: Some(object.id.to_string()),
             ..Default::default()
