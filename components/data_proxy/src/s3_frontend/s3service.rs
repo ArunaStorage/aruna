@@ -181,7 +181,7 @@ impl S3 for ArunaS3Service {
             })?;
 
         let ctx = object
-            .get_file_context(Some(new_location.clone()))
+            .get_file_context(Some(new_location.clone()), None)
             .map_err(|_| {
                 error!(error = "Unable to get file context");
                 s3_error!(InternalError, "Unable to get file context")
@@ -1138,7 +1138,7 @@ impl S3 for ArunaS3Service {
                         location.clone(),
                         None,
                         None,
-                        true,
+                        false,
                         None,
                         false,
                     )
@@ -1175,7 +1175,7 @@ impl S3 for ArunaS3Service {
 
                 if location.is_pithos() {
                     let ctx = new_object
-                        .get_file_context(Some(location.clone()))
+                        .get_file_context(Some(location.clone()), req.input.content_length)
                         .map_err(|_| {
                             error!(error = "Unable to get file context");
                             s3_error!(InternalError, "Unable to get file context")

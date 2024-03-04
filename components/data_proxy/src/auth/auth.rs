@@ -744,6 +744,10 @@ impl AuthHandler {
                 }
             }
         }
+        if !allow_create && resource_states.get_project().is_none() {
+            error!("No such bucket");
+            return Err(s3_error!(NoSuchBucket, "Bucket not found"));
+        }
         resource_states.validate(allow_create).map_err(|e| {
             error!(error = ?e, msg = e.to_string());
             s3_error!(InternalError, "Internal Error")

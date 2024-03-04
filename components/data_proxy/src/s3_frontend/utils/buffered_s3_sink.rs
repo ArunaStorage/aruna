@@ -82,7 +82,9 @@ impl BufferedS3Sink {
         if let Some(rx) = &self.msg_receiver {
             loop {
                 match rx.try_recv() {
-                    Ok(Message::Finished) => return Ok(true),
+                    Ok(Message::Finished) => {
+                        return Ok(true)
+                    },
                     Ok(_) => {}
                     Err(TryRecvError::Empty) => {
                         break;
@@ -113,9 +115,10 @@ impl BufferedS3Sink {
 
     #[tracing::instrument(level = "trace", skip(self))]
     async fn upload_single(&mut self) -> Result<()> {
-        trace!("Single upload");
         let backend_clone = self.backend.clone();
         let expected_len: i64 = self.buffer.len() as i64;
+
+        trace!(?expected_len, "uploading single");
         let location_clone = self.target_location.clone();
 
         let (sender, receiver) = async_channel::bounded(10);
@@ -226,15 +229,15 @@ impl Transformer for BufferedS3Sink {
 
     #[tracing::instrument(level = "trace", skip(self, buf))]
     async fn process_bytes(&mut self, buf: &mut BytesMut) -> Result<()> {
+
         let finished = self.process_messages()?;
 
         self.sum += buf.len();
-        let len = buf.len();
 
         self.buffer.put(buf.split());
 
         if self.single_part_upload {
-            if len == 0 && finished {
+            if finished {
                 self.upload_part().await?;
                 if let Some(notifier) = &self.notifier {
                     notifier.send_read_writer(Message::Finished)?;
@@ -252,7 +255,7 @@ impl Transformer for BufferedS3Sink {
                 self.upload_part().await?;
             }
 
-            if len == 0 && finished {
+            if finished {
                 if self.upload_id.is_none() {
                     self.upload_single().await?;
                 } else {
@@ -263,8 +266,9 @@ impl Transformer for BufferedS3Sink {
                         self.finish_multipart().await?;
                     }
                 }
+
                 if let Some(notifier) = &self.notifier {
-                    notifier.send_read_writer(Message::Finished)?;
+                    notifier.send_read_writer(Message::Completed)?;
                 }
                 return Ok(());
             }

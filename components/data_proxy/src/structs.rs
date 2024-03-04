@@ -313,15 +313,15 @@ impl Object {
         }
     }
 
-    pub fn get_file_context(&self, location: Option<ObjectLocation>) -> Result<FileContext> {
+    pub fn get_file_context(&self, location: Option<ObjectLocation>, expected_size: Option<i64>) -> Result<FileContext> {
+
+        let location_size = expected_size.or_else(|| location.as_ref().map(|l| l.raw_content_len)).unwrap_or_default();
+
         // TODO: Maybe hashes
         Ok(FileContext {
             idx: 0,
             file_path: self.name.clone(),
-            compressed_size: location
-                .as_ref()
-                .map(|l| l.disk_content_len as u64)
-                .unwrap_or_default(),
+            compressed_size: location_size as u64,
             decompressed_size: location
                 .as_ref()
                 .map(|l| l.raw_content_len as u64)
