@@ -231,18 +231,23 @@ impl Cache {
                 ),
             );
             if let Some(parents) = object.parents {
-                for parent in parents {
-                    let new_prefix = prefixes
-                        .get(&parent.get_id())
-                        .ok_or_else(|| anyhow!("Expected parent for non root object"))?
-                        .iter()
-                        .map(|e| {
-                            let path = format!("{}/{}", e, object.name);
-                            self.paths.insert(path.clone(), object.id);
-                            path
-                        })
-                        .collect::<Vec<_>>();
-                    prefixes.insert(object.id, new_prefix);
+                if parents.is_empty() {
+                    prefixes.insert(object.id, vec![object.name.clone()]);
+                    self.paths.insert(object.name.clone(), object.id);
+                } else {
+                    for parent in parents {
+                        let new_prefix = prefixes
+                            .get(&parent.get_id())
+                            .ok_or_else(|| anyhow!("Expected parent for non root object"))?
+                            .iter()
+                            .map(|e| {
+                                let path = format!("{}/{}", e, object.name);
+                                self.paths.insert(path.clone(), object.id);
+                                path
+                            })
+                            .collect::<Vec<_>>();
+                        prefixes.insert(object.id, new_prefix);
+                    }
                 }
             } else {
                 prefixes.insert(object.id, vec![object.name.clone()]);
@@ -250,6 +255,7 @@ impl Cache {
             }
         }
 
+        debug!("synced resources");
         let mut parts_map = HashMap::new();
         let parts = UploadPart::get_all(&client).await?;
 
@@ -383,6 +389,12 @@ impl Cache {
 
     #[tracing::instrument(level = "trace", skip(self, res))]
     pub fn get_resource_by_path(&self, res: &str) -> Option<DieselUlid> {
+        let entries = self
+            .paths
+            .iter()
+            .map(|e| (e.key().clone(), e.value().clone()))
+            .collect::<Vec<_>>();
+        dbg!(entries);
         self.paths.get(res).map(|e| e.value().clone())
     }
 
@@ -568,7 +580,10 @@ impl Cache {
         let proxy_user = User::try_from(user)?;
         let (to_update, to_delete) = if let Some(user) = self.users.get(&user_id) {
             let mut user = user.value().write().await;
+            dbg!(&proxy_user);
+            dbg!(&user);
             let comparison = proxy_user.compare_permissions(&user.0);
+            dbg!(&comparison);
             let new_keys = user
                 .1
                 .iter()

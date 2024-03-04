@@ -94,17 +94,15 @@ impl From<&Method> for DbPermissionLevel {
     }
 }
 
-impl From<&i32> for DbPermissionLevel {
+impl From<PermissionLevel> for DbPermissionLevel {
     #[tracing::instrument(level = "trace", skip(level))]
-    fn from(level: &i32) -> Self {
+    fn from(level: PermissionLevel) -> Self {
         match level {
-            &0 => DbPermissionLevel::Deny,
-            &1 => DbPermissionLevel::None,
-            &2 => DbPermissionLevel::Read,
-            &3 => DbPermissionLevel::Append,
-            &4 => DbPermissionLevel::Write,
-            &5 => DbPermissionLevel::Admin,
-            _ => DbPermissionLevel::Deny,
+            PermissionLevel::Unspecified | PermissionLevel::None => DbPermissionLevel::None,
+            PermissionLevel::Read => DbPermissionLevel::Read,
+            PermissionLevel::Append => DbPermissionLevel::Append,
+            PermissionLevel::Write => DbPermissionLevel::Write,
+            PermissionLevel::Admin => DbPermissionLevel::Admin,
         }
     }
 }
@@ -406,7 +404,7 @@ pub fn perm_convert(perms: Vec<Permission>) -> HashMap<DieselUlid, DbPermissionL
                     | ResourceId::DatasetId(id)
                     | ResourceId::ObjectId(id) => Some((
                         DieselUlid::from_str(&id).ok()?,
-                        DbPermissionLevel::from(&p.permission_level),
+                        DbPermissionLevel::from(p.permission_level()),
                     )),
                 }
             } else {
@@ -465,7 +463,7 @@ impl TryFrom<GrpcUser> for User {
                                 | Some(ResourceId::DatasetId(id))
                                 | Some(ResourceId::ObjectId(id)) => HashMap::from([(
                                     DieselUlid::from_str(&id)?,
-                                    DbPermissionLevel::from(&perm.permission_level),
+                                    DbPermissionLevel::from(perm.permission_level()),
                                 )]),
                                 _ => Err(anyhow!("Invalid resource id"))?,
                             }
@@ -633,19 +631,6 @@ impl TryInto<create_object_request::Parent> for TypedRelation {
                 error!("Invalid");
                 Err(anyhow!("Invalid "))
             }
-        }
-    }
-}
-
-impl From<PermissionLevel> for DbPermissionLevel {
-    #[tracing::instrument(level = "trace", skip(level))]
-    fn from(level: PermissionLevel) -> Self {
-        match level {
-            PermissionLevel::Read => DbPermissionLevel::Read,
-            PermissionLevel::Append => DbPermissionLevel::Append,
-            PermissionLevel::Write => DbPermissionLevel::Write,
-            PermissionLevel::Admin => DbPermissionLevel::Admin,
-            _ => DbPermissionLevel::None,
         }
     }
 }
@@ -1478,11 +1463,16 @@ impl ResourceStates {
         &self,
         key_info: &AccessKeyPermissions,
         perm: DbPermissionLevel,
+        allow_public: bool,
     ) -> Result<(), S3Error> {
-        for res in self.objects.iter() {
+        // Check from bottom to top Object -> Dataset -> Collection -> Project
+        for res in self.objects.iter().rev() {
             let ResourceState::Found { object } = res else {
                 continue;
             };
+            if allow_public && object.data_class == DataClass::Public {
+                return Ok(());
+            }
             if let Some(q_perm) = key_info.permissions.get(&object.id) {
                 if q_perm >= &perm {
                     return Ok(());

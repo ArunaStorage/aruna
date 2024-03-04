@@ -331,7 +331,11 @@ impl AuthHandler {
             }
             None
         } else {
-            resource_states.check_permissions(&access_key_info, DbPermissionLevel::from(method))?;
+            resource_states.check_permissions(
+                &access_key_info,
+                DbPermissionLevel::from(method),
+                is_method_read(method),
+            )?;
             resource_states
                 .require_project()?
                 .project_get_headers(method, headers)
@@ -415,17 +419,21 @@ impl AuthHandler {
         // Query the User
         let user_state: UserState =
             if let Some((user, attributes)) = self.extract_access_key_perms(creds).await {
-                if resource_states.require_object()?.data_class != DataClass::Public {
-                    // Extract the permission level from the method READ == "GET" and friends, WRITE == "POST" and friends
-                    // Check if the user has the required permissions
-                    resource_states.check_permissions(&user, DbPermissionLevel::from(method))?;
-                }
+                resource_states.check_permissions(
+                    &user,
+                    DbPermissionLevel::from(method),
+                    is_method_read(method),
+                )?;
                 rule_builder = rule_builder
                     .attributes(&attributes)
                     .permissions(&user.permissions);
                 Some(user).into()
             } else {
-                None.into()
+                if resource_states.require_object()?.data_class == DataClass::Public {
+                    UserState::Anonymous
+                } else {
+                    return Err(s3_error!(AccessDenied, "Missing access key"));
+                }
             };
 
         let result = self
@@ -708,6 +716,7 @@ impl AuthHandler {
         let mut resource_states: ResourceStates = ResourceStates::default();
         let len = prefixes.len();
         for (idx, (prefix, name)) in prefixes.iter().enumerate() {
+            dbg!(prefix, name, idx, len);
             let Some(obj) = self.cache.get_full_resource_by_path(prefix).await else {
                 resource_states
                     .set_missing(idx, len, name.to_string())
@@ -732,6 +741,8 @@ impl AuthHandler {
                 }
             }
         }
+        dbg!(resource_states.clone());
+        dbg!(allow_create);
         resource_states.validate(allow_create).map_err(|e| {
             error!(error = ?e, msg = e.to_string());
             s3_error!(InternalError, "Internal Error")
