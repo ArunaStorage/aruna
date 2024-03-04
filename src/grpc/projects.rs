@@ -22,8 +22,7 @@ use aruna_rust_api::api::storage::services::v2::project_service_server::ProjectS
 use aruna_rust_api::api::storage::services::v2::{
     ArchiveProjectRequest, ArchiveProjectResponse, CreateProjectRequest, CreateProjectResponse,
     DeleteProjectRequest, DeleteProjectResponse, GetProjectRequest, GetProjectResponse,
-    GetProjectsRequest, GetProjectsResponse, UpdateCollectionAuthorsResponse,
-    UpdateCollectionTitleResponse, UpdateProjectAuthorsRequest, UpdateProjectAuthorsResponse,
+    GetProjectsRequest, GetProjectsResponse, UpdateProjectAuthorsRequest, UpdateProjectAuthorsResponse,
     UpdateProjectDataClassRequest, UpdateProjectDataClassResponse, UpdateProjectDescriptionRequest,
     UpdateProjectDescriptionResponse, UpdateProjectKeyValuesRequest,
     UpdateProjectKeyValuesResponse, UpdateProjectLicensesRequest, UpdateProjectLicensesResponse,

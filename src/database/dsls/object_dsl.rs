@@ -211,7 +211,7 @@ impl Object {
         WHERE id = $2;";
 
         let prepared = client.prepare(query).await?;
-        let execute = client.execute(&prepared, &[&element, &self.id]).await?;
+        client.execute(&prepared, &[&element, &self.id]).await?;
         Ok(())
     }
 
@@ -569,9 +569,7 @@ impl Object {
             .collect();
         Ok(objects)
     }
-    pub async fn update_authors(id: &DieselUlid, author: String, client: &Client) -> Result<()> {
-        todo!()
-    }
+    
     pub async fn update_title(id: &DieselUlid, title: String, client: &Client) -> Result<()> {
         let query = "UPDATE objects
         SET title = $2

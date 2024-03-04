@@ -51,7 +51,6 @@ impl CreateTemplate {
                     .collect::<Result<Vec<DieselUlid>>>()?,
             ),
         };
-        // TODO: Add rules to workspace templates
         Ok(workspace)
     }
 }

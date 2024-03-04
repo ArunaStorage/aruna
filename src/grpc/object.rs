@@ -1,3 +1,21 @@
+use std::str::FromStr;
+use std::sync::Arc;
+
+use aruna_rust_api::api::storage::models::v2::{generic_resource, Object};
+use aruna_rust_api::api::storage::services::v2::{
+    CloneObjectRequest, CloneObjectResponse, CreateObjectRequest, CreateObjectResponse,
+    DeleteObjectRequest, DeleteObjectResponse, FinishObjectStagingRequest,
+    FinishObjectStagingResponse, GetDownloadUrlRequest, GetDownloadUrlResponse, GetObjectRequest,
+    GetObjectResponse, GetObjectsRequest, GetObjectsResponse, GetUploadUrlRequest,
+    GetUploadUrlResponse,
+    UpdateObjectAuthorsRequest, UpdateObjectAuthorsResponse, UpdateObjectRequest,
+    UpdateObjectResponse, UpdateObjectTitleRequest, UpdateObjectTitleResponse,
+};
+use aruna_rust_api::api::storage::services::v2::object_service_server::ObjectService;
+use diesel_ulid::DieselUlid;
+use itertools::Itertools;
+use tonic::{Request, Response, Result, Status};
+
 use crate::auth::permission_handler::{PermissionCheck, PermissionHandler};
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
@@ -11,25 +29,9 @@ use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::presigned_url_handler::{PresignedDownload, PresignedUpload};
 use crate::middlelayer::update_request_types::{UpdateAuthor, UpdateObject, UpdateTitle};
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
-use crate::utils::grpc_utils::get_token_from_md;
 use crate::utils::grpc_utils::{get_id_and_ctx, IntoGenericInner};
+use crate::utils::grpc_utils::get_token_from_md;
 use crate::utils::search_utils;
-use aruna_rust_api::api::storage::models::v2::{generic_resource, Object};
-use aruna_rust_api::api::storage::services::v2::object_service_server::ObjectService;
-use aruna_rust_api::api::storage::services::v2::{
-    CloneObjectRequest, CloneObjectResponse, CreateObjectRequest, CreateObjectResponse,
-    DeleteObjectRequest, DeleteObjectResponse, FinishObjectStagingRequest,
-    FinishObjectStagingResponse, GetDownloadUrlRequest, GetDownloadUrlResponse, GetObjectRequest,
-    GetObjectResponse, GetObjectsRequest, GetObjectsResponse, GetUploadUrlRequest,
-    GetUploadUrlResponse, UpdateCollectionAuthorsResponse, UpdateCollectionTitleResponse,
-    UpdateObjectAuthorsRequest, UpdateObjectAuthorsResponse, UpdateObjectRequest,
-    UpdateObjectResponse, UpdateObjectTitleRequest, UpdateObjectTitleResponse,
-};
-use diesel_ulid::DieselUlid;
-use itertools::Itertools;
-use std::str::FromStr;
-use std::sync::Arc;
-use tonic::{Request, Response, Result, Status};
 
 crate::impl_grpc_server!(ObjectServiceImpl, search_client: Arc<MeilisearchClient>);
 

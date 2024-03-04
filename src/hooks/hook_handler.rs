@@ -134,7 +134,6 @@ impl HookHandler {
                         }
                     }
                     crate::database::dsls::hook_dsl::InternalHook::CreateRelation { relation } => {
-                        // TODO: Policy evaluation
                         let relation = aruna_rust_api::api::storage::models::v2::Relation {
                             relation: Some(relation.clone()),
                         };
@@ -243,7 +242,7 @@ impl HookHandler {
                             .body(template)
                     }
                 };
-                let response = data_request.send().await?;
+                data_request.send().await?;
             }
         };
         Ok(())

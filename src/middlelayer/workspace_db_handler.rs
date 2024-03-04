@@ -35,7 +35,6 @@ impl DatabaseHandler {
         Hook::exists(&hooks, &client).await?;
         // Create template
         template.create(&client).await?;
-        // TODO: add rules
         Ok(template.id)
     }
     pub async fn create_workspace(
