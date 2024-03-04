@@ -675,6 +675,16 @@ impl Cache {
             object.name.to_string()
         };
 
+        let prefixes = self.get_prefixes(&TypedId::Unknown(object.id), false).await;
+
+        for (_, pre) in prefixes.iter() {
+            self.paths.insert(format!("{}/{}", pre.clone() , object.name), object.id);
+        }
+
+        if prefixes.is_empty() {
+            self.paths.insert(object.name.clone(), object.id);
+        }
+
         if old_name != object.name {
             self.update_object_name(TypedId::from(&object), old_name, object.name)
                 .await?;
