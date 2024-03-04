@@ -124,11 +124,7 @@ impl From<DBUserAttributes> for UserAttributes {
             data_proxy_attributes: attr
                 .data_proxy_attribute
                 .into_iter()
-                .flat_map(|(_, a)| {
-                    a.into_iter()
-                        .map(|a| a.into())
-                        .collect::<Vec<DataProxyAttribute>>()
-                })
+                .map(|a| a.into())
                 .collect(),
         }
     }
