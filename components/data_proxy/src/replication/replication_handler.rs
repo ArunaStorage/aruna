@@ -769,12 +769,9 @@ impl ReplicationHandler {
         );
 
         let (extractor, rx) = FooterExtractor::new(
-            CONFIG
+            Some(CONFIG
                 .proxy
-                .private_key
-                .as_ref()
-                .map(|x| x.as_bytes().try_into().ok())
-                .flatten(),
+                .get_private_key()?),
         );
 
         awr = awr.add_transformer(extractor);

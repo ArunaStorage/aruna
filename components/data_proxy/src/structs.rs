@@ -342,14 +342,7 @@ impl Object {
                 .unwrap_or_default(),
             recipients_pubkeys: vec![CONFIG
                 .proxy
-                .private_key
-                .as_ref()
-                .map(|x| x.as_bytes().try_into().ok())
-                .flatten()
-                .ok_or_else(|| {
-                    error!("No private key found");
-                    anyhow!("No private key found")
-                })?],
+                .get_private_key()?],
             ..Default::default()
         })
     }

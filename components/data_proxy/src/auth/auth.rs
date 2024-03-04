@@ -426,6 +426,7 @@ impl AuthHandler {
                 )?;
                 rule_builder = rule_builder
                     .attributes(&attributes)
+                    .user_id(&user.user_id.to_string())
                     .permissions(&user.permissions);
                 Some(user).into()
             } else {
@@ -441,7 +442,10 @@ impl AuthHandler {
             .evaluate_object(
                 rule_builder
                     .build()
-                    .map_err(|_| s3_error!(MalformedACLError, "Rule has wrong context"))?,
+                    .map_err(|e| {
+                        error!(error = ?e, msg = e.to_string());
+                        s3_error!(MalformedACLError, "Rule has wrong context")
+                    })?,
             )
             .map_err(|_| s3_error!(AccessDenied, "Forbidden by rule"))?;
 
@@ -716,7 +720,6 @@ impl AuthHandler {
         let mut resource_states: ResourceStates = ResourceStates::default();
         let len = prefixes.len();
         for (idx, (prefix, name)) in prefixes.iter().enumerate() {
-            dbg!(prefix, name, idx, len);
             let Some(obj) = self.cache.get_full_resource_by_path(prefix).await else {
                 resource_states
                     .set_missing(idx, len, name.to_string())
@@ -741,8 +744,6 @@ impl AuthHandler {
                 }
             }
         }
-        dbg!(resource_states.clone());
-        dbg!(allow_create);
         resource_states.validate(allow_create).map_err(|e| {
             error!(error = ?e, msg = e.to_string());
             s3_error!(InternalError, "Internal Error")

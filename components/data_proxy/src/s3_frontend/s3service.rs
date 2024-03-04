@@ -498,11 +498,9 @@ impl S3 for ArunaS3Service {
             let key = CONFIG
                 .proxy
                 .clone()
-                .private_key
-                .map(|k| k.clone().as_bytes().try_into().ok())
-                .flatten()
-                .ok_or_else(|| {
-                    error!(error = "Unable to get private key");
+                .get_private_key()
+                .map_err(|e| {
+                    error!(?e, error = "Unable to get private key");
                     s3_error!(InternalError, "Unable to get private key")
                 })?;
             parser = parser.add_recipient(&key);
@@ -1109,7 +1107,7 @@ impl S3 for ArunaS3Service {
 
         let mut location = self
             .backend
-            .initialize_location(&new_object, None, location_state, true)
+            .initialize_location(&new_object, None, location_state, false)
             .await
             .map_err(|_| {
                 error!(error = "Unable to create object_location");
@@ -1140,7 +1138,7 @@ impl S3 for ArunaS3Service {
                         location.clone(),
                         None,
                         None,
-                        false,
+                        true,
                         None,
                         false,
                     )

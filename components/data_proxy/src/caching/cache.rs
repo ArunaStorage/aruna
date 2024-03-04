@@ -389,12 +389,6 @@ impl Cache {
 
     #[tracing::instrument(level = "trace", skip(self, res))]
     pub fn get_resource_by_path(&self, res: &str) -> Option<DieselUlid> {
-        let entries = self
-            .paths
-            .iter()
-            .map(|e| (e.key().clone(), e.value().clone()))
-            .collect::<Vec<_>>();
-        dbg!(entries);
         self.paths.get(res).map(|e| e.value().clone())
     }
 
@@ -580,10 +574,7 @@ impl Cache {
         let proxy_user = User::try_from(user)?;
         let (to_update, to_delete) = if let Some(user) = self.users.get(&user_id) {
             let mut user = user.value().write().await;
-            dbg!(&proxy_user);
-            dbg!(&user);
             let comparison = proxy_user.compare_permissions(&user.0);
-            dbg!(&comparison);
             let new_keys = user
                 .1
                 .iter()
