@@ -599,7 +599,7 @@ impl AuthHandler {
         creds: Option<&Credentials>,
     ) -> Option<(AccessKeyPermissions, HashMap<String, String>)> {
         if let Some(creds) = creds {
-            if let Some(key) = self.cache.get_key_perms(&creds.access_key) {
+            if let Some(key) = self.cache.get_key_perms(&creds.access_key).await {
                 if let Some(user) = self.cache.get_user_attributes(&key.user_id).await {
                     return Some((key, user));
                 }

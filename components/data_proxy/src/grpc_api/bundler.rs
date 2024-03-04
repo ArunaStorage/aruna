@@ -50,7 +50,7 @@ impl BundlerService for BundlerServiceImpl {
 
             // Gather access_key
             let access_key = tid.unwrap_or_else(|| u.to_string());
-            let permissions = self.cache.get_key_perms(&access_key).ok_or_else(|| {
+            let permissions = self.cache.get_key_perms(&access_key).await.ok_or_else(|| {
                 error!("Missing permissions for user");
                 tonic::Status::unauthenticated(format!("Unable to authenticate user"))
             })?;
@@ -135,7 +135,7 @@ impl BundlerService for BundlerServiceImpl {
                 u.to_string()
             };
 
-            let user = self.cache.get_key_perms(&access_key).ok_or_else(|| {
+            let user = self.cache.get_key_perms(&access_key).await.ok_or_else(|| {
                 error!("Missing permissions for user");
                 tonic::Status::unauthenticated("Unable to authenticate user")
             })?;

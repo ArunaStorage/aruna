@@ -34,7 +34,7 @@ pub struct Cache {
     // Map DieselUlid as key and (User, Vec<String>) as value -> Vec<String> is a list of registered access keys -> access_keys
     users: DashMap<DieselUlid, Arc<RwLock<(User, Vec<String>)>>, RandomState>,
     // Permissions Maybe TODO: Arc<RwLock<AccessKeyPermissions>>?
-    access_keys: DashMap<String, AccessKeyPermissions, RandomState>,
+    access_keys: DashMap<String, Arc<RwLock<AccessKeyPermissions>>, RandomState>,
     // Map with ObjectId as key and Object as value
     resources: DashMap<
         DieselUlid,
@@ -180,7 +180,7 @@ impl Cache {
             .access_keys
             .get(access_key)
             .ok_or_else(|| anyhow!("User not found"))?
-            .value()
+            .value().read().await
             .secret
             .clone();
         if secret.is_empty() {
@@ -203,7 +203,9 @@ impl Cache {
             map
         });
         for key in access_keys.into_iter() {
-            self.access_keys.insert(key.access_key.to_string(), key);
+            let access_key = key.access_key.clone();
+            let key = Arc::new(RwLock::new(key));
+            self.access_keys.insert(access_key, key);
         }
         for user in User::get_all(&client).await? {
             let keys = user_keys.get(&user.user_id).cloned().unwrap_or_default();
@@ -318,8 +320,10 @@ impl Cache {
                 .upsert(pers.get_client().await?.client())
                 .await?;
         }
+
+        let new_key_access = Arc::new(RwLock::new(new_access_key));
         self.access_keys
-            .insert(access_key.to_string(), new_access_key);
+            .insert(access_key.to_string(), new_key_access);
         Ok((access_key.to_string(), new_secret))
     }
 
@@ -598,14 +602,13 @@ impl Cache {
             }
         }
         for key in to_update {
-            let mut access_key = self
+            let access_key_ref = self
                 .access_keys
                 .get(&key.0)
                 .ok_or_else(|| anyhow!("Access key not found"))?
-                .value()
-                .clone();
+                .value().clone();
+            let mut access_key = access_key_ref.write().await;
             access_key.permissions = key.1;
-            self.access_keys.insert(key.0, access_key.clone());
             if let Some(persistence) = self.persistence.read().await.as_ref() {
                 access_key
                     .upsert(persistence.get_client().await?.client())
@@ -751,10 +754,11 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_key_perms(&self, access_key: &str) -> Option<AccessKeyPermissions> {
-        let result = self.access_keys.get(access_key).map(|e| e.value().clone());
+    pub async fn get_key_perms(&self, access_key: &str) -> Option<AccessKeyPermissions> {
+        let result = self.access_keys.get(access_key)?;
+        let result = result.value().read().await.clone();
         trace!(?result);
-        result
+        Some(result)
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
