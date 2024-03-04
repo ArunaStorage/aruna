@@ -52,7 +52,7 @@ pub struct UserAttributes {
     pub permissions: DashMap<DieselUlid, ObjectMapping<DbPermissionLevel>, RandomState>,
     pub external_ids: Vec<OIDCMapping>,
     pub pubkey: String,
-    pub data_proxy_attribute: DashMap<DieselUlid, DataProxyAttribute>,
+    pub data_proxy_attribute: Vec<DataProxyAttribute>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
@@ -416,6 +416,51 @@ impl User {
         let rows = client.query(&prepared, &[&endpoint_id.to_string()]).await?;
 
         Ok(rows.iter().map(User::from_row).collect::<Vec<_>>())
+    }
+
+    pub async fn add_pubkey(pubkey: &String, user_id: &DieselUlid, client: &Client) -> Result<User> {
+        let query = "UPDATE users
+            SET attributes = jsonb_set(attributes, '{pubkey}', $1)
+            WHERE id = $2
+            RETURNING *;";
+
+        let prepared = client.prepare(query).await?;
+        let row = client.query_one(&prepared, &[pubkey, user_id]).await?;
+
+        Ok(User::from_row(&row))
+    }
+    //ToDo: Docs
+    pub async fn add_data_proxy_attribute(
+        client: &Client,
+        attribute: DataProxyAttribute,
+        user_id: &DieselUlid,
+    ) -> Result<User> {
+        let attribute = Json(vec![attribute]);
+        let query = "UPDATE users
+            SET attributes = jsonb_set(attributes, '{data_proxy_attribute}', (attributes->'data_proxy_attribute') || $1::jsonb, true)
+            WHERE id = $2
+            RETURNING *;";
+
+        let prepared = client.prepare(query).await?;
+        let row = client.query_one(&prepared, &[&attribute, &user_id]).await?;
+
+        Ok(User::from_row(&row))
+    }
+    pub async fn rm_data_proxy_attribute(
+        client: &Client,
+        attribute: DataProxyAttribute,
+        user_id: &DieselUlid,
+    ) -> Result<User> {
+        let attribute = Json(vec![attribute]);
+        let query = "UPDATE users
+            SET attributes = jsonb_set(attributes, '{data_proxy_attribute}', (attributes->'data_proxy_attribute') - $1::jsonb)
+            WHERE id = $2
+            RETURNING *;";
+
+        let prepared = client.prepare(query).await?;
+        let row = client.query_one(&prepared, &[&attribute, &user_id]).await?;
+
+        Ok(User::from_row(&row))
     }
 }
 

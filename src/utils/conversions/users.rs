@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use crate::database::{
     dsls::user_dsl::{
         APIToken, CustomAttributes as DBCustomAttributes,
@@ -71,21 +72,25 @@ pub fn convert_token_to_proto(token_id: &DieselUlid, db_token: APIToken) -> Toke
 
 impl From<DBUserAttributes> for UserAttributes {
     fn from(attr: DBUserAttributes) -> Self {
-        let tokens: Vec<Token> = attr.tokens.into_iter().map(|t| Token {
-            id: t.0.to_string(),
-            name: t.1.name,
-            created_at: Some(t.1.created_at.into()),
-            expires_at: Some(t.1.expires_at.into()),
-            permission: Some(Permission {
-                permission_level: t.1.user_rights.into(),
-                resource_id: t.1.object_id.map(|resource| match resource {
-                    ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
-                    ObjectMapping::COLLECTION(id) => ResourceId::CollectionId(id.to_string()),
-                    ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
-                    ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
+        let tokens: Vec<Token> = attr
+            .tokens
+            .into_iter()
+            .map(|t| Token {
+                id: t.0.to_string(),
+                name: t.1.name,
+                created_at: Some(t.1.created_at.into()),
+                expires_at: Some(t.1.expires_at.into()),
+                permission: Some(Permission {
+                    permission_level: t.1.user_rights.into(),
+                    resource_id: t.1.object_id.map(|resource| match resource {
+                        ObjectMapping::PROJECT(id) => ResourceId::ProjectId(id.to_string()),
+                        ObjectMapping::COLLECTION(id) => ResourceId::CollectionId(id.to_string()),
+                        ObjectMapping::DATASET(id) => ResourceId::DatasetId(id.to_string()),
+                        ObjectMapping::OBJECT(id) => ResourceId::ObjectId(id.to_string()),
+                    }),
                 }),
-            }),
-        }).collect();
+            })
+            .collect();
 
         let personal_permissions: Vec<Permission> = attr
             .permissions
@@ -119,7 +124,11 @@ impl From<DBUserAttributes> for UserAttributes {
             data_proxy_attributes: attr
                 .data_proxy_attribute
                 .into_iter()
-                .map(|(_, a)| a.into())
+                .flat_map(|(_, a)| {
+                    a.into_iter()
+                        .map(|a| a.into())
+                        .collect::<Vec<DataProxyAttribute>>()
+                })
                 .collect(),
         }
     }
@@ -209,5 +218,18 @@ impl TryFrom<DBUser> for ServiceAccount {
                 "User is not a service_account",
             ))
         }
+    }
+}
+
+impl TryFrom<DataProxyAttribute> for DBDataProxyAttribute {
+    type Error = anyhow::Error;
+    fn try_from(value: DataProxyAttribute) -> anyhow::Result<Self> {
+        Ok(DBDataProxyAttribute {
+            attribute_name: value.attribute_name,
+            attribute_value: value.attribute_value,
+            signature: value.signature,
+            proxy_id: DieselUlid::from_str(&value.proxy_id)?,
+        })
+
     }
 }

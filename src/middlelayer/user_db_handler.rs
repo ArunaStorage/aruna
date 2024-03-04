@@ -24,8 +24,8 @@ use aruna_rust_api::api::dataproxy::services::v2::{
 use aruna_rust_api::api::notification::services::v2::EventVariant;
 use aruna_rust_api::api::storage::services::v2::get_endpoint_request::Endpoint;
 use aruna_rust_api::api::storage::services::v2::{
-    AddTrustedEndpointsUserRequest, GetEndpointRequest, PersonalNotification,
-    RemoveTrustedEndpointsUserRequest,
+    AddDataProxyAttributeUserRequest, AddTrustedEndpointsUserRequest, GetEndpointRequest,
+    PersonalNotification, RemoveDataProxyAttributeUserRequest, RemoveTrustedEndpointsUserRequest,
 };
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
@@ -498,6 +498,17 @@ impl DatabaseHandler {
         let endpoint = DieselUlid::from_str(&request.endpoint_id)?;
         let user = User::add_trusted_endpoint(&client, &user_id, &endpoint).await?;
         self.cache.update_user(&user_id, user.clone());
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
         Ok(user)
     }
 
@@ -510,6 +521,17 @@ impl DatabaseHandler {
         let endpoint = DieselUlid::from_str(&request.endpoint_id)?;
         let user = User::remove_trusted_endpoint(&client, &user_id, &endpoint).await?;
         self.cache.update_user(&user_id, user.clone());
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
         Ok(user)
     }
 
@@ -595,6 +617,17 @@ impl DatabaseHandler {
             .create_or_update_credentials(credentials_request)
             .await?
             .into_inner();
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
         Ok((
             response.access_key,
             response.secret_key,
@@ -748,6 +781,85 @@ impl DatabaseHandler {
         );
 
         dp_conn.revoke_credentials(credentials_request).await?;
+        Ok(())
+    }
+
+    pub async fn add_pubkey_to_user(&self, pubkey: String, user_id: DieselUlid) -> Result<User> {
+        let client = self.database.get_client().await?;
+        let user = User::add_pubkey(&pubkey, &user_id, &client).await?;
+        self.cache.update_user(&user_id, user.clone());
+
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
+        Ok(user)
+    }
+
+    pub async fn add_data_proxy_attribute(
+        &self,
+        request: AddDataProxyAttributeUserRequest,
+        user_id: DieselUlid,
+    ) -> Result<()> {
+        let attribute = request
+            .attribute
+            .ok_or_else(|| anyhow!("No attribute provided"))?
+            .try_into()?;
+        let client = self.database.get_client().await?;
+        let user = User::add_data_proxy_attribute(&client, attribute, &user_id).await?;
+        self.cache.update_user(&user_id, user.clone());
+
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
+        Ok(())
+    }
+    pub async fn rm_data_proxy_attribute(
+        &self,
+        request: RemoveDataProxyAttributeUserRequest,
+        user_id: DieselUlid,
+    ) -> Result<()> {
+        let client = self.database.get_client().await?;
+        let attribute = User::get(user_id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("User not found"))?
+            .attributes
+            .0
+            .data_proxy_attribute
+            .into_iter()
+            .find(|a| {
+                a.proxy_id.to_string() == request.dataproxy_id
+                    && a.attribute_name == request.attribute_name
+            }).ok_or_else(|| anyhow!("Attribute not found"))?;
+        let user = User::rm_data_proxy_attribute(&client, attribute, &user_id).await?;
+        self.cache.update_user(&user_id, user.clone());
+
+        // Try to emit user updated notification(s)
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
         Ok(())
     }
 }

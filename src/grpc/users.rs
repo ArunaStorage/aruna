@@ -738,15 +738,40 @@ impl UserService for UserServiceImpl {
         return_with_log!(response);
     }
 
-    // !!!!! TODO!!!!!
     async fn add_pubkey_user(
         &self,
-        _request: Request<AddPubkeyUserRequest>,
+        request: Request<AddPubkeyUserRequest>,
     ) -> Result<Response<AddPubkeyUserResponse>, Status> {
-        //TODO
-        Err(Status::unimplemented(
-            "Adding pubkeys is currently unimplemented",
-        ))
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        // Extract token from request and check permissions
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Token authentication error"
+        );
+
+        let ctx = Context::self_ctx();
+        let user_id = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        // Add trusted endpoints to user
+        let user = tonic_internal!(
+            self.database_handler
+                .add_pubkey_to_user(inner_request.public_key, user_id)
+                .await,
+            "Failed to add endpoint to user"
+        );
+
+        // Return response
+        let response = AddPubkeyUserResponse {
+            user: Some(user.into()),
+        };
+        return_with_log!(response);
     }
     async fn add_trusted_endpoints_user(
         &self,
@@ -820,21 +845,67 @@ impl UserService for UserServiceImpl {
     }
     async fn add_data_proxy_attribute_user(
         &self,
-        _request: Request<AddDataProxyAttributeUserRequest>,
+        request: Request<AddDataProxyAttributeUserRequest>,
     ) -> Result<Response<AddDataProxyAttributeUserResponse>, Status> {
-        //TODO
-        Err(Status::unimplemented(
-            "Adding data proxy attributes is currently unimplemented",
-        ))
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        // Extract token from request and check permissions
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Token authentication error"
+        );
+
+        let ctx = Context::self_ctx();
+        let user_id = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        // Remove trusted endpoints from user
+        tonic_internal!(
+            self.database_handler
+                .add_data_proxy_attribute(inner_request, user_id)
+                .await,
+            "Failed to add endpoint to user"
+        );
+
+        // Return response
+        return_with_log!(AddDataProxyAttributeUserResponse{});
     }
     async fn remove_data_proxy_attribute_user(
         &self,
-        _request: Request<RemoveDataProxyAttributeUserRequest>,
+        request: Request<RemoveDataProxyAttributeUserRequest>,
     ) -> Result<Response<RemoveDataProxyAttributeUserResponse>, Status> {
-        //TODO
-        Err(Status::unimplemented(
-            "Removing data proxy attributes is currently unimplemented",
-        ))
+        log_received!(&request);
+
+        // Consume gRPC request into its parts
+        let (request_metadata, _, inner_request) = request.into_parts();
+
+        // Extract token from request and check permissions
+        let token = tonic_auth!(
+            get_token_from_md(&request_metadata),
+            "Token authentication error"
+        );
+
+        let ctx = Context::self_ctx();
+        let user_id = tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        // Remove trusted endpoints from user
+        tonic_internal!(
+            self.database_handler
+                .rm_data_proxy_attribute(inner_request, user_id)
+                .await,
+            "Failed to add endpoint to user"
+        );
+
+        // Return response
+        return_with_log!(RemoveDataProxyAttributeUserResponse{});
     }
     async fn create_s3_credentials_user_token(
         &self,
