@@ -148,7 +148,7 @@ impl RulesService for RuleServiceImpl {
         if rule.rule.owner_id != user_id {
             return Err(tonic::Status::unauthenticated("Unauthorized"));
         }
-        let ref rule = tonic_invalid!(
+        let rule = &tonic_invalid!(
             self.database_handler.update_rule(request, rule).await,
             "Invalid request"
         );

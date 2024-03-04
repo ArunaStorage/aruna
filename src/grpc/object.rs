@@ -53,7 +53,7 @@ impl ObjectService for ObjectServiceImpl {
         let parent_ctx = tonic_invalid!(
             request
                 .get_parent()
-                .ok_or(tonic::Status::invalid_argument("Parent missing."))?
+                .ok_or(Status::invalid_argument("Parent missing."))?
                 .get_context(),
             "invalid parent"
         );

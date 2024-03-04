@@ -62,7 +62,7 @@ impl DatabaseHandler {
     ) -> Result<()> {
         // Policy evaluation:
         for id in affected {
-            if let Some(bindings) = self.cache.get_rule_bindings(id).map(|b| b.clone()) {
+            if let Some(bindings) = self.cache.get_rule_bindings(id) {
                 for binding in bindings.clone().iter() {
                     self.evaluate_rule(&binding.rule_id, id, transaction_client)
                         .await?
@@ -144,7 +144,7 @@ impl DatabaseHandler {
     ) -> Result<()> {
         if let Some(rule) = self.cache.get_rule(rule_id) {
             let current_state =
-                Object::get_object_with_relations(object_id, &transaction_client).await?;
+                Object::get_object_with_relations(object_id, transaction_client).await?;
 
             let mut ctx = cel_interpreter::Context::default();
             ctx.add_variable("object", current_state.clone())

@@ -19,6 +19,7 @@ use std::fmt::Display;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::RwLock;
+use std::error::Error;
 
 use crate::caching::cache::Cache;
 use crate::caching::structs::PubKeyEnum;
@@ -40,7 +41,7 @@ impl Display for OIDCError {
         }
     }
 }
-impl std::error::Error for OIDCError {}
+impl Error for OIDCError {}
 /// This contains claims for ArunaTokens
 /// containing 3 mandatory and 2 optional fields.
 ///

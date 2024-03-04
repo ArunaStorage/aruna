@@ -260,7 +260,7 @@ impl PermissionHandler {
         // Check permissions for standard ArunaServer user token
         if self
             .cache
-            .check_permissions_with_contexts(&ctxs, &permissions, personal, &main_id)
+            .check_permissions_with_contexts(&ctxs, permissions, personal, &main_id)
         {
             //Ok((main_id, token, false, None))
             Ok(PermissionCheck {

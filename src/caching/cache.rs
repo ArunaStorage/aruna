@@ -178,7 +178,7 @@ impl Cache {
         let rules = Rule::all(&client).await?;
         for r in rules {
             self.object_rules.insert(
-                r.id.clone(),
+                r.id,
                 Arc::new(CachedRule {
                     rule: r.clone(),
                     compiled: cel_parser::parse(&r.rule_expressions)

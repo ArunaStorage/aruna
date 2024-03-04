@@ -245,7 +245,7 @@ impl SearchService for SearchServiceImpl {
                 .resource_ids
                 .into_iter()
                 .map(|id| DieselUlid::from_str(&id)
-                    .map_err(|_| tonic::Status::invalid_argument("Invalid id")))
+                    .map_err(|_| Status::invalid_argument("Invalid id")))
                 .collect::<Result<Vec<DieselUlid>, Status>>()
                 .clone(),
             "Invalid resource id format"

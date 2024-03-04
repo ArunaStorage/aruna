@@ -107,7 +107,7 @@ impl DatabaseHandler {
                 // Removing kvs from callback
                 if !rm.0.is_empty() {
                     for kv in rm.0 {
-                        if !(kv.variant == KeyValueVariant::STATIC_LABEL) {
+                        if kv.variant != KeyValueVariant::STATIC_LABEL {
                             object.remove_key_value(transaction_client, kv).await?;
                         } else {
                             return Err(anyhow!("Cannot remove static labels."));

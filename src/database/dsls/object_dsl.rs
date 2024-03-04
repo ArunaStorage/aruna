@@ -1197,7 +1197,7 @@ pub fn extract_paths_from_graph(edge_list: Vec<InternalRelation>) -> Result<Vec<
                             queue.push_back((mut_hierarchy, *dataset_id))
                         }
                         ObjectMapping::OBJECT(object_id) => {
-                            if children_map.get(object_id).is_some() {
+                            if children_map.contains_key(object_id) {
                                 queue.push_back((mut_hierarchy.clone(), *object_id))
                             }
 
