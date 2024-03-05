@@ -432,6 +432,7 @@ async fn test_keyvals() {
         id: obj_id,
         revision_number: create_object.revision_number,
         name: create_object.name,
+        title: create_object.title,
         description: create_object.description,
         created_at: create_object.created_at,
         created_by: create_object.created_by,
@@ -447,6 +448,7 @@ async fn test_keyvals() {
         endpoints: create_object.endpoints,
         data_license: ALL_RIGHTS_RESERVED.to_string(),
         metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+        authors: create_object.authors,
     };
     assert_eq!(object, comp_obj);
     object.remove_key_value(&client, kv).await.unwrap();
@@ -455,6 +457,7 @@ async fn test_keyvals() {
         id: obj_id,
         revision_number: test_object.revision_number,
         name: test_object.name,
+        title: test_object.title,
         description: test_object.description,
         created_at: test_object.created_at,
         created_by: test_object.created_by,
@@ -470,6 +473,7 @@ async fn test_keyvals() {
         endpoints: test_object.endpoints,
         data_license: ALL_RIGHTS_RESERVED.to_string(),
         metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+        authors: test_object.authors,
     };
     assert_eq!(object, comp_obj);
 }
@@ -511,6 +515,7 @@ async fn test_external_relations() {
         id: obj_id,
         revision_number: create_object.revision_number,
         name: create_object.name,
+        title: create_object.title,
         description: create_object.description,
         created_at: create_object.created_at,
         created_by: create_object.created_by,
@@ -528,6 +533,7 @@ async fn test_external_relations() {
         endpoints: create_object.endpoints,
         data_license: ALL_RIGHTS_RESERVED.to_string(),
         metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+        authors: create_object.authors,
     };
     let obj = Object::get(obj_id, client).await.unwrap().unwrap();
     assert_eq!(compare_obj, obj);
@@ -605,9 +611,14 @@ async fn test_updates() {
         .await
         .unwrap();
     let updated_project = Object::get(proj_id, client).await.unwrap().unwrap();
-    transaction.commit().await.unwrap();
     create_project.data_class = new_dataclass;
     assert_eq!(updated_project, create_project);
+    
+    let new_title = "NewTitle".to_string();
+    Object::update_title(&obj_id, new_title.clone(), client).await.unwrap();
+    let new = Object::get(obj_id, client).await.unwrap().unwrap();
+    transaction.commit().await.unwrap();
+    assert_eq!(new.title, new_title)
 }
 #[tokio::test]
 async fn test_delete() {
@@ -711,7 +722,7 @@ async fn archive_test() {
     // Test archive
     let archived_objects = Object::archive(&archive, client).await.unwrap();
     for o in archived_objects {
-        assert!(!o.object.dynamic);
+        assert!(!o.dynamic);
     }
 }
 

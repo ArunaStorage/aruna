@@ -249,7 +249,7 @@ impl ProjectService for ProjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&project.object.id)
-                .ok_or_else(|| tonic::Status::not_found("Project not found"))?,
+                .unwrap_or_default()
         }
         .into();
         let response = UpdateProjectNameResponse {
@@ -299,7 +299,7 @@ impl ProjectService for ProjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&project.object.id)
-                .ok_or_else(|| tonic::Status::not_found("Project not found"))?,
+                .unwrap_or_default()
         }
         .into();
 
@@ -350,7 +350,7 @@ impl ProjectService for ProjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&project.object.id)
-                .ok_or_else(|| tonic::Status::not_found("Project not found"))?,
+                .unwrap_or_default()
         }
         .into();
 
@@ -402,7 +402,7 @@ impl ProjectService for ProjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&project.object.id)
-                .ok_or_else(|| tonic::Status::not_found("Project not found"))?,
+                .unwrap_or_default()
         }
         .into();
         let response = UpdateProjectDataClassResponse {
@@ -499,7 +499,7 @@ impl ProjectService for ProjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&project.object.id)
-                .ok_or_else(|| tonic::Status::not_found("Project not found"))?,
+                .unwrap_or_default()
         }
         .into();
         let response = UpdateProjectLicensesResponse {

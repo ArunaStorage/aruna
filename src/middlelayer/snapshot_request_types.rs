@@ -71,12 +71,13 @@ impl SnapshotResponse {
     ) -> Result<Vec<ObjectWithRelations>> {
         let mut client = handler.database.get_client().await?;
         let transaction = client.transaction().await?;
-        let client = transaction.client();
-        let objects = Object::archive(&project.resource_ids, client).await?;
+        let transaction_client = transaction.client();
+        Object::archive(&project.resource_ids, transaction_client).await?;
         handler
-            .evaluate_rules(&project.resource_ids, client)
+            .evaluate_rules(&project.resource_ids, transaction_client)
             .await?;
         transaction.commit().await?;
+        let objects = Object::get_objects_with_relations(&project.resource_ids,&client).await?;
         Ok(objects)
     }
 

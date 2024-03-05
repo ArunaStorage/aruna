@@ -24,6 +24,7 @@ async fn test_db_calls() {
         prefix: "abc".to_string(),
         hook_ids: Json(vec![DieselUlid::generate()]),
         endpoint_ids: Json(vec![DieselUlid::generate()]),
+        rules: Json(vec![]),
     };
     ws_template.create(client).await.unwrap();
 

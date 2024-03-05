@@ -100,7 +100,7 @@ impl ObjectService for ObjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&object_plus.object.id)
-                .ok_or_else(|| Status::not_found("Object not found"))?,
+                .unwrap_or_default()
         }
         .into();
 
@@ -263,7 +263,7 @@ impl ObjectService for ObjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&object.object.id)
-                .ok_or_else(|| Status::not_found("Object not found"))?,
+                .unwrap_or_default()
         }
         .into();
         let response = FinishObjectStagingResponse {
@@ -323,7 +323,7 @@ impl ObjectService for ObjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&object.object.id)
-                .ok_or_else(|| Status::not_found("Object not found"))?,
+                .unwrap_or_default()
         }
         .into();
         let response = UpdateObjectResponse {
@@ -373,7 +373,7 @@ impl ObjectService for ObjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&new.object.id)
-                .ok_or_else(|| Status::not_found("Object not found"))?,
+                .unwrap_or_default()
         }
         .into();
         let response = CloneObjectResponse {

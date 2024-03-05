@@ -729,7 +729,7 @@ impl Object {
     pub async fn archive(
         ids: &Vec<DieselUlid>,
         client: &Client,
-    ) -> Result<Vec<ObjectWithRelations>> {
+    ) -> Result<Vec<Object>> {
         let query_one = " WITH o AS 
             (UPDATE objects 
             SET dynamic=false 
@@ -744,7 +744,7 @@ impl Object {
             FROM o
             LEFT OUTER JOIN internal_relations ir1 ON o.id IN (ir1.target_pid, ir1.origin_pid)
             WHERE o.id IN ";
-        let query_five = " GROUP BY o.id, o.revision_number, o.name, o.title, o.description, o.created_at, 
+        let query_five = " GROUP BY o.id, o.revision_number, o.name, o.title, o.description, o.created_at,
         o.created_by, o.authors, o.content_len, o.count, o.key_values, o.object_status, o.data_class, o.object_type, 
         o.external_relations, o.hashes, o.dynamic, o.endpoints, o.metadata_license, o.data_license;";
         let mut inserts = Vec::<&(dyn ToSql + Sync)>::new();
@@ -754,11 +754,11 @@ impl Object {
         let query_insert = create_multi_query(&inserts);
         let query = format!("{query_one}{query_insert}{query_three}{query_insert}{query_five}");
         let prepared = client.prepare(&query).await?;
-        let result: Vec<ObjectWithRelations> = client
+        let result: Vec<Object> = client
             .query(&prepared, &inserts)
             .await?
             .iter()
-            .map(ObjectWithRelations::from_row)
+            .map(Object::from_row)
             .collect();
 
         Ok(result)
@@ -1213,102 +1213,3 @@ pub fn extract_paths_from_graph(edge_list: Vec<InternalRelation>) -> Result<Vec<
 
     Ok(results)
 }
-
-// pub fn extract_paths_from_graph(
-//     root_id: &DieselUlid,
-//     edge_list: Vec<InternalRelation>,
-// ) -> Result<Vec<Hierarchy>> {
-//     // Helper struct for minimalistic graph creation
-//     #[derive(Debug)]
-//     struct Node {
-//         pub object_id: DieselUlid,
-//         pub object_type: ObjectType,
-//         pub parents: Vec<DieselUlid>,
-//     }
-//     impl Node {
-//         fn add_to_parent(&mut self, id: DieselUlid) {
-//             self.parents.push(id)
-//         }
-//     }
-
-//     // Create/update graph nodes from list of edges
-//     let mut nodes: HashMap<DieselUlid, Node> = HashMap::new();
-//     for edge in &edge_list {
-//         // Create origin if not exists
-//         if nodes.get(&edge.origin_pid).is_none() {
-//             nodes.insert(
-//                 edge.origin_pid,
-//                 Node {
-//                     object_id: edge.origin_pid,
-//                     object_type: edge.origin_type,
-//                     parents: vec![],
-//                 },
-//             );
-//         }
-
-//         // Create target node if not exists; update parents else
-//         if let Some(node) = nodes.get_mut(&edge.target_pid) {
-//             node.add_to_parent(edge.origin_pid)
-//         } else {
-//             nodes.insert(
-//                 edge.target_pid,
-//                 Node {
-//                     object_id: edge.target_pid,
-//                     object_type: edge.target_type,
-//                     parents: vec![edge.origin_pid],
-//                 },
-//             );
-//         }
-//     }
-
-//     // Fetch root node for traversal start point
-//     let root_node = nodes
-//         .get(root_id)
-//         .ok_or_else(|| anyhow::anyhow!("Root doesn't exist"))?;
-
-//     // Traverse nodes and collect paths
-//     let mut complete_paths = Vec::new();
-//     let mut current_path = Vec::new();
-//     let mut split_indexes = Vec::new();
-//     let mut queue = VecDeque::new();
-//     queue.push_front(root_node);
-
-//     while let Some(current_node) = queue.pop_front() {
-//         // Add current object to back of hierarchy
-//         current_path.push(match current_node.object_type {
-//             ObjectType::PROJECT => ObjectMapping::PROJECT(current_node.object_id),
-//             ObjectType::COLLECTION => ObjectMapping::COLLECTION(current_node.object_id),
-//             ObjectType::DATASET => ObjectMapping::DATASET(current_node.object_id),
-//             ObjectType::OBJECT => ObjectMapping::OBJECT(current_node.object_id),
-//         });
-
-//         // Check if current object is a project
-//         if current_node.object_type == ObjectType::PROJECT {
-//             // Save finished hierarchy
-//             complete_paths.push(current_path.clone());
-
-//             // Truncate current hierarchy back to last path split
-//             if let Some(index) = split_indexes.pop() {
-//                 current_path.truncate(index) //
-//             }
-//         } else {
-//             // Add parents to the front of the queue for DFS
-//             for parent_id in &current_node.parents {
-//                 let parent = nodes
-//                     .get(parent_id)
-//                     .ok_or_else(|| anyhow::anyhow!("Parent doesn't exist"))?;
-
-//                 queue.push_front(parent);
-//             }
-
-//             // Save index n times for hierarchy cleanup if more than 1 parent
-//             if current_node.parents.len() > 1 {
-//                 for _ in 0..(current_node.parents.len() - 1) {
-//                     split_indexes.push(current_path.len())
-//                 }
-//             }
-//         }
-//     }
-
-//     Ok(convert_paths_to_hierarchies(complete_paths))
-// }

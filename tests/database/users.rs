@@ -32,6 +32,8 @@ async fn create_user_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        first_name: "".to_string(),
+        last_name: "".to_string(),
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -41,6 +43,8 @@ async fn create_user_test() {
             custom_attributes: vec![],
             permissions: DashMap::default(),
             external_ids: vec![],
+            pubkey: "".to_string(),
+            data_proxy_attribute: vec![],
         }),
         active: true,
     };
@@ -68,6 +72,8 @@ async fn update_user_name_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        first_name: "".to_string(),
+        last_name: "".to_string(),
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -77,6 +83,8 @@ async fn update_user_name_test() {
             permissions: DashMap::default(),
             custom_attributes: vec![],
             external_ids: vec![],
+            pubkey: "".to_string(),
+            data_proxy_attribute: vec![],
         }),
         active: true,
     };
@@ -109,6 +117,8 @@ async fn update_user_email_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        first_name: "".to_string(),
+        last_name: "".to_string(),
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -118,6 +128,8 @@ async fn update_user_email_test() {
             permissions: DashMap::default(),
             custom_attributes: vec![],
             external_ids: vec![],
+            pubkey: "".to_string(),
+            data_proxy_attribute: vec![],
         }),
         active: true,
     };
@@ -150,6 +162,8 @@ async fn update_user_admin_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        first_name: "".to_string(),
+        last_name: "".to_string(),
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -159,6 +173,8 @@ async fn update_user_admin_test() {
             permissions: DashMap::default(),
             custom_attributes: vec![],
             external_ids: vec![],
+            pubkey: "".to_string(),
+            data_proxy_attribute: vec![],
         }),
         active: true,
     };
@@ -191,6 +207,8 @@ async fn update_user_service_account_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        first_name: "".to_string(),
+        last_name: "".to_string(),
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -200,6 +218,8 @@ async fn update_user_service_account_test() {
             permissions: DashMap::default(),
             custom_attributes: vec![],
             external_ids: vec![],
+            pubkey: "".to_string(),
+            data_proxy_attribute: vec![],
         }),
         active: true,
     };
@@ -232,6 +252,8 @@ async fn delete_user_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        first_name: "".to_string(),
+        last_name: "".to_string(),
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -241,6 +263,8 @@ async fn delete_user_test() {
             permissions: DashMap::default(),
             custom_attributes: vec![],
             external_ids: vec![],
+            pubkey: "".to_string(),
+            data_proxy_attribute: vec![],
         }),
         active: true,
     };
@@ -265,6 +289,8 @@ async fn add_permission_user_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        first_name: "".to_string(),
+        last_name: "".to_string(),
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -274,6 +300,8 @@ async fn add_permission_user_test() {
             permissions: DashMap::default(),
             custom_attributes: vec![],
             external_ids: vec![],
+            pubkey: "".to_string(),
+            data_proxy_attribute: vec![],
         }),
         active: true,
     };
@@ -331,6 +359,8 @@ async fn remove_user_permission_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        first_name: "".to_string(),
+        last_name: "".to_string(),
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -344,6 +374,8 @@ async fn remove_user_permission_test() {
             ]),
             custom_attributes: vec![],
             external_ids: vec![],
+            pubkey: "".to_string(),
+            data_proxy_attribute: vec![],
         }),
         active: true,
     };
@@ -422,6 +454,8 @@ async fn update_user_permission_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        first_name: "".to_string(),
+        last_name: "".to_string(),
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -431,6 +465,8 @@ async fn update_user_permission_test() {
             permissions: DashMap::default(),
             custom_attributes: vec![],
             external_ids: vec![],
+            pubkey: "".to_string(),
+            data_proxy_attribute: vec![],
         }),
         active: true,
     };
@@ -483,6 +519,8 @@ async fn user_token_test() {
     let mut user = User {
         id: DieselUlid::generate(),
         display_name: "aha".to_string(),
+        first_name: "".to_string(),
+        last_name: "".to_string(),
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -490,6 +528,7 @@ async fn user_token_test() {
             permissions: DashMap::default(),
             trusted_endpoints: DashMap::default(),
             external_ids: vec![],
+            pubkey: "".to_string(),
             tokens: [
                 (
                     perm1,
@@ -528,6 +567,7 @@ async fn user_token_test() {
             .into_iter()
             .collect(),
             custom_attributes: vec![],
+            data_proxy_attribute: vec![],
         }),
         active: true,
     };
@@ -588,6 +628,8 @@ async fn user_status_test() {
     let mut user = User {
         id,
         display_name: "aha".to_string(),
+        first_name: "".to_string(),
+        last_name: "".to_string(),
         email: "aja".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -597,6 +639,8 @@ async fn user_status_test() {
             tokens: DashMap::default(),
             custom_attributes: Vec::new(),
             external_ids: vec![],
+            pubkey: "".to_string(),
+            data_proxy_attribute: vec![],
         }),
         active: false,
     };

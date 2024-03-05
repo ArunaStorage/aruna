@@ -36,6 +36,7 @@ use tonic::{
     metadata::{AsciiMetadataKey, AsciiMetadataValue},
     Request,
 };
+use aruna_server::database::dsls::object_dsl::Author;
 
 /* ----- Begin Testing Constants ---------- */
 #[allow(dead_code)]
@@ -59,6 +60,8 @@ pub fn new_user(object_ids: Vec<ObjectMapping<DieselUlid>>) -> User {
     User {
         id: DieselUlid::generate(),
         display_name: "test1".to_string(),
+        first_name: "".to_string(),
+        last_name: "".to_string(),
         email: "test2@test3".to_string(),
         attributes: Json(UserAttributes {
             global_admin: false,
@@ -79,6 +82,8 @@ pub fn new_user(object_ids: Vec<ObjectMapping<DieselUlid>>) -> User {
                 ObjectMapping::OBJECT(id) => (*id, ObjectMapping::OBJECT(DbPermissionLevel::WRITE)),
             })),
             external_ids: vec![],
+            pubkey: "".to_string(),
+            data_proxy_attribute: vec![],
         }),
         active: true,
     }
@@ -90,6 +95,7 @@ pub fn new_object(user_id: DieselUlid, object_id: DieselUlid, object_type: Objec
         id: object_id,
         revision_number: 0,
         name: object_id.to_string(),
+        title: "title-test".to_string(),
         description: "b".to_string(),
         count: 1,
         created_at: None,
@@ -115,6 +121,13 @@ pub fn new_object(user_id: DieselUlid, object_id: DieselUlid, object_type: Objec
         )])),
         data_license: ALL_RIGHTS_RESERVED.to_string(),
         metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+        authors: Json(vec![Author{
+            first_name: "Jane".to_string(),
+            last_name: "Doe".to_string(),
+            email: Some("jane.doe@test.org".to_string()),
+            orcid: None,
+            user_id: None,
+        }]),
     }
 }
 
@@ -147,6 +160,7 @@ pub fn object_from_mapping(
         revision_number: 0,
         name: "a".to_string(),
         description: "b".to_string(),
+        title: "title-test".to_string(),
         count: 1,
         created_at: None,
         content_len: if let ObjectType::OBJECT = object_type {
@@ -165,6 +179,13 @@ pub fn object_from_mapping(
         endpoints: Json(DashMap::default()),
         data_license: ALL_RIGHTS_RESERVED.to_string(),
         metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+        authors: Json(vec![Author{
+            first_name: "Jane".to_string(),
+            last_name: "Doe".to_string(),
+            email: Some("jane.doe@test.org".to_string()),
+            orcid: None,
+            user_id: None,
+        }]),
     }
 }
 
@@ -285,6 +306,7 @@ pub async fn fast_track_grpc_collection_create(
 
     let create_request = CreateCollectionRequest {
         name: collection_name.to_string(),
+        title: "title-test".to_string(),
         description: "".to_string(),
         key_values: vec![],
         relations: vec![],
@@ -292,6 +314,13 @@ pub async fn fast_track_grpc_collection_create(
         parent: Some(parent),
         default_data_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
         metadata_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
+        authors: vec![aruna_rust_api::api::storage::models::v2::Author{
+            first_name: "Jane".to_string(),
+            last_name: "Doe".to_string(),
+            email: Some("jane.doe@test.org".to_string()),
+            orcid: None,
+            id: None,
+        }],
     };
 
     let grpc_request = add_token(Request::new(create_request), token);
@@ -325,12 +354,20 @@ pub async fn fast_track_grpc_dataset_create(
     let create_request = CreateDatasetRequest {
         name: dataset_name.to_string(),
         description: "".to_string(),
+        title: "".to_string(),
         key_values: vec![],
         relations: vec![],
         data_class: ApiDataClass::Private as i32,
         parent: Some(parent),
         default_data_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
         metadata_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
+        authors: vec![aruna_rust_api::api::storage::models::v2::Author{
+            first_name: "Jane".to_string(),
+            last_name: "Doe".to_string(),
+            email: Some("jane.doe@test.org".to_string()),
+            orcid: None,
+            id: None,
+        }],
     };
 
     let grpc_request = add_token(Request::new(create_request), token);

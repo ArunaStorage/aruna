@@ -105,7 +105,7 @@ impl CollectionService for CollectionServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&collection.object.id)
-                .ok_or_else(|| tonic::Status::not_found("Object not found"))?,
+                .unwrap_or_default()
         };
         let generic_collection: generic_resource::Resource = wrapped.into();
 

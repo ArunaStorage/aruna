@@ -163,7 +163,6 @@ CREATE TABLE IF NOT EXISTS objects (
     endpoints JSONB NOT NULL DEFAULT '{}',
     metadata_license VARCHAR(511) NOT NULL REFERENCES licenses(tag),
     data_license VARCHAR(511) NOT NULL REFERENCES licenses(tag),
-    rules JSONB NOT NULL DEFAULT '{}',
     UNIQUE(id, object_type)
 );
 CREATE INDEX IF NOT EXISTS objects_pk_idx ON objects (id);

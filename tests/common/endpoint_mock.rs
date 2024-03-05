@@ -1,12 +1,9 @@
 use super::test_utils::rand_string;
 use anyhow::Result;
-use aruna_rust_api::api::dataproxy::services::v2::{
-    dataproxy_user_service_server::{DataproxyUserService, DataproxyUserServiceServer},
-    GetCredentialsRequest, GetCredentialsResponse, PullReplicaRequest, PullReplicaResponse,
-    PushReplicaRequest, PushReplicaResponse, ReplicationStatusRequest, ReplicationStatusResponse,
-};
+use aruna_rust_api::api::dataproxy::services::v2::{CreateOrUpdateCredentialsRequest, CreateOrUpdateCredentialsResponse, dataproxy_user_service_server::{DataproxyUserService, DataproxyUserServiceServer}, GetCredentialsRequest, GetCredentialsResponse, PullReplicaRequest, PullReplicaResponse, PushReplicaRequest, PushReplicaResponse, ReplicationStatusRequest, ReplicationStatusResponse, RevokeCredentialsRequest, RevokeCredentialsResponse};
 use std::net::SocketAddr;
 use tokio::task::AbortHandle;
+use tonic::{Request, Response, Status};
 use tonic::transport::Server;
 
 #[allow(dead_code)]
@@ -49,6 +46,15 @@ impl DataproxyUserService for DataProxyServiceImpl {
             secret_key,
         }))
     }
+
+    async fn create_or_update_credentials(&self, _request: Request<CreateOrUpdateCredentialsRequest>) -> std::result::Result<Response<CreateOrUpdateCredentialsResponse>, Status> {
+        todo!()
+    }
+
+    async fn revoke_credentials(&self, _request: Request<RevokeCredentialsRequest>) -> std::result::Result<Response<RevokeCredentialsResponse>, Status> {
+        todo!()
+    }
+
     async fn push_replica(
         &self,
         _request: tonic::Request<PushReplicaRequest>,

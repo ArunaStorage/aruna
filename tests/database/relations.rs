@@ -52,6 +52,7 @@ async fn test_external_relations() {
         id: obj_id,
         revision_number: create_object.revision_number,
         name: create_object.name,
+        title: create_object.title,
         description: create_object.description,
         created_at: create_object.created_at,
         created_by: create_object.created_by,
@@ -69,6 +70,7 @@ async fn test_external_relations() {
         endpoints: create_object.endpoints,
         data_license: ALL_RIGHTS_RESERVED.to_string(),
         metadata_license: ALL_RIGHTS_RESERVED.to_string(),
+        authors: create_object.authors,
     };
     let obj = Object::get(obj_id, client).await.unwrap().unwrap();
 
