@@ -2,15 +2,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Object};
-use aruna_rust_api::api::storage::services::v2::{
-    CloneObjectRequest, CloneObjectResponse, CreateObjectRequest, CreateObjectResponse,
-    DeleteObjectRequest, DeleteObjectResponse, FinishObjectStagingRequest,
-    FinishObjectStagingResponse, GetDownloadUrlRequest, GetDownloadUrlResponse, GetObjectRequest,
-    GetObjectResponse, GetObjectsRequest, GetObjectsResponse, GetUploadUrlRequest,
-    GetUploadUrlResponse,
-    UpdateObjectAuthorsRequest, UpdateObjectAuthorsResponse, UpdateObjectRequest,
-    UpdateObjectResponse, UpdateObjectTitleRequest, UpdateObjectTitleResponse,
-};
+use aruna_rust_api::api::storage::services::v2::{CloneObjectRequest, CloneObjectResponse, CreateObjectRequest, CreateObjectResponse, DeleteObjectRequest, DeleteObjectResponse, FinishObjectStagingRequest, FinishObjectStagingResponse, GetDownloadUrlRequest, GetDownloadUrlResponse, GetObjectRequest, GetObjectResponse, GetObjectsRequest, GetObjectsResponse, GetUploadUrlRequest, GetUploadUrlResponse, SetObjectHashesRequest, SetObjectHashesResponse, UpdateObjectAuthorsRequest, UpdateObjectAuthorsResponse, UpdateObjectRequest, UpdateObjectResponse, UpdateObjectTitleRequest, UpdateObjectTitleResponse};
 use aruna_rust_api::api::storage::services::v2::object_service_server::ObjectService;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
@@ -27,7 +19,7 @@ use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::presigned_url_handler::{PresignedDownload, PresignedUpload};
-use crate::middlelayer::update_request_types::{UpdateAuthor, UpdateObject, UpdateTitle};
+use crate::middlelayer::update_request_types::{SetHashes, UpdateAuthor, UpdateObject, UpdateTitle};
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::grpc_utils::{get_id_and_ctx, IntoGenericInner};
 use crate::utils::grpc_utils::get_token_from_md;
@@ -507,8 +499,8 @@ impl ObjectService for ObjectServiceImpl {
         );
 
         let request = UpdateAuthor::Object(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid object id");
-        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, false);
+        let object_id = tonic_invalid!(request.get_id(), "Invalid object id");
+        let ctx = Context::res_ctx(object_id, DbPermissionLevel::WRITE, false);
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
@@ -531,7 +523,7 @@ impl ObjectService for ObjectServiceImpl {
 
         let rules = self
             .cache
-            .get_rule_bindings(&collection_id)
+            .get_rule_bindings(&object_id)
             .unwrap_or_default();
         let generic_resource: generic_resource::Resource = ObjectWrapper {
             object_with_relations: object,
@@ -555,8 +547,8 @@ impl ObjectService for ObjectServiceImpl {
         );
 
         let request = UpdateTitle::Object(request.into_inner());
-        let collection_id = tonic_invalid!(request.get_id(), "Invalid object id");
-        let ctx = Context::res_ctx(collection_id, DbPermissionLevel::WRITE, false);
+        let object_id = tonic_invalid!(request.get_id(), "Invalid object id");
+        let ctx = Context::res_ctx(object_id, DbPermissionLevel::WRITE, false);
 
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
@@ -579,7 +571,7 @@ impl ObjectService for ObjectServiceImpl {
 
         let rules = self
             .cache
-            .get_rule_bindings(&collection_id)
+            .get_rule_bindings(&object_id)
             .unwrap_or_default();
         let generic_resource: generic_resource::Resource = ObjectWrapper {
             object_with_relations: object,
@@ -587,6 +579,52 @@ impl ObjectService for ObjectServiceImpl {
         }
         .into();
         let response = UpdateObjectTitleResponse {
+            object: Some(generic_resource.into_inner()?),
+        };
+        return_with_log!(response);
+    }
+
+    async fn set_object_hashes(&self, request: Request<SetObjectHashesRequest>) -> std::result::Result<Response<SetObjectHashesResponse>, Status> {
+        log_received!(&request);
+
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error."
+        );
+
+        let request = SetHashes(request.into_inner());
+        let object_id = tonic_invalid!(request.get_id(), "Invalid object id");
+        let ctx = Context::res_ctx(object_id, DbPermissionLevel::WRITE, false);
+
+        tonic_auth!(
+            self.authorizer.check_permissions(&token, vec![ctx]).await,
+            "Unauthorized"
+        );
+
+        let mut object = tonic_invalid!(
+            self.database_handler.set_or_check_hashes(request).await,
+            "Invalid update license request"
+        );
+        self.cache.add_stats_to_object(&mut object);
+
+        // Add or update collection in search index
+        search_utils::update_search_index(
+            &self.search_client,
+            &self.cache,
+            vec![ObjectDocument::from(object.object.clone())],
+        )
+            .await;
+
+        let rules = self
+            .cache
+            .get_rule_bindings(&object_id)
+            .unwrap_or_default();
+        let generic_resource: generic_resource::Resource = ObjectWrapper {
+            object_with_relations: object,
+            rules,
+        }
+            .into();
+        let response = SetObjectHashesResponse {
             object: Some(generic_resource.into_inner()?),
         };
         return_with_log!(response);

@@ -16,6 +16,7 @@ use postgres_from_row::FromRow;
 use postgres_types::{FromSql, Json, ToSql, Type};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
+use itertools::Itertools;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::{Client, CopyInSink};
 
@@ -54,7 +55,7 @@ pub struct ExternalRelation {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ExternalRelations(pub DashMap<String, ExternalRelation, RandomState>);
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Hashes(pub Vec<Hash>);
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -890,6 +891,12 @@ impl Object {
         let prepared = client.prepare(query).await?;
         client.execute(&prepared, &[&endpoint, &object_ids]).await?;
         Ok(())
+    }
+}
+impl Eq for Hashes{}
+impl PartialEq for Hashes {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.iter().all(|h| other.0.iter().contains(h))
     }
 }
 

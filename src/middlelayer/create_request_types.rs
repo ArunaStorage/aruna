@@ -4,9 +4,7 @@ use crate::database::crud::CrudDb;
 use crate::database::dsls::endpoint_dsl::Endpoint;
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::license_dsl::{License, ALL_RIGHTS_RESERVED};
-use crate::database::dsls::object_dsl::{
-    EndpointInfo, ExternalRelations, Hashes, KeyValues, Object,
-};
+use crate::database::dsls::object_dsl::{Author, EndpointInfo, ExternalRelations, Hashes, KeyValues, Object};
 use crate::database::enums::{
     DbPermissionLevel, ObjectStatus, ObjectType, ReplicationStatus, ReplicationType,
 };
@@ -371,6 +369,23 @@ impl CreateRequest {
         }
     }
 
+    fn get_title(&self) -> String {
+        match self {
+            CreateRequest::Project(req, _) => req.title.clone(),
+            CreateRequest::Collection(req) => req.title.clone(),
+            CreateRequest::Dataset(req) => req.title.clone(),
+            CreateRequest::Object(req) => req.title.clone(),
+        }
+    }
+
+    fn get_authors(&self) -> Result<Json<Vec<Author>>> {
+        Ok(match self {
+            CreateRequest::Project(req, _) => Json(req.authors.iter().map(|author| author.clone().try_into()).collect::<Result<Vec<Author>>>()?),
+            CreateRequest::Collection(req) => Json(req.authors.iter().map(|author| author.clone().try_into()).collect::<Result<Vec<Author>>>()?),
+            CreateRequest::Dataset(req) => Json(req.authors.iter().map(|author| author.clone().try_into()).collect::<Result<Vec<Author>>>()?),
+            CreateRequest::Object(req) => Json(req.authors.iter().map(|author| author.clone().try_into()).collect::<Result<Vec<Author>>>()?),
+        })
+    }
     pub async fn as_new_db_object(
         &self,
         user_id: DieselUlid,
@@ -394,12 +409,12 @@ impl CreateRequest {
             id,
             revision_number: 0,
             name,
-            title: String::new(), // TODO! Add to API requests?
+            title: self.get_title(),
             description: self.get_description(),
             created_at: None,
             content_len: 0,
             created_by: user_id,
-            authors: Json(Vec::new()), // TODO! Add to API requests?
+            authors: self.get_authors()?,
             count: 1,
             key_values: Json(key_values),
             object_status: self.get_status(),

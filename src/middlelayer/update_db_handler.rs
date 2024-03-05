@@ -1,4 +1,4 @@
-use super::update_request_types::{LicenseUpdate, UpdateAuthor, UpdateObject, UpdateTitle};
+use super::update_request_types::{LicenseUpdate, SetHashes, UpdateAuthor, UpdateObject, UpdateTitle};
 use crate::database::crud::CrudDb;
 use crate::database::dsls::hook_dsl::TriggerVariant;
 use crate::database::dsls::internal_relation_dsl::{
@@ -730,5 +730,30 @@ impl DatabaseHandler {
         } else {
             Ok(object)
         }
+    }
+
+    pub async fn set_or_check_hashes(&self, request: SetHashes) -> Result<ObjectWithRelations> {
+        let client = self.database.get_client().await?;
+        let id = request.get_id()?;
+        let mut object = Object::get_object_with_relations(&id, &client).await?;
+
+        // Set or Check hash?
+        if object.object.hashes.0.0.is_empty() {
+            // TODO: Set hash
+            object.object.hashes = Json(request.get_hashes()?);
+            object.object.update(&client).await?;
+            self.cache.upsert_object(&id, object.clone());
+            Ok(object)
+        } else {
+            // TODO: Check hash
+            let request_hashes = request.get_hashes()?;
+            let object_hashes = object.object.hashes.0.clone();
+            if request_hashes == object_hashes {
+                Ok(object)
+            } else {
+                Err(anyhow!("Hashes do not match!"))
+            }
+        }
+
     }
 }

@@ -10,17 +10,7 @@ use crate::database::enums::{DataClass, ObjectType, ReplicationStatus};
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::services::v2::update_object_request::Parent as UpdateParent;
-use aruna_rust_api::api::storage::services::v2::{
-    UpdateCollectionAuthorsRequest, UpdateCollectionDataClassRequest,
-    UpdateCollectionDescriptionRequest, UpdateCollectionKeyValuesRequest,
-    UpdateCollectionLicensesRequest, UpdateCollectionNameRequest, UpdateCollectionTitleRequest,
-    UpdateDatasetAuthorsRequest, UpdateDatasetDataClassRequest, UpdateDatasetDescriptionRequest,
-    UpdateDatasetKeyValuesRequest, UpdateDatasetLicensesRequest, UpdateDatasetNameRequest,
-    UpdateDatasetTitleRequest, UpdateObjectAuthorsRequest, UpdateObjectRequest,
-    UpdateObjectTitleRequest, UpdateProjectAuthorsRequest, UpdateProjectDataClassRequest,
-    UpdateProjectDescriptionRequest, UpdateProjectKeyValuesRequest, UpdateProjectLicensesRequest,
-    UpdateProjectNameRequest, UpdateProjectTitleRequest,
-};
+use aruna_rust_api::api::storage::services::v2::{SetObjectHashesRequest, UpdateCollectionAuthorsRequest, UpdateCollectionDataClassRequest, UpdateCollectionDescriptionRequest, UpdateCollectionKeyValuesRequest, UpdateCollectionLicensesRequest, UpdateCollectionNameRequest, UpdateCollectionTitleRequest, UpdateDatasetAuthorsRequest, UpdateDatasetDataClassRequest, UpdateDatasetDescriptionRequest, UpdateDatasetKeyValuesRequest, UpdateDatasetLicensesRequest, UpdateDatasetNameRequest, UpdateDatasetTitleRequest, UpdateObjectAuthorsRequest, UpdateObjectRequest, UpdateObjectTitleRequest, UpdateProjectAuthorsRequest, UpdateProjectDataClassRequest, UpdateProjectDescriptionRequest, UpdateProjectKeyValuesRequest, UpdateProjectLicensesRequest, UpdateProjectNameRequest, UpdateProjectTitleRequest};
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -64,12 +54,15 @@ pub enum UpdateTitle {
     Dataset(UpdateDatasetTitleRequest),
     Object(UpdateObjectTitleRequest),
 }
+
 pub enum UpdateAuthor {
     Project(UpdateProjectAuthorsRequest),
     Collection(UpdateCollectionAuthorsRequest),
     Dataset(UpdateDatasetAuthorsRequest),
     Object(UpdateObjectAuthorsRequest),
 }
+
+pub struct SetHashes(pub SetObjectHashesRequest);
 
 impl DataClassUpdate {
     pub fn get_dataclass(&self) -> Result<DataClass> {
@@ -89,6 +82,7 @@ impl DataClassUpdate {
         Ok(id)
     }
 }
+
 
 impl NameUpdate {
     pub fn get_name(&self) -> Result<String> {
@@ -572,5 +566,14 @@ impl UpdateAuthor {
                 Ok((remove, add))
             }
         }
+    }
+}
+
+impl SetHashes {
+    pub fn get_id(&self) -> Result<DieselUlid> {
+        Ok(DieselUlid::from_str(&self.0.object_id)?)
+    }
+    pub fn get_hashes(&self) -> Result<Hashes> {
+        todo!()
     }
 }
