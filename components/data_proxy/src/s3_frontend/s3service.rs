@@ -495,7 +495,7 @@ impl S3 for ArunaS3Service {
 
             let mut parser = FooterParser::new(&output).unwrap();
 
-            let key = CONFIG.proxy.clone().get_private_key().map_err(|e| {
+            let key = CONFIG.proxy.clone().get_private_key_x25519().map_err(|e| {
                 error!(?e, error = "Unable to get private key");
                 s3_error!(InternalError, "Unable to get private key")
             })?;
@@ -1176,6 +1176,7 @@ impl S3 for ArunaS3Service {
                             error!(error = "Unable to get file context");
                             s3_error!(InternalError, "Unable to get file context")
                         })?;
+                    dbg!(&ctx);
                     tx.send(PithosMessage::FileContext(ctx))
                         .await
                         .map_err(|_| {

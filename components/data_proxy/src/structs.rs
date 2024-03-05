@@ -345,7 +345,7 @@ impl Object {
                     }
                 })
                 .unwrap_or_default(),
-            recipients_pubkeys: vec![CONFIG.proxy.get_public_key()?],
+            recipients_pubkeys: vec![CONFIG.proxy.get_public_key_x25519()?],
             ..Default::default()
         })
     }

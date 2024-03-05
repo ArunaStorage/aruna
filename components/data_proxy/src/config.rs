@@ -72,7 +72,7 @@ impl Proxy {
         Ok(())
     }
 
-    pub fn get_private_key(&self) -> Result<[u8; 32]> {
+    pub fn _get_private_key(&self) -> Result<[u8; 32]> {
         let Some(private_key) = self.private_key.clone() else {
             bail!("Private key not set")
         };
@@ -83,12 +83,24 @@ impl Proxy {
         Ok(key.try_into()?)
     }
 
-    pub fn get_public_key(&self) -> Result<[u8; 32]> {
+    pub fn get_private_key_x25519(&self) -> Result<[u8; 32]> {
+        let Some(private_key) = self.private_key.clone() else {
+            bail!("Private key not set")
+        };
+        crate::auth::crypto::ed25519_to_x25519_privatekey(&private_key)
+    }
+
+
+    pub fn _get_public_key(&self) -> Result<[u8; 32]> {
         let key = general_purpose::STANDARD.decode(self.public_key.clone())?;
         let key = key
             .get(0..32)
             .ok_or_else(|| anyhow!("Invalid key length"))?;
         Ok(key.try_into()?)
+    }
+
+    pub fn get_public_key_x25519(&self) -> Result<[u8; 32]> {
+        crate::auth::crypto::ed25519_to_x25519_pubkey(&self.public_key)
     }
 }
 
