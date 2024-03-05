@@ -313,9 +313,14 @@ impl Object {
         }
     }
 
-    pub fn get_file_context(&self, location: Option<ObjectLocation>, expected_size: Option<i64>) -> Result<FileContext> {
-
-        let location_size = expected_size.or_else(|| location.as_ref().map(|l| l.raw_content_len)).unwrap_or_default();
+    pub fn get_file_context(
+        &self,
+        location: Option<ObjectLocation>,
+        expected_size: Option<i64>,
+    ) -> Result<FileContext> {
+        let location_size = expected_size
+            .or_else(|| location.as_ref().map(|l| l.raw_content_len))
+            .unwrap_or_default();
 
         // TODO: Maybe hashes
         Ok(FileContext {
@@ -340,9 +345,7 @@ impl Object {
                     }
                 })
                 .unwrap_or_default(),
-            recipients_pubkeys: vec![CONFIG
-                .proxy
-                .get_private_key()?],
+            recipients_pubkeys: vec![CONFIG.proxy.get_private_key()?],
             ..Default::default()
         })
     }
@@ -371,7 +374,7 @@ impl User {
                 if v != ov {
                     to_update.push((self.user_id.to_string(), self.personal_permissions.clone()));
                 }
-            }else{
+            } else {
                 to_update.push((self.user_id.to_string(), self.personal_permissions.clone()));
             }
         }
@@ -1235,6 +1238,7 @@ impl ResourceState {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum NewOrExistingObject {
     Missing(Object),
     Existing(Object),
@@ -1265,6 +1269,7 @@ impl ResourceStates {
     }
 
     pub fn validate(&self, allow_create_project: bool) -> Result<()> {
+        dbg!(self);
         let project = if allow_create_project && self.objects[0].is_missing() {
             false
         } else {
@@ -1273,9 +1278,9 @@ impl ResourceStates {
 
         match (
             project,
-            self.objects[1].is_missing_or_none(),
-            self.objects[2].is_missing_or_none(),
-            self.objects[3].is_missing_or_none(),
+            self.objects[1].is_missing(),
+            self.objects[2].is_missing(),
+            self.objects[3].is_missing(),
         ) {
             (false, true, true, true)
             | (false, false, true, true)

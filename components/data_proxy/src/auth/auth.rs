@@ -439,14 +439,10 @@ impl AuthHandler {
 
         let result = self
             .rule_engine
-            .evaluate_object(
-                rule_builder
-                    .build()
-                    .map_err(|e| {
-                        error!(error = ?e, msg = e.to_string());
-                        s3_error!(MalformedACLError, "Rule has wrong context")
-                    })?,
-            )
+            .evaluate_object(rule_builder.build().map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                s3_error!(MalformedACLError, "Rule has wrong context")
+            })?)
             .map_err(|_| s3_error!(AccessDenied, "Forbidden by rule"))?;
 
         if !result {

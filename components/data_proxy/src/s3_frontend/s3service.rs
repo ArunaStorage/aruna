@@ -495,14 +495,10 @@ impl S3 for ArunaS3Service {
 
             let mut parser = FooterParser::new(&output).unwrap();
 
-            let key = CONFIG
-                .proxy
-                .clone()
-                .get_private_key()
-                .map_err(|e| {
-                    error!(?e, error = "Unable to get private key");
-                    s3_error!(InternalError, "Unable to get private key")
-                })?;
+            let key = CONFIG.proxy.clone().get_private_key().map_err(|e| {
+                error!(?e, error = "Unable to get private key");
+                s3_error!(InternalError, "Unable to get private key")
+            })?;
             parser = parser.add_recipient(&key);
             parser = parser.parse().map_err(|_| {
                 error!(error = "Unable to parse footer");
@@ -1061,6 +1057,11 @@ impl S3 for ArunaS3Service {
 
         let (_, collection, dataset, object, location_state) = states.into_new_or_existing()?;
 
+        dbg!(&collection);
+        dbg!(&dataset);
+        dbg!(&object);
+        dbg!(&location_state);
+
         let (mut new_object, was_init) = match object {
             NewOrExistingObject::Existing(ob) => {
                 if ob.object_status == Status::Initializing {
@@ -1313,9 +1314,9 @@ impl S3 for ArunaS3Service {
                     handler
                         .create_and_finish(new_object.clone(), location, token)
                         .await
-                        .map_err(|_| {
-                            error!(error = "Unable to create and/or finish object");
-                            s3_error!(InternalError, "Unable to create and/or finish object")
+                        .map_err(|e| {
+                            error!(error = ?e, "Unable to create and finish object");
+                            s3_error!(InvalidObjectState, "{}", e.to_string())
                         })?;
                 }
             }

@@ -180,7 +180,9 @@ impl Cache {
             .access_keys
             .get(access_key)
             .ok_or_else(|| anyhow!("User not found"))?
-            .value().read().await
+            .value()
+            .read()
+            .await
             .secret
             .clone();
         if secret.is_empty() {
@@ -606,7 +608,8 @@ impl Cache {
                 .access_keys
                 .get(&key.0)
                 .ok_or_else(|| anyhow!("Access key not found"))?
-                .value().clone();
+                .value()
+                .clone();
             let mut access_key = access_key_ref.write().await;
             access_key.permissions = key.1;
             if let Some(persistence) = self.persistence.read().await.as_ref() {
@@ -681,7 +684,8 @@ impl Cache {
         let prefixes = self.get_prefixes(&TypedId::Unknown(object.id), false).await;
 
         for (_, pre) in prefixes.iter() {
-            self.paths.insert(format!("{}/{}", pre.clone() , object.name), object.id);
+            self.paths
+                .insert(format!("{}/{}", pre.clone(), object.name), object.id);
         }
 
         if prefixes.is_empty() {

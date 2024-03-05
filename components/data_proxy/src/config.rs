@@ -1,8 +1,8 @@
-use anyhow::{bail, Result, anyhow};
-use diesel_ulid::DieselUlid;
-use serde::{Deserialize, Serialize};
+use anyhow::{anyhow, bail, Result};
 use base64::engine::general_purpose;
 use base64::Engine;
+use diesel_ulid::DieselUlid;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -72,11 +72,13 @@ impl Proxy {
     }
 
     pub fn get_private_key(&self) -> Result<[u8; 32]> {
-        let Some(private_key) = self.private_key.clone() else{
+        let Some(private_key) = self.private_key.clone() else {
             bail!("Private key not set")
         };
         let key = general_purpose::STANDARD.decode(private_key)?;
-        let key = key.get(key.len() - 32 ..).ok_or_else(|| anyhow!("Invalid key length"))?;
+        let key = key
+            .get(key.len() - 32..)
+            .ok_or_else(|| anyhow!("Invalid key length"))?;
         Ok(key.try_into()?)
     }
 }

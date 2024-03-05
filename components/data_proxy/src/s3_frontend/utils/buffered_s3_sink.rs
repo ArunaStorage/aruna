@@ -82,9 +82,7 @@ impl BufferedS3Sink {
         if let Some(rx) = &self.msg_receiver {
             loop {
                 match rx.try_recv() {
-                    Ok(Message::Finished) => {
-                        return Ok(true)
-                    },
+                    Ok(Message::Finished) => return Ok(true),
                     Ok(_) => {}
                     Err(TryRecvError::Empty) => {
                         break;
@@ -229,7 +227,6 @@ impl Transformer for BufferedS3Sink {
 
     #[tracing::instrument(level = "trace", skip(self, buf))]
     async fn process_bytes(&mut self, buf: &mut BytesMut) -> Result<()> {
-
         let finished = self.process_messages()?;
 
         self.sum += buf.len();

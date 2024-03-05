@@ -30,70 +30,42 @@ pub enum Arguments {
 }
 
 impl Arguments {
-    pub fn with_hierarchy(&self, hierarchy: &[Option<(DieselUlid, String)>; 4]) -> String {
+    pub fn with_hierarchy(&self, hierarchy: &[Option<(DieselUlid, String)>; 4]) -> Option<String> {
         match self {
-            Arguments::Project => hierarchy
-                .get(0)
-                .cloned()
-                .flatten()
-                .unwrap_or_default()
-                .1
-                .clone(),
+            Arguments::Project => hierarchy.get(0).cloned().flatten().map(|(_, b)| b),
             Arguments::ProjectId => hierarchy
                 .get(0)
                 .cloned()
                 .flatten()
-                .unwrap_or_default()
-                .0
-                .to_string()
-                .to_ascii_lowercase(),
-            Arguments::Collection => hierarchy
-                .get(1)
-                .cloned()
-                .flatten()
-                .map(|(_, b)| b.clone())
-                .unwrap_or_default(),
+                .map(|(a, _)| a.to_string().to_ascii_lowercase()),
+            Arguments::Collection => hierarchy.get(1).cloned().flatten().map(|(_, b)| b),
             Arguments::CollectionId => hierarchy
                 .get(1)
                 .cloned()
                 .flatten()
-                .map(|(a, _)| a.to_string().to_ascii_lowercase())
-                .unwrap_or_default(),
-            Arguments::Dataset => hierarchy
-                .get(2)
-                .cloned()
-                .flatten()
-                .map(|(_, b)| b.clone())
-                .unwrap_or_default(),
+                .map(|(a, _)| a.to_string().to_ascii_lowercase()),
+            Arguments::Dataset => hierarchy.get(2).cloned().flatten().map(|(_, b)| b),
             Arguments::DatasetId => hierarchy
                 .get(1)
                 .cloned()
                 .flatten()
-                .map(|(a, _)| a.to_string().to_ascii_lowercase())
-                .unwrap_or_default(),
-            Arguments::Object => hierarchy
-                .get(3)
-                .cloned()
-                .flatten()
-                .unwrap_or_default()
-                .1
-                .clone(),
+                .map(|(a, _)| a.to_string().to_ascii_lowercase()),
+            Arguments::Object => hierarchy.get(3).cloned().flatten().map(|(_, b)| b),
             Arguments::ObjectId => hierarchy
                 .get(3)
                 .cloned()
                 .flatten()
-                .unwrap_or_default()
-                .0
-                .to_string()
-                .to_ascii_lowercase(),
-            Arguments::Random(x) => thread_rng()
-                .sample_iter(&Alphanumeric)
-                .take(*x as usize)
-                .map(char::from)
-                .collect::<String>()
-                .to_ascii_lowercase(),
-            Arguments::Slash => "/".to_string(),
-            Arguments::Text(x) => x.clone(),
+                .map(|(a, _)| a.to_string().to_ascii_lowercase()),
+            Arguments::Random(x) => Some(
+                thread_rng()
+                    .sample_iter(&Alphanumeric)
+                    .take(*x as usize)
+                    .map(char::from)
+                    .collect::<String>()
+                    .to_ascii_lowercase(),
+            ),
+            Arguments::Slash => Some("/".to_string()),
+            Arguments::Text(x) => Some(x.clone()),
         }
     }
 }
@@ -123,16 +95,38 @@ impl CompiledVariant {
     }
 
     pub fn into_names(&self, hierarchy: [Option<(DieselUlid, String)>; 4]) -> (String, String) {
-        let bucket = self
+        let mut bucket = String::new();
+        for bucket_string in self
             .bucket_arguments
             .iter()
-            .map(|x| x.with_hierarchy(&hierarchy))
-            .collect::<String>();
-        let key = self
+            .filter_map(|x| x.with_hierarchy(&hierarchy))
+        {
+            if &bucket_string == "/" {
+                if bucket.is_empty() || bucket.ends_with("/") {
+                    continue;
+                } else {
+                    bucket.push_str("/");
+                }
+            }
+            bucket.push_str(&bucket_string);
+        }
+
+        let mut key = String::new();
+        for part_string in self
             .key_arguments
             .iter()
-            .map(|x| x.with_hierarchy(&hierarchy))
-            .collect::<String>();
+            .filter_map(|x| x.with_hierarchy(&hierarchy))
+        {
+            if &part_string == "/" {
+                if key.is_empty() || key.ends_with("/") {
+                    continue;
+                } else {
+                    key.push_str("/");
+                }
+            }
+            key.push_str(&part_string);
+        }
+
         (bucket, key)
     }
 
