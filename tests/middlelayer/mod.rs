@@ -7,3 +7,4 @@ mod snapshots;
 mod updates;
 mod users;
 mod workspaces;
+mod rules;
