@@ -380,10 +380,15 @@ impl User {
                 if v != ov {
                     to_update.push((k.to_string(), v.clone()));
                 }
-            } else {
-                to_delete.push(k.to_string())
             }
         }
+
+        for (k, _) in &other.tokens {
+            if let None = self.tokens.get(k) {
+                to_delete.push(k.to_string());
+            }
+        }
+
         (to_update, to_delete)
     }
 }
