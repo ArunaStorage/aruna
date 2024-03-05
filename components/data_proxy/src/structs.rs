@@ -988,6 +988,7 @@ impl From<Object> for CreateProjectRequest {
             preferred_endpoint: "".to_string(), // Gets endpoint id from grpc_query_handler::create_project()
             metadata_license_tag: value.metadata_license,
             default_data_license_tag: value.data_license,
+            ..Default::default()
         }
     }
 }

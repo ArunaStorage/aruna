@@ -540,6 +540,7 @@ impl S3 for ArunaS3Service {
         // Spawn get_object to fetch bytes from storage storage
         let backend = self.backend.clone();
         let loc_clone = location.clone();
+        trace!(?loc_clone, ?query_ranges, "spawning get_object");
         tokio::spawn(
             async move { backend.get_object(loc_clone, query_ranges, sender).await }
                 .instrument(info_span!("get_object")),

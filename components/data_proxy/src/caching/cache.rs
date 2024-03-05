@@ -431,13 +431,13 @@ impl Cache {
         // VecDeque<(id, [Option<(String, DieselUlid)>; 4])>
         const ARRAY_REPEAT_VALUE: std::option::Option<(std::string::String, TypedId)> =
             None::<(String, TypedId)>;
-        let mut prefixes = VecDeque::from([(resource_id.clone(), [ARRAY_REPEAT_VALUE; 4])]);
+        let mut prefixes = VecDeque::from([(resource_id.clone(), [ARRAY_REPEAT_VALUE; 3])]);
         let mut final_result = Vec::new();
         while let Some((id, visited)) = prefixes.pop_front() {
             if let Some(parents) = self.get_parents(&id.get_id()).await {
                 for (parent_name, parent_id) in parents {
                     let mut visited_here = visited.clone();
-                    for x in 3..=0 {
+                    for x in (0..3).rev() {
                         if visited_here[x].is_none() {
                             visited_here[x] = Some((parent_name.clone(), parent_id));
                             break;
@@ -447,14 +447,16 @@ impl Cache {
                 }
             } else {
                 let mut current_path = String::new();
-                for x in 0..4 {
+                for x in 0..3 {
                     match &visited[x] {
                         Some((name, id)) => {
-                            current_path.push('/');
+                            if !current_path.is_empty() {
+                                current_path.push('/');
+                            }
                             current_path.push_str(&name);
                             if with_intermediates {
                                 final_result.push((id.clone(), current_path.clone()));
-                            } else if x == 3 {
+                            } else if x == 2 {
                                 final_result.push((id.clone(), current_path.clone()));
                             }
                         }
@@ -537,6 +539,9 @@ impl Cache {
                 let parent = self.resources.get(&parent.get_id())?;
                 let parent = parent.value().0.read().await;
                 collected_parents.push((parent.name.clone(), TypedId::from(parent.deref())));
+            }
+            if parents.is_empty() {
+                return None;
             }
             return Some(collected_parents);
         }
@@ -649,6 +654,8 @@ impl Cache {
         object: Object,
         location: Option<ObjectLocation>,
     ) -> Result<()> {
+
+        trace!(?object, ?location, "upserting object");
         if let Some(persistence) = self.persistence.read().await.as_ref() {
             let mut client = persistence.get_client().await?;
             let transaction = client.transaction().await?;
@@ -683,6 +690,7 @@ impl Cache {
 
         let prefixes = self.get_prefixes(&TypedId::Unknown(object.id), false).await;
 
+        trace!(?prefixes, "prefixes");
         if object
             .parents
             .as_ref()
@@ -698,6 +706,8 @@ impl Cache {
             for (_, pre) in prefixes.iter() {
                 self.paths
                     .insert(format!("{}/{}", pre.clone(), object.name), object.id);
+
+                trace!(inserted = format!("{}/{}", pre.clone(), object.name), "inserted");
             }
         }
 

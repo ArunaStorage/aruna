@@ -397,7 +397,6 @@ impl AuthHandler {
 
         let path = format!("{bucket_name}/{key_name}");
         let prefix: Vec<(String, String)> = auth_helpers::key_into_prefix(&path)?;
-        dbg!(&prefix);
         let resource_states = self.prefix_into_resource_states(&prefix, false).await?;
 
         if is_method_read(method) {
