@@ -7,3 +7,4 @@ pub mod relations;
 pub mod stats;
 pub mod users;
 pub mod workspaces;
+pub mod rules;

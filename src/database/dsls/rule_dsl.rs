@@ -14,7 +14,7 @@ pub struct RuleBinding {
     pub cascading: bool,
 }
 
-#[derive(FromRow, FromSql, Debug, Clone, ToSql)]
+#[derive(FromRow, FromSql, Debug, Clone, ToSql, PartialEq, Eq)]
 pub struct Rule {
     pub id: DieselUlid,
     pub rule_expressions: String,
@@ -27,7 +27,7 @@ pub struct Rule {
 impl CrudDb for Rule {
     async fn create(&mut self, client: &Client) -> Result<()> {
         let query = "INSERT INTO rules 
-        (rule_id, rule_expressions, description, owner_id, is_public) 
+        (id, rule_expressions, description, owner_id, is_public)
         VALUES ($1, $2, $3, $4, $5) RETURNING *;";
 
         let prepared = client.prepare(query).await?;
@@ -49,7 +49,7 @@ impl CrudDb for Rule {
         Ok(())
     }
     async fn get(id: impl PrimaryKey, client: &Client) -> Result<Option<Self>> {
-        let query = "SELECT * FROM rules WHERE rule_id = $1";
+        let query = "SELECT * FROM rules WHERE id = $1";
         let prepared = client.prepare(query).await?;
         Ok(client
             .query_opt(&prepared, &[&id])
@@ -63,7 +63,7 @@ impl CrudDb for Rule {
         Ok(rows.iter().map(Rule::from_row).collect::<Vec<_>>())
     }
     async fn delete(&self, client: &Client) -> Result<()> {
-        let query = "DELETE FROM rules WHERE rule_id = $1";
+        let query = "DELETE FROM rules WHERE id = $1";
         let prepared = client.prepare(query).await?;
         client.execute(&prepared, &[&self.id]).await?;
         Ok(())
@@ -73,7 +73,7 @@ impl Rule {
     pub async fn update(&self, client: &Client) -> Result<()> {
         let query = "UPDATE rules 
         SET rule_expressions = $2, description = $3, owner_id = $4, is_public = $5 
-        WHERE rule_id = $1";
+        WHERE id = $1";
         let prepared = client.prepare(query).await?;
         client
             .execute(
@@ -95,7 +95,7 @@ impl Rule {
 impl CrudDb for RuleBinding {
     async fn create(&mut self, client: &Client) -> Result<()> {
         let query = "INSERT INTO rule_bindings 
-        (rule_id, origin_id, object_id, cascading) 
+        (rule_id, origin_id, object_id, cascading)
         VALUES ($1, $2, $3, $4) RETURNING *;";
 
         let prepared = client.prepare(query).await?;
@@ -116,6 +116,8 @@ impl CrudDb for RuleBinding {
         Ok(())
     }
     async fn get(_id: impl PrimaryKey, _client: &Client) -> Result<Option<Self>> {
+        // Always fails, because schema has defined 3 primary keys, and trait requires to return just one object, which is not always one.
+        // Instead of returning only the first object, failing seems better, because this is unexpected when using get
         Err(anyhow!("Cannot get unique entry"))
     }
     async fn all(client: &Client) -> Result<Vec<Self>> {
@@ -125,7 +127,7 @@ impl CrudDb for RuleBinding {
         Ok(rows.iter().map(RuleBinding::from_row).collect::<Vec<_>>())
     }
     async fn delete(&self, client: &Client) -> Result<()> {
-        let query = "DELETE FROM rule_bindings WHERE rule_id = $1, origin_id = $2";
+        let query = "DELETE FROM rule_bindings WHERE rule_id = $1 AND origin_id = $2";
         let prepared = client.prepare(query).await?;
         client
             .execute(&prepared, &[&self.rule_id, &self.origin_id])
@@ -140,7 +142,7 @@ impl RuleBinding {
         origin_id: DieselUlid,
         client: &Client,
     ) -> Result<()> {
-        let query = "DELETE FROM rule_bindings WHERE rule_id = $1, origin_id = $2";
+        let query = "DELETE FROM rule_bindings WHERE rule_id = $1 AND origin_id = $2";
         let prepared = client.prepare(query).await?;
         client.execute(&prepared, &[&rule_id, &origin_id]).await?;
         Ok(())

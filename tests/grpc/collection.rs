@@ -38,6 +38,7 @@ async fn grpc_create_collection() {
     // Create request with OIDC token in header
     let create_request = CreateCollectionRequest {
         name: "test-collection".to_string(),
+        title: "".to_string(),
         description: "Test Description".to_string(),
         key_values: vec![],
         relations: vec![],
@@ -45,6 +46,7 @@ async fn grpc_create_collection() {
         parent: Some(Parent::ProjectId(project.id.to_string())),
         default_data_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
         metadata_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
+        authors: vec![],
     };
     let grpc_request = add_token(Request::new(create_request), ADMIN_OIDC_TOKEN);
 

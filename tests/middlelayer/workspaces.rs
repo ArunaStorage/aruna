@@ -46,6 +46,7 @@ async fn create_and_delete_template() {
         hook_ids: vec![],
         description: "some_desc".to_string(),
         endpoint_ids: vec![],
+        rules: vec![],
     });
     let workspace_id = db_handler
         .create_workspace_template(request, user.id)
@@ -77,6 +78,7 @@ async fn get_templates() {
             hook_ids: vec![],
             description: rand_string(10),
             endpoint_ids: vec![],
+            rules: vec![],
         });
         ids.push(
             db_handler
@@ -160,6 +162,7 @@ async fn create_and_delete_workspace() {
         hook_ids: vec![DieselUlid::generate().to_string()],
         description: rand_string(10),
         endpoint_ids: vec![],
+        rules: vec![],
     });
     // -> Template with default endpoint
     let default_endpoint_template = CreateTemplate(CreateWorkspaceTemplateRequest {
@@ -169,6 +172,7 @@ async fn create_and_delete_workspace() {
         hook_ids: vec![],
         description: rand_string(10),
         endpoint_ids: vec![],
+        rules: vec![],
     });
     // -> Template with custom endpoint
     let custom_endpoint_template = CreateTemplate(CreateWorkspaceTemplateRequest {
@@ -178,6 +182,7 @@ async fn create_and_delete_workspace() {
         hook_ids: vec![],
         description: rand_string(10),
         endpoint_ids: vec![ep.id.to_string()],
+        rules: vec![],
     });
     assert!(db_handler
         .create_workspace_template(invalid, user.id)
@@ -352,6 +357,7 @@ pub async fn claim_workspace() {
         hook_ids: vec![],
         description: "abc".to_string(),
         endpoint_ids: vec![ep.id.to_string()],
+        rules: vec![],
     });
     let template_id = db_handler
         .create_workspace_template(template, creator.id)

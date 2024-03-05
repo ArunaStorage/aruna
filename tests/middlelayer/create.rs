@@ -120,6 +120,7 @@ async fn create_collection() {
     let collection_name = random_name();
     let request = CreateRequest::Collection(CreateCollectionRequest {
         name: collection_name.clone(),
+        title: "".to_string(),
         description: "test".to_string(),
         key_values: vec![],
         relations: vec![],
@@ -127,6 +128,7 @@ async fn create_collection() {
         parent: Some(CollectionParent::ProjectId(parent.object.id.to_string())),
         metadata_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
         default_data_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
+        authors: vec![],
     });
     let (coll, _) = db_handler
         .create_resource(request, user.id, false)
@@ -141,6 +143,8 @@ async fn create_collection() {
     assert_eq!(coll.object.description, "test".to_string());
     assert_eq!(coll.object.revision_number, 0);
     assert_eq!(coll.object.count, 1);
+    assert!(coll.object.title.is_empty());
+    assert!(coll.object.authors.0.is_empty());
     assert!(coll.object.dynamic);
     assert!(coll.object.hashes.0 .0.is_empty());
     assert!(coll.object.key_values.0 .0.is_empty());
@@ -194,6 +198,7 @@ async fn create_dataset() {
     let dataset_name = random_name();
     let request = CreateRequest::Dataset(CreateDatasetRequest {
         name: dataset_name.clone(),
+        title: "".to_string(),
         description: "test".to_string(),
         key_values: vec![],
         relations: vec![],
@@ -201,6 +206,7 @@ async fn create_dataset() {
         parent: Some(DatasetParent::ProjectId(parent.object.id.to_string())),
         metadata_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
         default_data_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
+        authors: vec![],
     });
     let (ds, _) = db_handler
         .create_resource(request, user.id, false)
@@ -215,6 +221,8 @@ async fn create_dataset() {
     assert_eq!(ds.object.description, "test".to_string());
     assert_eq!(ds.object.revision_number, 0);
     assert_eq!(ds.object.count, 1);
+    assert!(ds.object.title.is_empty());
+    assert!(ds.object.authors.0.is_empty());
     assert!(ds.object.dynamic);
     assert!(ds.object.hashes.0 .0.is_empty());
     assert!(ds.object.key_values.0 .0.is_empty());
@@ -289,6 +297,7 @@ async fn create_object() {
     let object_name = random_name();
     let request = CreateRequest::Object(CreateObjectRequest {
         name: object_name.clone(),
+        title: "".to_string(),
         description: "test".to_string(),
         key_values: vec![],
         relations: vec![],
@@ -297,6 +306,7 @@ async fn create_object() {
         parent: Some(ObjectParent::ProjectId(parent.object.id.to_string())),
         metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
         data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        authors: vec![],
     });
     let (obj, _) = db_handler
         .create_resource(request, user.id, false)
@@ -311,6 +321,8 @@ async fn create_object() {
     assert_eq!(obj.object.description, "test".to_string());
     assert_eq!(obj.object.revision_number, 0);
     assert_eq!(obj.object.count, 1);
+    assert!(obj.object.title.is_empty()) ;
+    assert!(obj.object.authors.0.is_empty()) ;
     assert!(!obj.object.dynamic);
     assert!(obj.object.hashes.0 .0.is_empty());
     assert!(obj.object.key_values.0 .0.is_empty());

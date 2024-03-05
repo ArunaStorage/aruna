@@ -164,6 +164,7 @@ async fn get_resource() {
     // Create confidential collection
     let create_request = CreateCollectionRequest {
         name: rand_string(32),
+        title: "".to_string(),
         description: "".to_string(),
         key_values: vec![],
         relations: vec![],
@@ -171,6 +172,7 @@ async fn get_resource() {
         parent: Some(parent),
         default_data_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
         metadata_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
+        authors: vec![],
     };
     let grpc_request = add_token(Request::new(create_request), USER1_OIDC_TOKEN);
     let confidential_collection = service_block

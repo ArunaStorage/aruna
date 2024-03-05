@@ -199,12 +199,14 @@ async fn default_licenses() {
     // Test if lower-hierarchy resources get parent licenses
     let create_collection_request = CreateCollectionRequest {
         name: "licenses_test_collection".to_string(),
+        title: "".to_string(),
         description: String::new(),
         key_values: Vec::new(),
         relations: Vec::new(),
         data_class: DataClass::Public as i32,
         metadata_license_tag: None,
         default_data_license_tag: None,
+        authors: vec![],
         parent: Some(aruna_rust_api::api::storage::services::v2::create_collection_request::Parent::ProjectId(project.id)),
     };
     let collection = services
@@ -230,12 +232,14 @@ async fn default_licenses() {
     // Test if overwrite sets new defaults for lower hierarchies
     let create_dataset_request = CreateDatasetRequest {
         name: "licenses_test_dataset".to_string(),
+        title: "".to_string(),
         description: String::new(),
         key_values: Vec::new(),
         relations: Vec::new(),
         data_class: DataClass::Public as i32,
         metadata_license_tag: None,
         default_data_license_tag: Some(second_license_tag.clone()),
+        authors: vec![],
         parent: Some(aruna_rust_api::api::storage::services::v2::create_dataset_request::Parent::CollectionId(collection.id)),
     };
     let dataset = services
@@ -253,6 +257,7 @@ async fn default_licenses() {
     assert_eq!(dataset.default_data_license_tag, second_license_tag);
     let create_object_request = CreateObjectRequest {
         name: "licenses_test_object".to_string(),
+        title: "".to_string(),
         description: String::new(),
         key_values: Vec::new(),
         relations: Vec::new(),
@@ -265,6 +270,7 @@ async fn default_licenses() {
                 dataset.id,
             ),
         ),
+        authors: vec![],
     };
     let object = services
         .object_service
