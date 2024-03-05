@@ -371,6 +371,8 @@ impl User {
                 if v != ov {
                     to_update.push((self.user_id.to_string(), self.personal_permissions.clone()));
                 }
+            }else{
+                to_update.push((self.user_id.to_string(), self.personal_permissions.clone()));
             }
         }
         for (k, v) in &self.tokens {
