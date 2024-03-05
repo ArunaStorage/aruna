@@ -640,12 +640,14 @@ impl S3 for ArunaS3Service {
             return Ok(S3Response::new(HeadObjectOutput {
                 content_length: -1,
                 last_modified: Some(
-                    time::OffsetDateTime::from_unix_timestamp((bundle.id.timestamp()/1000) as i64)
-                        .map_err(|_| {
-                            error!(error = "Unable to parse timestamp");
-                            s3_error!(InternalError, "Unable to parse timestamp")
-                        })?
-                        .into(),
+                    time::OffsetDateTime::from_unix_timestamp(
+                        (bundle.id.timestamp() / 1000) as i64,
+                    )
+                    .map_err(|_| {
+                        error!(error = "Unable to parse timestamp");
+                        s3_error!(InternalError, "Unable to parse timestamp")
+                    })?
+                    .into(),
                 ),
                 e_tag: Some(format!("-{}", bundle.id)),
                 ..Default::default()
@@ -661,7 +663,7 @@ impl S3 for ArunaS3Service {
         let output = HeadObjectOutput {
             content_length: content_len,
             last_modified: Some(
-                time::OffsetDateTime::from_unix_timestamp((object.id.timestamp()/1000) as i64)
+                time::OffsetDateTime::from_unix_timestamp((object.id.timestamp() / 1000) as i64)
                     .map_err(|e| {
                         error!(error = ?e, msg = "Unable to parse timestamp");
                         s3_error!(InternalError, "Unable to parse timestamp")
@@ -1176,7 +1178,6 @@ impl S3 for ArunaS3Service {
                             error!(error = "Unable to get file context");
                             s3_error!(InternalError, "Unable to get file context")
                         })?;
-                    dbg!(&ctx);
                     tx.send(PithosMessage::FileContext(ctx))
                         .await
                         .map_err(|_| {

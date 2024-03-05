@@ -119,12 +119,11 @@ impl CompiledVariant {
         {
             if part_string == "/" {
                 if key.ends_with("/") {
-                    dbg!("skipping");
                     continue;
                 } else {
                     key.push_str("/");
                 }
-            }else{
+            } else {
                 key.push_str(&part_string);
             }
         }

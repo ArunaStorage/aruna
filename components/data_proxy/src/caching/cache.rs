@@ -683,12 +683,25 @@ impl Cache {
 
         let prefixes = self.get_prefixes(&TypedId::Unknown(object.id), false).await;
 
-        for (_, pre) in prefixes.iter() {
-            self.paths
-                .insert(format!("{}/{}", pre.clone(), object.name), object.id);
+        if object
+            .parents
+            .as_ref()
+            .map(|e| e.is_empty())
+            .unwrap_or_else(|| true)
+            && object.object_type != ObjectType::Project
+        {
+            for (_, pre) in prefixes.iter() {
+                self.paths
+                    .remove(&format!("{}/{}", pre.clone(), object.name));
+            }
+        } else {
+            for (_, pre) in prefixes.iter() {
+                self.paths
+                    .insert(format!("{}/{}", pre.clone(), object.name), object.id);
+            }
         }
 
-        if prefixes.is_empty() {
+        if prefixes.is_empty() && object.object_type == ObjectType::Project {
             self.paths.insert(object.name.clone(), object.id);
         }
 

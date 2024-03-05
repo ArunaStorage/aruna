@@ -90,7 +90,6 @@ impl Proxy {
         crate::auth::crypto::ed25519_to_x25519_privatekey(&private_key)
     }
 
-
     pub fn _get_public_key(&self) -> Result<[u8; 32]> {
         let key = general_purpose::STANDARD.decode(self.public_key.clone())?;
         let key = key
