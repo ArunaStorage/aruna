@@ -117,14 +117,16 @@ impl CompiledVariant {
             .iter()
             .filter_map(|x| x.with_hierarchy(&hierarchy))
         {
-            if &part_string == "/" {
-                if key.is_empty() || key.ends_with("/") {
+            if part_string == "/" {
+                if key.ends_with("/") {
+                    dbg!("skipping");
                     continue;
                 } else {
                     key.push_str("/");
                 }
+            }else{
+                key.push_str(&part_string);
             }
-            key.push_str(&part_string);
         }
 
         (bucket, key)

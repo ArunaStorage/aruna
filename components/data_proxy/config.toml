@@ -3,6 +3,7 @@
 endpoint_id= "01H81W0ZMB54YEP5711Q2BK46V"
 # Private ed25519 key of the proxy (can also be provided via env-var PROXY_PRIVATE_KEY)
 private_key="MC4CAQAwBQYDK2VwBCIEIM/FI+bYw+auSKGyGqeISRIEjofvZV/lbK7QL1wkuCey"
+public_key="MCowBQYDK2VwAyEAnouQBh4GHPCD/k85VIzPyCdOijVg2qlzt2TELwTMy4c="
 # The serial number of the proxy (will be received from the server on registration)
 serial=1337
 # Optional will disable notification sync if not set

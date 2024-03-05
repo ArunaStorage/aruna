@@ -500,8 +500,8 @@ impl S3 for ArunaS3Service {
                 s3_error!(InternalError, "Unable to get private key")
             })?;
             parser = parser.add_recipient(&key);
-            parser = parser.parse().map_err(|_| {
-                error!(error = "Unable to parse footer");
+            parser = parser.parse().map_err(|e| {
+                error!(error = ?e, msg = "Unable to parse footer");
                 s3_error!(InternalError, "Unable to parse footer")
             })?;
 
@@ -640,7 +640,7 @@ impl S3 for ArunaS3Service {
             return Ok(S3Response::new(HeadObjectOutput {
                 content_length: -1,
                 last_modified: Some(
-                    time::OffsetDateTime::from_unix_timestamp(bundle.id.timestamp() as i64)
+                    time::OffsetDateTime::from_unix_timestamp((bundle.id.timestamp()/1000) as i64)
                         .map_err(|_| {
                             error!(error = "Unable to parse timestamp");
                             s3_error!(InternalError, "Unable to parse timestamp")
@@ -661,9 +661,9 @@ impl S3 for ArunaS3Service {
         let output = HeadObjectOutput {
             content_length: content_len,
             last_modified: Some(
-                time::OffsetDateTime::from_unix_timestamp(object.id.timestamp() as i64)
-                    .map_err(|_| {
-                        error!(error = "Unable to parse timestamp");
+                time::OffsetDateTime::from_unix_timestamp((object.id.timestamp()/1000) as i64)
+                    .map_err(|e| {
+                        error!(error = ?e, msg = "Unable to parse timestamp");
                         s3_error!(InternalError, "Unable to parse timestamp")
                     })?
                     .into(),
@@ -1057,11 +1057,6 @@ impl S3 for ArunaS3Service {
 
         let (_, collection, dataset, object, location_state) = states.into_new_or_existing()?;
 
-        dbg!(&collection);
-        dbg!(&dataset);
-        dbg!(&object);
-        dbg!(&location_state);
-
         let (mut new_object, was_init) = match object {
             NewOrExistingObject::Existing(ob) => {
                 if ob.object_status == Status::Initializing {
@@ -1108,7 +1103,7 @@ impl S3 for ArunaS3Service {
 
         let mut location = self
             .backend
-            .initialize_location(&new_object, None, location_state, false)
+            .initialize_location(&new_object, req.input.content_length, location_state, false)
             .await
             .map_err(|_| {
                 error!(error = "Unable to create object_location");

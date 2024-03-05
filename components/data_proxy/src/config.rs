@@ -35,6 +35,7 @@ impl Config {
 pub struct Proxy {
     pub endpoint_id: DieselUlid,
     pub private_key: Option<String>,
+    pub public_key: String,
     pub serial: i32,
     pub remote_synced: bool,
     pub enable_ingest: bool,
@@ -78,6 +79,14 @@ impl Proxy {
         let key = general_purpose::STANDARD.decode(private_key)?;
         let key = key
             .get(key.len() - 32..)
+            .ok_or_else(|| anyhow!("Invalid key length"))?;
+        Ok(key.try_into()?)
+    }
+
+    pub fn get_public_key(&self) -> Result<[u8; 32]> {
+        let key = general_purpose::STANDARD.decode(self.public_key.clone())?;
+        let key = key
+            .get(0..32)
             .ok_or_else(|| anyhow!("Invalid key length"))?;
         Ok(key.try_into()?)
     }

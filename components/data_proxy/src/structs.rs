@@ -345,7 +345,7 @@ impl Object {
                     }
                 })
                 .unwrap_or_default(),
-            recipients_pubkeys: vec![CONFIG.proxy.get_private_key()?],
+            recipients_pubkeys: vec![CONFIG.proxy.get_public_key()?],
             ..Default::default()
         })
     }
@@ -1210,7 +1210,7 @@ impl ResourceState {
         matches!(self, ResourceState::Missing { .. })
     }
 
-    pub fn is_missing_or_none(&self) -> bool {
+    pub fn _is_missing_or_none(&self) -> bool {
         matches!(self, ResourceState::Missing { .. } | ResourceState::None)
     }
 
@@ -1269,7 +1269,6 @@ impl ResourceStates {
     }
 
     pub fn validate(&self, allow_create_project: bool) -> Result<()> {
-        dbg!(self);
         let project = if allow_create_project && self.objects[0].is_missing() {
             false
         } else {

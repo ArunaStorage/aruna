@@ -233,8 +233,11 @@ impl Transformer for BufferedS3Sink {
 
         self.buffer.put(buf.split());
 
+        dbg!(finished);
+        dbg!(self.buffer.len());
+
         if self.single_part_upload {
-            if finished {
+            if finished && self.buffer.len() > 0 {
                 self.upload_part().await?;
                 if let Some(notifier) = &self.notifier {
                     notifier.send_read_writer(Message::Finished)?;
@@ -252,7 +255,7 @@ impl Transformer for BufferedS3Sink {
                 self.upload_part().await?;
             }
 
-            if finished {
+            if finished && self.buffer.len() > 0 {
                 if self.upload_id.is_none() {
                     self.upload_single().await?;
                 } else {
