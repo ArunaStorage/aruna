@@ -8,7 +8,9 @@ use aruna_rust_api::api::storage::{
         UpdateProjectDescriptionRequest, UpdateProjectKeyValuesRequest, UpdateProjectNameRequest,
     },
 };
+use aruna_rust_api::api::storage::models::v2::Author;
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
 use tonic::Request;
 
 use crate::common::{
@@ -34,6 +36,7 @@ async fn grpc_create_project() {
 
     let create_request = CreateProjectRequest {
         name: project_name.to_string(),
+        title: "this-is-a-title-test".to_string(),
         description: "Something".to_string(),
         key_values: vec![],
         relations: vec![],
@@ -41,6 +44,13 @@ async fn grpc_create_project() {
         preferred_endpoint: "".to_string(),
         default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
         metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        authors: vec![Author{
+            first_name: "A".to_string(),
+            last_name: "B".to_string(),
+            email: Some("C".to_string()),
+            orcid: None,
+            id: None,
+        }],
     };
 
     let grpc_request = add_token(Request::new(create_request), ADMIN_OIDC_TOKEN);
@@ -62,6 +72,14 @@ async fn grpc_create_project() {
     assert_eq!(proto_project.relations, vec![]);
     assert_eq!(proto_project.status, Status::Available as i32);
     assert!(proto_project.dynamic);
+    assert_eq!(&proto_project.title,"this-is-a-title-test");
+    assert!(proto_project.authors.iter().contains(&Author{
+            first_name: "A".to_string(),
+            last_name: "B".to_string(),
+            email: Some("C".to_string()),
+            orcid: None,
+            id: None,
+        }));
     assert_eq!(
         proto_project.endpoints,
         vec![DataEndpoint {

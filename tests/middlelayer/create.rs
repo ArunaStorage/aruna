@@ -43,6 +43,7 @@ async fn create_project() {
     let request = CreateRequest::Project(
         CreateProjectRequest {
             name: project_name.clone(),
+            title: "".to_string(),
             description: "test".to_string(),
             key_values: vec![],
             relations: vec![],
@@ -50,6 +51,7 @@ async fn create_project() {
             preferred_endpoint: "".to_string(),
             metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
             default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+            authors: vec![],
         },
         default_endpoint.to_string(),
     );
@@ -100,6 +102,7 @@ async fn create_collection() {
     let parent = CreateRequest::Project(
         CreateProjectRequest {
             name: parent_name,
+            title: "".to_string(),
             description: "test".to_string(),
             key_values: vec![],
             relations: vec![],
@@ -107,6 +110,7 @@ async fn create_collection() {
             preferred_endpoint: "".to_string(),
             metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
             default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+            authors: vec![],
         },
         default_endpoint.to_string(),
     );
@@ -178,6 +182,7 @@ async fn create_dataset() {
     let parent = CreateRequest::Project(
         CreateProjectRequest {
             name: parent_name,
+            title: "".to_string(),
             description: "test".to_string(),
             key_values: vec![],
             relations: vec![],
@@ -185,6 +190,7 @@ async fn create_dataset() {
             preferred_endpoint: "".to_string(),
             metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
             default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+            authors: vec![],
         },
         default_endpoint.to_string(),
     );
@@ -256,6 +262,7 @@ async fn create_object() {
     let failing_parent = CreateRequest::Project(
         CreateProjectRequest {
             name: "project".to_string(),
+            title: "".to_string(),
             description: "test".to_string(),
             key_values: vec![],
             relations: vec![],
@@ -263,6 +270,7 @@ async fn create_object() {
             preferred_endpoint: endpoint.to_string(),
             metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
             default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+            authors: vec![],
         },
         DieselUlid::generate().to_string(),
     );
@@ -277,6 +285,7 @@ async fn create_object() {
     let parent = CreateRequest::Project(
         CreateProjectRequest {
             name: parent_name,
+            title: "".to_string(),
             description: "test".to_string(),
             key_values: vec![],
             relations: vec![],
@@ -284,6 +293,7 @@ async fn create_object() {
             preferred_endpoint: "".to_string(),
             metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
             default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+            authors: vec![],
         },
         default_endpoint.to_string(),
     );

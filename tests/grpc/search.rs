@@ -129,6 +129,7 @@ async fn get_resource() {
     // Create public project
     let create_request = CreateProjectRequest {
         name: rand_string(32).to_lowercase(),
+        title: "".to_string(),
         description: "".to_string(),
         key_values: vec![],
         relations: vec![],
@@ -136,6 +137,7 @@ async fn get_resource() {
         default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
         metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
         preferred_endpoint: "".to_string(),
+        authors: vec![],
     };
     let grpc_request = add_token(Request::new(create_request), USER1_OIDC_TOKEN);
     let public_project = service_block

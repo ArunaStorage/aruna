@@ -267,6 +267,7 @@ pub async fn fast_track_grpc_project_create(
 
     let create_request = CreateProjectRequest {
         name: project_name.to_string(),
+        title: "title-test".to_string(),
         description: "".to_string(),
         key_values: vec![],
         relations: vec![],
@@ -274,6 +275,13 @@ pub async fn fast_track_grpc_project_create(
         preferred_endpoint: "".to_string(),
         default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
         metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        authors: vec![aruna_rust_api::api::storage::models::v2::Author{
+            first_name: "Jane".to_string(),
+            last_name: "Doe".to_string(),
+            email: Some("jane.doe@test.org".to_string()),
+            orcid: None,
+            id: None,
+        }], 
     };
 
     let grpc_request = add_token(Request::new(create_request), token);

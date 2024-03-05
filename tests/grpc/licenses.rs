@@ -121,6 +121,7 @@ async fn default_licenses() {
     // Create project without licenses
     let create_project_with_defaults_request = CreateProjectRequest {
         name: "default-license-test-project".to_string(),
+        title: "".to_string(),
         description: String::new(),
         key_values: Vec::new(),
         relations: Vec::new(),
@@ -128,6 +129,7 @@ async fn default_licenses() {
         preferred_endpoint: String::new(),
         metadata_license_tag: String::new(),
         default_data_license_tag: String::new(),
+        authors: vec![],
     };
     let response = services
         .project_service
@@ -152,6 +154,7 @@ async fn default_licenses() {
     // Create licenses and project with license
     let mut create_project_request = CreateProjectRequest {
         name: "license-test-project".to_string(),
+        title: "".to_string(),
         description: String::new(),
         key_values: Vec::new(),
         relations: Vec::new(),
@@ -159,6 +162,7 @@ async fn default_licenses() {
         preferred_endpoint: String::new(),
         metadata_license_tag: String::new(),
         default_data_license_tag: String::new(),
+        authors: vec![],
     };
     let license_tag = services
         .license_service
