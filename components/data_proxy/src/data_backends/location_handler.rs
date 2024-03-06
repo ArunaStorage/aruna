@@ -59,7 +59,9 @@ impl Arguments {
                 .cloned()
                 .flatten()
                 .map(|(a, _)| a.to_string().to_ascii_lowercase()),
-            Arguments::EndpointId => Some(CONFIG.proxy.endpoint_id.to_string().to_ascii_lowercase()),
+            Arguments::EndpointId => {
+                Some(CONFIG.proxy.endpoint_id.to_string().to_ascii_lowercase())
+            }
             Arguments::Random(x) => Some(
                 thread_rng()
                     .sample_iter(&Alphanumeric)

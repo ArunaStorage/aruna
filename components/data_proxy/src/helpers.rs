@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use anyhow::Result;
 use http::Method;
 use rand::distributions::DistString;
@@ -152,4 +154,19 @@ pub fn random_string(len: usize) -> String {
     Alphanumeric
         .sample_string(&mut thread_rng(), len)
         .to_ascii_lowercase()
+}
+
+
+pub trait IntoOption {
+    fn into_option(self) -> Option<Self> where Self: Sized;
+}
+
+impl<T, S> IntoOption for HashSet<T, S> {
+    fn into_option(self) -> Option<Self> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(self)
+        }
+    }
 }

@@ -34,6 +34,7 @@ use std::{
 use tracing::{debug, error};
 
 use crate::auth::auth::AuthHandler;
+use crate::helpers::IntoOption;
 use crate::CONFIG;
 
 /* ----- Constants ----- */
@@ -109,11 +110,12 @@ impl From<PermissionLevel> for DbPermissionLevel {
 
 //impl From<Option<Permission
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub enum ObjectType {
     Project,
     Collection,
     Dataset,
+    #[default]
     Object,
 }
 
@@ -260,7 +262,13 @@ impl ObjectLocation {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub enum VersionVariant {
+    HasVersion(DieselUlid), // a(latest) -> has_version -> b (DieselUlid)
+    IsVersion(DieselUlid),  // a(not_latest) -> is_version -> b (DieselUlid / latest)
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct Object {
     pub id: DieselUlid,
     pub name: String,
@@ -275,6 +283,7 @@ pub struct Object {
     pub dynamic: bool,
     pub children: Option<HashSet<TypedRelation>>,
     pub parents: Option<HashSet<TypedRelation>>,
+    pub versions: Option<HashSet<VersionVariant>>,
     pub synced: bool,
     pub endpoints: Vec<Endpoint>, // TODO
     pub created_at: Option<NaiveDateTime>,
@@ -306,6 +315,7 @@ impl Object {
             dynamic: true,
             children: None,
             parents: parent.map(|p| HashSet::from([p])),
+            versions: None,
             synced: false,
             endpoints: vec![], // Can be empty, as long as create_object overwrites this
             // object with gRPC response
@@ -697,43 +707,52 @@ impl TryFrom<Project> for Object {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: Project) -> Result<Self, Self::Error> {
-        let (inbound, outbound): (Vec<_>, Vec<_>) = value
-            .relations
-            .iter()
-            .filter_map(|x| {
-                if let Some(rel) = &x.relation {
-                    match rel {
-                        Relation::Internal(var) => {
-                            if var.defined_variant() == InternalRelationVariant::BelongsTo {
+        let mut inbound = HashSet::default();
+        let mut outbound = HashSet::default();
+        let mut version = HashSet::default();
+
+        for rel in value.relations.iter() {
+            if let Some(rel) = &rel.relation {
+                match rel {
+                    Relation::Internal(var) => {
+                        match var.defined_variant() {
+                            InternalRelationVariant::BelongsTo => {
                                 match var.direction() {
                                     RelationDirection::Inbound => {
-                                        Some((TypedRelation::try_from(rel).ok()?, true))
+                                        inbound.insert(TypedRelation::try_from(rel)?);
                                     }
                                     RelationDirection::Outbound => {
-                                        Some((TypedRelation::try_from(rel).ok()?, false))
+                                        outbound.insert(TypedRelation::try_from(rel)?);
                                     }
-                                    _ => None,
+                                    RelationDirection::Unspecified => continue,
                                 }
-                            } else {
-                                None
                             }
+                            InternalRelationVariant::Version => {
+                                match var.direction() {
+                                    RelationDirection::Inbound => {
+                                        version.insert(VersionVariant::HasVersion(DieselUlid::from_str(
+                                            &var.resource_id,
+                                        )?));
+                                    }
+                                    RelationDirection::Outbound => {
+                                        version.insert(VersionVariant::IsVersion(DieselUlid::from_str(
+                                            &var.resource_id,
+                                        )?));
+                                    }
+                                    RelationDirection::Unspecified => continue,
+                                }
+                            }
+                            _ => continue,
                         }
-                        _ => None,
                     }
-                } else {
-                    None
+                    _ => continue,
                 }
-            })
-            .partition(|(_, e)| *e);
+            }
+        }
 
-        let inbounds = inbound
-            .into_iter()
-            .map(|(id, _)| id)
-            .collect::<HashSet<TypedRelation>>();
-        let outbounds = outbound
-            .into_iter()
-            .map(|(id, _)| id)
-            .collect::<HashSet<TypedRelation>>();
+        let inbounds = inbound.into_option();
+        let outbounds = outbound.into_option();
+        let versions = version.into_option();
 
         Ok(Object {
             id: DieselUlid::from_str(&value.id).map_err(|e| {
@@ -750,8 +769,9 @@ impl TryFrom<Project> for Object {
             metadata_license: value.metadata_license_tag,
             data_license: value.default_data_license_tag,
             dynamic: value.dynamic,
-            parents: Some(inbounds),
-            children: Some(outbounds),
+            parents: inbounds,
+            children: outbounds,
+            versions,
             synced: false,
             endpoints: value
                 .endpoints
@@ -770,43 +790,52 @@ impl TryFrom<Collection> for Object {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: Collection) -> Result<Self, Self::Error> {
-        let (inbound, outbound): (Vec<_>, Vec<_>) = value
-            .relations
-            .iter()
-            .filter_map(|x| {
-                if let Some(rel) = &x.relation {
-                    match rel {
-                        Relation::Internal(var) => {
-                            if var.defined_variant() == InternalRelationVariant::BelongsTo {
+        let mut inbound = HashSet::default();
+        let mut outbound = HashSet::default();
+        let mut version = HashSet::default();
+
+        for rel in value.relations.iter() {
+            if let Some(rel) = &rel.relation {
+                match rel {
+                    Relation::Internal(var) => {
+                        match var.defined_variant() {
+                            InternalRelationVariant::BelongsTo => {
                                 match var.direction() {
                                     RelationDirection::Inbound => {
-                                        Some((TypedRelation::try_from(rel).ok()?, true))
+                                        inbound.insert(TypedRelation::try_from(rel)?);
                                     }
                                     RelationDirection::Outbound => {
-                                        Some((TypedRelation::try_from(rel).ok()?, false))
+                                        outbound.insert(TypedRelation::try_from(rel)?);
                                     }
-                                    _ => None,
+                                    RelationDirection::Unspecified => continue,
                                 }
-                            } else {
-                                None
                             }
+                            InternalRelationVariant::Version => {
+                                match var.direction() {
+                                    RelationDirection::Inbound => {
+                                        version.insert(VersionVariant::HasVersion(DieselUlid::from_str(
+                                            &var.resource_id,
+                                        )?));
+                                    }
+                                    RelationDirection::Outbound => {
+                                        version.insert(VersionVariant::IsVersion(DieselUlid::from_str(
+                                            &var.resource_id,
+                                        )?));
+                                    }
+                                    RelationDirection::Unspecified => continue,
+                                }
+                            }
+                            _ => continue,
                         }
-                        _ => None,
                     }
-                } else {
-                    None
+                    _ => continue,
                 }
-            })
-            .partition(|(_, e)| *e);
+            }
+        }
 
-        let inbounds = inbound
-            .into_iter()
-            .map(|(id, _)| id)
-            .collect::<HashSet<TypedRelation>>();
-        let outbounds = outbound
-            .into_iter()
-            .map(|(id, _)| id)
-            .collect::<HashSet<TypedRelation>>();
+        let inbounds = inbound.into_option();
+        let outbounds = outbound.into_option();
+        let versions = version.into_option();
 
         Ok(Object {
             id: DieselUlid::from_str(&value.id).map_err(|e| e)?,
@@ -820,8 +849,9 @@ impl TryFrom<Collection> for Object {
             metadata_license: value.metadata_license_tag,
             data_license: value.default_data_license_tag,
             dynamic: value.dynamic,
-            parents: Some(inbounds),
-            children: Some(outbounds),
+            parents: inbounds,
+            children: outbounds,
+            versions,
             synced: false,
             endpoints: value
                 .endpoints
@@ -840,43 +870,52 @@ impl TryFrom<Dataset> for Object {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: Dataset) -> Result<Self, Self::Error> {
-        let (inbound, outbound): (Vec<_>, Vec<_>) = value
-            .relations
-            .iter()
-            .filter_map(|x| {
-                if let Some(rel) = &x.relation {
-                    match rel {
-                        Relation::Internal(var) => {
-                            if var.defined_variant() == InternalRelationVariant::BelongsTo {
+        let mut inbound = HashSet::default();
+        let mut outbound = HashSet::default();
+        let mut version = HashSet::default();
+
+        for rel in value.relations.iter() {
+            if let Some(rel) = &rel.relation {
+                match rel {
+                    Relation::Internal(var) => {
+                        match var.defined_variant() {
+                            InternalRelationVariant::BelongsTo => {
                                 match var.direction() {
                                     RelationDirection::Inbound => {
-                                        Some((TypedRelation::try_from(rel).ok()?, true))
+                                        inbound.insert(TypedRelation::try_from(rel)?);
                                     }
                                     RelationDirection::Outbound => {
-                                        Some((TypedRelation::try_from(rel).ok()?, false))
+                                        outbound.insert(TypedRelation::try_from(rel)?);
                                     }
-                                    _ => None,
+                                    RelationDirection::Unspecified => continue,
                                 }
-                            } else {
-                                None
                             }
+                            InternalRelationVariant::Version => {
+                                match var.direction() {
+                                    RelationDirection::Inbound => {
+                                        version.insert(VersionVariant::HasVersion(DieselUlid::from_str(
+                                            &var.resource_id,
+                                        )?));
+                                    }
+                                    RelationDirection::Outbound => {
+                                        version.insert(VersionVariant::IsVersion(DieselUlid::from_str(
+                                            &var.resource_id,
+                                        )?));
+                                    }
+                                    RelationDirection::Unspecified => continue,
+                                }
+                            }
+                            _ => continue,
                         }
-                        _ => None,
                     }
-                } else {
-                    None
+                    _ => continue,
                 }
-            })
-            .partition(|(_, e)| *e);
+            }
+        }
 
-        let inbounds = inbound
-            .into_iter()
-            .map(|(id, _)| id)
-            .collect::<HashSet<TypedRelation>>();
-        let outbounds = outbound
-            .into_iter()
-            .map(|(id, _)| id)
-            .collect::<HashSet<TypedRelation>>();
+        let inbounds = inbound.into_option();
+        let outbounds = outbound.into_option();
+        let versions = version.into_option();
 
         Ok(Object {
             id: DieselUlid::from_str(&value.id)?,
@@ -890,8 +929,9 @@ impl TryFrom<Dataset> for Object {
             metadata_license: value.metadata_license_tag,
             data_license: value.default_data_license_tag,
             dynamic: value.dynamic,
-            parents: Some(inbounds),
-            children: Some(outbounds),
+            parents: inbounds,
+            children: outbounds,
+            versions,
             synced: false,
             endpoints: value
                 .endpoints
@@ -910,43 +950,52 @@ impl TryFrom<GrpcObject> for Object {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: GrpcObject) -> Result<Self, Self::Error> {
-        let (inbound, outbound): (Vec<_>, Vec<_>) = value
-            .relations
-            .iter()
-            .filter_map(|x| {
-                if let Some(rel) = &x.relation {
-                    match rel {
-                        Relation::Internal(var) => {
-                            if var.defined_variant() == InternalRelationVariant::BelongsTo {
+        let mut inbound = HashSet::default();
+        let mut outbound = HashSet::default();
+        let mut version = HashSet::default();
+
+        for rel in value.relations.iter() {
+            if let Some(rel) = &rel.relation {
+                match rel {
+                    Relation::Internal(var) => {
+                        match var.defined_variant() {
+                            InternalRelationVariant::BelongsTo => {
                                 match var.direction() {
                                     RelationDirection::Inbound => {
-                                        Some((TypedRelation::try_from(rel).ok()?, true))
+                                        inbound.insert(TypedRelation::try_from(rel)?);
                                     }
                                     RelationDirection::Outbound => {
-                                        Some((TypedRelation::try_from(rel).ok()?, false))
+                                        outbound.insert(TypedRelation::try_from(rel)?);
                                     }
-                                    _ => None,
+                                    RelationDirection::Unspecified => continue,
                                 }
-                            } else {
-                                None
                             }
+                            InternalRelationVariant::Version => {
+                                match var.direction() {
+                                    RelationDirection::Inbound => {
+                                        version.insert(VersionVariant::HasVersion(DieselUlid::from_str(
+                                            &var.resource_id,
+                                        )?));
+                                    }
+                                    RelationDirection::Outbound => {
+                                        version.insert(VersionVariant::IsVersion(DieselUlid::from_str(
+                                            &var.resource_id,
+                                        )?));
+                                    }
+                                    RelationDirection::Unspecified => continue,
+                                }
+                            }
+                            _ => continue,
                         }
-                        _ => None,
                     }
-                } else {
-                    None
+                    _ => continue,
                 }
-            })
-            .partition(|(_, e)| *e);
+            }
+        }
 
-        let inbounds = inbound
-            .into_iter()
-            .map(|(id, _)| id)
-            .collect::<HashSet<TypedRelation>>();
-        let outbounds = outbound
-            .into_iter()
-            .map(|(id, _)| id)
-            .collect::<HashSet<TypedRelation>>();
+        let inbounds = inbound.into_option();
+        let outbounds = outbound.into_option();
+        let versions = version.into_option();
 
         Ok(Object {
             id: DieselUlid::from_str(&value.id)?,
@@ -960,8 +1009,9 @@ impl TryFrom<GrpcObject> for Object {
             metadata_license: value.metadata_license_tag,
             data_license: value.data_license_tag,
             dynamic: value.dynamic,
-            parents: Some(inbounds),
-            children: Some(outbounds),
+            parents: inbounds,
+            children: outbounds,
+            versions,
             synced: false,
             endpoints: value
                 .endpoints
@@ -1041,20 +1091,14 @@ impl From<CreateBucketInput> for Object {
         Object {
             id: DieselUlid::generate(),
             name: value.bucket,
-            title: "".to_string(),
-            key_values: vec![],
             object_status: Status::Available,
             data_class: DataClass::Private,
             object_type: ObjectType::Project,
-            hashes: HashMap::default(),
             metadata_license: ALL_RIGHTS_RESERVED.to_string(), // Default for now
             data_license: ALL_RIGHTS_RESERVED.to_string(),     // Default for now
-            dynamic: false,
-            parents: None,
-            children: None,
-            synced: false,
             endpoints: vec![],
             created_at: Some(chrono::Utc::now().naive_utc()), // Now for default
+            ..Default::default()
         }
     }
 }

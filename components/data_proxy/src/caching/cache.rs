@@ -654,7 +654,6 @@ impl Cache {
         object: Object,
         location: Option<ObjectLocation>,
     ) -> Result<()> {
-
         trace!(?object, ?location, "upserting object");
         if let Some(persistence) = self.persistence.read().await.as_ref() {
             let mut client = persistence.get_client().await?;
@@ -707,7 +706,10 @@ impl Cache {
                 self.paths
                     .insert(format!("{}/{}", pre.clone(), object.name), object.id);
 
-                trace!(inserted = format!("{}/{}", pre.clone(), object.name), "inserted");
+                trace!(
+                    inserted = format!("{}/{}", pre.clone(), object.name),
+                    "inserted"
+                );
             }
         }
 

@@ -513,7 +513,10 @@ impl S3 for ArunaS3Service {
             None
         };
 
-        let parts = vec![footer.as_ref().map(|f| f.eof_metadata.disk_file_size).unwrap_or_else(|| location.disk_content_len as u64)];
+        let parts = vec![footer
+            .as_ref()
+            .map(|f| f.eof_metadata.disk_file_size)
+            .unwrap_or_else(|| location.disk_content_len as u64)];
 
         trace!("calculating ranges");
         let (query_ranges, edit_list, actual_range) =
@@ -564,9 +567,8 @@ impl S3 for ArunaS3Service {
                 );
 
                 if location.get_encryption_key().is_some() {
-                    asrw = asrw.add_transformer(
-                        ChaCha20DecParts::new_with_lengths(decryption_key, parts),
-                    );
+                    asrw = asrw
+                        .add_transformer(ChaCha20DecParts::new_with_lengths(decryption_key, parts));
                 }
 
                 if location.is_compressed() {
