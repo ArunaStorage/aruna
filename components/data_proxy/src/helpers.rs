@@ -156,9 +156,10 @@ pub fn random_string(len: usize) -> String {
         .to_ascii_lowercase()
 }
 
-
 pub trait IntoOption {
-    fn into_option(self) -> Option<Self> where Self: Sized;
+    fn into_option(self) -> Option<Self>
+    where
+        Self: Sized;
 }
 
 impl<T, S> IntoOption for HashSet<T, S> {

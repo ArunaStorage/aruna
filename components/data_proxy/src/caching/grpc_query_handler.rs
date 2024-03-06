@@ -436,7 +436,6 @@ impl GrpcQueryHandler {
         mut loc: Option<ObjectLocation>,
         token: &str,
     ) -> Result<DPObject> {
-
         trace!(?object, ?loc, "Creating object");
 
         let mut req = Request::new(CreateObjectRequest::from(object));
@@ -517,7 +516,6 @@ impl GrpcQueryHandler {
         token: &str,
         force_update: bool,
     ) -> Result<DPObject> {
-
         trace!(?object, "Initializing object update");
 
         // Create UpdateObjectRequest with provided value for force_revision parameter
@@ -560,8 +558,13 @@ impl GrpcQueryHandler {
         location: Option<ObjectLocation>,
         token: &str,
     ) -> Result<DPObject> {
-
-        trace!(?object_id, ?content_len, ?hashes, ?location, "Finishing object");
+        trace!(
+            ?object_id,
+            ?content_len,
+            ?hashes,
+            ?location,
+            "Finishing object"
+        );
 
         let mut req = Request::new(FinishObjectStagingRequest {
             object_id: object_id.to_string(),
@@ -610,7 +613,6 @@ impl GrpcQueryHandler {
         mut loc: ObjectLocation,
         token: &str,
     ) -> Result<DPObject> {
-
         trace!(?proxy_object, ?loc, "Creating and finishing object");
 
         // Create Object in Aruna Server

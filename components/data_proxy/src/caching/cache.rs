@@ -4,6 +4,7 @@ use crate::caching::grpc_query_handler::sort_objects;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::database::persistence::delete_parts_by_upload_id;
 use crate::replication::replication_handler::ReplicationMessage;
+use crate::s3_frontend::data_handler::DataHandler;
 use crate::structs::{
     AccessKeyPermissions, Bundle, DbPermissionLevel, ObjectType, TypedId, UploadPart, User,
 };
@@ -71,6 +72,8 @@ pub struct Cache {
     pub(crate) auth: RwLock<Option<AuthHandler>>,
     pub(crate) sender: Sender<ReplicationMessage>,
     backend: Option<Arc<Box<dyn StorageBackend>>>,
+
+    pub(crate) self_arc: RwLock<Option<Arc<Cache>>>,
 }
 
 impl Cache {
@@ -108,7 +111,9 @@ impl Cache {
             auth: RwLock::new(None),
             sender,
             backend,
+            self_arc: RwLock::new(None),
         });
+        cache.self_arc.write().await.replace(cache.clone());
 
         // Initialize auth handler
         let auth_handler =
@@ -193,6 +198,15 @@ impl Cache {
         }
     }
 
+    pub async fn get_cache(&self) -> Result<Arc<Cache>> {
+        Ok(self
+            .self_arc
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| anyhow!("Cache not found"))?)
+    }
+
     #[tracing::instrument(level = "trace", skip(self, database))]
     pub async fn sync_with_persistence(&self, database: Database) -> Result<Database> {
         let client = database.get_client().await?;
@@ -227,6 +241,25 @@ impl Cache {
 
         for object in database_objects {
             let location = ObjectLocation::get_opt(&object.id, &client).await?;
+
+            let cache = self.get_cache().await?;
+            if let Some(location) = location {
+                if location.is_temporary {
+                    if let Some(backend) = &self.backend {
+                        tokio::spawn(DataHandler::finalize_location(
+                            object.id,
+                            cache,
+                            token,
+                            backend,
+                            ctx,
+                            before_location,
+                            part_lens,
+                            new_location,
+                        ));
+                    }
+                }
+            }
+
             self.resources.insert(
                 object.id,
                 (
@@ -1055,7 +1088,8 @@ impl Cache {
 
     #[tracing::instrument(level = "trace", skip(self, upload_id))]
     pub fn get_parts(&self, upload_id: &str) -> Vec<UploadPart> {
-        let mut parts = self.multi_parts
+        let mut parts = self
+            .multi_parts
             .get(upload_id)
             .map(|e| e.value().clone())
             .unwrap_or_default();

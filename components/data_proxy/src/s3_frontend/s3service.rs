@@ -168,7 +168,6 @@ impl S3 for ArunaS3Service {
                 s3_error!(InternalError, "Unable to finish upload")
             })?;
 
-
         let response = CompleteMultipartUploadOutput {
             e_tag: Some(object.id.to_string()),
             ..Default::default()
@@ -177,10 +176,13 @@ impl S3 for ArunaS3Service {
         old_location.disk_content_len = disk_size as i64;
         old_location.raw_content_len = cumulative_size as i64;
 
-        self.cache.update_location(object.id, old_location.clone()).await.map_err(|_| {
-            error!(error = "Unable to update location");
-            s3_error!(InternalError, "Unable to update location")
-        })?;
+        self.cache
+            .update_location(object.id, old_location.clone())
+            .await
+            .map_err(|_| {
+                error!(error = "Unable to update location");
+                s3_error!(InternalError, "Unable to update location")
+            })?;
 
         let new_location = self
             .backend
@@ -524,27 +526,28 @@ impl S3 for ArunaS3Service {
             None
         };
 
-       let parts = if location.is_temporary {
+        let parts = if location.is_temporary {
             let mut part_sizes = Vec::new();
-            let parts = self.cache.get_parts(&location.upload_id.as_ref().ok_or_else(|| {
-                error!(error = "Upload id must be specified");
-                s3_error!(InvalidPart, "Upload id must be specified")
-            })?);
+            let parts = self
+                .cache
+                .get_parts(&location.upload_id.as_ref().ok_or_else(|| {
+                    error!(error = "Upload id must be specified");
+                    s3_error!(InvalidPart, "Upload id must be specified")
+                })?);
 
             for parts in parts {
-                let full_chunks = (parts.size / (65536 + 28))*(65536 + 28);
+                let full_chunks = (parts.size / (65536 + 28)) * (65536 + 28);
                 part_sizes.push(full_chunks);
                 if parts.size % (65536 + 28) != 0 {
                     part_sizes.push(parts.size - full_chunks);
                 }
             }
             part_sizes
-
-        } else{
+        } else {
             vec![footer
-            .as_ref()
-            .map(|f| f.eof_metadata.disk_file_size)
-            .unwrap_or_else(|| location.disk_content_len as u64)]
+                .as_ref()
+                .map(|f| f.eof_metadata.disk_file_size)
+                .unwrap_or_else(|| location.disk_content_len as u64)]
         };
 
         trace!("calculating ranges");

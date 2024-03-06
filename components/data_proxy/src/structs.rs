@@ -715,37 +715,31 @@ impl TryFrom<Project> for Object {
         for rel in value.relations.iter() {
             if let Some(rel) = &rel.relation {
                 match rel {
-                    Relation::Internal(var) => {
-                        match var.defined_variant() {
-                            InternalRelationVariant::BelongsTo => {
-                                match var.direction() {
-                                    RelationDirection::Inbound => {
-                                        inbound.insert(TypedRelation::try_from(rel)?);
-                                    }
-                                    RelationDirection::Outbound => {
-                                        outbound.insert(TypedRelation::try_from(rel)?);
-                                    }
-                                    RelationDirection::Unspecified => continue,
-                                }
+                    Relation::Internal(var) => match var.defined_variant() {
+                        InternalRelationVariant::BelongsTo => match var.direction() {
+                            RelationDirection::Inbound => {
+                                inbound.insert(TypedRelation::try_from(rel)?);
                             }
-                            InternalRelationVariant::Version => {
-                                match var.direction() {
-                                    RelationDirection::Inbound => {
-                                        version.insert(VersionVariant::HasVersion(DieselUlid::from_str(
-                                            &var.resource_id,
-                                        )?));
-                                    }
-                                    RelationDirection::Outbound => {
-                                        version.insert(VersionVariant::IsVersion(DieselUlid::from_str(
-                                            &var.resource_id,
-                                        )?));
-                                    }
-                                    RelationDirection::Unspecified => continue,
-                                }
+                            RelationDirection::Outbound => {
+                                outbound.insert(TypedRelation::try_from(rel)?);
                             }
-                            _ => continue,
-                        }
-                    }
+                            RelationDirection::Unspecified => continue,
+                        },
+                        InternalRelationVariant::Version => match var.direction() {
+                            RelationDirection::Inbound => {
+                                version.insert(VersionVariant::HasVersion(DieselUlid::from_str(
+                                    &var.resource_id,
+                                )?));
+                            }
+                            RelationDirection::Outbound => {
+                                version.insert(VersionVariant::IsVersion(DieselUlid::from_str(
+                                    &var.resource_id,
+                                )?));
+                            }
+                            RelationDirection::Unspecified => continue,
+                        },
+                        _ => continue,
+                    },
                     _ => continue,
                 }
             }
@@ -798,37 +792,31 @@ impl TryFrom<Collection> for Object {
         for rel in value.relations.iter() {
             if let Some(rel) = &rel.relation {
                 match rel {
-                    Relation::Internal(var) => {
-                        match var.defined_variant() {
-                            InternalRelationVariant::BelongsTo => {
-                                match var.direction() {
-                                    RelationDirection::Inbound => {
-                                        inbound.insert(TypedRelation::try_from(rel)?);
-                                    }
-                                    RelationDirection::Outbound => {
-                                        outbound.insert(TypedRelation::try_from(rel)?);
-                                    }
-                                    RelationDirection::Unspecified => continue,
-                                }
+                    Relation::Internal(var) => match var.defined_variant() {
+                        InternalRelationVariant::BelongsTo => match var.direction() {
+                            RelationDirection::Inbound => {
+                                inbound.insert(TypedRelation::try_from(rel)?);
                             }
-                            InternalRelationVariant::Version => {
-                                match var.direction() {
-                                    RelationDirection::Inbound => {
-                                        version.insert(VersionVariant::HasVersion(DieselUlid::from_str(
-                                            &var.resource_id,
-                                        )?));
-                                    }
-                                    RelationDirection::Outbound => {
-                                        version.insert(VersionVariant::IsVersion(DieselUlid::from_str(
-                                            &var.resource_id,
-                                        )?));
-                                    }
-                                    RelationDirection::Unspecified => continue,
-                                }
+                            RelationDirection::Outbound => {
+                                outbound.insert(TypedRelation::try_from(rel)?);
                             }
-                            _ => continue,
-                        }
-                    }
+                            RelationDirection::Unspecified => continue,
+                        },
+                        InternalRelationVariant::Version => match var.direction() {
+                            RelationDirection::Inbound => {
+                                version.insert(VersionVariant::HasVersion(DieselUlid::from_str(
+                                    &var.resource_id,
+                                )?));
+                            }
+                            RelationDirection::Outbound => {
+                                version.insert(VersionVariant::IsVersion(DieselUlid::from_str(
+                                    &var.resource_id,
+                                )?));
+                            }
+                            RelationDirection::Unspecified => continue,
+                        },
+                        _ => continue,
+                    },
                     _ => continue,
                 }
             }
@@ -878,37 +866,31 @@ impl TryFrom<Dataset> for Object {
         for rel in value.relations.iter() {
             if let Some(rel) = &rel.relation {
                 match rel {
-                    Relation::Internal(var) => {
-                        match var.defined_variant() {
-                            InternalRelationVariant::BelongsTo => {
-                                match var.direction() {
-                                    RelationDirection::Inbound => {
-                                        inbound.insert(TypedRelation::try_from(rel)?);
-                                    }
-                                    RelationDirection::Outbound => {
-                                        outbound.insert(TypedRelation::try_from(rel)?);
-                                    }
-                                    RelationDirection::Unspecified => continue,
-                                }
+                    Relation::Internal(var) => match var.defined_variant() {
+                        InternalRelationVariant::BelongsTo => match var.direction() {
+                            RelationDirection::Inbound => {
+                                inbound.insert(TypedRelation::try_from(rel)?);
                             }
-                            InternalRelationVariant::Version => {
-                                match var.direction() {
-                                    RelationDirection::Inbound => {
-                                        version.insert(VersionVariant::HasVersion(DieselUlid::from_str(
-                                            &var.resource_id,
-                                        )?));
-                                    }
-                                    RelationDirection::Outbound => {
-                                        version.insert(VersionVariant::IsVersion(DieselUlid::from_str(
-                                            &var.resource_id,
-                                        )?));
-                                    }
-                                    RelationDirection::Unspecified => continue,
-                                }
+                            RelationDirection::Outbound => {
+                                outbound.insert(TypedRelation::try_from(rel)?);
                             }
-                            _ => continue,
-                        }
-                    }
+                            RelationDirection::Unspecified => continue,
+                        },
+                        InternalRelationVariant::Version => match var.direction() {
+                            RelationDirection::Inbound => {
+                                version.insert(VersionVariant::HasVersion(DieselUlid::from_str(
+                                    &var.resource_id,
+                                )?));
+                            }
+                            RelationDirection::Outbound => {
+                                version.insert(VersionVariant::IsVersion(DieselUlid::from_str(
+                                    &var.resource_id,
+                                )?));
+                            }
+                            RelationDirection::Unspecified => continue,
+                        },
+                        _ => continue,
+                    },
                     _ => continue,
                 }
             }
@@ -958,37 +940,31 @@ impl TryFrom<GrpcObject> for Object {
         for rel in value.relations.iter() {
             if let Some(rel) = &rel.relation {
                 match rel {
-                    Relation::Internal(var) => {
-                        match var.defined_variant() {
-                            InternalRelationVariant::BelongsTo => {
-                                match var.direction() {
-                                    RelationDirection::Inbound => {
-                                        inbound.insert(TypedRelation::try_from(rel)?);
-                                    }
-                                    RelationDirection::Outbound => {
-                                        outbound.insert(TypedRelation::try_from(rel)?);
-                                    }
-                                    RelationDirection::Unspecified => continue,
-                                }
+                    Relation::Internal(var) => match var.defined_variant() {
+                        InternalRelationVariant::BelongsTo => match var.direction() {
+                            RelationDirection::Inbound => {
+                                inbound.insert(TypedRelation::try_from(rel)?);
                             }
-                            InternalRelationVariant::Version => {
-                                match var.direction() {
-                                    RelationDirection::Inbound => {
-                                        version.insert(VersionVariant::HasVersion(DieselUlid::from_str(
-                                            &var.resource_id,
-                                        )?));
-                                    }
-                                    RelationDirection::Outbound => {
-                                        version.insert(VersionVariant::IsVersion(DieselUlid::from_str(
-                                            &var.resource_id,
-                                        )?));
-                                    }
-                                    RelationDirection::Unspecified => continue,
-                                }
+                            RelationDirection::Outbound => {
+                                outbound.insert(TypedRelation::try_from(rel)?);
                             }
-                            _ => continue,
-                        }
-                    }
+                            RelationDirection::Unspecified => continue,
+                        },
+                        InternalRelationVariant::Version => match var.direction() {
+                            RelationDirection::Inbound => {
+                                version.insert(VersionVariant::HasVersion(DieselUlid::from_str(
+                                    &var.resource_id,
+                                )?));
+                            }
+                            RelationDirection::Outbound => {
+                                version.insert(VersionVariant::IsVersion(DieselUlid::from_str(
+                                    &var.resource_id,
+                                )?));
+                            }
+                            RelationDirection::Unspecified => continue,
+                        },
+                        _ => continue,
+                    },
                     _ => continue,
                 }
             }
