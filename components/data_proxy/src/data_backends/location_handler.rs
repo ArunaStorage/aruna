@@ -13,6 +13,8 @@ use nom::{
 use rand::distributions::Alphanumeric;
 use rand::thread_rng;
 use rand::Rng;
+
+use crate::CONFIG;
 //backend_scheme="s3://{{PROJECT_NAME}}-{{RANDOM:10}}/{{COLLECTION_NAME}}/{{DATASET_NAME}}/{{RANDOM:10}}_{{OBJECT_NAME}}"
 #[derive(Debug, Clone)]
 pub enum Arguments {
@@ -24,6 +26,7 @@ pub enum Arguments {
     DatasetId,
     Object,
     ObjectId,
+    EndpointId,
     Random(u32),
     Slash,
     Text(String),
@@ -56,6 +59,7 @@ impl Arguments {
                 .cloned()
                 .flatten()
                 .map(|(a, _)| a.to_string().to_ascii_lowercase()),
+            Arguments::EndpointId => Some(CONFIG.proxy.endpoint_id.to_string().to_ascii_lowercase()),
             Arguments::Random(x) => Some(
                 thread_rng()
                     .sample_iter(&Alphanumeric)
@@ -216,6 +220,7 @@ impl CompiledVariant {
             tag("{{DATASET_ID}}").map(|_| Arguments::DatasetId),
             tag("{{OBJECT_NAME}}").map(|_| Arguments::Object),
             tag("{{OBJECT_ID}}").map(|_| Arguments::ObjectId),
+            tag("{{PROXY_ID}}").map(|_| Arguments::EndpointId),
             terminated(preceded(tag("{{RANDOM:"), u32), tag("}}")).map(|x| Arguments::Random(x)),
             tag("/").map(|_| Arguments::Slash),
             take_while(|c| c != '{' && c != '}' && c != '/')

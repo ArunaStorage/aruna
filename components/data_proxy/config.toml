@@ -49,7 +49,7 @@ dropbox_bucket="" # Set value to set a dropbox bucket
 # - {{OBJECT_ID}} - The object ULID
 # - {{RANDOM:x}} - A random string of (x == integer) lower_case ascii characters
 # - {{PROXY_ID}} - The proxy ULID (lowercase)
-backend_scheme="s3://{{PROJECT_NAME}}-{{RANDOM:10}}/{{COLLECTION_NAME}}/{{DATASET_NAME}}/{{RANDOM:10}}_{{OBJECT_NAME}}" 
+backend_scheme="s3://{{PROJECT_ID}}-{{PROJECT_NAME}}/{{COLLECTION_NAME}}/{{DATASET_NAME}}/{{RANDOM:10}}/{{OBJECT_NAME}}" 
 
 [[rules]]
 target="OBJECT" # ROOT, OBJECT, OBJECTPACKAGE, BUNDLE, REPLICATIONIN, REPLICATIONOUT,
