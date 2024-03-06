@@ -531,6 +531,8 @@ impl S3 for ArunaS3Service {
                 .unwrap_or_else(|| location.disk_content_len as u64)]
         };
 
+        trace!(footer = ?footer, "footer");
+
         trace!("calculating ranges");
         let (query_ranges, edit_list, actual_range) =
             match calculate_ranges(req.input.range, content_length as u64, footer, &location) {

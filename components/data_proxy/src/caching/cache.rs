@@ -255,7 +255,11 @@ impl Cache {
         debug!("synced parts");
 
         for object in database_objects {
-            let location = ObjectLocation::get_opt(&object.id, &client).await?;
+            let location = if let Some(location_id) = &object.location_id {
+                ObjectLocation::get_opt(&location_id, &client).await?
+            }else{
+                None
+            };
 
             let cache = self.get_cache().await?;
             if let Some(before_location) = &location {
@@ -696,10 +700,14 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self, object, location))]
     pub async fn upsert_object(
         &self,
-        object: Object,
+        mut object: Object,
         location: Option<ObjectLocation>,
     ) -> Result<()> {
         trace!(?object, ?location, "upserting object");
+        if let Some(location) = &location {
+            object.location_id = Some(location.id);
+        }
+
         if let Some(persistence) = self.persistence.read().await.as_ref() {
             let mut client = persistence.get_client().await?;
             let transaction = client.transaction().await?;
@@ -1042,14 +1050,23 @@ impl Cache {
         object_id: DieselUlid,
         location: ObjectLocation,
     ) -> Result<()> {
+
+        let object = if let Some(resource) = self.resources.get(&object_id) {
+            let (object, loc) = resource.value();
+            let loc_id = location.id.clone();
+            *loc.write().await = Some(location.clone());
+            let mut mut_object = object.write().await;
+            mut_object.location_id = Some(loc_id);
+            object.clone()
+        }else{
+            bail!("Resource not found")
+        };
+
         if let Some(persistence) = self.persistence.read().await.as_ref() {
             location
                 .upsert(persistence.get_client().await?.client())
                 .await?;
-        }
-        if let Some(resource) = self.resources.get(&object_id) {
-            let (_, loc) = resource.value();
-            *loc.write().await = Some(location);
+            object.read().await.upsert(persistence.get_client().await?.client()).await?;
         }
         Ok(())
     }
