@@ -103,7 +103,7 @@ impl S3 for ArunaS3Service {
             user_state.sign_impersonating_token(self.cache.auth.read().await.as_ref());
 
         let (object, old_location) = objects_state.extract_object()?;
-        let old_location = old_location.ok_or_else(|| {
+        let mut old_location = old_location.ok_or_else(|| {
             error!(error = "Unable to extract object location");
             s3_error!(InternalError, "Unable to extract object location")
         })?;
@@ -145,11 +145,13 @@ impl S3 for ArunaS3Service {
 
         let mut size_list = vec![];
         let mut cumulative_size = 0;
+        let mut disk_size = 0;
         for part in parts {
             for etag in etag_parts.iter() {
                 if part.part_number == etag.part_number as u64 {
                     size_list.push(part.size);
                     cumulative_size += part.raw_size;
+                    disk_size += part.size;
                     break;
                 }
             }
@@ -166,10 +168,19 @@ impl S3 for ArunaS3Service {
                 s3_error!(InternalError, "Unable to finish upload")
             })?;
 
+
         let response = CompleteMultipartUploadOutput {
             e_tag: Some(object.id.to_string()),
             ..Default::default()
         };
+
+        old_location.disk_content_len = disk_size as i64;
+        old_location.raw_content_len = cumulative_size as i64;
+
+        self.cache.update_location(object.id, old_location.clone()).await.map_err(|_| {
+            error!(error = "Unable to update location");
+            s3_error!(InternalError, "Unable to update location")
+        })?;
 
         let new_location = self
             .backend
@@ -523,7 +534,9 @@ impl S3 for ArunaS3Service {
             for parts in parts {
                 let full_chunks = (parts.size / (65536 + 28))*(65536 + 28);
                 part_sizes.push(full_chunks);
-                part_sizes.push(parts.size - full_chunks);
+                if parts.size % (65536 + 28) != 0 {
+                    part_sizes.push(parts.size - full_chunks);
+                }
             }
             part_sizes
 

@@ -1055,10 +1055,12 @@ impl Cache {
 
     #[tracing::instrument(level = "trace", skip(self, upload_id))]
     pub fn get_parts(&self, upload_id: &str) -> Vec<UploadPart> {
-        self.multi_parts
+        let mut parts = self.multi_parts
             .get(upload_id)
             .map(|e| e.value().clone())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        parts.sort_by(|a, b| a.part_number.cmp(&b.part_number));
+        parts
     }
 
     #[tracing::instrument(level = "trace", skip(self, upload_id))]
