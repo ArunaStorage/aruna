@@ -5,7 +5,7 @@ use crate::structs::Object;
 use crate::structs::ResourceStates;
 use anyhow::anyhow;
 use anyhow::Result;
-use chrono::Duration;
+use chrono::TimeDelta;
 use chrono::Utc;
 use diesel_ulid::DieselUlid;
 use http::HeaderMap;
@@ -558,7 +558,11 @@ impl BundleRuleInputBuilder {
                 expires: self
                     .bundle
                     .expires_at
-                    .unwrap_or_else(|| Utc::now() + Duration::weeks(100 * 52))
+                    .unwrap_or_else(|| {
+                        Utc::now()
+                            + TimeDelta::try_weeks(100 * 52)
+                                .unwrap_or_else(|| TimeDelta::max_value())
+                    })
                     .timestamp(),
             },
         })

@@ -21,7 +21,6 @@ use diesel_ulid::DieselUlid;
 use rand::Rng;
 use tokio_stream::StreamExt;
 use tracing::error;
-use tracing::trace;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]

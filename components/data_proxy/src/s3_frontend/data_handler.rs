@@ -1,7 +1,6 @@
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::s3_frontend::utils::buffered_s3_sink::BufferedS3Sink;
-use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use crate::structs::Object;
 use crate::structs::ObjectLocation;
 use anyhow::anyhow;
@@ -181,10 +180,13 @@ impl DataHandler {
                     HashingTransformer::new_with_backchannel(Sha256::new(), "sha256".to_string());
 
                 asr = asr.add_transformer(final_sha);
-                asr.process().await.map_err(|e| {
-                    error!(error = ?e, msg = e.to_string());
-                    e
-                }).unwrap();
+                asr.process()
+                    .await
+                    .map_err(|e| {
+                        error!(error = ?e, msg = e.to_string());
+                        e
+                    })
+                    .unwrap();
 
                 Ok::<(u64, u64, String, String, String), anyhow::Error>((
                     orig_size_stream.try_recv().map_err(|e| {

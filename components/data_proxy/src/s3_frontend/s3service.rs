@@ -793,7 +793,7 @@ impl S3 for ArunaS3Service {
                     key: Some(e.key),
                     last_modified: e.created_at.map(|t| {
                         s3s::dto::Timestamp::from(
-                            time::OffsetDateTime::from_unix_timestamp(t.timestamp())
+                            time::OffsetDateTime::from_unix_timestamp(t.and_utc().timestamp())
                                 .unwrap_or_else(|_| {
                                     error!(error = "Unable to parse timestamp");
                                     time::OffsetDateTime::now_utc()
@@ -1013,7 +1013,8 @@ impl S3 for ArunaS3Service {
                     buckets.push(Bucket {
                         creation_date: o.created_at.map(|t| {
                             s3s::dto::Timestamp::from(
-                                time::OffsetDateTime::from_unix_timestamp(t.timestamp()).unwrap(),
+                                time::OffsetDateTime::from_unix_timestamp(t.and_utc().timestamp())
+                                    .unwrap(),
                             )
                         }),
                         name: Some(o.name),
