@@ -29,7 +29,7 @@ use pithos_lib::helpers::notifications::Message as PithosMessage;
 use pithos_lib::streamreadwrite::GenericStreamReadWriter;
 use pithos_lib::transformer::ReadWriter;
 use pithos_lib::transformers::async_sender_sink::AsyncSenderSink;
-use pithos_lib::transformers::decrypt::ChaCha20Dec;
+use pithos_lib::transformers::decrypt_with_parts::ChaCha20DecParts;
 use pithos_lib::transformers::encrypt::ChaCha20Enc;
 use pithos_lib::transformers::filter::Filter;
 use pithos_lib::transformers::footer::FooterGenerator;
@@ -513,6 +513,8 @@ impl S3 for ArunaS3Service {
             None
         };
 
+        let parts = vec![footer.as_ref().map(|f| f.eof_metadata.disk_file_size).unwrap_or_else(|| location.disk_content_len as u64)];
+
         trace!("calculating ranges");
         let (query_ranges, edit_list, actual_range) =
             match calculate_ranges(req.input.range, content_length as u64, footer, &location) {
@@ -563,10 +565,7 @@ impl S3 for ArunaS3Service {
 
                 if location.get_encryption_key().is_some() {
                     asrw = asrw.add_transformer(
-                        ChaCha20Dec::new_with_fixed(decryption_key).map_err(|_| {
-                            error!(error = "Unable to initialize ChaCha20Dec");
-                            s3_error!(InternalError, "Internal notifier error")
-                        })?,
+                        ChaCha20DecParts::new_with_lengths(decryption_key, parts),
                     );
                 }
 

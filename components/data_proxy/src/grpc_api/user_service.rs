@@ -149,13 +149,13 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
             })?;
 
             let (u, tid, _) = a.check_permissions(&token).map_err(|_| {
-                error!(error = "Unable to authenticate user");
+                error!(error = "Unable to authenticate user, check permissions");
                 tonic::Status::unauthenticated("Unable to authenticate user")
             })?;
 
             if let Some(q_handler) = self.cache.aruna_client.read().await.as_ref() {
                 let user = q_handler.get_user(u, "".to_string()).await.map_err(|_| {
-                    error!(error = "Unable to authenticate user");
+                    error!(error = "Unable to authenticate user, get user grpc");
                     tonic::Status::unauthenticated("Unable to authenticate user")
                 })?;
 
@@ -166,7 +166,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
                     .create_or_update_secret(&access_key, &u)
                     .await
                     .map_err(|_| {
-                        error!(error = "Unable to authenticate user");
+                        error!(error = "Unable to authenticate user, create or update secret grpc");
                         tonic::Status::unauthenticated("Unable to authenticate user")
                     })?;
 
