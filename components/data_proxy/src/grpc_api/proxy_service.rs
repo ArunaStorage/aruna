@@ -608,7 +608,7 @@ impl DataproxyReplicationServiceImpl {
     }
 
     async fn get_footer(&self, location: ObjectLocation) -> Result<Footer, anyhow::Error> {
-        let (footer_sender, footer_receiver) = async_channel::unbounded();
+        let (footer_sender, footer_receiver) = async_channel::bounded(1000);
         let _ = self
             .backend
             .get_object(location.clone(), Some("-131072".to_string()), footer_sender)

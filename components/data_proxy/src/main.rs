@@ -88,7 +88,7 @@ async fn main() -> Result<()> {
     let storage_backend: Arc<Box<dyn StorageBackend>> = Arc::new(backend);
 
     trace!("init cache");
-    let (sender, receiver) = async_channel::unbounded();
+    let (sender, receiver) = async_channel::bounded(1000);
     let cache = Cache::new(
         CONFIG.proxy.aruna_url.clone(),
         CONFIG.persistence.is_some(),

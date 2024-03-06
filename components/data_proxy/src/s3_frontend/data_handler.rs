@@ -1,6 +1,7 @@
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::s3_frontend::utils::buffered_s3_sink::BufferedS3Sink;
+use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use crate::structs::Object;
 use crate::structs::ObjectLocation;
 use anyhow::anyhow;
@@ -176,17 +177,20 @@ impl DataHandler {
                     asr = asr.add_transformer(FooterGenerator::new(None));
                 }
 
+                asr = asr.add_transformer(DebugTransformer::new("After pithos"));
+
+
                 let (final_sha, final_sha_recv) =
                     HashingTransformer::new_with_backchannel(Sha256::new(), "sha256".to_string());
 
                 asr = asr.add_transformer(final_sha);
+                asr = asr.add_transformer(DebugTransformer::new("Before sink"));
                 asr.process()
                     .await
                     .map_err(|e| {
                         error!(error = ?e, msg = e.to_string());
                         e
-                    })
-                    .unwrap();
+                    })?;
 
                 Ok::<(u64, u64, String, String, String), anyhow::Error>((
                     orig_size_stream.try_recv().map_err(|e| {
@@ -235,11 +239,11 @@ impl DataHandler {
                 e
             })?;
 
-        debug!(new_location = ?new_location, "Finished finalizing location");
-
         new_location.disk_content_len = before_size as i64;
         new_location.raw_content_len = after_size as i64;
         new_location.disk_hash = Some(final_sha);
+
+        debug!(new_location = ?new_location, "Finished finalizing location");
 
         let hashes = vec![
             Hash {

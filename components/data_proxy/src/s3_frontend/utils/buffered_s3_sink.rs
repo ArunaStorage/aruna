@@ -233,9 +233,6 @@ impl Transformer for BufferedS3Sink {
 
         self.buffer.put(buf.split());
 
-        if buf.len() > 0 {
-            trace!(buf_len = ?buf.len(), "buffered");
-        }
         if finished {
             trace!(sum = self.sum, buf_len = ?self.buffer.len(), "finished")
         }
@@ -262,19 +259,19 @@ impl Transformer for BufferedS3Sink {
             if finished && self.buffer.len() > 0 {
                 if self.upload_id.is_none() {
                     self.upload_single().await?;
+                    if let Some(notifier) = &self.notifier {
+                        notifier.send_read_writer(Message::Completed)?;
+                    }
                 } else {
                     // Upload den Rest +
                     self.upload_part().await?;
-                    if !self.single_part_upload {
-                        trace!("finishing multipart");
+                    if self.buffer.is_empty() {
                         self.finish_multipart().await?;
+                        if let Some(notifier) = &self.notifier {
+                            notifier.send_read_writer(Message::Completed)?;
+                        }
                     }
-                }
-
-                if let Some(notifier) = &self.notifier {
-                    notifier.send_read_writer(Message::Completed)?;
-                }
-                return Ok(());
+                }                
             }
             Ok(())
         }

@@ -469,7 +469,7 @@ impl S3 for ArunaS3Service {
         // Gets 128 kb chunks (last 2)
 
         let footer: Option<Footer> = if location.is_pithos() {
-            let (footer_sender, footer_receiver) = async_channel::unbounded();
+            let (footer_sender, footer_receiver) = async_channel::bounded(1000);
             pin!(footer_receiver);
             self.backend
                 .get_object(
@@ -563,7 +563,7 @@ impl S3 for ArunaS3Service {
             async move { backend.get_object(loc_clone, query_ranges, sender).await }
                 .instrument(info_span!("get_object")),
         );
-        let (final_send, final_rcv) = async_channel::unbounded();
+        let (final_send, final_rcv) = async_channel::bounded(1000);
 
         let decryption_key = location.get_encryption_key().ok_or_else(|| {
             error!(error = "Unable to get encryption key");
