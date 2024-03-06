@@ -11,7 +11,7 @@ use aruna_rust_api::api::storage::services::v2::{
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::license_dsl::ALL_RIGHTS_RESERVED;
 use aruna_server::database::dsls::object_dsl::{KeyValue, KeyValueVariant, KeyValues, Object};
-use aruna_server::database::enums::{DataClass, ObjectMapping, ObjectType};
+use aruna_server::database::enums::{DataClass, ObjectMapping, ObjectStatus, ObjectType};
 use aruna_server::middlelayer::update_request_types::{
     DataClassUpdate, DescriptionUpdate, KeyValueUpdate, NameUpdate,
 };
@@ -435,6 +435,7 @@ async fn update_object_test() {
         metadata_license_tag: None,
     };
 
+    // Test in place update
     let (updated, is_new) = db_handler
         .update_grpc_object(update_request, user.id, false)
         .await
@@ -469,6 +470,8 @@ async fn update_object_test() {
         data_license_tag: None,
         metadata_license_tag: None,
     };
+
+    // test new revision update
     let (new, is_new) = db_handler
         .update_grpc_object(trigger_new_request, user.id, false)
         .await
@@ -482,6 +485,8 @@ async fn update_object_test() {
         variant: KeyValueVariant::LABEL,
     }));
     assert!(!new.object.hashes.0 .0.is_empty());
+
+    // test force revision updates
     let force_new_revision = UpdateObjectRequest {
         object_id: new.object.id.to_string(),
         name: None,
@@ -495,6 +500,7 @@ async fn update_object_test() {
         metadata_license_tag: None,
         data_license_tag: None,
     };
+
     let (new_2, is_new_2) = db_handler
         .update_grpc_object(force_new_revision, user.id, false)
         .await
@@ -504,6 +510,9 @@ async fn update_object_test() {
         new_2.object.revision_number,
         (new.object.revision_number + 1)
     );
+    assert_eq!(new_2.object.object_status, ObjectStatus::INITIALIZING);
+
+    // test license update
     let license_update = UpdateObjectRequest {
         object_id: new.object.id.to_string(),
         name: None,
@@ -530,4 +539,5 @@ async fn update_object_test() {
         license_update.data_license_tag,
         Some(license_updated.object.data_license)
     )
+
 }

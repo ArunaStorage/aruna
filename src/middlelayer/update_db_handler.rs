@@ -319,6 +319,11 @@ impl DatabaseHandler {
             || license_triggers_new_revision
             || dataclass_triggers_new_revision
         {
+            let object_status = if request.force_revision {
+                ObjectStatus::INITIALIZING
+            } else {
+                ObjectStatus::AVAILABLE
+            };
             let id = DieselUlid::generate();
             let (metadata_license, data_license) =
                 req.get_license(&old, transaction_client).await?;
@@ -339,7 +344,7 @@ impl DatabaseHandler {
                 key_values: Json(req.get_all_kvs(old.clone())?),
                 hashes: Json(req.get_hashes(old.clone())?),
                 object_type: crate::database::enums::ObjectType::OBJECT,
-                object_status: ObjectStatus::INITIALIZING, // New revisions must be finished
+                object_status, // New revisions must be finished if force_revision is set
                 dynamic: false,
                 endpoints: Json(req.get_endpoints(old.clone(), true)?),
                 metadata_license,
@@ -443,14 +448,18 @@ impl DatabaseHandler {
         self.cache.add_object(owr.clone());
 
         // Update all affected objects in cache
-        if !affected.is_empty() {
-            let affected = Object::get_objects_with_relations(&affected, &client).await?;
-            for o in affected {
-                self.cache.upsert_object(&o.object.id.clone(), o);
+        let affected = if !affected.is_empty() {
+            let mut affected = Object::get_objects_with_relations(&affected, &client).await?;
+            for o in &affected {
+                self.cache.upsert_object(&o.object.id.clone(), o.clone());
             }
-        }
+            affected.insert(0, owr.clone());
+            affected
+            
+        } else {
+            vec![owr.clone()]
+        };
 
-        let hierarchies = owr.object.fetch_object_hierarchies(&client).await?;
 
         // Trigger hooks for the 4 combinations:
         // 1. update in place & new key_vals
@@ -543,26 +552,28 @@ impl DatabaseHandler {
                 }
             });
         };
+        
+        for object_with_relation in affected {
+            let hierarchies = object_with_relation.object.fetch_object_hierarchies(&client).await?;
 
-        // Try to emit object updated notification(s)
-        if let Err(err) = self
-            .natsio_handler
-            .register_resource_event(
-                &owr,
-                hierarchies,
-                EventVariant::Updated,
-                Some(&DieselUlid::generate()), // block_id for deduplication
-            )
-            .await
-        {
-            // Log error, rollback transaction and return
-            log::error!("{}", err);
-            //transaction.rollback().await?;
-            Err(anyhow::anyhow!("Notification emission failed"))
-        } else {
-            //transaction.commit().await?;
-            Ok((owr, is_new))
+            // Try to emit object updated notification(s)
+            if let Err(err) = self
+                .natsio_handler
+                .register_resource_event(
+                    &object_with_relation,
+                    hierarchies,
+                    EventVariant::Updated,
+                    Some(&DieselUlid::generate()), // block_id for deduplication
+                )
+                .await
+            {
+                // Log error, rollback transaction and return
+                log::error!("{}", err);
+                //transaction.rollback().await?;
+                return Err(anyhow::anyhow!("Notification emission failed"))
+            }
         }
+        Ok((owr, is_new))
     }
 
     pub async fn finish_object(

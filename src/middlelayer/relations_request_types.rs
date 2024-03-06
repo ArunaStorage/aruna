@@ -1,14 +1,15 @@
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
-use crate::database::dsls::internal_relation_dsl::InternalRelation;
+use crate::database::dsls::internal_relation_dsl::{INTERNAL_RELATION_VARIANT_VERSION, InternalRelation};
 use crate::database::dsls::object_dsl::{ExternalRelation, ObjectWithRelations};
 use crate::database::enums::DbPermissionLevel;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::models::v2::{relation, Relation};
 use aruna_rust_api::api::storage::services::v2::ModifyRelationsRequest;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
+use itertools::Itertools;
 
 pub struct ModifyRelations(pub ModifyRelationsRequest);
 
@@ -34,7 +35,7 @@ impl ModifyRelations {
     pub fn get_id(&self) -> Result<DieselUlid> {
         Ok(DieselUlid::from_str(&self.0.resource_id)?)
     }
-    pub fn get_labels(
+    pub fn get_relations(
         &self,
         resource: ObjectWithRelations,
         cache: Arc<Cache>,
@@ -46,10 +47,15 @@ impl ModifyRelations {
             DbPermissionLevel::WRITE,
             true,
         )];
+
         let (external_add_relations, internal_add_relations, mut added_to_check) =
             ModifyRelations::convert_relations(&self.0.add_relations, resource_id, cache.clone())?;
         let (external_rm_relations, temp_rm_int_relations, mut removed_to_check) =
             ModifyRelations::convert_relations(&self.0.remove_relations, resource_id, cache)?;
+        if !temp_rm_int_relations.iter().filter(|ir| ir.relation_name == INTERNAL_RELATION_VARIANT_VERSION).collect::<Vec<&InternalRelation>>().is_empty() {
+            return Err(anyhow!("Cannot remove version relations"));
+        }
+
         let mut existing = Vec::from_iter(resource.outbound.0.into_iter().map(|r| r.1));
         existing.append(&mut Vec::from_iter(
             resource.outbound_belongs_to.0.into_iter().map(|r| r.1),

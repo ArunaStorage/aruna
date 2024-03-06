@@ -219,6 +219,57 @@ async fn create_and_delete_rule_binding() {
 
 #[tokio::test]
 async fn evaluate_rules() {
+// init
+    let db_handler = init_database_handler_middlelayer().await;
+
+    // create user
+    let mut user = test_utils::new_user(vec![]);
+    user.create(&db_handler.database.get_client().await.unwrap())
+        .await
+        .unwrap();
+
+    // create rule
+    let request = CreateRuleRequest {
+        rule: "false".to_string(),
+        description: "test rule".to_string(),
+        public: true,
+    };
+    let rule_id = db_handler
+        .create_rule(CreateRule(request.clone()), user.id)
+        .await
+        .unwrap();
+    let _cached_rule = db_handler.cache.get_rule(&rule_id).unwrap();
+
+    // create object
+    let default_endpoint = DieselUlid::generate();
+    let project_name = rand_string(30).to_lowercase();
+    let request = CreateRequest::Project(
+        CreateProjectRequest {
+            name: project_name,
+            title: "a valid title for a project".to_string(),
+            description: "test".to_string(),
+            key_values: vec![],
+            relations: vec![],
+            data_class: 1,
+            preferred_endpoint: "".to_string(),
+            metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+            default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+            authors: vec![],
+        },
+        default_endpoint.to_string(),
+    );
+    let (project, _) = db_handler
+        .create_resource(request, user.id, false)
+        .await
+        .unwrap();
+
+    // create rule binding
+    let request = CreateRuleBinding(CreateRuleBindingRequest {
+        rule_id: rule_id.to_string(),
+        object_id: project.object.id.to_string(),
+        cascading: true,
+    });
+    db_handler.create_rule_binding(request).await.unwrap();
     todo!()
 }
 
