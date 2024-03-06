@@ -34,7 +34,7 @@ host="http://localhost:9000"
 # secret_key="minioadmin"
 encryption=true
 compression=true
-deduplication=true # If deduplication is enabled, the backend will check if an object with the same hash already exists and return the existing object if it does
+deduplication=true # COMING SOON If deduplication is enabled, the backend will check if an object with the same hash already exists and return the existing object if it does
 tmp="tmp12345" # Will generate a random temp bucket_name if not set
 dropbox_bucket="" # Set value to set a dropbox bucket
 # A scheme for the backend to use when deciding where to store objects

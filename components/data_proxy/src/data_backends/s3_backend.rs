@@ -322,6 +322,7 @@ impl StorageBackend for S3Backend {
                 ),
                 file_format,
                 raw_content_len: expected_size.unwrap_or_default(),
+                is_temporary: true,
                 ..Default::default()
             });
         }

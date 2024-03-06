@@ -525,7 +525,6 @@ impl S3 for ArunaS3Service {
                 part_sizes.push(full_chunks);
                 part_sizes.push(parts.size - full_chunks);
             }
-
             part_sizes
 
         } else{
