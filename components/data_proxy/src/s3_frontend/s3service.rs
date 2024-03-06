@@ -513,10 +513,27 @@ impl S3 for ArunaS3Service {
             None
         };
 
-        let parts = vec![footer
+       let parts = if location.is_temporary {
+            let mut part_sizes = Vec::new();
+            let parts = self.cache.get_parts(&location.upload_id.as_ref().ok_or_else(|| {
+                error!(error = "Upload id must be specified");
+                s3_error!(InvalidPart, "Upload id must be specified")
+            })?);
+
+            for parts in parts {
+                let full_chunks = (parts.size / (65536 + 28))*(65536 + 28);
+                part_sizes.push(full_chunks);
+                part_sizes.push(parts.size - full_chunks);
+            }
+
+            part_sizes
+
+        } else{
+            vec![footer
             .as_ref()
             .map(|f| f.eof_metadata.disk_file_size)
-            .unwrap_or_else(|| location.disk_content_len as u64)];
+            .unwrap_or_else(|| location.disk_content_len as u64)]
+        };
 
         trace!("calculating ranges");
         let (query_ranges, edit_list, actual_range) =
@@ -579,8 +596,8 @@ impl S3 for ArunaS3Service {
                     asrw = asrw.add_transformer(Filter::new_with_edit_list(Some(edit_list)));
                 };
 
-                asrw.process().await.map_err(|_| {
-                    error!(error = "Unable to process final part");
+                asrw.process().await.map_err(|e| {
+                    error!(error = ?e, msg = "Unable to process final part");
                     s3_error!(InternalError, "Internal notifier error")
                 })?;
 
@@ -1345,9 +1362,9 @@ impl S3 for ArunaS3Service {
                 ));
             }
             Some(bytes) => {
-                if bytes < 5 * 1024 * 1024 {
+                if bytes > 5 * 1024 * 1024 * 1024 {
                     error!("Content-Length exceeds 5GB");
-                    return Err(s3_error!(EntityTooSmall, "Content-Length smaller 5Mib"));
+                    return Err(s3_error!(EntityTooLarge, "Content-Length larger than 5Gib"));
                 }
             }
         };

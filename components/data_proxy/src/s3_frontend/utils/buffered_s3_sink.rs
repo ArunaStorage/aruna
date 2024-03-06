@@ -237,7 +237,7 @@ impl Transformer for BufferedS3Sink {
             if finished && self.buffer.len() > 0 {
                 self.upload_part().await?;
                 if let Some(notifier) = &self.notifier {
-                    notifier.send_read_writer(Message::Finished)?;
+                    notifier.send_read_writer(Message::Completed)?;
                 }
                 return Ok(());
             }

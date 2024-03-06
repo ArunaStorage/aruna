@@ -226,6 +226,7 @@ pub struct ObjectLocation {
     pub raw_content_len: i64,
     pub disk_content_len: i64,
     pub disk_hash: Option<String>,
+    pub is_temporary: bool,
     pub ref_count: u32, // Number of objects that reference this location
 }
 
