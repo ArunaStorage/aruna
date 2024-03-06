@@ -21,6 +21,7 @@ use diesel_ulid::DieselUlid;
 use rand::Rng;
 use tokio_stream::StreamExt;
 use tracing::error;
+use tracing::trace;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -147,6 +148,7 @@ impl StorageBackend for S3Backend {
         };
 
         while let Some(bytes) = object_request.body.next().await {
+            trace!(len = ?bytes.as_ref().map(|e| e.len()), "Sending bytes");
             sender
                 .send(Ok(bytes.map_err(|e| {
                     tracing::error!(error = ?e, msg = e.to_string());

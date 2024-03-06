@@ -15,6 +15,7 @@ use pithos_lib::transformers::decrypt_with_parts::ChaCha20DecParts;
 use pithos_lib::transformers::encrypt::ChaCha20Enc;
 use pithos_lib::transformers::footer::FooterGenerator;
 use pithos_lib::transformers::hashing_transformer::HashingTransformer;
+use pithos_lib::transformers::pithos_comp_enc::PithosTransformer;
 use pithos_lib::transformers::size_probe::SizeProbe;
 use pithos_lib::transformers::zstd_comp::ZstdEnc;
 use pithos_lib::transformers::zstd_decomp::ZstdDec;
@@ -25,6 +26,7 @@ use tokio::pin;
 use tracing::debug;
 use tracing::error;
 use tracing::info_span;
+use tracing::trace;
 use tracing::Instrument;
 
 #[derive(Debug)]
@@ -76,13 +78,14 @@ impl DataHandler {
 
         debug!(?before_location, ?new_location, "Finalizing location");
 
-        let ctx = object.get_file_context(Some(new_location.clone()), None)?;
+        let ctx = object.get_file_context(
+            Some(new_location.clone()),
+            Some(before_location.disk_content_len),
+        )?;
 
         let (tx_send, tx_receive) = async_channel::bounded(10);
 
         let clone_key = before_location.get_encryption_key();
-
-        let after_key = new_location.get_encryption_key();
 
         let before_location = before_location.clone();
         let backend_clone = backend.clone();
@@ -104,7 +107,7 @@ impl DataHandler {
                 let (tx, rx) = async_channel::bounded(10);
                 let (sink, _) = BufferedS3Sink::new(
                     backend_clone,
-                    new_location_clone,
+                    new_location_clone.clone(),
                     None,
                     None,
                     false,
@@ -118,10 +121,6 @@ impl DataHandler {
                 let (orig_probe, orig_size_stream) = SizeProbe::new();
                 asr = asr.add_transformer(orig_probe);
                 asr.add_message_receiver(rx).await?;
-                tx.send(pithos_lib::helpers::notifications::Message::FileContext(
-                    ctx,
-                ))
-                .await?;
 
                 if let Some(key) = clone_key.clone() {
                     asr = asr.add_transformer(ChaCha20DecParts::new_with_lengths(key, part_lens));
@@ -142,11 +141,31 @@ impl DataHandler {
 
                 asr = asr.add_transformer(sha_transformer);
                 asr = asr.add_transformer(md5_transformer);
-                asr = asr.add_transformer(ZstdEnc::new());
-                asr = asr.add_transformer(FooterGenerator::new(None));
-                asr = asr.add_transformer(ChaCha20Enc::new_with_fixed(
-                    after_key.ok_or_else(|| anyhow!("Missing encryption_key"))?,
-                )?);
+
+                if new_location_clone.is_compressed() && !new_location_clone.is_pithos() {
+                    trace!("adding zstd decompressor");
+                    asr = asr.add_transformer(ZstdEnc::new());
+                }
+
+                if let Some(enc_key) = &new_location_clone.get_encryption_key() {
+                    if !new_location_clone.is_pithos() {
+                        asr = asr.add_transformer(ChaCha20Enc::new_with_fixed(*enc_key).map_err(
+                            |e| {
+                                error!(error = ?e, msg = "Unable to initialize ChaCha20Enc");
+                                e
+                            },
+                        )?);
+                    }
+                }
+
+                if new_location_clone.is_pithos() {
+                    tx.send(pithos_lib::helpers::notifications::Message::FileContext(
+                        ctx,
+                    ))
+                    .await?;
+                    asr = asr.add_transformer(PithosTransformer::new());
+                    asr = asr.add_transformer(FooterGenerator::new(None));
+                }
 
                 let (final_sha, final_sha_recv) =
                     HashingTransformer::new_with_backchannel(Sha256::new(), "sha256".to_string());

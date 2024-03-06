@@ -972,7 +972,7 @@ impl Cache {
                         id = p_id.clone();
                     }
                     TypedId::Project(p_id) => {
-                        result[2] = Some((p_id.clone(), name.clone()));
+                        result[0] = Some((p_id.clone(), name.clone()));
                         id = p_id.clone();
                     }
                     _ => bail!("Unexpected parent type"),
