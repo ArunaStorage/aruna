@@ -239,6 +239,21 @@ impl Cache {
 
         let mut prefixes: HashMap<DieselUlid, Vec<String>> = HashMap::new();
 
+        let mut parts_map = HashMap::new();
+        let parts = UploadPart::get_all(&client).await?;
+
+        for part in parts {
+            let part_vec: &mut Vec<UploadPart> =
+                parts_map.entry(part.upload_id.clone()).or_default();
+            part_vec.push(part);
+        }
+
+        for (upload_id, parts) in parts_map {
+            self.multi_parts.insert(upload_id, parts);
+        }
+
+        debug!("synced parts");
+
         for object in database_objects {
             let location = ObjectLocation::get_opt(&object.id, &client).await?;
 
@@ -254,13 +269,19 @@ impl Cache {
                             ?before_location,
                             "finalizing missing temp location"
                         );
-                        tokio::spawn(DataHandler::finalize_location(
-                            object,
-                            cache,
-                            backend,
-                            before_location,
-                            None,
-                        ));
+                        tokio::spawn(
+                            async move {
+                                DataHandler::finalize_location(
+                                    object,
+                                    cache,
+                                    backend,
+                                    before_location,
+                                    None,
+                                )
+                                .await
+                            }
+                            .instrument(info_span!("finalize_location")),
+                        );
                     }
                 }
             }
@@ -298,20 +319,6 @@ impl Cache {
         }
 
         debug!("synced resources");
-        let mut parts_map = HashMap::new();
-        let parts = UploadPart::get_all(&client).await?;
-
-        for part in parts {
-            let part_vec: &mut Vec<UploadPart> =
-                parts_map.entry(part.upload_id.clone()).or_default();
-            part_vec.push(part);
-        }
-
-        for (upload_id, parts) in parts_map {
-            self.multi_parts.insert(upload_id, parts);
-        }
-
-        debug!("synced objects");
         Ok(database)
     }
 

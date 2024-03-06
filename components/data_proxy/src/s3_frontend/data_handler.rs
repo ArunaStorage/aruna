@@ -1,6 +1,7 @@
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::s3_frontend::utils::buffered_s3_sink::BufferedS3Sink;
+use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use crate::structs::Object;
 use crate::structs::ObjectLocation;
 use anyhow::anyhow;
@@ -33,7 +34,10 @@ use tracing::Instrument;
 pub struct DataHandler {}
 
 impl DataHandler {
-    #[tracing::instrument(level = "trace", skip(cache, backend, before_location))]
+    #[tracing::instrument(
+        level = "trace",
+        skip(object, cache, backend, before_location, path_level)
+    )]
     pub async fn finalize_location(
         object: Object,
         cache: Arc<Cache>,
@@ -102,6 +106,8 @@ impl DataHandler {
             }
         }
 
+        trace!(part_lens = ?part_lens, "Part lengths");
+
         let aswr_handle = tokio::spawn(
             async move {
                 let (tx, rx) = async_channel::bounded(10);
@@ -122,6 +128,8 @@ impl DataHandler {
                 asr = asr.add_transformer(orig_probe);
                 asr.add_message_receiver(rx).await?;
 
+                //asr = asr.add_transformer(DebugTransformer::new("FinalizeLocation"));
+
                 if let Some(key) = clone_key.clone() {
                     asr = asr.add_transformer(ChaCha20DecParts::new_with_lengths(key, part_lens));
                 }
@@ -129,6 +137,8 @@ impl DataHandler {
                 if is_compressed {
                     asr = asr.add_transformer(ZstdDec::new());
                 }
+
+                //asr = asr.add_transformer(DebugTransformer::new("After ZSTD"));
 
                 let (uncompressed_probe, uncompressed_stream) = SizeProbe::new();
 
@@ -173,29 +183,29 @@ impl DataHandler {
                 asr = asr.add_transformer(final_sha);
                 asr.process().await.map_err(|e| {
                     error!(error = ?e, msg = e.to_string());
-                    tonic::Status::unauthenticated(e.to_string())
-                })?;
+                    e
+                }).unwrap();
 
                 Ok::<(u64, u64, String, String, String), anyhow::Error>((
                     orig_size_stream.try_recv().map_err(|e| {
                         error!(error = ?e, msg = e.to_string());
-                        tonic::Status::unauthenticated(e.to_string())
+                        e
                     })?,
                     uncompressed_stream.try_recv().map_err(|e| {
                         error!(error = ?e, msg = e.to_string());
-                        tonic::Status::unauthenticated(e.to_string())
+                        e
                     })?,
                     sha_recv.try_recv().map_err(|e| {
                         error!(error = ?e, msg = e.to_string());
-                        tonic::Status::unauthenticated(e.to_string())
+                        e
                     })?,
                     md5_recv.try_recv().map_err(|e| {
                         error!(error = ?e, msg = e.to_string());
-                        tonic::Status::unauthenticated(e.to_string())
+                        e
                     })?,
                     final_sha_recv.try_recv().map_err(|e| {
                         error!(error = ?e, msg = e.to_string());
-                        tonic::Status::unauthenticated(e.to_string())
+                        e
                     })?,
                 ))
             }
@@ -207,7 +217,7 @@ impl DataHandler {
             .await
             .map_err(|e| {
                 error!(error = ?e, msg = e.to_string());
-                tonic::Status::unauthenticated(e.to_string())
+                e
             })?;
 
         //
@@ -216,11 +226,11 @@ impl DataHandler {
             .await
             .map_err(|e| {
                 error!(error = ?e, msg = e.to_string());
-                tonic::Status::unauthenticated(e.to_string())
+                e
             })?
             .map_err(|e| {
                 error!(error = ?e, msg = e.to_string());
-                tonic::Status::unauthenticated(e.to_string())
+                e
             })?;
 
         debug!(new_location = ?new_location, "Finished finalizing location");

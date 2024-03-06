@@ -148,7 +148,7 @@ impl StorageBackend for S3Backend {
         };
 
         while let Some(bytes) = object_request.body.next().await {
-            trace!(len = ?bytes.as_ref().map(|e| e.len()), "Sending bytes");
+            //trace!(len = ?bytes.as_ref().map(|e| e.len()), "Sending bytes");
             sender
                 .send(Ok(bytes.map_err(|e| {
                     tracing::error!(error = ?e, msg = e.to_string());

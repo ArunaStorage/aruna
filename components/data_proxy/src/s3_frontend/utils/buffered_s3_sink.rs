@@ -233,6 +233,9 @@ impl Transformer for BufferedS3Sink {
 
         self.buffer.put(buf.split());
 
+        if buf.len() > 0 {
+            trace!(buf_len = ?buf.len(), "buffered");
+        }
         if finished {
             trace!(sum = self.sum, buf_len = ?self.buffer.len(), "finished")
         }
