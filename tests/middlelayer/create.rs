@@ -6,7 +6,6 @@ use aruna_rust_api::api::storage::services::v2::create_object_request::Parent as
 use aruna_rust_api::api::storage::services::v2::{
     CreateCollectionRequest, CreateDatasetRequest, CreateObjectRequest, CreateProjectRequest,
 };
-use aruna_server::caching::cache::Cache;
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::license_dsl::ALL_RIGHTS_RESERVED;
 use aruna_server::database::dsls::object_dsl::EndpointInfo;
@@ -16,7 +15,6 @@ use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
-use std::sync::Arc;
 
 fn random_name() -> String {
     thread_rng()
@@ -170,7 +168,6 @@ async fn create_dataset() {
     // init
     let db_handler = init_database_handler_middlelayer().await;
     let client = &db_handler.database.get_client().await.unwrap();
-    let cache = Arc::new(Cache::new());
     // create user
     let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
@@ -198,7 +195,7 @@ async fn create_dataset() {
         .create_resource(parent, user.id, false)
         .await
         .unwrap();
-    cache.add_object(parent.clone());
+    db_handler.cache.add_object(parent.clone());
 
     // test requests
     let dataset_name = random_name();
@@ -250,7 +247,7 @@ async fn create_object() {
     // init
     let db_handler = init_database_handler_middlelayer().await;
     let client = &db_handler.database.get_client().await.unwrap();
-    let cache = Arc::new(Cache::new());
+    let cache = &db_handler.cache;
 
     // create user
     let mut user = test_utils::new_user(vec![]);

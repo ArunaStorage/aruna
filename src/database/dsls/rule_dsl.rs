@@ -121,13 +121,13 @@ impl CrudDb for RuleBinding {
         Err(anyhow!("Cannot get unique entry"))
     }
     async fn all(client: &Client) -> Result<Vec<Self>> {
-        let query = "SELECT * FROM rule_bindings";
+        let query = "SELECT * FROM rule_bindings;";
         let prepared = client.prepare(query).await?;
         let rows = client.query(&prepared, &[]).await?;
         Ok(rows.iter().map(RuleBinding::from_row).collect::<Vec<_>>())
     }
     async fn delete(&self, client: &Client) -> Result<()> {
-        let query = "DELETE FROM rule_bindings WHERE rule_id = $1 AND origin_id = $2";
+        let query = "DELETE FROM rule_bindings WHERE rule_id = $1 AND origin_id = $2;";
         let prepared = client.prepare(query).await?;
         client
             .execute(&prepared, &[&self.rule_id, &self.origin_id])
@@ -142,7 +142,7 @@ impl RuleBinding {
         origin_id: DieselUlid,
         client: &Client,
     ) -> Result<()> {
-        let query = "DELETE FROM rule_bindings WHERE rule_id = $1 AND origin_id = $2";
+        let query = "DELETE FROM rule_bindings WHERE rule_id = $1 AND origin_id = $2;";
         let prepared = client.prepare(query).await?;
         client.execute(&prepared, &[&rule_id, &origin_id]).await?;
         Ok(())
