@@ -288,6 +288,7 @@ pub struct Object {
     pub synced: bool,
     pub endpoints: Vec<Endpoint>, // TODO
     pub created_at: Option<NaiveDateTime>,
+    pub created_by: Option<DieselUlid>,
 }
 
 impl Object {
@@ -304,9 +305,7 @@ impl Object {
 
         Self {
             id: DieselUlid::generate(),
-            title: "".to_string(),
             name,
-            key_values: vec![],
             object_status: object_status,
             data_class: DataClass::Private,
             object_type,
@@ -314,13 +313,10 @@ impl Object {
             metadata_license: ALL_RIGHTS_RESERVED.to_string(),
             data_license: ALL_RIGHTS_RESERVED.to_string(),
             dynamic: true,
-            children: None,
             parents: parent.map(|p| HashSet::from([p])),
-            versions: None,
-            synced: false,
-            endpoints: vec![], // Can be empty, as long as create_object overwrites this
             // object with gRPC response
             created_at: Some(chrono::Utc::now().naive_utc()),
+            ..Default::default()
         }
     }
 
@@ -777,6 +773,7 @@ impl TryFrom<Project> for Object {
                 value.created_at.unwrap_or_default().seconds,
                 0,
             ),
+            created_by: Some(DieselUlid::from_str(&value.created_by)?),
         })
     }
 }
@@ -851,6 +848,7 @@ impl TryFrom<Collection> for Object {
                 value.created_at.unwrap_or_default().seconds,
                 0,
             ),
+            created_by: Some(DieselUlid::from_str(&value.created_by)?),
         })
     }
 }
@@ -925,6 +923,7 @@ impl TryFrom<Dataset> for Object {
                 value.created_at.unwrap_or_default().seconds,
                 0,
             ),
+            created_by: Some(DieselUlid::from_str(&value.created_by)?),
         })
     }
 }
@@ -999,6 +998,7 @@ impl TryFrom<GrpcObject> for Object {
                 value.created_at.unwrap_or_default().seconds,
                 0,
             ),
+            created_by: Some(DieselUlid::from_str(&value.created_by)?),
         })
     }
 }

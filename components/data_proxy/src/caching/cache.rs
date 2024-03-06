@@ -243,18 +243,23 @@ impl Cache {
             let location = ObjectLocation::get_opt(&object.id, &client).await?;
 
             let cache = self.get_cache().await?;
-            if let Some(location) = location {
-                if location.is_temporary {
+            if let Some(before_location) = &location {
+                if before_location.is_temporary {
                     if let Some(backend) = &self.backend {
+                        let backend = backend.clone();
+                        let before_location = before_location.clone();
+                        let object = object.clone();
+                        trace!(
+                            ?object,
+                            ?before_location,
+                            "finalizing missing temp location"
+                        );
                         tokio::spawn(DataHandler::finalize_location(
-                            object.id,
+                            object,
                             cache,
-                            token,
                             backend,
-                            ctx,
                             before_location,
-                            part_lens,
-                            new_location,
+                            None,
                         ));
                     }
                 }
@@ -1107,6 +1112,24 @@ impl Cache {
             .await?;
         }
         self.multi_parts.remove(&upload_id);
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, upload_id))]
+    pub async fn delete_part(&self, upload_id: String, part_number: u64) -> Result<()> {
+        let mut entry = self
+            .multi_parts
+            .get_mut(&upload_id)
+            .ok_or_else(|| anyhow!("Upload not found"))?;
+        let value = entry.value_mut();
+        let index = value
+            .iter()
+            .position(|x| x.part_number == part_number)
+            .ok_or_else(|| anyhow!("Part not found"))?;
+        let removed = value.remove(index);
+        if let Some(persistence) = self.persistence.read().await.as_ref() {
+            UploadPart::delete(&removed.id, persistence.get_client().await?.client()).await?;
+        }
         Ok(())
     }
 }

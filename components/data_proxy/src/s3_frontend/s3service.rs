@@ -143,18 +143,23 @@ impl S3 for ArunaS3Service {
 
         let parts = self.cache.get_parts(&upload_id);
 
-        let mut size_list = vec![];
         let mut cumulative_size = 0;
         let mut disk_size = 0;
-        for part in parts {
+        'outer: for part in parts {
             for etag in etag_parts.iter() {
                 if part.part_number == etag.part_number as u64 {
-                    size_list.push(part.size);
                     cumulative_size += part.raw_size;
                     disk_size += part.size;
-                    break;
+                    continue 'outer;
                 }
             }
+            self.cache
+                .delete_part(upload_id.to_string(), part.part_number)
+                .await
+                .map_err(|_| {
+                    error!(error = "Unable to delete part");
+                    s3_error!(InternalError, "Unable to delete part")
+                })?;
         }
 
         // Does this object exists (including object id etc)
@@ -184,22 +189,6 @@ impl S3 for ArunaS3Service {
                 s3_error!(InternalError, "Unable to update location")
             })?;
 
-        let new_location = self
-            .backend
-            .initialize_location(&object, None, objects_state.try_slice()?, false)
-            .await
-            .map_err(|_| {
-                error!(error = "Unable to create object_location");
-                s3_error!(InternalError, "Unable to create object_location")
-            })?;
-
-        let ctx = object
-            .get_file_context(Some(new_location.clone()), None)
-            .map_err(|_| {
-                error!(error = "Unable to get file context");
-                s3_error!(InternalError, "Unable to get file context")
-            })?;
-
         if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
             if let Some(token) = &impersonating_token {
                 // Set id of new location to object id to satisfy FK constraint
@@ -213,20 +202,12 @@ impl S3 for ArunaS3Service {
             }
         }
 
-        let token = impersonating_token.ok_or_else(|| {
-            error!(error = "Unauthorized: Impersonating error");
-            s3_error!(NotSignedUp, "Unauthorized: Impersonating error")
-        })?;
-
         tokio::spawn(DataHandler::finalize_location(
-            object.id,
+            object,
             self.cache.clone(),
-            token,
             self.backend.clone(),
-            ctx,
             old_location,
-            size_list,
-            new_location,
+            Some(objects_state.try_slice()?),
         ));
         debug!(?response);
         Ok(S3Response::new(response))

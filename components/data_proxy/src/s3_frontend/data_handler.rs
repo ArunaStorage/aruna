@@ -1,6 +1,7 @@
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::s3_frontend::utils::buffered_s3_sink::BufferedS3Sink;
+use crate::structs::Object;
 use crate::structs::ObjectLocation;
 use anyhow::anyhow;
 use anyhow::Result;
@@ -8,7 +9,6 @@ use aruna_rust_api::api::storage::models::v2::Hash;
 use aruna_rust_api::api::storage::models::v2::Hashalgorithm;
 use diesel_ulid::DieselUlid;
 use md5::{Digest, Md5};
-use pithos_lib::helpers::structs::FileContext;
 use pithos_lib::streamreadwrite::GenericStreamReadWriter;
 use pithos_lib::transformer::ReadWriter;
 use pithos_lib::transformers::decrypt_with_parts::ChaCha20DecParts;
@@ -31,18 +31,52 @@ use tracing::Instrument;
 pub struct DataHandler {}
 
 impl DataHandler {
-    #[tracing::instrument(level = "trace", skip(cache, backend, before_location, new_location))]
+    #[tracing::instrument(level = "trace", skip(cache, backend, before_location))]
     pub async fn finalize_location(
-        object_id: DieselUlid,
+        object: Object,
         cache: Arc<Cache>,
-        token: String,
         backend: Arc<Box<dyn StorageBackend>>,
-        ctx: FileContext,
         before_location: ObjectLocation,
-        part_lens: Vec<u64>,
-        mut new_location: ObjectLocation,
+        path_level: Option<[Option<(DieselUlid, String)>; 4]>,
     ) -> Result<()> {
+        let token = if let Some(handler) = cache.auth.read().await.as_ref() {
+            let Some(created_by) = object.created_by.clone() else {
+                error!("No created_by found");
+                return Err(anyhow!("No created_by found"));
+            };
+            handler
+                .sign_impersonating_token(created_by.to_string(), None::<String>)
+                .map_err(|e| {
+                    error!(error = ?e, msg = e.to_string());
+                    e
+                })?
+        } else {
+            error!("No handler found");
+            return Err(anyhow!("No handler found"));
+        };
+
+        let upload_id = before_location
+            .upload_id
+            .as_ref()
+            .ok_or_else(|| anyhow!("Missing upload_id"))?
+            .to_string();
+
+        let parents = if let Some(levels) = path_level {
+            levels
+        } else {
+            cache.get_single_parent(&object.id).await.map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                e
+            })?
+        };
+
+        let mut new_location = backend
+            .initialize_location(&object, None, parents, false)
+            .await?;
+
         debug!(?before_location, ?new_location, "Finalizing location");
+
+        let ctx = object.get_file_context(Some(new_location.clone()), None)?;
 
         let (tx_send, tx_receive) = async_channel::bounded(10);
 
@@ -54,6 +88,16 @@ impl DataHandler {
         let backend_clone = backend.clone();
         let new_location_clone = new_location.clone();
         let is_compressed = before_location.file_format.is_compressed();
+
+        let mut part_lens = Vec::new();
+        let parts = cache.get_parts(&upload_id);
+        for part in parts {
+            let full_chunks = (part.size / (65536 + 28)) * (65536 + 28);
+            part_lens.push(full_chunks);
+            if part.size % (65536 + 28) != 0 {
+                part_lens.push(part.size - full_chunks);
+            }
+        }
 
         let aswr_handle = tokio::spawn(
             async move {
@@ -181,7 +225,7 @@ impl DataHandler {
             // Set id of new location to object id to satisfy FK constraint
             // TODO: Update hashes etc.
 
-            cache.update_location(object_id, new_location).await?;
+            cache.update_location(object.id, new_location).await?;
 
             let upload_id = before_location
                 .upload_id
