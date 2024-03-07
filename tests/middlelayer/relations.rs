@@ -67,16 +67,16 @@ async fn test_modify() {
             defined_variant: 5, // POLICY
             custom_variant: None,
             resource_variant: 4,
-            direction: 2,
+            direction: RelationDirection::Outbound as i32,
         })),
     };
     let rel_del_one = Relation {
         relation: Some(RelationEnum::Internal(APIInternalRelation {
             resource_id: target.to_string(),
-            defined_variant: 1, // BELONGS_TO
+            defined_variant: InternalRelationVariant::Metadata as i32, // BELONGS_TO
             custom_variant: None,
             resource_variant: 4,
-            direction: 2,
+            direction: RelationDirection::Outbound as i32,
         })),
     };
     let request = ModifyRelations(ModifyRelationsRequest {
@@ -103,8 +103,8 @@ async fn test_modify() {
         .unwrap();
     assert!(owr.inbound.0.is_empty());
     assert!(owr.inbound_belongs_to.0.is_empty());
-    assert_eq!(owr.outbound.0.len(), 2);
-    assert!(owr.outbound_belongs_to.0.is_empty());
+    assert_eq!(owr.outbound.0.len(), 1);
+    assert_eq!(owr.outbound_belongs_to.0.len(), 1);
     assert!(owr
         .object
         .external_relations
