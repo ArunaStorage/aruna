@@ -1,9 +1,12 @@
 use crate::common::init::init_database_handler_middlelayer;
 use crate::common::test_utils;
 use crate::common::test_utils::rand_string;
+use aruna_rust_api::api::storage::models::v2::DataClass;
+use aruna_rust_api::api::storage::services::v2::create_object_request::Parent;
 use aruna_rust_api::api::storage::services::v2::{
-    CreateProjectRequest, CreateRuleBindingRequest, CreateRuleRequest, DeleteRuleBindingRequest,
-    UpdateRuleRequest,
+    create_collection_request, CreateCollectionRequest, CreateObjectRequest, CreateProjectRequest,
+    CreateRuleBindingRequest, CreateRuleRequest, DeleteRuleBindingRequest,
+    UpdateCollectionDescriptionRequest, UpdateRuleRequest,
 };
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::license_dsl::ALL_RIGHTS_RESERVED;
@@ -12,7 +15,9 @@ use aruna_server::middlelayer::create_request_types::CreateRequest;
 use aruna_server::middlelayer::rule_request_types::{
     CreateRule, CreateRuleBinding, DeleteRuleBinding, UpdateRule,
 };
+use aruna_server::middlelayer::update_request_types::DescriptionUpdate;
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
 
 #[tokio::test]
 async fn create_rule() {
@@ -218,8 +223,8 @@ async fn create_and_delete_rule_binding() {
 }
 
 #[tokio::test]
-async fn evaluate_rules() {
-// init
+async fn evaluate_and_update_rules() {
+    // init
     let db_handler = init_database_handler_middlelayer().await;
 
     // create user
@@ -230,7 +235,7 @@ async fn evaluate_rules() {
 
     // create rule
     let request = CreateRuleRequest {
-        rule: "false".to_string(),
+        rule: "object.object.title.startsWith('a valid title')".to_string(),
         description: "test rule".to_string(),
         public: true,
     };
@@ -270,10 +275,127 @@ async fn evaluate_rules() {
         cascading: true,
     });
     db_handler.create_rule_binding(request).await.unwrap();
-    todo!()
-}
 
-#[tokio::test]
-async fn evaluate_and_update_rules() {
-    todo!()
+    // create invalid subresource
+    let object_name = rand_string(10);
+    let request = CreateRequest::Object(CreateObjectRequest {
+        name: object_name,
+        title: "invalid title for an object".to_string(),
+        description: "abc".to_string(),
+        key_values: vec![],
+        relations: vec![],
+        data_class: 1,
+        hashes: vec![],
+        metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        authors: vec![],
+        parent: Some(Parent::ProjectId(project.object.id.to_string())),
+    });
+    let response = db_handler.create_resource(request, user.id, false).await;
+    assert!(response.is_err());
+
+    // create valid request
+    let object_name = rand_string(10);
+    let request = CreateRequest::Object(CreateObjectRequest {
+        name: object_name,
+        title: "a valid title for an object".to_string(),
+        description: "abc".to_string(),
+        key_values: vec![],
+        relations: vec![],
+        data_class: 1,
+        hashes: vec![],
+        metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        authors: vec![],
+        parent: Some(Parent::ProjectId(project.object.id.to_string())),
+    });
+    let response = db_handler.create_resource(request, user.id, false).await;
+    // Check rule evaluation
+    assert!(response.is_ok());
+    let object = response.unwrap().0.object;
+    // check rule inheritance
+    assert!(db_handler
+        .cache
+        .get_rule_bindings(&object.id)
+        .unwrap()
+        .iter()
+        .contains(&RuleBinding {
+            rule_id,
+            origin_id: project.object.id,
+            object_id: object.id,
+            cascading: true,
+        }));
+
+    // Check not-inherited rules
+    let request = CreateRuleRequest {
+        rule: "object.object.description == 'abc'".to_string(),
+        description: "test rule".to_string(),
+        public: true,
+    };
+    let rule_id = db_handler
+        .create_rule(CreateRule(request.clone()), user.id)
+        .await
+        .unwrap();
+    let _cached_rule = db_handler.cache.get_rule(&rule_id).unwrap();
+    let collection_name = rand_string(10);
+    let request = CreateRequest::Collection(CreateCollectionRequest {
+        name: collection_name,
+        title: "a valid title for a collection".to_string(),
+        description: "abc".to_string(),
+        key_values: vec![],
+        relations: vec![],
+        data_class: DataClass::Public as i32,
+        metadata_license_tag: None,
+        default_data_license_tag: None,
+        authors: vec![],
+        parent: Some(create_collection_request::Parent::ProjectId(
+            project.object.id.to_string(),
+        )),
+    });
+    let (collection, _) = db_handler
+        .create_resource(request, user.id, false)
+        .await
+        .unwrap();
+    let request = CreateRuleBinding(CreateRuleBindingRequest {
+        rule_id: rule_id.to_string(),
+        object_id: collection.object.id.to_string(),
+        cascading: false,
+    });
+    db_handler.create_rule_binding(request).await.unwrap();
+    // Try to change description
+    let request = UpdateCollectionDescriptionRequest {
+        collection_id: collection.object.id.to_string(),
+        description: "def".to_string(),
+    };
+    assert!(db_handler
+        .update_description(DescriptionUpdate::Collection(request))
+        .await
+        .is_err());
+    // Create subresource without inherited rule
+    let object_name = rand_string(10);
+    let request = CreateRequest::Object(CreateObjectRequest {
+        name: object_name,
+        title: "a valid title for an object".to_string(),
+        description: "xzy".to_string(),
+        key_values: vec![],
+        relations: vec![],
+        data_class: DataClass::Public as i32,
+        hashes: vec![],
+        metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        authors: vec![],
+        parent: Some(Parent::CollectionId(collection.object.id.to_string())),
+    });
+    let (object, _) = db_handler
+        .create_resource(request, user.id, false)
+        .await
+        .unwrap();
+    assert!(db_handler
+        .cache
+        .get_rule_bindings(&object.object.id)
+        .unwrap()
+        .iter()
+        .filter(|binding| binding.rule_id == rule_id)
+        .collect::<Vec<&RuleBinding>>()
+        .is_empty());
 }

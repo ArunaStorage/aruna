@@ -9,7 +9,6 @@ use aruna_rust_api::api::storage::services::v2::ModifyRelationsRequest;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
-use itertools::Itertools;
 
 pub struct ModifyRelations(pub ModifyRelationsRequest);
 

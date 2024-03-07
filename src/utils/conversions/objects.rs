@@ -266,10 +266,12 @@ impl Serialize for Object {
         let mut state = serializer.serialize_struct("object", 18)?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("revision_number", &self.revision_number)?;
+        state.serialize_field("title", &self.title)?;
         state.serialize_field("name", &self.name)?;
         state.serialize_field("description", &self.description)?;
         state.serialize_field("created_at", &self.created_at)?;
         state.serialize_field("created_by", &self.created_by)?;
+        state.serialize_field("authors", &self.authors.0)?;
         state.serialize_field("content_len", &self.content_len)?;
         state.serialize_field("count", &self.count)?;
         state.serialize_field("key_values", &self.key_values.0)?;

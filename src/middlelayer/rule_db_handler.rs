@@ -24,6 +24,7 @@ impl DatabaseHandler {
         // 1. Collect additional bindings
         let parents = Object::fetch_parents_by_id(origin, transaction_client).await?;
         let mut children = Object::fetch_subresources_by_id(origin, transaction_client).await?;
+        children.insert(0, *origin);
         let mut cascading = HashSet::default();
         for parent in parents {
             if let Some(bindings) = self.cache.get_rule_bindings(&parent) {
@@ -38,7 +39,7 @@ impl DatabaseHandler {
         self.evaluate_additional_rules(&children, &cascading, transaction_client)
             .await?;
         // 3. Update bindings
-        children.insert(0, *origin);
+        let mut inherited_rules = HashSet::default(); // must be unique
         for child in children {
             for binding in cascading.clone().into_iter() {
                 let mut new = RuleBinding {
@@ -47,8 +48,10 @@ impl DatabaseHandler {
                     object_id: child,
                     cascading: binding.cascading,
                 };
-                new.create(transaction_client).await?;
-                self.cache.insert_rule_binding(vec![child], new.clone());
+                if inherited_rules.insert(new.clone()) {
+                    new.create(transaction_client).await?;
+                    self.cache.insert_rule_binding(vec![child], new.clone());
+                }
             }
         }
         Ok(())
