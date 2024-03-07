@@ -138,7 +138,7 @@ impl DataHandler {
                     asr = asr.add_transformer(ZstdDec::new());
                 }
 
-                //asr = asr.add_transformer(DebugTransformer::new("After ZSTD"));
+                asr = asr.add_transformer(DebugTransformer::new("After ZSTD"));
 
                 let (uncompressed_probe, uncompressed_stream) = SizeProbe::new();
 

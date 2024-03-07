@@ -722,11 +722,11 @@ impl Cache {
         }
         let old_name = if let Some(o) = self.resources.get(&object.id) {
             let (obj, loc) = o.value();
-            let mut object = obj.write().await;
+            let mut object = obj.try_write()?;
             let old_name = object.name.clone();
             *object = object.clone();
             if let Some(location) = location {
-                *loc.write().await = Some(location);
+                *loc.try_write()? = Some(location);
             }
             old_name
         } else {
@@ -1051,13 +1051,17 @@ impl Cache {
         location: ObjectLocation,
     ) -> Result<()> {
 
-        let object = if let Some(resource) = self.resources.get(&object_id) {
+        let (object, old_id) = if let Some(resource) = self.resources.get(&object_id) {
             let (object, loc) = resource.value();
+            let old_id = {
+                let reference = loc.read().await;
+                reference.as_ref().map(|e| e.id.clone())
+            };
             let loc_id = location.id.clone();
             *loc.write().await = Some(location.clone());
             let mut mut_object = object.write().await;
             mut_object.location_id = Some(loc_id);
-            object.clone()
+            (object.clone(), old_id)
         }else{
             bail!("Resource not found")
         };
@@ -1067,6 +1071,9 @@ impl Cache {
                 .upsert(persistence.get_client().await?.client())
                 .await?;
             object.read().await.upsert(persistence.get_client().await?.client()).await?;
+            if let Some(old_id) = old_id {
+                ObjectLocation::delete(&old_id, persistence.get_client().await?.client()).await?;
+            }
         }
         Ok(())
     }

@@ -9,6 +9,7 @@ use tracing::{error, trace};
 #[derive(Default)]
 pub struct DebugTransformer {
     name: String,
+    accumulator: usize,
     notifier: Option<Arc<Notifier>>,
     msg_receiver: Option<Receiver<Message>>,
     idx: Option<usize>,
@@ -26,11 +27,12 @@ impl DebugTransformer {
 
 impl DebugTransformer {
     #[tracing::instrument(level = "trace", skip(self))]
-    fn process_messages(&mut self) -> Result<bool> {
+    fn process_messages(&mut self) -> Result<(bool, bool)> {
         if let Some(rx) = &self.msg_receiver {
             loop {
                 match rx.try_recv() {
-                    Ok(Message::Finished) => return Ok(true),
+                    Ok(Message::Finished) => return Ok((true, false)),
+                    Ok(Message::ShouldFlush) => return Ok((false, true)),
                     Ok(_) => {}
                     Err(TryRecvError::Empty) => {
                         break;
@@ -42,7 +44,7 @@ impl DebugTransformer {
                 }
             }
         }
-        Ok(false)
+        Ok((false, false))
     }
 }
 
@@ -58,8 +60,9 @@ impl Transformer for DebugTransformer {
 
     #[tracing::instrument(level = "trace", skip(self, buf))]
     async fn process_bytes(&mut self, buf: &mut BytesMut) -> Result<()> {
-        let finished = self.process_messages()?;
-        trace!(name = ?self.name, ?finished, len = ?buf.len(), "process_bytes");
+        let (finished, should_flush) = self.process_messages()?;
+        self.accumulator += buf.len();
+        trace!(name = ?self.name, ?finished, ?should_flush,  len = ?buf.len(), processed = ?self.accumulator, "process_bytes");
         if finished {
             if let Some(notifier) = &self.notifier {
                 notifier.send_next(
