@@ -128,8 +128,6 @@ impl DataHandler {
                 asr = asr.add_transformer(orig_probe);
                 asr.add_message_receiver(rx).await?;
 
-                //asr = asr.add_transformer(DebugTransformer::new("FinalizeLocation"));
-
                 if let Some(key) = clone_key.clone() {
                     asr = asr.add_transformer(ChaCha20DecParts::new_with_lengths(key, part_lens));
                 }
@@ -137,8 +135,6 @@ impl DataHandler {
                 if is_compressed {
                     asr = asr.add_transformer(ZstdDec::new());
                 }
-
-                asr = asr.add_transformer(DebugTransformer::new("After ZSTD"));
 
                 let (uncompressed_probe, uncompressed_stream) = SizeProbe::new();
 
@@ -177,14 +173,10 @@ impl DataHandler {
                     asr = asr.add_transformer(FooterGenerator::new(None));
                 }
 
-                asr = asr.add_transformer(DebugTransformer::new("After pithos"));
-
-
                 let (final_sha, final_sha_recv) =
                     HashingTransformer::new_with_backchannel(Sha256::new(), "sha256".to_string());
 
                 asr = asr.add_transformer(final_sha);
-                asr = asr.add_transformer(DebugTransformer::new("Before sink"));
                 asr.process()
                     .await
                     .map_err(|e| {

@@ -287,18 +287,20 @@ impl S3 for ArunaS3Service {
 
         let (_, collection, dataset, object, location_state) = states.into_new_or_existing()?;
 
-        let new_object = match object {
+        trace!(?collection, ?dataset, ?object);
+
+        let new_object = match &object {
             NewOrExistingObject::Existing(ob) => {
                 if ob.object_status == Status::Initializing {
                     trace!("Object is initializing");
-                    ob
+                    ob.clone()
                 } else {
                     let mut new_revision = if let Some(handler) =
                         self.cache.aruna_client.read().await.as_ref()
                     {
                         if let Some(token) = &impersonating_token {
                             handler
-                                .init_object_update(ob, token, true)
+                                .init_object_update(ob.clone(), token, true)
                                 .await
                                 .map_err(|_| {
                                     error!(error = "Object update failed");
@@ -320,7 +322,7 @@ impl S3 for ArunaS3Service {
                     new_revision
                 }
             }
-            NewOrExistingObject::Missing(object) => object,
+            NewOrExistingObject::Missing(object) => object.clone(),
             NewOrExistingObject::None => {
                 return Err(s3_error!(
                     InvalidObjectState,
@@ -378,17 +380,27 @@ impl S3 for ArunaS3Service {
             }
         }
 
-        if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
-            if let Some(token) = &impersonating_token {
-                let _ = handler
-                    .create_object(new_object.clone(), Some(location), token)
-                    .await
-                    .map_err(|_| {
-                        error!(error = "Unable to create dataset");
-                        s3_error!(InternalError, "Unable to create dataset")
-                    })?;
+        if let NewOrExistingObject::Missing(_) = &object {
+            if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
+                if let Some(token) = &impersonating_token {
+                    let _ = handler
+                        .create_object(new_object.clone(), Some(location.clone()), token)
+                        .await
+                        .map_err(|_| {
+                            error!(error = "Unable to create object");
+                            s3_error!(InternalError, "Unable to create object")
+                        })?;
+                }
             }
         }
+
+        self.cache
+            .upsert_object(new_object, Some(location))
+            .await
+            .map_err(|_| {
+                error!(error = "Unable to cache new object");
+                s3_error!(InternalError, "Unable to cache new object")
+            })?;
 
         let output = CreateMultipartUploadOutput {
             key: Some(req.input.key),
@@ -530,8 +542,6 @@ impl S3 for ArunaS3Service {
                 .map(|f| f.eof_metadata.disk_file_size)
                 .unwrap_or_else(|| location.disk_content_len as u64)]
         };
-
-        trace!(footer = ?footer, "footer");
 
         trace!("calculating ranges");
         let (query_ranges, edit_list, actual_range) =
