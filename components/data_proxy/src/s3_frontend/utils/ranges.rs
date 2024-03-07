@@ -93,9 +93,9 @@ pub fn aruna_range_from_s3range(range_string: S3Range, content_length: u64) -> A
             Some(val) => ArunaRange {
                 from: first,
                 to: if val > content_length {
-                    content_length - 1
+                    content_length
                 } else {
-                    val
+                    val + 1
                 },
             },
             None => ArunaRange {
