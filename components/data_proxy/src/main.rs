@@ -165,7 +165,7 @@ async fn main() -> Result<()> {
     )
     .map_err(|e| {
         error!(error = ?e, msg = e.to_string());
-        anyhow!("an error occured {e}")
+        anyhow!("an error occurred {e}")
     });
 
     if let Some(s3_server) = s3_server {

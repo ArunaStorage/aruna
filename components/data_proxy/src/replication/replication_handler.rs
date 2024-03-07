@@ -22,7 +22,7 @@ use pithos_lib::transformers::footer_extractor::FooterExtractor;
 use pithos_lib::{streamreadwrite::GenericStreamReadWriter, transformer::ReadWriter};
 use std::{str::FromStr, sync::Arc};
 use tokio::pin;
-use tracing::trace;
+use tracing::{info_span, Instrument, trace};
 
 pub struct ReplicationMessage {
     pub direction: Direction,
@@ -82,7 +82,7 @@ impl ReplicationHandler {
         // Push messages into DashMap for further processing
         let queue_clone = queue.clone();
         let receiver = self.receiver.clone();
-        let recieve = tokio::spawn(async move {
+        let receive = tokio::spawn(async move {
             while let Ok(ReplicationMessage {
                 direction,
                 endpoint_id,
@@ -100,11 +100,11 @@ impl ReplicationHandler {
             }
         });
 
-        // Proccess DashMap entries in batches
+        // Process DashMap entries in batches
         let process: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
             loop {
                 // Process batches every 30 seconds
-                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await; // TODO: set to 30 secs
                 let batch = queue.clone();
 
                 let result = self.process(batch).await.map_err(|e| {
@@ -133,7 +133,7 @@ impl ReplicationHandler {
             }
         });
         // Run both tasks simultaneously
-        let (_, result) = tokio::try_join!(recieve, process).map_err(|e| {
+        let (_, result) = tokio::try_join!(receive, process).map_err(|e| {
             tracing::error!(error = ?e, msg = e.to_string());
             e
         })?;
@@ -189,15 +189,15 @@ impl ReplicationHandler {
                         e
                     })?;
 
-                // This is the init message for object proccessing
+                // This is the init message for object processing
                 let (start_sender, start_receiver) = async_channel::bounded(1);
-                // This channel is used to collect all proccessed objects and chunks
+                // This channel is used to collect all processed objects and chunks
                 let (sync_sender, sync_receiver) = async_channel::bounded(100);
                 // This channel is only used to transmit the sync result to compare
-                // recieved vs requested objects
+                // received vs requested objects
                 let (finish_sender, finish_receiver) = async_channel::bounded(1);
 
-                // This map collects for each object_id a channel for datatransmission
+                // This map collects for each object_id a channel for data transmission
                 // TODO: This could be used to make parallel requests later
                 let object_handler_map: ObjectHandler = Arc::new(DashMap::default());
                 for object in pull {
@@ -228,7 +228,7 @@ impl ReplicationHandler {
                 trace!(?object_handler_map);
                 // Response handler:
                 // This is used to handle all requests and responses
-                // to the other dataproxy
+                // to the other data proxy
                 let data_map = object_handler_map.clone();
                 let sync_sender_clone = sync_sender.clone();
                 let request_sender_clone = request_sender.clone();
@@ -243,7 +243,7 @@ impl ReplicationHandler {
                             })) => {
                                 counter += 1;
 
-                                // If ObjectInfo is send, a init msg is collected in sync ...
+                                // If ObjectInfo is sent, an init msg is collected in sync ...
                                 let id = DieselUlid::from_str(&object_id).map_err(|e| {
                                     tracing::error!(error = ?e, msg = e.to_string());
                                     e
@@ -385,7 +385,7 @@ impl ReplicationHandler {
                     Arc::new(DashMap::default()); // Syncs if object is already synced
                 let finished_clone = finished_objects.clone();
                 tokio::spawn(async move {
-                    // For now, every entry of the object_handler_map is proccessed
+                    // For now, every entry of the object_handler_map is processed
                     // consecutively
                     while start_receiver.recv().await.is_ok() {
                         let mut batch_counter = 0;
@@ -406,7 +406,7 @@ impl ReplicationHandler {
 
                                 // The object gets queried
                                 let (object, location) =
-                                    cache.get_resource_cloned(&object_id, true).await?;
+                                    cache.get_resource_cloned(&object_id, false).await?;
                                 trace!(?object);
                                 // If no location is found, a new one is created
                                 let mut location = if location.is_some() {
@@ -415,7 +415,8 @@ impl ReplicationHandler {
                                     finished_clone.insert(Direction::Pull(object_id), true);
                                     object_handler_map.remove(&id);
                                     continue;
-                                } else if !synced {
+                                } else if synced {
+                                    trace!("skipping object");
                                     continue;
                                 } else {
                                     backend
@@ -560,7 +561,7 @@ impl ReplicationHandler {
                                                 tracing::error!(error = ?e, msg = e.to_string());
                                                 e
                                             })?;
-                                    return Err(anyhow!("Not all chunks recieved, aborting sync"));
+                                    return Err(anyhow!("Not all chunks received, aborting sync"));
                                 }
                             } else {
                                 trace!("Not all chunks received, aborting ...");
@@ -583,7 +584,7 @@ impl ReplicationHandler {
                                                 tracing::error!(error = ?e, msg = e.to_string());
                                                 e
                                             })?;
-                                return Err(anyhow!("Not all chunks recieved, aborting sync"));
+                                return Err(anyhow!("Not all chunks received, aborting sync"));
                             }
                         }
                         finished_objects.insert(Direction::Pull(*object_id), false);
@@ -634,7 +635,7 @@ impl ReplicationHandler {
         tokio::spawn(async move {
             while let Ok(data) = data_receiver.recv().await {
                 let trace_message = format!(
-                    "Recieved chunk with idx {:?} for object with id {:?} and size {}, expected {}",
+                    "Received chunk with idx {:?} for object with id {:?} and size {}, expected {}",
                     data.chunk_idx,
                     data.object_id,
                     data.data.len(),
@@ -749,9 +750,9 @@ impl ReplicationHandler {
                 }
             }
             Ok::<(), anyhow::Error>(())
-        });
+        }.instrument(info_span!("replication chunk receiver")));
 
-        trace!("Starting ArunaStreamReadWriter taks");
+        trace!("Starting ArunaStreamReadWriter task");
         let location_clone = location.clone();
         pin!(data_stream);
         let mut awr = GenericStreamReadWriter::new_with_sink(

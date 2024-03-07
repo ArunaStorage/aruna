@@ -14,7 +14,7 @@ use pithos_lib::helpers::notifications::Notifier;
 use pithos_lib::transformer::TransformerType;
 use pithos_lib::transformer::{Sink, Transformer};
 use tokio::sync::mpsc::Sender as TokioSender;
-use tracing::error;
+use tracing::{error, trace};
 
 pub struct ReplicationSink {
     object_id: String,
@@ -77,6 +77,7 @@ impl ReplicationSink {
         Ok(false)
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn create_and_send_message(&mut self) -> Result<bool> {
         if self.buffer.is_empty() {
             return Ok(true);
@@ -111,6 +112,7 @@ impl ReplicationSink {
                 checksum: hex::encode(result),
             })),
         };
+        trace!(message=?message);
 
         self.sender.send(Ok(message.clone())).await.map_err(|e| {
             error!(error = ?e, msg = e.to_string());
@@ -172,7 +174,7 @@ impl Transformer for ReplicationSink {
             self.is_finished = true;
 
             if let Some(notifier) = &self.notifier {
-                notifier.send_read_writer(pithos_lib::helpers::notifications::Message::Finished)?;
+                notifier.send_read_writer(pithos_lib::helpers::notifications::Message::Completed)?;
             }
 
             return Ok(());

@@ -1,11 +1,4 @@
-use crate::{
-    auth::auth_helpers::get_token_from_md,
-    caching::cache::Cache,
-    data_backends::storage_backend::StorageBackend,
-    replication::replication_handler::ReplicationMessage,
-    s3_frontend::utils::replication_sink::ReplicationSink,
-    structs::{Object, ObjectLocation, PubKey},
-};
+use crate::{auth::auth_helpers::get_token_from_md, caching::cache::Cache, CONFIG, data_backends::storage_backend::StorageBackend, replication::replication_handler::ReplicationMessage, s3_frontend::utils::replication_sink::ReplicationSink, structs::{Object, ObjectLocation, PubKey}};
 use anyhow::{anyhow, Result};
 use bytes::{BufMut, BytesMut};
 use pithos_lib::{
@@ -39,6 +32,7 @@ use tokio::{pin, sync::Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::Streaming;
 use tracing::{error, info_span, trace, Instrument};
+use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 
 #[derive(Clone)]
 pub struct DataproxyReplicationServiceImpl {
@@ -104,6 +98,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
         let finished_state_clone = finished_state_handler.clone();
 
         let (id, pk) = self.get_endpoint_from_token(&token).await?;
+        let pk = crate::auth::crypto::ed25519_to_x25519_pubkey(&pk.key).map_err(|_| tonic::Status::internal("Unable to convert pubkey"))?;
 
         // Recieving loop
         let proxy_replication_service = self.clone();
@@ -298,9 +293,13 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
         });
 
         // Responding loop
-        let proxy_replication_service = self.clone();
+        let proxy_replication_service = DataproxyReplicationServiceImpl {
+            cache: self.cache.clone(),
+            sender: self.sender.clone(),
+            backend: self.backend.clone(),
+        };
 
-        let pubkey = pk.key.to_string();
+        let pubkey = pk;
         tokio::spawn(async move {
             loop {
                 match object_input_rcv.recv().await {
@@ -368,7 +367,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                             proxy_replication_service
                                 .send_object(
                                     object.id.to_string(),
-                                    pubkey.clone(),
+                                    pubkey,
                                     location,
                                     object_output_send.clone(),
                                     retry_rcv.clone(),
@@ -488,7 +487,7 @@ impl DataproxyReplicationServiceImpl {
         let mut objects = Vec::new();
         let object_endpoint_map = DashMap::new();
         for id in ids {
-            if let Ok((object, location)) = self.cache.get_resource_cloned(&id, true).await {
+            if let Ok((object, location)) = self.cache.get_resource_cloned(&id, false).await {
                 let location = location.as_ref().ok_or_else(|| {
                     error!("No location found for object");
                     tonic::Status::not_found("No location found for object")
@@ -514,13 +513,14 @@ impl DataproxyReplicationServiceImpl {
     async fn send_object(
         &self,
         object_id: String,
-        pubkey: String,
+        pubkey: [u8; 32],
         location: ObjectLocation,
         sender: tokio::sync::mpsc::Sender<Result<PullReplicationResponse, tonic::Status>>,
         error_rcv: Receiver<Option<(i64, String)>>, // contains chunk_idx and object_id
     ) -> Result<()> {
+        dbg!("starting send object");
         // Create channel for get_object
-        let (object_sender, object_receiver) = async_channel::bounded(255);
+        let (object_sender, object_receiver) = async_channel::bounded(10000);
 
         let footer = if location.is_pithos() {
             Some(self.get_footer(location.clone()).await?)
@@ -528,8 +528,11 @@ impl DataproxyReplicationServiceImpl {
             None
         };
 
+        dbg!("got footer");
+
         let location_clone = location.clone();
 
+        dbg!("cloned location");
         // Spawn get_object
         let backend = self.backend.clone();
         tokio::spawn(
@@ -544,6 +547,7 @@ impl DataproxyReplicationServiceImpl {
             }
             .instrument(info_span!("get_object")),
         );
+        dbg!("got object");
 
         // Spawn final part
         let _ = tokio::spawn(
@@ -560,7 +564,8 @@ impl DataproxyReplicationServiceImpl {
                         error_rcv,
                     ),
                 );
-
+                asrw = asrw.add_transformer(DebugTransformer::new("Debug replication"));
+    
                 if let Some(key) = location.get_encryption_key() {
                     // Add decryption transformer
                     if !location.is_pithos() {
@@ -581,7 +586,7 @@ impl DataproxyReplicationServiceImpl {
                 if let Some(footer) = footer {
                     // Add footer transformer
                     asrw = asrw.add_transformer(FooterUpdater::new(
-                        vec![pubkey.as_bytes().try_into()?],
+                        vec![pubkey],
                         footer,
                     ));
                 } else {
@@ -609,21 +614,21 @@ impl DataproxyReplicationServiceImpl {
 
     async fn get_footer(&self, location: ObjectLocation) -> Result<Footer, anyhow::Error> {
         let (footer_sender, footer_receiver) = async_channel::bounded(1000);
-        let _ = self
-            .backend
-            .get_object(location.clone(), Some("-131072".to_string()), footer_sender)
-            .await
-            .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
-                e
-            })?;
+        self.backend
+                .get_object(location.clone(), Some("-131072".to_string()), footer_sender)
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = ?e, msg = e.to_string());
+                    e
+                })?;
 
         let mut buf = BytesMut::new();
         while let Ok(Ok(bytes)) = footer_receiver.try_recv() {
             buf.put(bytes)
         }
+        let readers_priv_key = CONFIG.proxy.clone().get_private_key_x25519()?;
 
-        let parser: Footer = FooterParser::new(&buf)?.parse()?.try_into()?;
+        let parser: Footer = FooterParser::new(&buf)?.add_recipient(&readers_priv_key).parse()?.try_into()?;
         Ok(parser)
     }
 }

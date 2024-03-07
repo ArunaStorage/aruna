@@ -722,9 +722,9 @@ impl Cache {
         }
         let old_name = if let Some(o) = self.resources.get(&object.id) {
             let (obj, loc) = o.value();
-            let mut object = obj.try_write()?;
-            let old_name = object.name.clone();
-            *object = object.clone();
+            let mut dash_map_object = obj.try_write()?;
+            let old_name = dash_map_object.name.clone();
+            *dash_map_object = object.clone();
             if let Some(location) = location {
                 *loc.try_write()? = Some(location);
             }
