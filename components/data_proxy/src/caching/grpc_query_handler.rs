@@ -433,7 +433,7 @@ impl GrpcQueryHandler {
     pub async fn create_object(
         &self,
         object: DPObject,
-        mut loc: Option<ObjectLocation>,
+        loc: Option<ObjectLocation>,
         token: &str,
     ) -> Result<DPObject> {
         trace!(?object, ?loc, "Creating object");
@@ -458,11 +458,9 @@ impl GrpcQueryHandler {
                 anyhow!("unknown object")
             })?;
 
-        let object = DPObject::try_from(response)?;
+        let mut object = DPObject::try_from(response)?;
 
-        if let Some(ref mut loc) = loc {
-            loc.id = object.id;
-        }
+        object.location_id = loc.as_ref().map(|l| l.id.clone());
 
         self.cache.upsert_object(object.clone(), loc).await?;
         Ok(object)
@@ -610,7 +608,7 @@ impl GrpcQueryHandler {
     pub async fn create_and_finish(
         &self,
         proxy_object: DPObject,
-        mut loc: ObjectLocation,
+        loc: ObjectLocation,
         token: &str,
     ) -> Result<DPObject> {
         trace!(?proxy_object, ?loc, "Creating and finishing object");
@@ -663,8 +661,8 @@ impl GrpcQueryHandler {
             })?;
 
         // Id of location record should be set to Dataproxy Object id but is set to Server Object id... the fuck?
-        let object = DPObject::try_from(response)?;
-        loc.id = object.id;
+        let mut object = DPObject::try_from(response)?;
+        object.location_id = Some(loc.id);
 
         // Persist Object and Location in cache/database
         self.cache.upsert_object(object.clone(), Some(loc)).await?;

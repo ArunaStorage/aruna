@@ -7,6 +7,7 @@ use base64::Engine;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use s3s::s3_error;
+use tracing::trace;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -39,6 +40,7 @@ pub async fn list_response(
     cache: &Arc<Cache>,
     delimiter: &Option<String>,
     prefix: &Option<String>,
+    bucket_name: &str,
     start_at: &str,
     max_keys: usize,
 ) -> Result<(BTreeSet<Contents>, BTreeSet<String>, Option<String>)> {
@@ -48,7 +50,7 @@ pub async fn list_response(
 
     match (delimiter.clone(), prefix.clone()) {
         (Some(delimiter), Some(prefix)) => {
-            for (path, id) in cache.get_stripped_path_range(prefix.as_str(), start_at) {
+            for (path, id) in cache.get_path_range(bucket_name, start_at) {
                 // Breaks with next path to start at after max_keys is reached
                 let num_keys = keys.len() + common_prefixes.len();
                 if num_keys == max_keys {
@@ -68,7 +70,7 @@ pub async fn list_response(
                             (
                                 &path,
                                 &cache
-                                    .get_resource_cloned(&id, true)
+                                    .get_resource_cloned(&id, false)
                                     .await
                                     .map_err(|_| s3_error!(NoSuchKey, "No key found for path"))?,
                             )
@@ -81,7 +83,7 @@ pub async fn list_response(
             }
         }
         (Some(delimiter), None) => {
-            for (path, id) in cache.get_stripped_path_range("", start_at) {
+            for (path, id) in cache.get_path_range(bucket_name, start_at) {
                 // Breaks with next path to start at after max_keys is reached
                 let num_keys = keys.len() + common_prefixes.len();
                 if num_keys == max_keys {
@@ -98,7 +100,7 @@ pub async fn list_response(
                         (
                             &path,
                             &cache
-                                .get_resource_cloned(&id, true)
+                                .get_resource_cloned(&id, false)
                                 .await
                                 .map_err(|_| s3_error!(NoSuchKey, "No key found for path"))?,
                         )
@@ -108,7 +110,7 @@ pub async fn list_response(
             }
         }
         (None, Some(prefix)) => {
-            for (path, id) in cache.get_stripped_path_range(prefix.as_str(), start_at) {
+            for (path, id) in cache.get_path_range(bucket_name, start_at) {
                 // Breaks with next path to start at after max_keys is reached
                 let num_keys = keys.len() + common_prefixes.len();
                 if num_keys == max_keys {
@@ -121,7 +123,7 @@ pub async fn list_response(
                         (
                             &path,
                             &cache
-                                .get_resource_cloned(&id, true)
+                                .get_resource_cloned(&id, false)
                                 .await
                                 .map_err(|_| s3_error!(NoSuchKey, "No key found for path"))?,
                         )
@@ -133,7 +135,7 @@ pub async fn list_response(
             }
         }
         (None, None) => {
-            for (path, id) in cache.get_stripped_path_range("", start_at) {
+            for (path, id) in cache.get_path_range(bucket_name, start_at) {
                 // Breaks with next path to start at after max_keys is reached
                 let num_keys = keys.len() + common_prefixes.len();
                 if num_keys == max_keys {
@@ -145,7 +147,7 @@ pub async fn list_response(
                     (
                         &path,
                         &cache
-                            .get_resource_cloned(&id, true)
+                            .get_resource_cloned(&id, false)
                             .await
                             .map_err(|_| s3_error!(NoSuchKey, "No key found for path"))?,
                     )

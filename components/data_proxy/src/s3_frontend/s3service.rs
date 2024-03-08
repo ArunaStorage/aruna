@@ -805,7 +805,7 @@ impl S3 for ArunaS3Service {
         };
 
         let (keys, common_prefixes, new_continuation_token) =
-            list_response(&self.cache, &delimiter, &prefix, &start_after, max_keys)
+            list_response(&self.cache, &delimiter, &prefix, &project_name, &start_after, max_keys)
                 .await
                 .map_err(|_| {
                     error!(error = "Keys not found in ListObjectsV2");

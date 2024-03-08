@@ -873,6 +873,7 @@ impl Cache {
         } else {
             None
         };
+        trace!(?obj, ?loc);
         Ok((obj, loc))
     }
 
@@ -892,12 +893,15 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_stripped_path_range(&self, prefix: &str, skip: &str) -> Vec<(String, DieselUlid)> {
+    pub fn get_path_range(&self, bucket_name: &str, skip: &str) -> Vec<(String, DieselUlid)> {
+
+        let prefix = format!("{}/", bucket_name.to_string());
+
         self.paths
-            .range(format!("{prefix}/{skip}")..=format!("{prefix}~"))
+            .range(format!("{prefix}{skip}")..=format!("{prefix}~"))
             .map(|e| {
                 (
-                    e.key().strip_prefix(prefix).unwrap_or_default().to_string(),
+                    e.key().strip_prefix(&prefix).unwrap_or_default().to_string(),
                     e.value().clone(),
                 )
             })
