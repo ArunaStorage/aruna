@@ -708,8 +708,12 @@ impl Cache {
             object.location_id = Some(location.id);
         } else {
             if let Some(o) = self.resources.get(&object.id) {
-                let (obj, _) = o.value();
-                object.location_id = obj.read().await.location_id.clone();
+                let (obj, loc) = o.value();
+                if let Some(obj) = loc.read().await.as_ref() {
+                    object.location_id = Some(obj.id);
+                }else{
+                    object.location_id = obj.read().await.location_id.clone();
+                }
             }
         }
 
