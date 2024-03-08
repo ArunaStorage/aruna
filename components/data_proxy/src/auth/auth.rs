@@ -34,6 +34,7 @@ use s3s::s3_error;
 use s3s::S3Error;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
+use tracing::trace;
 use std::collections::HashMap;
 use std::ops::Add;
 use std::str::FromStr;
@@ -397,6 +398,7 @@ impl AuthHandler {
 
         let path = format!("{bucket_name}/{key_name}");
         let prefix: Vec<(String, String)> = auth_helpers::key_into_prefix(&path)?;
+        trace!(?prefix, "Prefix");
         let resource_states = self.prefix_into_resource_states(&prefix, false).await?;
 
         if is_method_read(method) {
@@ -716,6 +718,7 @@ impl AuthHandler {
         let mut resource_states: ResourceStates = ResourceStates::default();
         let len = prefixes.len();
         for (idx, (prefix, name)) in prefixes.iter().enumerate() {
+            trace!(idx);
             let Some(obj) = self.cache.get_full_resource_by_path(prefix).await else {
                 resource_states
                     .set_missing(idx, len, name.to_string())

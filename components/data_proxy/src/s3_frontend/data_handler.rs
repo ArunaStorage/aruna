@@ -1,7 +1,6 @@
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
 use crate::s3_frontend::utils::buffered_s3_sink::BufferedS3Sink;
-use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use crate::structs::Object;
 use crate::structs::ObjectLocation;
 use anyhow::anyhow;

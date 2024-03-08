@@ -40,7 +40,7 @@ pub fn calculate_ranges(
         });
 
         return Ok((
-            Some(format!("bytes={}-{}", a.from, a.to)),
+            Some(format!("bytes={}-{}", a.from, a.to-1)),
             Some(b),
             calculate_content_length_from_range(a),
             Some(aruna_range),

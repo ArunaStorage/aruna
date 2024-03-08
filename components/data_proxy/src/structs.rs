@@ -1448,11 +1448,11 @@ impl ResourceStates {
             (1, 2) | (2, 3) | (3, 4) => {
                 self.objects[3] = ResourceState::new_missing(name, ResourceVariant::Object)
             }
-            (2, _) => {
+            (1, 4) => {
                 self.objects[1] = ResourceState::new_missing(name, ResourceVariant::Collection)
             }
-            (3, _) => self.objects[2] = ResourceState::new_missing(name, ResourceVariant::Dataset),
-            _ => bail!("Invalid index"),
+            (1, 3) | (2, 4) => self.objects[2] = ResourceState::new_missing(name, ResourceVariant::Dataset),
+            (a, b) => bail!("Invalid index {}, {}", a,b),
         }
         Ok(())
     }

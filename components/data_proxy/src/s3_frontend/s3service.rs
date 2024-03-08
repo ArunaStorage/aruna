@@ -4,7 +4,6 @@ use super::utils::ranges::calculate_ranges;
 use crate::bundler::bundle_helper::get_bundle;
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
-use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use crate::s3_frontend::utils::list_objects::list_response;
 use crate::structs::CheckAccessResult;
 use crate::structs::NewOrExistingObject;
@@ -474,7 +473,7 @@ impl S3 for ArunaS3Service {
             error!(error = "Unable to get resource");
             s3_error!(NoSuchKey, "Object not found")
         })?;
-        let content_length = location.raw_content_len;
+        let mut content_length = location.raw_content_len;
 
         let (sender, receiver) = async_channel::bounded(10);
         let object = states.require_object()?;
@@ -557,6 +556,7 @@ impl S3 for ArunaS3Service {
             };
 
         let (accept_ranges, content_range) = if let Some(query_range) = actual_range {
+            content_length = (query_range.to - query_range.from) as i64;
             (
                 Some("bytes".to_string()),
                 Some(format!(
@@ -578,7 +578,7 @@ impl S3 for ArunaS3Service {
             async move { backend.get_object(loc_clone, query_ranges, sender).await }
                 .instrument(info_span!("get_object")),
         );
-        let (final_send, final_rcv) = async_channel::bounded(1000);
+        let (final_send, final_rcv) = async_channel::bounded(100);
 
         let decryption_key = location.get_encryption_key().ok_or_else(|| {
             error!(error = "Unable to get encryption key");
@@ -594,8 +594,6 @@ impl S3 for ArunaS3Service {
                     AsyncSenderSink::new(final_send),
                 );
 
-                asrw = asrw.add_transformer(DebugTransformer::new("start"));
-
                 if location.get_encryption_key().is_some() {
                     asrw = asrw
                         .add_transformer(ChaCha20DecParts::new_with_lengths(decryption_key, parts));
@@ -608,8 +606,6 @@ impl S3 for ArunaS3Service {
                 if let Some(edit_list) = edit_list {
                     asrw = asrw.add_transformer(Filter::new_with_edit_list(Some(edit_list)));
                 };
-
-                asrw = asrw.add_transformer(DebugTransformer::new_with_backoff("after_filer", 10));
 
                 asrw.process().await.map_err(|e| {
                     error!(error = ?e, msg = "Unable to process final part");
