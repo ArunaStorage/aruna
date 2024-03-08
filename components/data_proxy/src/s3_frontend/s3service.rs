@@ -56,6 +56,8 @@ use tracing::info_span;
 use tracing::trace;
 use tracing::warn;
 use tracing::Instrument;
+use std::collections::HashSet;
+use crate::structs::TypedRelation;
 
 pub struct ArunaS3Service {
     backend: Arc<Box<dyn StorageBackend>>,
@@ -289,7 +291,7 @@ impl S3 for ArunaS3Service {
 
         trace!(?collection, ?dataset, ?object);
 
-        let new_object = match &object {
+        let mut new_object = match &object {
             NewOrExistingObject::Existing(ob) => {
                 if ob.object_status == Status::Initializing {
                     trace!("Object is initializing");
@@ -355,28 +357,45 @@ impl S3 for ArunaS3Service {
 
         location.upload_id = Some(init_response.to_string());
 
+
+        let mut collection_id = None;
         if let NewOrExistingObject::Missing(collection) = collection {
             if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                 if let Some(token) = &impersonating_token {
-                    let _ = handler
-                        .create_collection(collection, token)
-                        .await
-                        .map_err(|_| {
-                            error!(error = "Unable to create collection");
-                            s3_error!(InternalError, "Unable to create collection")
-                        })?;
+                    let col =
+                        handler
+                            .create_collection(collection, token)
+                            .await
+                            .map_err(|_| {
+                                error!(error = "Unable to create collection");
+                                s3_error!(InternalError, "Unable to create collection")
+                            })?;
+                        collection_id = Some(col.id)
                 }
             }
         }
 
-        if let NewOrExistingObject::Missing(dataset) = dataset {
+        let mut dataset_id = None;
+        if let NewOrExistingObject::Missing(mut dataset) = dataset {
             if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                 if let Some(token) = &impersonating_token {
-                    let _ = handler.create_dataset(dataset, token).await.map_err(|_| {
+                    if let Some(collection_id) = collection_id {
+                        dataset.parents = Some(HashSet::from_iter([TypedRelation::Collection(collection_id)]));
+                    }
+                    let dataset = handler.create_dataset(dataset, token).await.map_err(|_| {
                         error!(error = "Unable to create dataset");
                         s3_error!(InternalError, "Unable to create dataset")
                     })?;
+                    dataset_id = Some(dataset.id);
                 }
+            }
+        }
+
+        if let Some(dataset_id) = dataset_id {
+            new_object.parents = Some(HashSet::from_iter([TypedRelation::Dataset(dataset_id)]));
+        }else{
+            if let Some(collection_id) = collection_id {
+                new_object.parents = Some(HashSet::from_iter([TypedRelation::Collection(collection_id)]));
             }
         }
 
@@ -1232,10 +1251,11 @@ impl S3 for ArunaS3Service {
             }
         }
 
+        let mut collection_id = None;
         if let NewOrExistingObject::Missing(collection) = collection {
             if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                 if let Some(token) = &impersonating_token {
-                    let _col =
+                    let col =
                         handler
                             .create_collection(collection, token)
                             .await
@@ -1243,18 +1263,32 @@ impl S3 for ArunaS3Service {
                                 error!(error = "Unable to create collection");
                                 s3_error!(InternalError, "Unable to create collection")
                             })?;
+                        collection_id = Some(col.id)
                 }
             }
         }
 
-        if let NewOrExistingObject::Missing(dataset) = dataset {
+        let mut dataset_id = None;
+        if let NewOrExistingObject::Missing(mut dataset) = dataset {
             if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                 if let Some(token) = &impersonating_token {
-                    let _ = handler.create_dataset(dataset, token).await.map_err(|_| {
+                    if let Some(collection_id) = collection_id {
+                        dataset.parents = Some(HashSet::from_iter([TypedRelation::Collection(collection_id)]));
+                    }
+                    let dataset = handler.create_dataset(dataset, token).await.map_err(|_| {
                         error!(error = "Unable to create dataset");
                         s3_error!(InternalError, "Unable to create dataset")
                     })?;
+                    dataset_id = Some(dataset.id);
                 }
+            }
+        }
+
+        if let Some(dataset_id) = dataset_id {
+            new_object.parents = Some(HashSet::from_iter([TypedRelation::Dataset(dataset_id)]));
+        }else{
+            if let Some(collection_id) = collection_id {
+                new_object.parents = Some(HashSet::from_iter([TypedRelation::Collection(collection_id)]));
             }
         }
 
