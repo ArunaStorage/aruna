@@ -80,7 +80,7 @@ impl ReplicationSink {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn create_and_send_message(&mut self) -> Result<bool> {
         if self.buffer.is_empty() {
-            return Ok(true);
+            return Ok(false);
         }
 
         let len = if self.chunk_counter < self.maximum_chunks {
@@ -90,7 +90,7 @@ impl ReplicationSink {
         };
 
         if self.buffer.len() < len {
-            return Ok(true);
+            return Ok(false);
         }
 
         let data = self.buffer.split_to(len).to_vec();
@@ -138,7 +138,7 @@ impl ReplicationSink {
         self.chunk_counter += 1;
         self.bytes_start += len as u64;
 
-        Ok(false)
+        Ok(true)
     }
 }
 
