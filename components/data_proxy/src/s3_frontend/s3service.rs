@@ -393,15 +393,15 @@ impl S3 for ArunaS3Service {
                         })?;
                 }
             }
-        }
-
-        self.cache
+        }else{
+            self.cache
             .upsert_object(new_object, Some(location))
             .await
             .map_err(|_| {
                 error!(error = "Unable to cache new object");
                 s3_error!(InternalError, "Unable to cache new object")
             })?;
+        }
 
         let output = CreateMultipartUploadOutput {
             key: Some(req.input.key),
@@ -568,6 +568,8 @@ impl S3 for ArunaS3Service {
             (None, None)
         };
 
+        trace!(?edit_list);
+
         // Spawn get_object to fetch bytes from storage storage
         let backend = self.backend.clone();
         let loc_clone = location.clone();
@@ -592,6 +594,8 @@ impl S3 for ArunaS3Service {
                     AsyncSenderSink::new(final_send),
                 );
 
+                asrw = asrw.add_transformer(DebugTransformer::new("start"));
+
                 if location.get_encryption_key().is_some() {
                     asrw = asrw
                         .add_transformer(ChaCha20DecParts::new_with_lengths(decryption_key, parts));
@@ -604,6 +608,8 @@ impl S3 for ArunaS3Service {
                 if let Some(edit_list) = edit_list {
                     asrw = asrw.add_transformer(Filter::new_with_edit_list(Some(edit_list)));
                 };
+
+                asrw = asrw.add_transformer(DebugTransformer::new_with_backoff("after_filer", 10));
 
                 asrw.process().await.map_err(|e| {
                     error!(error = ?e, msg = "Unable to process final part");

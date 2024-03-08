@@ -13,6 +13,7 @@ pub struct DebugTransformer {
     notifier: Option<Arc<Notifier>>,
     msg_receiver: Option<Receiver<Message>>,
     idx: Option<usize>,
+    counter: usize,
 }
 
 impl DebugTransformer {
@@ -20,6 +21,16 @@ impl DebugTransformer {
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
+            counter: usize::MAX,
+            ..Default::default()
+        }
+    }
+
+    #[tracing::instrument(level = "trace", skip(name))]
+    pub fn new_with_backoff(name: &str, counter: usize) -> Self {
+        Self {
+            name: name.to_string(),
+            counter,
             ..Default::default()
         }
     }
@@ -60,6 +71,14 @@ impl Transformer for DebugTransformer {
 
     #[tracing::instrument(level = "trace", skip(self, buf))]
     async fn process_bytes(&mut self, buf: &mut BytesMut) -> Result<()> {
+
+        if self.counter != usize::MAX {
+            if self.counter == 0 {
+                return Err(anyhow!("Backoff limit reached"));
+            }
+            self.counter -= 1;
+        }
+
         let (finished, should_flush) = self.process_messages()?;
         self.accumulator += buf.len();
         trace!(name = ?self.name, ?finished, ?should_flush,  len = ?buf.len(), processed = ?self.accumulator, "process_bytes");
