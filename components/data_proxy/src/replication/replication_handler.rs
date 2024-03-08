@@ -22,7 +22,7 @@ use pithos_lib::transformers::footer_extractor::FooterExtractor;
 use pithos_lib::{streamreadwrite::GenericStreamReadWriter, transformer::ReadWriter};
 use std::{str::FromStr, sync::Arc};
 use tokio::pin;
-use tracing::{info_span, Instrument, trace};
+use tracing::{info_span, trace, Instrument};
 
 pub struct ReplicationMessage {
     pub direction: Direction,
@@ -632,31 +632,32 @@ impl ReplicationHandler {
 
         trace!("Starting chunk processing");
         let (data_sender, data_stream) = async_channel::bounded(100);
-        tokio::spawn(async move {
-            while let Ok(data) = data_receiver.recv().await {
-                let trace_message = format!(
+        tokio::spawn(
+            async move {
+                while let Ok(data) = data_receiver.recv().await {
+                    let trace_message = format!(
                     "Received chunk with idx {:?} for object with id {:?} and size {}, expected {}",
                     data.chunk_idx,
                     data.object_id,
                     data.data.len(),
                     expected,
                 );
-                trace!(trace_message);
-                let chunk = bytes::Bytes::from_iter(data.data.into_iter());
-                // Check if chunk is missing
-                let idx = data.chunk_idx;
+                    trace!(trace_message);
+                    let chunk = bytes::Bytes::from_iter(data.data.into_iter());
+                    // Check if chunk is missing
+                    let idx = data.chunk_idx;
 
-                if idx != expected {
-                    if retry_counter > 5 {
-                        trace!("Exceeded retries");
-                        return Err(anyhow!(
-                            "Exceeded retries for chunk because of skipped chunk"
-                        ));
-                    } else {
-                        // TODO:
-                        // RetryChunk message
-                        trace!("MissingChunk: Retry chunk {}", expected);
-                        stream_sender
+                    if idx != expected {
+                        if retry_counter > 5 {
+                            trace!("Exceeded retries");
+                            return Err(anyhow!(
+                                "Exceeded retries for chunk because of skipped chunk"
+                            ));
+                        } else {
+                            // TODO:
+                            // RetryChunk message
+                            trace!("MissingChunk: Retry chunk {}", expected);
+                            stream_sender
                             .send(PullReplicationRequest {
                                 message: Some(Message::ErrorMessage(
                                     aruna_rust_api::api::dataproxy::services::v2::ErrorMessage {
@@ -674,35 +675,35 @@ impl ReplicationHandler {
                                 tracing::error!(error = ?e, msg = e.to_string());
                                 e
                             })?;
-                        retry_counter += 1;
-                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                        continue;
-                    }
-                } else {
-                    expected += 1;
-                };
-
-                // Check checksum of chunk:
-                let hash = data.checksum;
-                // - create a Md5 hasher instance
-                let mut hasher = Md5::new();
-                // - process input message
-                hasher.update(&chunk);
-                // - acquire hash digest in the form of GenericArray,
-                //   which in this case is equivalent to [u8; 16]
-                let result = hasher.finalize();
-                let calculated_hash = hex::encode(result);
-                if calculated_hash != hash {
-                    if retry_counter > 5 {
-                        trace!("Exceeded retries");
-                        return Err(anyhow!(
-                            "Exceeded retries for chunk because of differing checksums"
-                        ));
+                            retry_counter += 1;
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                            continue;
+                        }
                     } else {
-                        // TODO:
-                        // RetryChunk message
-                        trace!("HashError: Retry chunk {}", expected);
-                        stream_sender
+                        expected += 1;
+                    };
+
+                    // Check checksum of chunk:
+                    let hash = data.checksum;
+                    // - create a Md5 hasher instance
+                    let mut hasher = Md5::new();
+                    // - process input message
+                    hasher.update(&chunk);
+                    // - acquire hash digest in the form of GenericArray,
+                    //   which in this case is equivalent to [u8; 16]
+                    let result = hasher.finalize();
+                    let calculated_hash = hex::encode(result);
+                    if calculated_hash != hash {
+                        if retry_counter > 5 {
+                            trace!("Exceeded retries");
+                            return Err(anyhow!(
+                                "Exceeded retries for chunk because of differing checksums"
+                            ));
+                        } else {
+                            // TODO:
+                            // RetryChunk message
+                            trace!("HashError: Retry chunk {}", expected);
+                            stream_sender
                             .send(PullReplicationRequest {
                                 message: Some(Message::ErrorMessage(
                                     aruna_rust_api::api::dataproxy::services::v2::ErrorMessage {
@@ -720,37 +721,39 @@ impl ReplicationHandler {
                                 tracing::error!(error = ?e, msg = e.to_string());
                                 e
                             })?;
-                        retry_counter += 1;
-                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                        continue;
+                            retry_counter += 1;
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                            continue;
+                        }
                     }
-                }
 
-                data_sender.send(Ok(chunk)).await.map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
-                    e
-                })?;
-
-                // Message is send to sync
-                sync_sender
-                    .send(RcvSync::Chunk(
-                        DieselUlid::from_str(&data.object_id).map_err(|e| {
-                            tracing::error!(error = ?e, msg = e.to_string());
-                            e
-                        })?,
-                        data.chunk_idx,
-                    ))
-                    .await
-                    .map_err(|e| {
+                    data_sender.send(Ok(chunk)).await.map_err(|e| {
                         tracing::error!(error = ?e, msg = e.to_string());
                         e
                     })?;
-                if (idx + 1) == max_chunks {
-                    return Ok(());
+
+                    // Message is send to sync
+                    sync_sender
+                        .send(RcvSync::Chunk(
+                            DieselUlid::from_str(&data.object_id).map_err(|e| {
+                                tracing::error!(error = ?e, msg = e.to_string());
+                                e
+                            })?,
+                            data.chunk_idx,
+                        ))
+                        .await
+                        .map_err(|e| {
+                            tracing::error!(error = ?e, msg = e.to_string());
+                            e
+                        })?;
+                    if (idx + 1) == max_chunks {
+                        return Ok(());
+                    }
                 }
+                Ok::<(), anyhow::Error>(())
             }
-            Ok::<(), anyhow::Error>(())
-        }.instrument(info_span!("replication chunk receiver")));
+            .instrument(info_span!("replication chunk receiver")),
+        );
 
         trace!("Starting ArunaStreamReadWriter task");
         let location_clone = location.clone();

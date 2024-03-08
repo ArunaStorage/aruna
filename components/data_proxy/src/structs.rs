@@ -1451,8 +1451,10 @@ impl ResourceStates {
             (1, 4) => {
                 self.objects[1] = ResourceState::new_missing(name, ResourceVariant::Collection)
             }
-            (1, 3) | (2, 4) => self.objects[2] = ResourceState::new_missing(name, ResourceVariant::Dataset),
-            (a, b) => bail!("Invalid index {}, {}", a,b),
+            (1, 3) | (2, 4) => {
+                self.objects[2] = ResourceState::new_missing(name, ResourceVariant::Dataset)
+            }
+            (a, b) => bail!("Invalid index {}, {}", a, b),
         }
         Ok(())
     }

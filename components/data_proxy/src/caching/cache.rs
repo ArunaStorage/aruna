@@ -257,7 +257,7 @@ impl Cache {
         for object in database_objects {
             let location = if let Some(location_id) = &object.location_id {
                 ObjectLocation::get_opt(&location_id, &client).await?
-            }else{
+            } else {
                 None
             };
 
@@ -706,7 +706,7 @@ impl Cache {
         trace!(?object, ?location, "upserting object");
         if let Some(location) = &location {
             object.location_id = Some(location.id);
-        }else{
+        } else {
             if let Some(o) = self.resources.get(&object.id) {
                 let (obj, _) = o.value();
                 object.location_id = obj.read().await.location_id.clone();
@@ -873,7 +873,6 @@ impl Cache {
         } else {
             None
         };
-        trace!(?obj, ?loc);
         Ok((obj, loc))
     }
 
@@ -894,14 +893,16 @@ impl Cache {
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_path_range(&self, bucket_name: &str, skip: &str) -> Vec<(String, DieselUlid)> {
-
         let prefix = format!("{}/", bucket_name.to_string());
 
         self.paths
             .range(format!("{prefix}{skip}")..=format!("{prefix}~"))
             .map(|e| {
                 (
-                    e.key().strip_prefix(&prefix).unwrap_or_default().to_string(),
+                    e.key()
+                        .strip_prefix(&prefix)
+                        .unwrap_or_default()
+                        .to_string(),
                     e.value().clone(),
                 )
             })
@@ -1059,7 +1060,6 @@ impl Cache {
         object_id: DieselUlid,
         location: ObjectLocation,
     ) -> Result<()> {
-
         let (object, old_id) = if let Some(resource) = self.resources.get(&object_id) {
             let (object, loc) = resource.value();
             let old_id = {
@@ -1071,7 +1071,7 @@ impl Cache {
             let mut mut_object = object.write().await;
             mut_object.location_id = Some(loc_id);
             (object.clone(), old_id)
-        }else{
+        } else {
             bail!("Resource not found")
         };
 
@@ -1079,7 +1079,11 @@ impl Cache {
             location
                 .upsert(persistence.get_client().await?.client())
                 .await?;
-            object.read().await.upsert(persistence.get_client().await?.client()).await?;
+            object
+                .read()
+                .await
+                .upsert(persistence.get_client().await?.client())
+                .await?;
             if let Some(old_id) = old_id {
                 ObjectLocation::delete(&old_id, persistence.get_client().await?.client()).await?;
             }

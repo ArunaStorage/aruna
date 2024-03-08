@@ -1,5 +1,5 @@
 use crate::caching::cache::Cache;
-use crate::structs::{Object, ObjectLocation};
+use crate::structs::{Object, ObjectLocation, ObjectType};
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::DataClass;
 use base64::engine::general_purpose;
@@ -7,7 +7,6 @@ use base64::Engine;
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use s3s::s3_error;
-use tracing::trace;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -119,16 +118,15 @@ pub async fn list_response(
                 }
 
                 if path.strip_prefix(&prefix).is_some() {
-                    keys.insert(
-                        (
-                            &path,
-                            &cache
-                                .get_resource_cloned(&id, false)
-                                .await
-                                .map_err(|_| s3_error!(NoSuchKey, "No key found for path"))?,
-                        )
-                            .into(),
-                    );
+                    let object_with_location = cache
+                        .get_resource_cloned(&id, false)
+                        .await
+                        .map_err(|_| s3_error!(NoSuchKey, "No key found for path"))?;
+
+                    if object_with_location.0.object_type != ObjectType::Object {
+                        continue;
+                    }
+                    keys.insert((&path, &object_with_location).into());
                 } else {
                     continue;
                 };
@@ -143,16 +141,15 @@ pub async fn list_response(
                     break;
                 }
 
-                keys.insert(
-                    (
-                        &path,
-                        &cache
-                            .get_resource_cloned(&id, false)
-                            .await
-                            .map_err(|_| s3_error!(NoSuchKey, "No key found for path"))?,
-                    )
-                        .into(),
-                );
+                let object_with_location = cache
+                    .get_resource_cloned(&id, false)
+                    .await
+                    .map_err(|_| s3_error!(NoSuchKey, "No key found for path"))?;
+
+                if object_with_location.0.object_type != ObjectType::Object {
+                    continue;
+                }
+                keys.insert((&path, &object_with_location).into());
             }
         }
     }

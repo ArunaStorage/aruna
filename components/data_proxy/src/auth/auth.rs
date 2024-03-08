@@ -34,7 +34,6 @@ use s3s::s3_error;
 use s3s::S3Error;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
-use tracing::trace;
 use std::collections::HashMap;
 use std::ops::Add;
 use std::str::FromStr;
@@ -42,6 +41,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
 use tracing::error;
+use tracing::trace;
 
 pub struct AuthHandler {
     cache: Arc<Cache>,
@@ -718,7 +718,6 @@ impl AuthHandler {
         let mut resource_states: ResourceStates = ResourceStates::default();
         let len = prefixes.len();
         for (idx, (prefix, name)) in prefixes.iter().enumerate() {
-            trace!(idx);
             let Some(obj) = self.cache.get_full_resource_by_path(prefix).await else {
                 resource_states
                     .set_missing(idx, len, name.to_string())

@@ -176,12 +176,10 @@ impl DataHandler {
                     HashingTransformer::new_with_backchannel(Sha256::new(), "sha256".to_string());
 
                 asr = asr.add_transformer(final_sha);
-                asr.process()
-                    .await
-                    .map_err(|e| {
-                        error!(error = ?e, msg = e.to_string());
-                        e
-                    })?;
+                asr.process().await.map_err(|e| {
+                    error!(error = ?e, msg = e.to_string());
+                    e
+                })?;
 
                 Ok::<(u64, u64, String, String, String), anyhow::Error>((
                     orig_size_stream.try_recv().map_err(|e| {

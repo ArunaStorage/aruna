@@ -1,4 +1,12 @@
-use crate::{auth::auth_helpers::get_token_from_md, caching::cache::Cache, CONFIG, data_backends::storage_backend::StorageBackend, replication::replication_handler::ReplicationMessage, s3_frontend::utils::replication_sink::ReplicationSink, structs::{Object, ObjectLocation, PubKey}};
+use crate::{
+    auth::auth_helpers::get_token_from_md,
+    caching::cache::Cache,
+    data_backends::storage_backend::StorageBackend,
+    replication::replication_handler::ReplicationMessage,
+    s3_frontend::utils::replication_sink::ReplicationSink,
+    structs::{Object, ObjectLocation, PubKey},
+    CONFIG,
+};
 use anyhow::{anyhow, Result};
 use bytes::{BufMut, BytesMut};
 use pithos_lib::{
@@ -11,6 +19,7 @@ use pithos_lib::{
     },
 };
 
+use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use aruna_rust_api::api::dataproxy::services::v2::{
     dataproxy_replication_service_server::DataproxyReplicationService, error_message::Error,
     ErrorMessage, RetryChunkMessage,
@@ -32,7 +41,6 @@ use tokio::{pin, sync::Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::Streaming;
 use tracing::{error, info_span, trace, Instrument};
-use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 
 #[derive(Clone)]
 pub struct DataproxyReplicationServiceImpl {
@@ -98,7 +106,8 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
         let finished_state_clone = finished_state_handler.clone();
 
         let (id, pk) = self.get_endpoint_from_token(&token).await?;
-        let pk = crate::auth::crypto::ed25519_to_x25519_pubkey(&pk.key).map_err(|_| tonic::Status::internal("Unable to convert pubkey"))?;
+        let pk = crate::auth::crypto::ed25519_to_x25519_pubkey(&pk.key)
+            .map_err(|_| tonic::Status::internal("Unable to convert pubkey"))?;
 
         // Recieving loop
         let proxy_replication_service = self.clone();
@@ -565,7 +574,7 @@ impl DataproxyReplicationServiceImpl {
                     ),
                 );
                 asrw = asrw.add_transformer(DebugTransformer::new("Debug replication"));
-    
+
                 if let Some(key) = location.get_encryption_key() {
                     // Add decryption transformer
                     if !location.is_pithos() {
@@ -585,10 +594,7 @@ impl DataproxyReplicationServiceImpl {
 
                 if let Some(footer) = footer {
                     // Add footer transformer
-                    asrw = asrw.add_transformer(FooterUpdater::new(
-                        vec![pubkey],
-                        footer,
-                    ));
+                    asrw = asrw.add_transformer(FooterUpdater::new(vec![pubkey], footer));
                 } else {
                     asrw = asrw.add_transformer(FooterGenerator::new(None));
                 }
@@ -615,12 +621,12 @@ impl DataproxyReplicationServiceImpl {
     async fn get_footer(&self, location: ObjectLocation) -> Result<Footer, anyhow::Error> {
         let (footer_sender, footer_receiver) = async_channel::bounded(1000);
         self.backend
-                .get_object(location.clone(), Some("-131072".to_string()), footer_sender)
-                .await
-                .map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
-                    e
-                })?;
+            .get_object(location.clone(), Some("-131072".to_string()), footer_sender)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
 
         let mut buf = BytesMut::new();
         while let Ok(Ok(bytes)) = footer_receiver.try_recv() {
@@ -628,7 +634,10 @@ impl DataproxyReplicationServiceImpl {
         }
         let readers_priv_key = CONFIG.proxy.clone().get_private_key_x25519()?;
 
-        let parser: Footer = FooterParser::new(&buf)?.add_recipient(&readers_priv_key).parse()?.try_into()?;
+        let parser: Footer = FooterParser::new(&buf)?
+            .add_recipient(&readers_priv_key)
+            .parse()?
+            .try_into()?;
         Ok(parser)
     }
 }

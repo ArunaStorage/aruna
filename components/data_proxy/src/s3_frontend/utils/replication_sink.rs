@@ -174,7 +174,8 @@ impl Transformer for ReplicationSink {
             self.is_finished = true;
 
             if let Some(notifier) = &self.notifier {
-                notifier.send_read_writer(pithos_lib::helpers::notifications::Message::Completed)?;
+                notifier
+                    .send_read_writer(pithos_lib::helpers::notifications::Message::Completed)?;
             }
 
             return Ok(());

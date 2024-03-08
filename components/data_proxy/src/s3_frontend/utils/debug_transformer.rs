@@ -71,7 +71,6 @@ impl Transformer for DebugTransformer {
 
     #[tracing::instrument(level = "trace", skip(self, buf))]
     async fn process_bytes(&mut self, buf: &mut BytesMut) -> Result<()> {
-
         if self.counter != usize::MAX {
             if self.counter == 0 {
                 return Err(anyhow!("Backoff limit reached"));

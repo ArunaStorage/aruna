@@ -271,7 +271,7 @@ impl Transformer for BufferedS3Sink {
                             notifier.send_read_writer(Message::Completed)?;
                         }
                     }
-                }                
+                }
             }
             Ok(())
         }
