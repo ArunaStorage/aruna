@@ -451,10 +451,11 @@ impl ReplicationHandler {
                                 trace!("Upsert object");
                                 // TODO: This should probably happen after checking if all chunks were processed
                                 // Sync with cache and db
-                                let location: Option<ObjectLocation> = Some(location.clone());
                                 cache
-                                    .upsert_object(object.clone(), location.clone())
+                                    .upsert_object(object.clone())
                                     .await?;
+
+                                cache.add_location_with_binding(object.id, location).await?;
 
                                 trace!("Update status");
                                 // Send UpdateStatus to server

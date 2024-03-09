@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use anyhow::Result;
+use diesel_ulid::DieselUlid;
 use postgres_types::{FromSql, ToSql};
 use serde::Deserialize;
 use serde::Serialize;
@@ -7,6 +8,7 @@ use std::fmt::{Debug, Display, Formatter};
 use tokio_postgres::Client;
 use tracing::error;
 
+use crate::structs::LocationBinding;
 use crate::structs::UploadPart;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -216,4 +218,117 @@ pub async fn delete_parts_by_upload_id(client: &Client, upload_id: String) -> Re
     let prepared = client.prepare(query).await?;
     client.execute(&prepared, &[&upload_id]).await?;
     Ok(())
+}
+
+
+
+impl LocationBinding {
+
+    pub async fn insert_binding(&self, client: &Client) -> Result<()> {
+        let query = format!(
+            "INSERT INTO location_bindings (object_id, location_id) VALUES ($1::UUID, $2::UUID);",
+        );
+        let prepared = client.prepare(&query).await.map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
+
+        client
+            .query(&prepared, &[&self.object_id, &self.location_id])
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
+        Ok(())
+    }
+
+    pub async fn update_binding(object_id: &DieselUlid, new_location_id: &DieselUlid, client: &Client) -> Result<()> {
+        let query = format!(
+            "UPDATE location_bindings SET location_id = $2::UUID WHERE object_id = $1::UUID;",
+        );
+        let prepared = client.prepare(&query).await.map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
+
+        client
+            .query(&prepared, &[&object_id, &new_location_id])
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
+        Ok(())
+    }
+
+    pub async fn get_all(client: &Client) -> Result<Vec<Self>>
+    {
+        let query = format!("SELECT * FROM location_bindings;");
+        let prepared = client.prepare(&query).await.map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
+        let rows = client.query(&prepared, &[]).await.map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
+        Ok(rows
+            .iter()
+            .map(|row| {
+                Self {
+                    object_id: row.get::<usize, DieselUlid>(0),
+                    location_id: row.get::<usize, DieselUlid>(1),
+                }
+            })
+            .collect::<Vec<Self>>())
+    }
+    pub async fn get_by_object_id(object_id: &DieselUlid, client: &Client) -> Result<Option<Self>> {
+        let query = format!("SELECT * FROM location_bindings WHERE object_id = $1;");
+        let prepared = client.prepare(&query).await.map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
+        let row = client.query_opt(&prepared, &[&object_id]).await.map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
+        Ok(row.map(|row| Self {
+            object_id: row.get::<usize, DieselUlid>(0),
+            location_id: row.get::<usize, DieselUlid>(1),
+        }))
+    }
+
+
+    pub async fn get_by_location_id(location_id: &DieselUlid, client: &Client) -> Result<Vec<Self>> {
+        let query = format!("SELECT * FROM location_bindings WHERE location_id = $1;");
+        let prepared = client.prepare(&query).await.map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
+        let row = client.query(&prepared, &[&location_id]).await.map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
+        Ok(row
+            .iter()
+            .map(|row| Self {
+                object_id: row.get::<usize, DieselUlid>(0),
+                location_id: row.get::<usize, DieselUlid>(1),
+            })
+            .collect::<Vec<Self>>())
+    }
+
+    pub async fn delete_by_object_id(object_id: &DieselUlid, client: &Client) -> Result<()> {
+        let query = format!("DELETE FROM location_binding WHERE object_id = $1;");
+        let prepared = client.prepare(&query).await.map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
+        client.execute(&prepared, &[&object_id]).await.map_err(|e| {
+            tracing::error!(error = ?e, msg = e.to_string());
+            e
+        })?;
+        Ok(())
+    }
 }

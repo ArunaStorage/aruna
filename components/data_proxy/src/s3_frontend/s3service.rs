@@ -195,7 +195,7 @@ impl S3 for ArunaS3Service {
             if let Some(token) = &impersonating_token {
                 // Set id of new location to object id to satisfy FK constraint
                 let _ = handler
-                    .finish_object(object.id, cumulative_size as i64, vec![], None, token)
+                    .finish_object(object.id, cumulative_size as i64, vec![], token)
                     .await
                     .map_err(|_| {
                         error!(error = "Unable to finish object");
@@ -253,7 +253,7 @@ impl S3 for ArunaS3Service {
         };
 
         self.cache
-            .upsert_object(new_object, None)
+            .upsert_object(new_object)
             .await
             .map_err(|_| {
                 error!(error = "Unable to cache new bucket");
@@ -401,27 +401,34 @@ impl S3 for ArunaS3Service {
             }
         }
 
+        let mut object_id = new_object.id;
         if let NewOrExistingObject::Missing(_) = &object {
             if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
                 if let Some(token) = &impersonating_token {
-                    let _ = handler
-                        .create_object(new_object.clone(), Some(location.clone()), token)
+                    let server_object = handler
+                        .create_object(new_object.clone(), token)
                         .await
                         .map_err(|_| {
                             error!(error = "Unable to create object");
                             s3_error!(InternalError, "Unable to create object")
                         })?;
+                    object_id = server_object.id;
                 }
             }
         } else {
             self.cache
-                .upsert_object(new_object, Some(location))
+                .upsert_object(new_object)
                 .await
                 .map_err(|_| {
                     error!(error = "Unable to cache new object");
                     s3_error!(InternalError, "Unable to cache new object")
                 })?;
         }
+
+        self.cache.add_location_with_binding(object_id, location).await.map_err(|e| {
+            error!(error = ?e, msg = "Unable to add location binding to object");
+            s3_error!(InternalError, "Unable to cache new object")
+        })?;
 
         let output = CreateMultipartUploadOutput {
             key: Some(req.input.key),
@@ -1370,12 +1377,11 @@ impl S3 for ArunaS3Service {
         if let Some(handler) = self.cache.aruna_client.read().await.as_ref() {
             if let Some(token) = &impersonating_token {
                 if was_init {
-                    handler
+                    new_object = handler
                         .finish_object(
                             new_object.id,
                             location.raw_content_len,
                             hashes.clone(),
-                            Some(location.clone()),
                             token,
                         )
                         .await
@@ -1385,7 +1391,7 @@ impl S3 for ArunaS3Service {
                         })?;
                 } else {
                     handler
-                        .create_and_finish(new_object.clone(), location, token)
+                        .create_and_finish(new_object.clone(), location.raw_content_len, token)
                         .await
                         .map_err(|e| {
                             error!(error = ?e, "Unable to create and finish object");
@@ -1394,6 +1400,11 @@ impl S3 for ArunaS3Service {
                 }
             }
         }
+
+        self.cache.add_location_with_binding(new_object.id, location).await.map_err(|e| {
+            error!(error = ?e, msg = "Unable to add location with binding");
+            s3_error!(InternalError, "Unable to add location with binding")
+        })?;
 
         let output = PutObjectOutput {
             e_tag: md5_initial,

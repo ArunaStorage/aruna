@@ -6,7 +6,7 @@ use crate::database::persistence::delete_parts_by_upload_id;
 use crate::replication::replication_handler::ReplicationMessage;
 use crate::s3_frontend::data_handler::DataHandler;
 use crate::structs::{
-    AccessKeyPermissions, Bundle, DbPermissionLevel, ObjectType, TypedId, UploadPart, User,
+    AccessKeyPermissions, Bundle, DbPermissionLevel, LocationBinding, ObjectType, TypedId, UploadPart, User
 };
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
@@ -255,11 +255,13 @@ impl Cache {
         debug!("synced parts");
 
         for object in database_objects {
-            let location = if let Some(location_id) = &object.location_id {
-                ObjectLocation::get_opt(&location_id, &client).await?
-            } else {
-                None
-            };
+            let mut location = None;
+            if object.object_type == ObjectType::Object {
+                let binding = LocationBinding::get_by_object_id(&object.id, &client).await?;
+                if let Some(binding) = binding {
+                    location = Some(ObjectLocation::get(&binding.location_id, &client).await?);
+                }
+            }
 
             let cache = self.get_cache().await?;
             if let Some(before_location) = &location {
@@ -697,53 +699,31 @@ impl Cache {
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", skip(self, object, location))]
+    #[tracing::instrument(level = "trace", skip(self, object))]
     pub async fn upsert_object(
         &self,
-        mut object: Object,
-        location: Option<ObjectLocation>,
+        object: Object,
     ) -> Result<()> {
-        trace!(?object, ?location, "upserting object");
-        if let Some(location) = &location {
-            object.location_id = Some(location.id);
-        } else {
-            if let Some(o) = self.resources.get(&object.id) {
-                let (obj, loc) = o.value();
-                if let Some(obj) = loc.read().await.as_ref() {
-                    object.location_id = Some(obj.id);
-                }else{
-                    object.location_id = obj.read().await.location_id.clone();
-                }
-            }
-        }
-
+        trace!(?object, "upserting object");
         if let Some(persistence) = self.persistence.read().await.as_ref() {
             let mut client = persistence.get_client().await?;
             let transaction = client.transaction().await?;
             let transaction_client = transaction.client();
-
             object.upsert(transaction_client).await?;
-
-            if let Some(l) = &location {
-                l.upsert(transaction_client).await?;
-            }
             transaction.commit().await?;
         }
         let old_name = if let Some(o) = self.resources.get(&object.id) {
-            let (obj, loc) = o.value();
+            let (obj, _) = o.value();
             let mut dash_map_object = obj.try_write()?;
             let old_name = dash_map_object.name.clone();
             *dash_map_object = object.clone();
-            if let Some(location) = location {
-                *loc.try_write()? = Some(location);
-            }
             old_name
         } else {
             self.resources.insert(
                 object.id,
                 (
                     Arc::new(RwLock::new(object.clone())),
-                    Arc::new(RwLock::new(location)),
+                    Arc::new(RwLock::new(None)),
                 ),
             );
             object.name.to_string()
@@ -1059,22 +1039,49 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self, object_id, location))]
+    pub async fn add_location_with_binding(&self, object_id: DieselUlid, location: ObjectLocation) -> Result<()>{
+        let (_, loc) = self
+            .resources
+            .get(&object_id)
+            .ok_or_else(|| anyhow!("Resource not found"))
+            ?
+            .value().clone();
+        *loc.write().await = Some(location.clone());
+
+        if let Some(persistence) = self.persistence.read().await.as_ref() {
+            location
+                .upsert(persistence.get_client().await?.client())
+                .await
+                ?;
+
+            let binding = LocationBinding {
+                object_id,
+                location_id: location.id.clone(),
+            };
+
+            binding
+                .insert_binding(persistence.get_client().await?.client())
+                .await
+                ?;
+        }
+
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, object_id, location))]
     pub async fn update_location(
         &self,
         object_id: DieselUlid,
         location: ObjectLocation,
     ) -> Result<()> {
-        let (object, old_id) = if let Some(resource) = self.resources.get(&object_id) {
-            let (object, loc) = resource.value();
+        let old_location_id = if let Some(resource) = self.resources.get(&object_id) {
+            let (_, loc) = resource.value();
             let old_id = {
                 let reference = loc.read().await;
                 reference.as_ref().map(|e| e.id.clone())
             };
-            let loc_id = location.id.clone();
             *loc.write().await = Some(location.clone());
-            let mut mut_object = object.write().await;
-            mut_object.location_id = Some(loc_id);
-            (object.clone(), old_id)
+            old_id
         } else {
             bail!("Resource not found")
         };
@@ -1083,12 +1090,9 @@ impl Cache {
             location
                 .upsert(persistence.get_client().await?.client())
                 .await?;
-            object
-                .read()
-                .await
-                .upsert(persistence.get_client().await?.client())
-                .await?;
-            if let Some(old_id) = old_id {
+
+            LocationBinding::update_binding(&object_id, &location.id, persistence.get_client().await?.client()).await?;
+            if let Some(old_id) = old_location_id {
                 ObjectLocation::delete(&old_id, persistence.get_client().await?.client()).await?;
             }
         }

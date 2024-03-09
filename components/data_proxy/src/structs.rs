@@ -264,6 +264,12 @@ impl ObjectLocation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub struct LocationBinding {
+    pub object_id: DieselUlid,
+    pub location_id: DieselUlid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum VersionVariant {
     HasVersion(DieselUlid), // a(latest) -> has_version -> b (DieselUlid)
     IsVersion(DieselUlid),  // a(not_latest) -> is_version -> b (DieselUlid / latest)
@@ -289,7 +295,6 @@ pub struct Object {
     pub endpoints: Vec<Endpoint>, // TODO
     pub created_at: Option<NaiveDateTime>,
     pub created_by: Option<DieselUlid>,
-    pub location_id: Option<DieselUlid>,
 }
 
 impl Object {
@@ -775,7 +780,6 @@ impl TryFrom<Project> for Object {
                 0,
             ),
             created_by: Some(DieselUlid::from_str(&value.created_by)?),
-            location_id: None,
         })
     }
 }
@@ -851,7 +855,6 @@ impl TryFrom<Collection> for Object {
                 0,
             ),
             created_by: Some(DieselUlid::from_str(&value.created_by)?),
-            location_id: None,
         })
     }
 }
@@ -927,7 +930,6 @@ impl TryFrom<Dataset> for Object {
                 0,
             ),
             created_by: Some(DieselUlid::from_str(&value.created_by)?),
-            location_id: None,
         })
     }
 }
@@ -1003,7 +1005,6 @@ impl TryFrom<GrpcObject> for Object {
                 0,
             ),
             created_by: Some(DieselUlid::from_str(&value.created_by)?),
-            location_id: None,
         })
     }
 }

@@ -1,7 +1,6 @@
 use crate::replication::replication_handler::Direction;
 use crate::replication::replication_handler::ReplicationMessage;
 use crate::structs::Object as DPObject;
-use crate::structs::ObjectLocation;
 use crate::structs::ObjectType;
 use crate::structs::PubKey;
 use anyhow::anyhow;
@@ -270,7 +269,7 @@ impl GrpcQueryHandler {
 
         let object = DPObject::try_from(response)?;
 
-        self.cache.upsert_object(object.clone(), None).await?;
+        self.cache.upsert_object(object.clone()).await?;
 
         Ok(object)
     }
@@ -347,7 +346,7 @@ impl GrpcQueryHandler {
 
         let object = DPObject::try_from(response)?;
 
-        self.cache.upsert_object(object.clone(), None).await?;
+        self.cache.upsert_object(object.clone()).await?;
 
         Ok(object)
     }
@@ -400,7 +399,7 @@ impl GrpcQueryHandler {
 
         let object = DPObject::try_from(response)?;
 
-        self.cache.upsert_object(object.clone(), None).await?;
+        self.cache.upsert_object(object.clone()).await?;
 
         Ok(object)
     }
@@ -429,14 +428,13 @@ impl GrpcQueryHandler {
             })
     }
 
-    #[tracing::instrument(level = "trace", skip(self, object, loc, token))]
+    #[tracing::instrument(level = "trace", skip(self, object, token))]
     pub async fn create_object(
         &self,
         object: DPObject,
-        loc: Option<ObjectLocation>,
         token: &str,
     ) -> Result<DPObject> {
-        trace!(?object, ?loc, "Creating object");
+        trace!(?object, "Creating object");
 
         let mut req = Request::new(CreateObjectRequest::from(object));
 
@@ -458,11 +456,9 @@ impl GrpcQueryHandler {
                 anyhow!("unknown object")
             })?;
 
-        let mut object = DPObject::try_from(response)?;
+        let object = DPObject::try_from(response)?;
 
-        object.location_id = loc.as_ref().map(|l| l.id.clone());
-
-        self.cache.upsert_object(object.clone(), loc).await?;
+        self.cache.upsert_object(object.clone()).await?;
         Ok(object)
     }
 
@@ -542,25 +538,23 @@ impl GrpcQueryHandler {
             anyhow!("response does not contain object")
         })?)?;
 
-        self.cache.upsert_object(object.clone(), None).await?;
+        self.cache.upsert_object(object.clone()).await?;
 
         Ok(object)
     }
 
-    #[tracing::instrument(level = "trace", skip(self, hashes, location, token))]
+    #[tracing::instrument(level = "trace", skip(self, hashes, token))]
     pub async fn finish_object(
         &self,
         object_id: DieselUlid,
         content_len: i64,
         hashes: Vec<Hash>,
-        location: Option<ObjectLocation>,
         token: &str,
     ) -> Result<DPObject> {
         trace!(
             ?object_id,
             ?content_len,
             ?hashes,
-            ?location,
             "Finishing object"
         );
 
@@ -591,27 +585,19 @@ impl GrpcQueryHandler {
 
         let object = DPObject::try_from(response)?;
 
-        // Persist Object and Location in cache/database
-        if let Some(mut location) = location {
-            location.id = object.id;
-            self.cache
-                .upsert_object(object.clone(), Some(location))
-                .await?;
-        } else {
-            self.cache.upsert_object(object.clone(), None).await?;
-        }
+        self.cache.upsert_object(object.clone()).await?;
 
         Ok(object)
     }
 
-    #[tracing::instrument(level = "trace", skip(self, proxy_object, loc, token))]
+    #[tracing::instrument(level = "trace", skip(self, proxy_object, token))]
     pub async fn create_and_finish(
         &self,
         proxy_object: DPObject,
-        loc: ObjectLocation,
+        content_len: i64,
         token: &str,
     ) -> Result<DPObject> {
-        trace!(?proxy_object, ?loc, "Creating and finishing object");
+        trace!(?proxy_object, "Creating and finishing object");
 
         // Create Object in Aruna Server
         let mut req = Request::new(CreateObjectRequest::from(proxy_object.clone()));
@@ -637,7 +623,7 @@ impl GrpcQueryHandler {
 
         let mut req = Request::new(FinishObjectStagingRequest {
             object_id: server_object.id.to_string(),
-            content_len: loc.raw_content_len,
+            content_len,
             hashes: proxy_object.get_hashes(), // Hashes stay the same
             completed_parts: vec![],
         });
@@ -661,11 +647,10 @@ impl GrpcQueryHandler {
             })?;
 
         // Id of location record should be set to Dataproxy Object id but is set to Server Object id... the fuck?
-        let mut object = DPObject::try_from(response)?;
-        object.location_id = Some(loc.id);
+        let object = DPObject::try_from(response)?;
 
         // Persist Object and Location in cache/database
-        self.cache.upsert_object(object.clone(), Some(loc)).await?;
+        self.cache.upsert_object(object.clone()).await?;
 
         Ok(object)
     }
@@ -728,7 +713,7 @@ impl GrpcQueryHandler {
         sort_resources(&mut resources);
         for res in resources {
             let object = DPObject::try_from(res)?;
-            self.cache.upsert_object(object, None).await?
+            self.cache.upsert_object(object).await?
         }
 
         let (keep_alive_tx, mut keep_alive_rx) = tokio::sync::mpsc::channel::<()>(1);
@@ -969,7 +954,7 @@ impl GrpcQueryHandler {
                                 )
                                 .await?;
 
-                            self.cache.upsert_object(object.try_into()?, None).await?;
+                            self.cache.upsert_object(object.try_into()?).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Collection => {
                             let object = self
@@ -981,7 +966,7 @@ impl GrpcQueryHandler {
                                     r.checksum,
                                 )
                                 .await?;
-                            self.cache.upsert_object(object.try_into()?, None).await?;
+                            self.cache.upsert_object(object.try_into()?).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Dataset => {
                             let object = self
@@ -993,7 +978,7 @@ impl GrpcQueryHandler {
                                     r.checksum,
                                 )
                                 .await?;
-                            self.cache.upsert_object(object.try_into()?, None).await?;
+                            self.cache.upsert_object(object.try_into()?).await?;
                         }
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Object => {
                             let object = self
@@ -1007,7 +992,7 @@ impl GrpcQueryHandler {
                                 .await?;
                             // Update anyway
                             self.cache
-                                .upsert_object(object.clone().try_into()?, None)
+                                .upsert_object(object.clone().try_into()?)
                                 .await?;
                             // Try pull replication
                             self.handle_replication(object).await?;
