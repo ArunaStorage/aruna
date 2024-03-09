@@ -1043,8 +1043,7 @@ impl Cache {
         let (_, loc) = self
             .resources
             .get(&object_id)
-            .ok_or_else(|| anyhow!("Resource not found"))
-            ?
+            .ok_or_else(|| anyhow!("Resource not found {}", object_id))?
             .value().clone();
         *loc.write().await = Some(location.clone());
 
@@ -1091,10 +1090,17 @@ impl Cache {
                 .upsert(persistence.get_client().await?.client())
                 .await?;
 
-            LocationBinding::update_binding(&object_id, &location.id, persistence.get_client().await?.client()).await?;
+            let new_binding = LocationBinding {
+                object_id,
+                location_id: location.id.clone(),
+            };
+
             if let Some(old_id) = old_location_id {
                 ObjectLocation::delete(&old_id, persistence.get_client().await?.client()).await?;
             }
+            new_binding
+                .insert_binding(persistence.get_client().await?.client())
+                .await?;
         }
         Ok(())
     }

@@ -243,26 +243,7 @@ impl LocationBinding {
         Ok(())
     }
 
-    pub async fn update_binding(object_id: &DieselUlid, new_location_id: &DieselUlid, client: &Client) -> Result<()> {
-        let query = format!(
-            "UPDATE location_bindings SET location_id = $2::UUID WHERE object_id = $1::UUID;",
-        );
-        let prepared = client.prepare(&query).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
-
-        client
-            .query(&prepared, &[&object_id, &new_location_id])
-            .await
-            .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
-                e
-            })?;
-        Ok(())
-    }
-
-    pub async fn get_all(client: &Client) -> Result<Vec<Self>>
+    pub async fn _get_all(client: &Client) -> Result<Vec<Self>>
     {
         let query = format!("SELECT * FROM location_bindings;");
         let prepared = client.prepare(&query).await.map_err(|e| {
@@ -300,7 +281,7 @@ impl LocationBinding {
     }
 
 
-    pub async fn get_by_location_id(location_id: &DieselUlid, client: &Client) -> Result<Vec<Self>> {
+    pub async fn _get_by_location_id(location_id: &DieselUlid, client: &Client) -> Result<Vec<Self>> {
         let query = format!("SELECT * FROM location_bindings WHERE location_id = $1;");
         let prepared = client.prepare(&query).await.map_err(|e| {
             tracing::error!(error = ?e, msg = e.to_string());
@@ -319,7 +300,7 @@ impl LocationBinding {
             .collect::<Vec<Self>>())
     }
 
-    pub async fn delete_by_object_id(object_id: &DieselUlid, client: &Client) -> Result<()> {
+    pub async fn _delete_by_object_id(object_id: &DieselUlid, client: &Client) -> Result<()> {
         let query = format!("DELETE FROM location_binding WHERE object_id = $1;");
         let prepared = client.prepare(&query).await.map_err(|e| {
             tracing::error!(error = ?e, msg = e.to_string());

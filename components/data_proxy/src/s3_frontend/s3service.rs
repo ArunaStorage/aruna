@@ -1146,7 +1146,6 @@ impl S3 for ArunaS3Service {
                             return Err(s3_error!(InternalError, "Token creation failed"));
                         }
                     } else {
-                        //TODO: Enable offline mode
                         error!("ArunaServer client not available");
                         return Err(s3_error!(InternalError, "ArunaServer client not available"));
                     };
@@ -1390,7 +1389,7 @@ impl S3 for ArunaS3Service {
                             s3_error!(InternalError, "Unable to finish object")
                         })?;
                 } else {
-                    handler
+                    new_object = handler
                         .create_and_finish(new_object.clone(), location.raw_content_len, token)
                         .await
                         .map_err(|e| {
