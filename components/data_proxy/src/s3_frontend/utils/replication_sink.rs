@@ -86,7 +86,7 @@ impl ReplicationSink {
         let len = if self.chunk_counter < self.maximum_chunks {
             65536 + 28
         } else {
-            self.buffer.len() as usize
+            self.buffer.len()
         };
 
         if self.buffer.len() < len {
@@ -112,7 +112,6 @@ impl ReplicationSink {
                 checksum: hex::encode(result),
             })),
         };
-        trace!(message=?message);
 
         self.sender.send(Ok(message.clone())).await.map_err(|e| {
             error!(error = ?e, msg = e.to_string());

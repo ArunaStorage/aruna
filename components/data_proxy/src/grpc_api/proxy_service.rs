@@ -125,10 +125,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                     let msg = proxy_replication_service
                                         .check_permissions(init, id)
                                         .await
-                                        .map_err(|e| {
-                                            tracing::error!(error = ?e, msg = e.to_string());
-                                            e
-                                        });
+                                        .map_err(|e| e);
                                     object_input_send.send(msg).await.map_err(|e| {
                                         tracing::error!(error = ?e, msg = e.to_string());
                                         e
@@ -350,7 +347,8 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                             trace!(?object, ?location);
                             // Need to keep track when to create an object, and when to only update the location
                             // Get chunk size from blocklist
-                            let max_blocks = location.count_blocks();
+                            let max_blocks = location.count_blocks() + 1;
+                            trace!(max_blocks);
                             stored_objects.insert(object.id, max_blocks);
                             // Send ObjectInfo into stream
                             object_output_send
@@ -529,7 +527,7 @@ impl DataproxyReplicationServiceImpl {
     ) -> Result<()> {
         dbg!("starting send object");
         // Create channel for get_object
-        let (object_sender, object_receiver) = async_channel::bounded(10000);
+        let (object_sender, object_receiver) = async_channel::bounded(255);
 
         let footer = if location.is_pithos() {
             Some(self.get_footer(location.clone()).await?)

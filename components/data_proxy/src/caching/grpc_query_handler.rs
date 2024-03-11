@@ -429,11 +429,7 @@ impl GrpcQueryHandler {
     }
 
     #[tracing::instrument(level = "trace", skip(self, object, token))]
-    pub async fn create_object(
-        &self,
-        object: DPObject,
-        token: &str,
-    ) -> Result<DPObject> {
+    pub async fn create_object(&self, object: DPObject, token: &str) -> Result<DPObject> {
         trace!(?object, "Creating object");
 
         let mut req = Request::new(CreateObjectRequest::from(object));
@@ -551,12 +547,7 @@ impl GrpcQueryHandler {
         hashes: Vec<Hash>,
         token: &str,
     ) -> Result<DPObject> {
-        trace!(
-            ?object_id,
-            ?content_len,
-            ?hashes,
-            "Finishing object"
-        );
+        trace!(?object_id, ?content_len, ?hashes, "Finishing object");
 
         let mut req = Request::new(FinishObjectStagingRequest {
             object_id: object_id.to_string(),
@@ -991,9 +982,7 @@ impl GrpcQueryHandler {
                                 )
                                 .await?;
                             // Update anyway
-                            self.cache
-                                .upsert_object(object.clone().try_into()?)
-                                .await?;
+                            self.cache.upsert_object(object.clone().try_into()?).await?;
                             // Try pull replication
                             self.handle_replication(object).await?;
                         }

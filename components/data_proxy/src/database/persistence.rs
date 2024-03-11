@@ -220,10 +220,7 @@ pub async fn delete_parts_by_upload_id(client: &Client, upload_id: String) -> Re
     Ok(())
 }
 
-
-
 impl LocationBinding {
-
     pub async fn insert_binding(&self, client: &Client) -> Result<()> {
         let query = format!(
             "INSERT INTO location_bindings (object_id, location_id) VALUES ($1::UUID, $2::UUID);",
@@ -243,8 +240,7 @@ impl LocationBinding {
         Ok(())
     }
 
-    pub async fn _get_all(client: &Client) -> Result<Vec<Self>>
-    {
+    pub async fn _get_all(client: &Client) -> Result<Vec<Self>> {
         let query = format!("SELECT * FROM location_bindings;");
         let prepared = client.prepare(&query).await.map_err(|e| {
             tracing::error!(error = ?e, msg = e.to_string());
@@ -256,11 +252,9 @@ impl LocationBinding {
         })?;
         Ok(rows
             .iter()
-            .map(|row| {
-                Self {
-                    object_id: row.get::<usize, DieselUlid>(0),
-                    location_id: row.get::<usize, DieselUlid>(1),
-                }
+            .map(|row| Self {
+                object_id: row.get::<usize, DieselUlid>(0),
+                location_id: row.get::<usize, DieselUlid>(1),
             })
             .collect::<Vec<Self>>())
     }
@@ -270,27 +264,35 @@ impl LocationBinding {
             tracing::error!(error = ?e, msg = e.to_string());
             e
         })?;
-        let row = client.query_opt(&prepared, &[&object_id]).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
+        let row = client
+            .query_opt(&prepared, &[&object_id])
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
         Ok(row.map(|row| Self {
             object_id: row.get::<usize, DieselUlid>(0),
             location_id: row.get::<usize, DieselUlid>(1),
         }))
     }
 
-
-    pub async fn _get_by_location_id(location_id: &DieselUlid, client: &Client) -> Result<Vec<Self>> {
+    pub async fn _get_by_location_id(
+        location_id: &DieselUlid,
+        client: &Client,
+    ) -> Result<Vec<Self>> {
         let query = format!("SELECT * FROM location_bindings WHERE location_id = $1;");
         let prepared = client.prepare(&query).await.map_err(|e| {
             tracing::error!(error = ?e, msg = e.to_string());
             e
         })?;
-        let row = client.query(&prepared, &[&location_id]).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
+        let row = client
+            .query(&prepared, &[&location_id])
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
         Ok(row
             .iter()
             .map(|row| Self {
@@ -306,10 +308,13 @@ impl LocationBinding {
             tracing::error!(error = ?e, msg = e.to_string());
             e
         })?;
-        client.execute(&prepared, &[&object_id]).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
-            e
-        })?;
+        client
+            .execute(&prepared, &[&object_id])
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
         Ok(())
     }
 }

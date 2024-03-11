@@ -1,3 +1,4 @@
+use crate::structs::FileFormat;
 use crate::CONFIG;
 use crate::{
     caching::cache::Cache, data_backends::storage_backend::StorageBackend,
@@ -192,7 +193,7 @@ impl ReplicationHandler {
                 // This is the init message for object processing
                 let (start_sender, start_receiver) = async_channel::bounded(1);
                 // This channel is used to collect all processed objects and chunks
-                let (sync_sender, sync_receiver) = async_channel::bounded(100);
+                let (sync_sender, sync_receiver) = async_channel::bounded(1000);
                 // This channel is only used to transmit the sync result to compare
                 // received vs requested objects
                 let (finish_sender, finish_receiver) = async_channel::bounded(1);
@@ -212,7 +213,7 @@ impl ReplicationHandler {
                             tracing::error!(error = ?e, msg = e.to_string());
                             e
                         })?;
-                    let (object_sdx, object_rcv) = async_channel::bounded(100);
+                    let (object_sdx, object_rcv) = async_channel::bounded(1000);
                     object_handler_map.insert(
                         object.to_string(),
                         (
@@ -239,6 +240,7 @@ impl ReplicationHandler {
                             Some(ResponseMessage::ObjectInfo(ObjectInfo {
                                 object_id,
                                 chunks,
+                                raw_size,
                                 ..
                             })) => {
                                 counter += 1;
@@ -248,7 +250,13 @@ impl ReplicationHandler {
                                     tracing::error!(error = ?e, msg = e.to_string());
                                     e
                                 })?;
-
+                                if let Some(mut entry) = data_map.get_mut(&object_id) {
+                                    let (_, _, max_chunks, size, _) = entry.value_mut();
+                                    *max_chunks = chunks;
+                                    *size = raw_size
+                                } else {
+                                    todo!("Retry object");
+                                }
                                 sync_sender_clone
                                     .send(RcvSync::Info(id, chunks))
                                     .await
@@ -451,9 +459,7 @@ impl ReplicationHandler {
                                 trace!("Upsert object");
                                 // TODO: This should probably happen after checking if all chunks were processed
                                 // Sync with cache and db
-                                cache
-                                    .upsert_object(object.clone())
-                                    .await?;
+                                cache.upsert_object(object.clone()).await?;
 
                                 cache.add_location_with_binding(object.id, location).await?;
 
@@ -632,17 +638,18 @@ impl ReplicationHandler {
         let mut retry_counter = 0;
 
         trace!("Starting chunk processing");
-        let (data_sender, data_stream) = async_channel::bounded(100);
+        let (data_sender, data_stream) = async_channel::bounded(1000);
         tokio::spawn(
             async move {
                 while let Ok(data) = data_receiver.recv().await {
                     let trace_message = format!(
-                    "Received chunk with idx {:?} for object with id {:?} and size {}, expected {}",
-                    data.chunk_idx,
-                    data.object_id,
-                    data.data.len(),
-                    expected,
-                );
+                        "Received chunk with idx {:?} for object with id {:?} and size {}, expected {}, max chunks {}",
+                        data.chunk_idx,
+                        data.object_id,
+                        data.data.len(),
+                        expected,
+                        max_chunks,
+                    );
                     trace!(trace_message);
                     let chunk = bytes::Bytes::from_iter(data.data.into_iter());
                     // Check if chunk is missing
@@ -786,6 +793,15 @@ impl ReplicationHandler {
             tracing::error!(error = ?e, msg = e.to_string());
             e
         })?;
+        if let Some(keys) = footer.encryption_keys {
+            if let Some((key, _)) = keys.keys.first() {
+                location.file_format = FileFormat::Pithos(*key);
+            } else {
+                return Err(anyhow!("Unable to extract key"));
+            }
+        } else {
+            return Err(anyhow!("Unable to extract keys"));
+        };
 
         // TODO:
         // Fetch calculated hashes
@@ -793,6 +809,7 @@ impl ReplicationHandler {
         // Put infos into location
         location.disk_content_len = footer.eof_metadata.disk_file_size as i64;
         location.disk_hash = Some(hex::encode(footer.eof_metadata.disk_hash_sha256));
+        trace!(location = ?location);
 
         Ok(())
     }

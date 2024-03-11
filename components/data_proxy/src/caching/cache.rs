@@ -6,7 +6,8 @@ use crate::database::persistence::delete_parts_by_upload_id;
 use crate::replication::replication_handler::ReplicationMessage;
 use crate::s3_frontend::data_handler::DataHandler;
 use crate::structs::{
-    AccessKeyPermissions, Bundle, DbPermissionLevel, LocationBinding, ObjectType, TypedId, UploadPart, User
+    AccessKeyPermissions, Bundle, DbPermissionLevel, LocationBinding, ObjectType, TypedId,
+    UploadPart, User,
 };
 use crate::{
     database::{database::Database, persistence::WithGenericBytes},
@@ -701,10 +702,7 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self, object))]
-    pub async fn upsert_object(
-        &self,
-        object: Object,
-    ) -> Result<()> {
+    pub async fn upsert_object(&self, object: Object) -> Result<()> {
         trace!(?object, "upserting object");
         if let Some(persistence) = self.persistence.read().await.as_ref() {
             let mut client = persistence.get_client().await?;
@@ -1040,19 +1038,23 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self, object_id, location))]
-    pub async fn add_location_with_binding(&self, object_id: DieselUlid, location: ObjectLocation) -> Result<()>{
+    pub async fn add_location_with_binding(
+        &self,
+        object_id: DieselUlid,
+        location: ObjectLocation,
+    ) -> Result<()> {
         let (_, loc) = self
             .resources
             .get(&object_id)
             .ok_or_else(|| anyhow!("Resource not found {}", object_id))?
-            .value().clone();
+            .value()
+            .clone();
         *loc.write().await = Some(location.clone());
 
         if let Some(persistence) = self.persistence.read().await.as_ref() {
             location
                 .upsert(persistence.get_client().await?.client())
-                .await
-                ?;
+                .await?;
 
             let binding = LocationBinding {
                 object_id,
@@ -1061,8 +1063,7 @@ impl Cache {
 
             binding
                 .insert_binding(persistence.get_client().await?.client())
-                .await
-                ?;
+                .await?;
         }
 
         Ok(())
@@ -1097,11 +1098,18 @@ impl Cache {
             };
 
             if let Some(old_id) = old_location_id {
-                ObjectLocation::delete(&old_id, persistence.get_client().await?.client()).await?;
+                if old_id != location.id {
+                    ObjectLocation::delete(&old_id, persistence.get_client().await?.client())
+                        .await?;
+                    new_binding
+                        .insert_binding(persistence.get_client().await?.client())
+                        .await?;
+                }
+            } else {
+                new_binding
+                    .insert_binding(persistence.get_client().await?.client())
+                    .await?;
             }
-            new_binding
-                .insert_binding(persistence.get_client().await?.client())
-                .await?;
         }
         Ok(())
     }

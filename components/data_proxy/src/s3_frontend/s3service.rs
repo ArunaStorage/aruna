@@ -4,6 +4,7 @@ use super::utils::ranges::calculate_ranges;
 use crate::bundler::bundle_helper::get_bundle;
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
+use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use crate::s3_frontend::utils::list_objects::list_response;
 use crate::structs::CheckAccessResult;
 use crate::structs::NewOrExistingObject;
@@ -252,13 +253,10 @@ impl S3 for ArunaS3Service {
             location: Some(new_object.name.to_string()),
         };
 
-        self.cache
-            .upsert_object(new_object)
-            .await
-            .map_err(|_| {
-                error!(error = "Unable to cache new bucket");
-                s3_error!(InternalError, "Unable to cache new bucket")
-            })?;
+        self.cache.upsert_object(new_object).await.map_err(|_| {
+            error!(error = "Unable to cache new bucket");
+            s3_error!(InternalError, "Unable to cache new bucket")
+        })?;
 
         debug!(?output);
         Ok(S3Response::new(output))
@@ -416,19 +414,19 @@ impl S3 for ArunaS3Service {
                 }
             }
         } else {
-            self.cache
-                .upsert_object(new_object)
-                .await
-                .map_err(|_| {
-                    error!(error = "Unable to cache new object");
-                    s3_error!(InternalError, "Unable to cache new object")
-                })?;
+            self.cache.upsert_object(new_object).await.map_err(|_| {
+                error!(error = "Unable to cache new object");
+                s3_error!(InternalError, "Unable to cache new object")
+            })?;
         }
 
-        self.cache.add_location_with_binding(object_id, location).await.map_err(|e| {
-            error!(error = ?e, msg = "Unable to add location binding to object");
-            s3_error!(InternalError, "Unable to cache new object")
-        })?;
+        self.cache
+            .add_location_with_binding(object_id, location)
+            .await
+            .map_err(|e| {
+                error!(error = ?e, msg = "Unable to add location binding to object");
+                s3_error!(InternalError, "Unable to cache new object")
+            })?;
 
         let output = CreateMultipartUploadOutput {
             key: Some(req.input.key),
@@ -567,7 +565,12 @@ impl S3 for ArunaS3Service {
         } else {
             vec![footer
                 .as_ref()
-                .map(|f| f.eof_metadata.disk_file_size)
+                .map(|f| {
+                    f.eof_metadata.disk_file_size
+                        - f.eof_metadata.toc_len
+                        - f.eof_metadata.encryption_len
+                        - 73
+                })
                 .unwrap_or_else(|| location.disk_content_len as u64)]
         };
 
@@ -613,6 +616,7 @@ impl S3 for ArunaS3Service {
             s3_error!(InternalError, "Unable to get encryption key")
         })?;
 
+        trace!(parts = ?parts);
         // Spawn final part
         tokio::spawn(
             async move {
@@ -1400,10 +1404,13 @@ impl S3 for ArunaS3Service {
             }
         }
 
-        self.cache.add_location_with_binding(new_object.id, location).await.map_err(|e| {
-            error!(error = ?e, msg = "Unable to add location with binding");
-            s3_error!(InternalError, "Unable to add location with binding")
-        })?;
+        self.cache
+            .add_location_with_binding(new_object.id, location)
+            .await
+            .map_err(|e| {
+                error!(error = ?e, msg = "Unable to add location with binding");
+                s3_error!(InternalError, "Unable to add location with binding")
+            })?;
 
         let output = PutObjectOutput {
             e_tag: md5_initial,
