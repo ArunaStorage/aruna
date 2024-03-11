@@ -329,6 +329,8 @@ impl AuthHandler {
         let cors_headers = if resource_states.get_project().is_none() {
             if Method::GET == *method {
                 return Err(s3_error!(NoSuchBucket, "No such bucket"));
+            }else if access_key_info.is_service_account {
+                return Err(s3_error!(AccessDenied, "Service account not allowed to create buckets"));
             }
             None
         } else {

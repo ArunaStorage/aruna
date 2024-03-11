@@ -369,6 +369,7 @@ pub struct User {
     pub user_id: DieselUlid,
     pub personal_permissions: HashMap<DieselUlid, DbPermissionLevel>,
     pub tokens: HashMap<DieselUlid, HashMap<DieselUlid, DbPermissionLevel>>,
+    pub is_service_account: bool,
     pub attributes: HashMap<String, String>,
 }
 
@@ -451,6 +452,8 @@ impl TryFrom<GrpcUser> for User {
             HashMap::default()
         };
 
+        let is_service_account = value.attributes.as_ref().map(|e| e.service_account).unwrap_or_default();
+
         Ok(User {
             user_id: DieselUlid::from_str(&value.id)?,
             personal_permissions: perm_convert(
@@ -490,6 +493,7 @@ impl TryFrom<GrpcUser> for User {
                 })
                 .collect::<Result<HashMap<DieselUlid, HashMap<DieselUlid, DbPermissionLevel>>>>()?,
             attributes: attributes,
+            is_service_account,
         })
     }
 }
@@ -499,6 +503,7 @@ pub struct AccessKeyPermissions {
     pub access_key: String,
     pub user_id: DieselUlid,
     pub secret: String,
+    pub is_service_account: bool,
     pub permissions: HashMap<DieselUlid, DbPermissionLevel>,
 }
 

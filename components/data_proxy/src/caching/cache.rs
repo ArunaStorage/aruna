@@ -364,6 +364,7 @@ impl Cache {
         let new_access_key = AccessKeyPermissions {
             access_key: access_key.to_string(),
             user_id: *user_id,
+            is_service_account: user.read().await.0.is_service_account,
             secret: new_secret.clone(),
             permissions: permissions,
         };
