@@ -156,6 +156,26 @@ pub fn random_string(len: usize) -> String {
         .to_ascii_lowercase()
 }
 
+pub fn bucket_path_from_pathstring(path: &str) -> Result<(String, String)> {
+    if path.starts_with("s3://") {
+        let parts = path[5..].split_once('/');
+        if let Some((bucket, key)) = parts {
+            Ok((bucket.to_string(), key.to_string()))
+        } else {
+            Err(anyhow::anyhow!("Invalid path format"))
+        }
+    } else if path.starts_with("file://") {
+        let parts = path[7..].split_once('/');
+        if let Some((bucket, key)) = parts {
+            Ok((bucket.to_string(), key.to_string()))
+        } else {
+            Err(anyhow::anyhow!("Invalid path format"))
+        }
+    } else {
+        return Err(anyhow::anyhow!("Invalid path format"));
+    }
+}
+
 pub trait IntoOption {
     fn into_option(self) -> Option<Self>
     where

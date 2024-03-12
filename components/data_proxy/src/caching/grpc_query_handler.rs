@@ -3,9 +3,11 @@ use crate::replication::replication_handler::ReplicationMessage;
 use crate::structs::Object as DPObject;
 use crate::structs::ObjectType;
 use crate::structs::PubKey;
+use crate::structs::TypedRelation;
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_replication_service_client::DataproxyReplicationServiceClient;
+use aruna_rust_api::api::dataproxy::services::v2::IngestResource;
 use aruna_rust_api::api::dataproxy::services::v2::PullReplicationRequest;
 use aruna_rust_api::api::dataproxy::services::v2::PullReplicationResponse;
 use aruna_rust_api::api::notification::services::v2::announcement_event;
@@ -33,6 +35,8 @@ use aruna_rust_api::api::storage::models::v2::Project;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
 use aruna_rust_api::api::storage::models::v2::ReplicationStatus;
 use aruna_rust_api::api::storage::models::v2::User as GrpcUser;
+use aruna_rust_api::api::storage::services::v2::create_dataset_request;
+use aruna_rust_api::api::storage::services::v2::create_object_request;
 use aruna_rust_api::api::storage::services::v2::data_replication_service_client::DataReplicationServiceClient;
 use aruna_rust_api::api::storage::services::v2::full_sync_endpoint_response::Target;
 use aruna_rust_api::api::storage::services::v2::get_endpoint_request::Endpoint;
@@ -1131,6 +1135,209 @@ impl GrpcQueryHandler {
             }
         }
         Ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, col, parent, token))]
+    pub async fn create_collection_ingestion(
+        &self,
+        col: IngestResource,
+        parent: DieselUlid,
+        token: &str,
+    ) -> Result<DPObject> {
+        let md_license = if col.metadata_license_tag.is_empty() {
+            None
+        } else {
+            Some(col.metadata_license_tag)
+        };
+
+        let data_license = if col.data_license_tag.is_empty() {
+            None
+        } else {
+            Some(col.data_license_tag)
+        };
+
+        let mut req = Request::new(CreateCollectionRequest {
+            name: col.name,
+            title: col.title,
+            description: col.description,
+            key_values: col.key_values,
+            relations: col.relations,
+            data_class: col.data_class,
+            metadata_license_tag: md_license,
+            default_data_license_tag: data_license,
+            authors: col.authors,
+            parent: Some(aruna_rust_api::api::storage::services::v2::create_collection_request::Parent::ProjectId(parent.to_string())),
+        });
+
+        Self::add_token_to_md(req.metadata_mut(), token)?;
+
+        let response = self
+            .collection_service
+            .clone()
+            .create_collection(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner()
+            .collection
+            .ok_or_else(|| {
+                tracing::error!(error = "unknown collection");
+                anyhow!("unknown collection")
+            })?;
+
+        let object = DPObject::try_from(response)?;
+
+        self.cache.upsert_object(object.clone()).await?;
+
+        Ok(object)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, ds, parent, token))]
+    pub async fn create_dataset_ingest(
+        &self,
+        ds: IngestResource,
+        parent: TypedRelation,
+        token: &str,
+    ) -> Result<DPObject> {
+        let parent = match parent {
+            TypedRelation::Project(id) => create_dataset_request::Parent::ProjectId(id.to_string()),
+            TypedRelation::Collection(id) => {
+                create_dataset_request::Parent::CollectionId(id.to_string())
+            }
+            _ => return Err(anyhow!("Invalid parent type")),
+        };
+
+        let md_license = if ds.metadata_license_tag.is_empty() {
+            None
+        } else {
+            Some(ds.metadata_license_tag)
+        };
+
+        let data_license = if ds.data_license_tag.is_empty() {
+            None
+        } else {
+            Some(ds.data_license_tag)
+        };
+
+        let mut req = Request::new(CreateDatasetRequest {
+            name: ds.name,
+            title: ds.title,
+            description: ds.description,
+            key_values: ds.key_values,
+            relations: ds.relations,
+            data_class: ds.data_class,
+            metadata_license_tag: md_license,
+            default_data_license_tag: data_license,
+            authors: ds.authors,
+            parent: Some(parent),
+        });
+
+        Self::add_token_to_md(req.metadata_mut(), token)?;
+
+        let response = self
+            .dataset_service
+            .clone()
+            .create_dataset(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner()
+            .dataset
+            .ok_or_else(|| {
+                tracing::error!(error = "unknown collection");
+                anyhow!("unknown collection")
+            })?;
+
+        let object = DPObject::try_from(response)?;
+
+        self.cache.upsert_object(object.clone()).await?;
+
+        Ok(object)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, obj, parent, token))]
+    pub async fn create_and_finish_ingest(
+        &self,
+        obj: IngestResource,
+        content_len: i64,
+        parent: TypedRelation,
+        token: &str,
+    ) -> Result<DPObject> {
+        let parent = match parent {
+            TypedRelation::Project(id) => create_object_request::Parent::ProjectId(id.to_string()),
+            TypedRelation::Collection(id) => {
+                create_object_request::Parent::CollectionId(id.to_string())
+            }
+            TypedRelation::Dataset(id) => create_object_request::Parent::DatasetId(id.to_string()),
+            _ => return Err(anyhow!("Invalid parent type")),
+        };
+
+        let mut req = Request::new(CreateObjectRequest {
+            name: obj.name,
+            title: obj.title,
+            description: obj.description,
+            key_values: obj.key_values,
+            relations: obj.relations,
+            data_class: obj.data_class,
+            metadata_license_tag: obj.metadata_license_tag,
+            data_license_tag: obj.data_license_tag,
+            authors: obj.authors,
+            parent: Some(parent),
+            hashes: vec![],
+        });
+
+        Self::add_token_to_md(req.metadata_mut(), token)?;
+
+        let response = self
+            .object_service
+            .clone()
+            .create_object(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner()
+            .object
+            .ok_or_else(|| {
+                tracing::error!(error = "unknown object");
+                anyhow!("unknown object")
+            })?;
+
+        let mut req = Request::new(FinishObjectStagingRequest {
+            object_id: response.id,
+            content_len,
+            hashes: vec![],
+            completed_parts: vec![],
+        });
+
+        Self::add_token_to_md(req.metadata_mut(), token)?;
+
+        let response = self
+            .object_service
+            .clone()
+            .finish_object_staging(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?
+            .into_inner()
+            .object
+            .ok_or_else(|| {
+                tracing::error!(error = "unknown object");
+                anyhow!("unknown object")
+            })?;
+
+        let object = DPObject::try_from(response)?;
+
+        self.cache.upsert_object(object.clone()).await?;
+
+        Ok(object)
     }
 }
 

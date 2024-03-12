@@ -461,10 +461,7 @@ impl DataproxyReplicationServiceImpl {
                 tonic::Status::unauthenticated("DataProxy not authenticated")
             })?;
 
-            return Ok((
-                dataproxy_id,
-                pk,
-            ));
+            return Ok((dataproxy_id, pk));
         }
         Err(tonic::Status::unauthenticated(
             "DataProxy not authenticated",

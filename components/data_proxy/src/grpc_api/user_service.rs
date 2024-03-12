@@ -47,7 +47,6 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
                 tonic::Status::unauthenticated("Unable to authenticate user")
             })?;
 
-
             if pk.is_proxy {
                 error!(error = "Proxy token is not allowed");
                 return Err(tonic::Status::unauthenticated("Proxy token is not allowed"));

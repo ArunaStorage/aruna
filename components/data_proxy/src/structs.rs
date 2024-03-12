@@ -1,5 +1,6 @@
 use anyhow::Result;
 use anyhow::{anyhow, bail};
+use aruna_rust_api::api::dataproxy::services::v2::IngestResource;
 use aruna_rust_api::api::storage::models::v2::generic_resource::Resource;
 use aruna_rust_api::api::storage::models::v2::permission::ResourceId;
 use aruna_rust_api::api::storage::models::v2::Pubkey;
