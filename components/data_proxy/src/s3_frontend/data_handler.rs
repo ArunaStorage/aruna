@@ -28,6 +28,7 @@ use tracing::error;
 use tracing::info_span;
 use tracing::trace;
 use tracing::Instrument;
+use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 
 #[derive(Debug)]
 pub struct DataHandler {}
@@ -123,8 +124,7 @@ impl DataHandler {
                 pin!(tx_receive);
                 // Bind to variable to extend the lifetime of arsw to the end of the function
                 let mut asr = GenericStreamReadWriter::new_with_sink(tx_receive, sink);
-                let (orig_probe, orig_size_stream) = SizeProbe::new();
-                asr = asr.add_transformer(orig_probe);
+
                 asr.add_message_receiver(rx).await?;
 
                 if let Some(key) = clone_key.clone() {
@@ -171,18 +171,22 @@ impl DataHandler {
                     asr = asr.add_transformer(PithosTransformer::new());
                     asr = asr.add_transformer(FooterGenerator::new(None));
                 }
-
+                
                 let (final_sha, final_sha_recv) =
                     HashingTransformer::new_with_backchannel(Sha256::new(), "sha256".to_string());
 
                 asr = asr.add_transformer(final_sha);
+
+                let (disk_size_probe, disk_size_stream) = SizeProbe::new();
+                asr = asr.add_transformer(disk_size_probe);
+                
                 asr.process().await.map_err(|e| {
                     error!(error = ?e, msg = e.to_string());
                     e
                 })?;
 
                 Ok::<(u64, u64, String, String, String), anyhow::Error>((
-                    orig_size_stream.try_recv().map_err(|e| {
+                    disk_size_stream.try_recv().map_err(|e| {
                         error!(error = ?e, msg = e.to_string());
                         e
                     })?,

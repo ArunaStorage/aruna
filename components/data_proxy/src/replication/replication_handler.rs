@@ -6,7 +6,7 @@ use crate::{
 };
 use ahash::{HashSet, RandomState};
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::dataproxy::services::v2::{ObjectInfo, ReplicationStatus};
+use aruna_rust_api::api::dataproxy::services::v2::{Empty, ObjectInfo, ReplicationStatus};
 use aruna_rust_api::api::{
     dataproxy::services::v2::{
         error_message, pull_replication_request::Message,
@@ -22,6 +22,8 @@ use md5::{Digest, Md5};
 use pithos_lib::transformers::footer_extractor::FooterExtractor;
 use pithos_lib::{streamreadwrite::GenericStreamReadWriter, transformer::ReadWriter};
 use std::{str::FromStr, sync::Arc};
+use std::default::Default;
+use tokio::sync::RwLock;
 use tokio::pin;
 use tracing::{info_span, trace, Instrument};
 
@@ -56,8 +58,70 @@ pub struct ReplicationHandler {
     pub self_id: String,
 }
 
+#[derive(Clone, Debug)]
+struct ObjectState {
+    sender:  Sender<DataChunk>,
+    receiver:  Receiver<DataChunk>,
+    state: ObjectStateStatus
+}
+
+#[derive(Clone, Debug)]
+pub enum ObjectStateStatus {
+    NotReceived,
+    Infos{
+        max_chunks: i64,
+        size: i64
+    },
+}
+
+
+
+impl ObjectState {
+    pub fn new(sender: Sender<DataChunk>, receiver: Receiver<DataChunk>) -> Self {
+        ObjectState {
+            sender,
+            receiver,
+            state: ObjectStateStatus::NotReceived,
+        }
+    }
+
+    pub fn update_state(&mut self, max_chunks:i64, size:i64) {
+        self.state = ObjectStateStatus::Infos { max_chunks , size };
+    }
+
+    pub fn is_synced(&self) -> bool {
+        !matches!{self.state, ObjectStateStatus::NotReceived}
+    }
+
+    pub fn get_size(&self) -> Option<i64> {
+        if let ObjectStateStatus::Infos {size, ..} = self.state {
+            Some(size)
+        } else { None }
+    }
+
+    pub fn get_rcv(&self) -> Receiver<DataChunk> {
+        self.receiver.clone()
+    }
+
+    pub fn get_chunks(&self) -> Result<i64> {
+        if let ObjectStateStatus::Infos {max_chunks,.. } = self.state {
+            if max_chunks > 0  {
+                Ok(max_chunks)
+            } else {
+                Err(anyhow!("Invalid max chunks received"))
+            }
+        } else {
+            Err(anyhow!("Not synced"))
+        }
+    }
+
+    pub fn get_sdx(&self) -> Sender<DataChunk> {
+        self.sender.clone()
+    }
+}
+
 type ObjectHandler =
-    Arc<DashMap<String, (Sender<DataChunk>, Receiver<DataChunk>, i64, i64, bool), RandomState>>;
+    Arc<DashMap<String, Arc<RwLock<ObjectState>>, RandomState>>;
 impl ReplicationHandler {
     #[tracing::instrument(level = "trace", skip(cache, backend, receiver))]
     pub fn new(
@@ -216,13 +280,10 @@ impl ReplicationHandler {
                     let (object_sdx, object_rcv) = async_channel::bounded(1000);
                     object_handler_map.insert(
                         object.to_string(),
-                        (
-                            object_sdx.clone(),
-                            object_rcv.clone(),
-                            Default::default(),
-                            Default::default(),
-                            false,
-                        ),
+                        Arc::new(RwLock::new(
+                            ObjectState::new(object_sdx.clone(), object_rcv.clone())
+
+                        ))
                     );
                 }
 
@@ -244,18 +305,35 @@ impl ReplicationHandler {
                                 ..
                             })) => {
                                 counter += 1;
-
+                                trace!(object_id, chunks, raw_size);
                                 // If ObjectInfo is sent, an init msg is collected in sync ...
                                 let id = DieselUlid::from_str(&object_id).map_err(|e| {
                                     tracing::error!(error = ?e, msg = e.to_string());
                                     e
                                 })?;
-                                if let Some(mut entry) = data_map.get_mut(&object_id) {
-                                    let (_, _, max_chunks, size, _) = entry.value_mut();
-                                    *max_chunks = chunks;
-                                    *size = raw_size
+                                if let Some(entry) = data_map.get(&object_id) {
+                                    let mut guard = entry.write().await;
+                                    guard.update_state(chunks, raw_size);
                                 } else {
-                                    todo!("Retry object");
+                                    // If no entry is found, abort sync
+                                    request_sender_clone
+                                        .send(
+                                            PullReplicationRequest {
+                                                message: Some(
+                                                    Message::ErrorMessage(
+                                                        aruna_rust_api::api::dataproxy::services::v2::ErrorMessage {
+                                                            error: Some(
+                                                                error_message::Error::Abort(Empty{})
+                                                            )
+                                                        }
+                                                    )
+                                                )
+                                            }
+                                        )
+                                        .await.map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?;
                                 }
                                 sync_sender_clone
                                     .send(RcvSync::Info(id, chunks))
@@ -290,9 +368,9 @@ impl ReplicationHandler {
                                 data,
                                 checksum,
                             })) => {
-                                trace!("Received chunk");
                                 // If an entry is created inside the object_handler_map ...
                                 if let Some(entry) = data_map.get(&object_id) {
+                                    let sender = entry.read().await.get_sdx();
                                     // Chunks get processed
                                     let chunk = DataChunk {
                                         object_id: object_id.clone(),
@@ -300,7 +378,7 @@ impl ReplicationHandler {
                                         data,
                                         checksum,
                                     };
-                                    entry.0.send(chunk).await?;
+                                    sender.send(chunk).await?;
                                     let id = DieselUlid::from_str(&object_id)?;
                                     // Message is send to sync
                                     sync_sender_clone
@@ -404,11 +482,7 @@ impl ReplicationHandler {
                                 let (key, value) = entry.pair();
                                 batch.push((key.clone(), value.clone()));
                             }
-                            for entry in batch.clone() {
-                                let (id, (_, rcv, chunks, raw_size, synced)) = {
-                                    let (key, value) = entry;
-                                    (key.clone(), value.clone())
-                                };
+                            for (id, object_state) in batch.iter() {
                                 trace!("processing: {}", id);
                                 let object_id = DieselUlid::from_str(&id)?;
 
@@ -421,16 +495,16 @@ impl ReplicationHandler {
                                     // TODO:
                                     // - Skip if object was already synced
                                     finished_clone.insert(Direction::Pull(object_id), true);
-                                    object_handler_map.remove(&id);
+                                    object_handler_map.remove(id);
                                     continue;
-                                } else if synced {
+                                } else if !object_state.read().await.is_synced() {
                                     trace!("skipping object");
                                     continue;
                                 } else {
                                     backend
                                         .initialize_location(
                                             &object,
-                                            Some(raw_size),
+                                            object_state.read().await.get_size(),
                                             cache.get_single_parent(&object.id).await?,
                                             false,
                                         )
@@ -443,12 +517,12 @@ impl ReplicationHandler {
                                 trace!("Load into backend");
                                 // Send Chunks get processed
                                 ReplicationHandler::load_into_backend(
-                                    rcv.clone(),
+                                    object_state.read().await.get_rcv(),
                                     request_sdx.clone(),
                                     sync_sender.clone(),
                                     &mut location,
                                     backend.clone(),
-                                    chunks,
+                                    object_state.read().await.get_chunks()?,
                                 )
                                 .await
                                 .map_err(|e| {
@@ -477,7 +551,9 @@ impl ReplicationHandler {
                                         e
                                     })?;
                                 {
-                                    object_handler_map.remove(&id);
+                                    trace!("before entry remove");
+                                    object_handler_map.remove(id);
+                                    trace!("after entry remove");
                                 }
                                 trace!( msg="Removed entry from map", map = ?object_handler_map);
                             }
