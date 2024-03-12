@@ -711,6 +711,11 @@ impl TryFrom<&DataEndpoint> for Endpoint {
     }
 }
 
+pub fn from_prost_time(prost_stamp: Option<prost_wkt_types::Timestamp>) -> Option<NaiveDateTime> {
+    DateTime::from_timestamp(prost_stamp.as_ref()?.seconds, prost_stamp?.nanos as u32).map(|e| e.naive_utc())
+}
+
+
 impl TryFrom<Project> for Object {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(value))]
@@ -780,10 +785,7 @@ impl TryFrom<Project> for Object {
                 .iter()
                 .map(Endpoint::try_from)
                 .collect::<Result<Vec<Endpoint>>>()?,
-            created_at: NaiveDateTime::from_timestamp_opt(
-                value.created_at.unwrap_or_default().seconds,
-                0,
-            ),
+            created_at: from_prost_time(value.created_at),
             created_by: Some(DieselUlid::from_str(&value.created_by)?),
         })
     }
@@ -855,10 +857,7 @@ impl TryFrom<Collection> for Object {
                 .iter()
                 .map(Endpoint::try_from)
                 .collect::<Result<Vec<Endpoint>>>()?,
-            created_at: NaiveDateTime::from_timestamp_opt(
-                value.created_at.unwrap_or_default().seconds,
-                0,
-            ),
+            created_at: from_prost_time(value.created_at),
             created_by: Some(DieselUlid::from_str(&value.created_by)?),
         })
     }
@@ -930,10 +929,7 @@ impl TryFrom<Dataset> for Object {
                 .iter()
                 .map(Endpoint::try_from)
                 .collect::<Result<Vec<Endpoint>>>()?,
-            created_at: NaiveDateTime::from_timestamp_opt(
-                value.created_at.unwrap_or_default().seconds,
-                0,
-            ),
+            created_at: from_prost_time(value.created_at),
             created_by: Some(DieselUlid::from_str(&value.created_by)?),
         })
     }
@@ -1005,10 +1001,7 @@ impl TryFrom<GrpcObject> for Object {
                 .iter()
                 .map(Endpoint::try_from)
                 .collect::<Result<Vec<Endpoint>>>()?,
-            created_at: NaiveDateTime::from_timestamp_opt(
-                value.created_at.unwrap_or_default().seconds,
-                0,
-            ),
+            created_at: from_prost_time(value.created_at),
             created_by: Some(DieselUlid::from_str(&value.created_by)?),
         })
     }
@@ -1822,7 +1815,7 @@ impl From<S3SCORSRule> for CORSRule {
             allowed_methods: value.allowed_methods,
             allowed_origins: value.allowed_origins,
             expose_headers: value.expose_headers,
-            max_age_seconds: value.max_age_seconds,
+            max_age_seconds: value.max_age_seconds.unwrap_or_default(),
         }
     }
 }
@@ -1835,7 +1828,7 @@ impl From<CORSRule> for S3SCORSRule {
             allowed_methods: val.allowed_methods,
             allowed_origins: val.allowed_origins,
             expose_headers: val.expose_headers,
-            max_age_seconds: val.max_age_seconds,
+            max_age_seconds: Some(val.max_age_seconds),
         }
     }
 }

@@ -29,7 +29,7 @@ impl DataproxyIngestionService for DataproxyIngestionServiceImpl {
 
     async fn ingest_existing_object(
         &self,
-        request: tonic::Request<IngestExistingObjectRequest>,
+        _request: tonic::Request<IngestExistingObjectRequest>,
     ) -> std::result::Result<
         tonic::Response<IngestExistingObjectResponse>,
         tonic::Status,

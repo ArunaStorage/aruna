@@ -14,7 +14,7 @@ use pithos_lib::helpers::notifications::Notifier;
 use pithos_lib::transformer::TransformerType;
 use pithos_lib::transformer::{Sink, Transformer};
 use tokio::sync::mpsc::Sender as TokioSender;
-use tracing::{error, trace};
+use tracing::error;
 
 pub struct ReplicationSink {
     object_id: String,

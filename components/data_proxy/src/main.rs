@@ -1,7 +1,6 @@
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::dataproxy::services::v2::bundler_service_server::BundlerServiceServer;
-use aruna_rust_api::api::dataproxy::services::v2::dataproxy_ingestion_service_server::DataproxyIngestionService;
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_ingestion_service_server::DataproxyIngestionServiceServer;
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_replication_service_server::DataproxyReplicationServiceServer;
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_server::DataproxyUserServiceServer;

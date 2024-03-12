@@ -11,6 +11,7 @@ use anyhow::anyhow;
 use anyhow::Result;
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
+use aws_sdk_s3::primitives::SdkBody;
 use aws_sdk_s3::{
     config::Region,
     primitives::ByteStream,
@@ -19,7 +20,6 @@ use aws_sdk_s3::{
 };
 use diesel_ulid::DieselUlid;
 use rand::Rng;
-use tokio_stream::StreamExt;
 use tracing::error;
 
 #[allow(dead_code)]
@@ -60,6 +60,7 @@ impl S3Backend {
         let s3_endpoint = host.clone().ok_or_else(|| anyhow!("Missing s3 host"))?;
         tracing::debug!("S3 Endpoint: {}", s3_endpoint);
 
+        #[allow(deprecated)]
         let config = aws_config::load_from_env().await;
         let s3_config = aws_sdk_s3::config::Builder::from(&config)
             .region(Region::new("RegionOne"))
@@ -99,7 +100,7 @@ impl StorageBackend for S3Backend {
             .await?;
 
         let hyper_body = hyper::Body::wrap_stream(recv);
-        let bytestream = ByteStream::from(hyper_body);
+        let bytestream = ByteStream::from(SdkBody::from_body_0_4(hyper_body));
 
         match self
             .s3_client
@@ -175,7 +176,7 @@ impl StorageBackend for S3Backend {
                 tracing::error!(error = ?e, msg = e.to_string());
                 e
             })?;
-        Ok(object.content_length())
+        Ok(object.content_length().unwrap_or_default())
     }
 
     // Initiates a multipart upload in s3 and returns the associated upload id.
@@ -209,7 +210,7 @@ impl StorageBackend for S3Backend {
         part_number: i32,
     ) -> Result<PartETag> {
         let hyper_body = hyper::Body::wrap_stream(recv);
-        let bytestream = ByteStream::from(hyper_body);
+        let bytestream = ByteStream::from(SdkBody::from_body_0_4(hyper_body));
 
         let upload = self
             .s3_client

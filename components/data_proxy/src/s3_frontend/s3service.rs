@@ -4,7 +4,6 @@ use super::utils::ranges::calculate_ranges;
 use crate::bundler::bundle_helper::get_bundle;
 use crate::caching::cache::Cache;
 use crate::data_backends::storage_backend::StorageBackend;
-use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use crate::s3_frontend::utils::list_objects::list_response;
 use crate::structs::CheckAccessResult;
 use crate::structs::NewOrExistingObject;
@@ -126,7 +125,10 @@ impl S3 for ArunaS3Service {
             .into_iter()
             .map(|a| {
                 Ok(PartETag {
-                    part_number: a.part_number,
+                    part_number: a.part_number.ok_or_else(|| {
+                        error!(error = "part_number must be specified");
+                        s3_error!(InvalidPart, "part_number must be specified")
+                    })?,
                     etag: a.e_tag.ok_or_else(|| {
                         error!(error = "etag must be specified");
                         s3_error!(InvalidPart, "etag must be specified")
@@ -658,7 +660,7 @@ impl S3 for ArunaS3Service {
             body,
             accept_ranges,
             content_range,
-            content_length,
+            content_length: Some(content_length),
             last_modified: None,
             e_tag: Some(format!("-{}", object.id)),
             version_id: None,
@@ -700,7 +702,7 @@ impl S3 for ArunaS3Service {
 
         if let ObjectsState::Bundle { bundle, .. } = objects_state {
             return Ok(S3Response::new(HeadObjectOutput {
-                content_length: -1,
+                content_length: None,
                 last_modified: Some(
                     time::OffsetDateTime::from_unix_timestamp(
                         (bundle.id.timestamp() / 1000) as i64,
@@ -723,7 +725,7 @@ impl S3 for ArunaS3Service {
         let mime = mime_guess::from_path(object.name.as_str()).first();
 
         let output = HeadObjectOutput {
-            content_length: content_len,
+            content_length: Some(content_len),
             last_modified: Some(
                 time::OffsetDateTime::from_unix_timestamp((object.id.timestamp() / 1000) as i64)
                     .map_err(|e| {
@@ -854,7 +856,7 @@ impl S3 for ArunaS3Service {
                         )
                     }),
                     owner: None,
-                    size: e.size,
+                    size: Some(e.size),
                     ..Default::default()
                 })
                 .collect(),
@@ -866,12 +868,12 @@ impl S3 for ArunaS3Service {
             continuation_token,
             delimiter,
             encoding_type: None,
-            is_truncated: new_continuation_token.is_some(),
-            key_count,
-            max_keys: max_keys.try_into().map_err(|err| {
+            is_truncated: Some(new_continuation_token.is_some()),
+            key_count: Some(key_count),
+            max_keys: Some(max_keys.try_into().map_err(|err| {
                 error!(error = ?err, "Conversion failure");
                 s3_error!(InternalError, "[BACKEND] Conversion failure: {}", err)
-            })?,
+            })?),
             name: Some(project_name.clone()),
             next_continuation_token: new_continuation_token,
             prefix,
