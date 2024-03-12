@@ -43,10 +43,15 @@ impl BundlerService for BundlerServiceImpl {
                 tonic::Status::unauthenticated(e.to_string())
             })?;
             // Check if permissions are valid
-            let (u, tid, _) = a.check_permissions(&token).map_err(|e| {
+            let (u, tid, pk) = a.check_permissions(&token).map_err(|e| {
                 error!(error = ?e, msg = e.to_string());
                 tonic::Status::unauthenticated(format!("Unable to authenticate user"))
             })?;
+
+            if pk.is_proxy {
+                error!(error = "Proxy token is not allowed");
+                return Err(tonic::Status::unauthenticated("Proxy token is not allowed"));
+            }
 
             // Gather access_key
             let access_key = tid.unwrap_or_else(|| u.to_string());
@@ -124,10 +129,15 @@ impl BundlerService for BundlerServiceImpl {
                 tonic::Status::unauthenticated(e.to_string())
             })?;
 
-            let (u, tid, _) = a.check_permissions(&token).map_err(|_| {
+            let (u, tid, pk) = a.check_permissions(&token).map_err(|_| {
                 error!(error = "Unable to authenticate user");
                 tonic::Status::unauthenticated("Unable to authenticate user")
             })?;
+
+            if pk.is_proxy {
+                error!(error = "Proxy token is not allowed");
+                return Err(tonic::Status::unauthenticated("Proxy token is not allowed"));
+            }
 
             let access_key = if let Some(t_id) = tid {
                 t_id

@@ -463,10 +463,7 @@ impl DataproxyReplicationServiceImpl {
 
             return Ok((
                 dataproxy_id,
-                pk.ok_or_else(|| {
-                    error!("No public key found for endpoint");
-                    tonic::Status::internal("No public key found for endpoint")
-                })?,
+                pk,
             ));
         }
         Err(tonic::Status::unauthenticated(

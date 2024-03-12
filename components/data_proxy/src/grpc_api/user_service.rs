@@ -42,10 +42,16 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
                 tonic::Status::unauthenticated(e.to_string())
             })?;
 
-            let (u, tid, _) = a.check_permissions(&token).map_err(|_| {
+            let (u, tid, pk) = a.check_permissions(&token).map_err(|_| {
                 error!(error = "Unable to authenticate user");
                 tonic::Status::unauthenticated("Unable to authenticate user")
             })?;
+
+
+            if pk.is_proxy {
+                error!(error = "Proxy token is not allowed");
+                return Err(tonic::Status::unauthenticated("Proxy token is not allowed"));
+            }
 
             if let Some(q_handler) = self.cache.aruna_client.read().await.as_ref() {
                 let user = q_handler.get_user(u, "".to_string()).await.map_err(|_| {
@@ -98,10 +104,15 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
                 tonic::Status::unauthenticated(e.to_string())
             })?;
 
-            let (u, tid, _) = a.check_permissions(&token).map_err(|_| {
+            let (u, tid, pk) = a.check_permissions(&token).map_err(|_| {
                 error!(error = "Unable to authenticate user");
                 tonic::Status::unauthenticated("Unable to authenticate user")
             })?;
+
+            if pk.is_proxy {
+                error!(error = "Proxy token is not allowed");
+                return Err(tonic::Status::unauthenticated("Proxy token is not allowed"));
+            }
 
             if let Some(q_handler) = self.cache.aruna_client.read().await.as_ref() {
                 let user = q_handler.get_user(u, "".to_string()).await.map_err(|_| {
@@ -148,10 +159,15 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
                 tonic::Status::unauthenticated(e.to_string())
             })?;
 
-            let (u, tid, _) = a.check_permissions(&token).map_err(|_| {
+            let (u, tid, pk) = a.check_permissions(&token).map_err(|_| {
                 error!(error = "Unable to authenticate user, check permissions");
                 tonic::Status::unauthenticated("Unable to authenticate user")
             })?;
+
+            if pk.is_proxy {
+                error!(error = "Proxy token is not allowed");
+                return Err(tonic::Status::unauthenticated("Proxy token is not allowed"));
+            }
 
             if let Some(q_handler) = self.cache.aruna_client.read().await.as_ref() {
                 let user = q_handler.get_user(u, "".to_string()).await.map_err(|_| {

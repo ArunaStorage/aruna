@@ -157,7 +157,7 @@ impl AuthHandler {
     pub fn check_permissions(
         &self,
         token: &str,
-    ) -> Result<(DieselUlid, Option<String>, Option<PubKey>), anyhow::Error> {
+    ) -> Result<(DieselUlid, Option<String>, PubKey), anyhow::Error> {
         let kid = decode_header(token)?
             .kid
             .ok_or_else(|| anyhow!("Unspecified kid"))
@@ -179,10 +179,10 @@ impl AuthHandler {
 
         if let Some(it) = claims.it {
             match it.action {
-                Action::All => Ok((DieselUlid::from_str(&claims.sub)?, claims.tid, Some(pk))),
+                Action::All => Ok((DieselUlid::from_str(&claims.sub)?, claims.tid, pk)),
                 Action::CreateSecrets => {
                     if it.target == self.self_id {
-                        Ok((DieselUlid::from_str(&claims.sub)?, claims.tid, Some(pk)))
+                        Ok((DieselUlid::from_str(&claims.sub)?, claims.tid, pk))
                     } else {
                         error!("Token is not valid for this Dataproxy");
                         bail!("Token is not valid for this Dataproxy")
@@ -190,7 +190,7 @@ impl AuthHandler {
                 }
                 Action::DpExchange => {
                     if it.target == self.self_id {
-                        Ok((DieselUlid::from_str(&claims.sub)?, None, Some(pk)))
+                        Ok((DieselUlid::from_str(&claims.sub)?, None, pk))
                     } else {
                         error!("Token is not valid for this Dataproxy");
                         bail!("Token is not valid for this Dataproxy")
@@ -209,7 +209,7 @@ impl AuthHandler {
                     e
                 })?,
                 claims.tid,
-                Some(pk),
+                pk,
             ))
         }
     }
