@@ -39,6 +39,7 @@ pub struct Proxy {
     pub serial: i32,
     pub remote_synced: bool,
     pub enable_ingest: bool,
+    pub admin_ids: Vec<DieselUlid>,
     pub aruna_url: Option<String>,
     pub grpc_server: String,
 }

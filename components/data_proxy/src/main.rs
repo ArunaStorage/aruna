@@ -1,6 +1,8 @@
 use anyhow::anyhow;
 use anyhow::Result;
 use aruna_rust_api::api::dataproxy::services::v2::bundler_service_server::BundlerServiceServer;
+use aruna_rust_api::api::dataproxy::services::v2::dataproxy_ingestion_service_server::DataproxyIngestionService;
+use aruna_rust_api::api::dataproxy::services::v2::dataproxy_ingestion_service_server::DataproxyIngestionServiceServer;
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_replication_service_server::DataproxyReplicationServiceServer;
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_server::DataproxyUserServiceServer;
 use caching::cache::Cache;
@@ -37,6 +39,7 @@ mod helpers;
 
 use crate::config::Config;
 use crate::data_backends::filesystem_backend::FSBackend;
+use crate::grpc_api::ingestion_service::DataproxyIngestionServiceImpl;
 use crate::replication::replication_handler::ReplicationHandler;
 
 lazy_static! {
@@ -144,12 +147,19 @@ async fn main() -> Result<()> {
                     DataproxyReplicationServiceImpl::new(
                         cache_clone.clone(),
                         sender,
-                        storage_backend,
+                        storage_backend.clone(),
                     ),
                 ))
                 .add_service(DataproxyUserServiceServer::new(
                     DataproxyUserServiceImpl::new(cache_clone.clone()),
                 ));
+
+            if CONFIG.proxy.enable_ingest {
+                builder = builder.add_service(DataproxyIngestionServiceServer::new(DataproxyIngestionServiceImpl::new(
+                    cache_clone.clone(),
+                    storage_backend,
+                )));
+            }
 
             if let Some(frontend) = &CONFIG.frontend {
                 builder = builder.add_service(BundlerServiceServer::new(BundlerServiceImpl::new(
