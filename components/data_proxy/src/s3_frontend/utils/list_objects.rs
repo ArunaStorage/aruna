@@ -65,16 +65,15 @@ pub async fn list_response(
                             delimiter
                         ));
                     } else {
-                        keys.insert(
-                            (
-                                &path,
-                                &cache
-                                    .get_resource_cloned(&id, false)
-                                    .await
-                                    .map_err(|_| s3_error!(NoSuchKey, "No key found for path"))?,
-                            )
-                                .into(),
-                        );
+                        let object_with_location = cache
+                            .get_resource_cloned(&id, false)
+                            .await
+                            .map_err(|_| s3_error!(NoSuchKey, "No key found for path"))?;
+
+                        if object_with_location.0.object_type != ObjectType::Object {
+                            continue;
+                        }
+                        keys.insert((&path, &object_with_location).into());
                     };
                 } else {
                     continue;
@@ -95,16 +94,15 @@ pub async fn list_response(
                     common_prefixes.insert(format!("{}{}", common_prefix, delimiter));
                 } else {
                     // If None split -> Entry
-                    keys.insert(
-                        (
-                            &path,
-                            &cache
-                                .get_resource_cloned(&id, false)
-                                .await
-                                .map_err(|_| s3_error!(NoSuchKey, "No key found for path"))?,
-                        )
-                            .into(),
-                    );
+                    let object_with_location = cache
+                        .get_resource_cloned(&id, false)
+                        .await
+                        .map_err(|_| s3_error!(NoSuchKey, "No key found for path"))?;
+
+                    if object_with_location.0.object_type != ObjectType::Object {
+                        continue;
+                    }
+                    keys.insert((&path, &object_with_location).into());
                 };
             }
         }

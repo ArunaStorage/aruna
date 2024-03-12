@@ -452,7 +452,11 @@ impl TryFrom<GrpcUser> for User {
             HashMap::default()
         };
 
-        let is_service_account = value.attributes.as_ref().map(|e| e.service_account).unwrap_or_default();
+        let is_service_account = value
+            .attributes
+            .as_ref()
+            .map(|e| e.service_account)
+            .unwrap_or_default();
 
         Ok(User {
             user_id: DieselUlid::from_str(&value.id)?,
@@ -712,9 +716,9 @@ impl TryFrom<&DataEndpoint> for Endpoint {
 }
 
 pub fn from_prost_time(prost_stamp: Option<prost_wkt_types::Timestamp>) -> Option<NaiveDateTime> {
-    DateTime::from_timestamp(prost_stamp.as_ref()?.seconds, prost_stamp?.nanos as u32).map(|e| e.naive_utc())
+    DateTime::from_timestamp(prost_stamp.as_ref()?.seconds, prost_stamp?.nanos as u32)
+        .map(|e| e.naive_utc())
 }
-
 
 impl TryFrom<Project> for Object {
     type Error = anyhow::Error;

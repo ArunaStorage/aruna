@@ -154,10 +154,9 @@ async fn main() -> Result<()> {
                 ));
 
             if CONFIG.proxy.enable_ingest {
-                builder = builder.add_service(DataproxyIngestionServiceServer::new(DataproxyIngestionServiceImpl::new(
-                    cache_clone.clone(),
-                    storage_backend,
-                )));
+                builder = builder.add_service(DataproxyIngestionServiceServer::new(
+                    DataproxyIngestionServiceImpl::new(cache_clone.clone(), storage_backend),
+                ));
             }
 
             if let Some(frontend) = &CONFIG.frontend {
