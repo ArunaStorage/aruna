@@ -8,7 +8,7 @@ public_key="MCowBQYDK2VwAyEAnouQBh4GHPCD/k85VIzPyCdOijVg2qlzt2TELwTMy4c="
 serial=1337
 # Optional will disable notification sync if not set
 aruna_url="http://localhost:50051"
-enable_ingest=false # Set to true to enable the ingest service
+enable_ingest=true # Set to true to enable the ingest service
 admin_ids=["01H819G3ZMK5DC9Q5PD18N9SXB"] # Admins can access the ingest service
 grpc_server="0.0.0.0:50052"
 remote_synced=true

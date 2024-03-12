@@ -613,10 +613,7 @@ impl S3 for ArunaS3Service {
         );
         let (final_send, final_rcv) = async_channel::bounded(100);
 
-        let decryption_key = location.get_encryption_key().ok_or_else(|| {
-            error!(error = "Unable to get encryption key");
-            s3_error!(InternalError, "Unable to get encryption key")
-        })?;
+        let decryption_key = location.get_encryption_key();
 
         trace!(parts = ?parts);
         // Spawn final part
@@ -628,9 +625,9 @@ impl S3 for ArunaS3Service {
                     AsyncSenderSink::new(final_send),
                 );
 
-                if location.get_encryption_key().is_some() {
+                if let Some(key) = decryption_key {
                     asrw = asrw
-                        .add_transformer(ChaCha20DecParts::new_with_lengths(decryption_key, parts));
+                        .add_transformer(ChaCha20DecParts::new_with_lengths(key, parts));
                 }
 
                 if location.is_compressed() {
