@@ -1,19 +1,19 @@
 # Build Stage
-FROM harbor.computational.bio.uni-giessen.de/docker_hub_cache/library/rust:1 AS builder
-WORKDIR /usr/src/
-RUN apt-get -y update && apt-get -y upgrade
-RUN apt-get -y install llvm cmake gcc ca-certificates libssl-dev libsodium-dev
-ENV PB_REL="https://github.com/protocolbuffers/protobuf/releases"
-RUN curl -LO $PB_REL/download/v3.15.8/protoc-3.15.8-linux-x86_64.zip
-RUN unzip protoc-3.15.8-linux-x86_64.zip -d $HOME/.local
-RUN export PATH="$PATH:$HOME/.local/bin"
+FROM rust:1-alpine AS builder
+WORKDIR /build
+RUN apk update
+RUN apk upgrade
+ENV RUSTFLAGS="-C target-feature=-crt-static"
+RUN apk add llvm cmake gcc ca-certificates libc-dev pkgconfig openssl-dev protoc protobuf-dev protobuf-dev libpq-dev musl-dev git
 COPY . .
 RUN cargo build --release
 
-FROM harbor.computational.bio.uni-giessen.de/docker_hub_cache/library/ubuntu
-
-RUN apt-get -y update && apt-get -y upgrade
-RUN apt-get install ca-certificates openssl
-COPY --from=builder /usr/src/target/release/aos_data_proxy .
-COPY .env .
-CMD [ "./aos_data_proxy" ]
+FROM alpine:3.18
+WORKDIR /run
+RUN apk update
+RUN apk upgrade
+RUN apk add libgcc gcompat ca-certificates libpq
+COPY --from=builder /build/target/release/aos_data_proxy .
+COPY --from=builder /build/.env .
+COPY --from=builder /build/src/database/schema.sql .
+CMD [ "/run/aos_data_proxy" ]

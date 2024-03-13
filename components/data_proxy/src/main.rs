@@ -1,139 +1,191 @@
-use std::{str::FromStr, sync::Arc};
-
-use backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
-use futures::try_join;
-use service_server::server::{InternalServerImpl, ProxyServer};
-use std::io::Write;
-
-use crate::{
-    bundler::{
-        bundler::Bundler, bundler_web_server::run_axum,
-        internal_bundler_service::InternalBundlerServiceImpl,
-    },
-    data_server::{
-        data_handler::DataHandler, s3server::S3Server, utils::settings::ServiceSettings,
-    },
+use anyhow::anyhow;
+use anyhow::Result;
+use aruna_rust_api::api::dataproxy::services::v2::bundler_service_server::BundlerServiceServer;
+use aruna_rust_api::api::dataproxy::services::v2::dataproxy_ingestion_service_server::DataproxyIngestionServiceServer;
+use aruna_rust_api::api::dataproxy::services::v2::dataproxy_replication_service_server::DataproxyReplicationServiceServer;
+use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_server::DataproxyUserServiceServer;
+use caching::cache::Cache;
+use data_backends::{s3_backend::S3Backend, storage_backend::StorageBackend};
+use futures_util::TryFutureExt;
+use grpc_api::bundler::BundlerServiceImpl;
+use grpc_api::{
+    proxy_service::DataproxyReplicationServiceImpl, user_service::DataproxyUserServiceImpl,
 };
+use lazy_static::lazy_static;
+use std::{net::SocketAddr, sync::Arc};
+use tokio::try_join;
+use tonic::transport::Server;
+use tracing::error;
+use tracing::info_span;
+use tracing::trace;
+use tracing::Instrument;
+use tracing_subscriber::EnvFilter;
 
-mod backends;
 mod bundler;
-mod data_server;
+mod caching;
+mod data_backends;
+mod database;
+mod replication;
+mod s3_frontend;
+// mod helpers;
+mod grpc_api;
+mod structs;
+#[macro_use]
+mod macros;
+mod auth;
+mod config;
 mod helpers;
-mod service_server;
 
+use crate::config::Config;
+use crate::data_backends::filesystem_backend::FSBackend;
+use crate::grpc_api::ingestion_service::DataproxyIngestionServiceImpl;
+use crate::replication::replication_handler::ReplicationHandler;
+
+lazy_static! {
+    static ref CONFIG: Config = {
+        dotenvy::from_filename(".env").ok();
+        let config_file = dotenvy::var("CONFIG").unwrap_or("config.toml".to_string());
+        let mut config: Config =
+            toml::from_str(std::fs::read_to_string(config_file).unwrap().as_str()).unwrap();
+        config.validate().unwrap();
+        config
+    };
+}
+
+#[tracing::instrument(level = "trace", skip())]
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     dotenvy::from_filename(".env").ok();
 
-    let hostname = dotenvy::var("PROXY_HOSTNAME").unwrap();
-    // External S3 server
-    let proxy_data_host = dotenvy::var("PROXY_DATA_HOST").unwrap();
-    // ULID of the endpoint
-    let endpoint_id = dotenvy::var("ENDPOINT_ID").unwrap();
-    // Aruna Backend
-    let backend_host = dotenvy::var("BACKEND_HOST").unwrap();
-    // Internal backchannel Aruna -> Dproxy
-    let internal_backend_host = dotenvy::var("BACKEND_HOST_INTERNAL").unwrap();
-    // Optional Bundler URL
-    let external_bundler_url = dotenvy::var("BUNDLER_URL").ok();
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or("none".into())
+        .add_directive("aos_data_proxy=trace".parse()?);
 
-    env_logger::Builder::new()
-        .format(|buf, record| {
-            writeln!(
-                buf,
-                "{}:{} {} [{}] - {}",
-                record.file().unwrap_or("unknown"),
-                record.line().unwrap_or(0),
-                chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
-                record.level(),
-                record.args()
-            )
-        })
-        .filter_level(log::LevelFilter::Debug)
-        .init();
+    let subscriber = tracing_subscriber::fmt()
+        //.with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
+        // Use a more compact, abbreviated log format
+        .compact()
+        // Set LOG_LEVEL to
+        .with_env_filter(filter)
+        // Display source code file paths
+        .with_file(true)
+        // Display source code line numbers
+        .with_line_number(true)
+        .with_target(false)
+        .finish();
 
-    let s3_client = match S3Backend::new().await {
-        Ok(value) => value,
-        Err(err) => {
-            log::error!("{}", err);
-            return;
+    tracing::subscriber::set_global_default(subscriber)?;
+
+    trace!("init storage backend");
+
+    let backend: Box<dyn StorageBackend> = match CONFIG.backend {
+        config::Backend::S3 { .. } => {
+            Box::new(S3Backend::new(CONFIG.proxy.endpoint_id.to_string()).await?)
+        }
+        config::Backend::FileSystem { .. } => {
+            Box::new(FSBackend::new(CONFIG.proxy.endpoint_id.to_string()).await?)
         }
     };
-    let storage_backend: Arc<Box<dyn StorageBackend>> = Arc::new(Box::new(s3_client));
 
-    let data_handler = Arc::new(
-        DataHandler::new(
-            storage_backend.clone(),
-            backend_host.to_string(),
-            ServiceSettings {
-                endpoint_id: rusty_ulid::Ulid::from_str(&endpoint_id).unwrap(),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap(),
-    );
+    let storage_backend: Arc<Box<dyn StorageBackend>> = Arc::new(backend);
 
-    let data_server = S3Server::new(
-        &proxy_data_host,
-        hostname,
-        backend_host.to_string(),
-        storage_backend.clone(),
-        data_handler.clone(),
-        endpoint_id.to_string(),
+    trace!("init cache");
+    let (sender, receiver) = async_channel::bounded(1000);
+    let cache = Cache::new(
+        CONFIG.proxy.aruna_url.clone(),
+        CONFIG.persistence.is_some(),
+        CONFIG.proxy.endpoint_id,
+        CONFIG
+            .proxy
+            .clone()
+            .private_key
+            .ok_or_else(|| anyhow!("Private key not set"))?,
+        CONFIG.proxy.serial,
+        sender.clone(),
+        Some(storage_backend.clone()),
     )
-    .await
-    .unwrap();
+    .await?;
 
-    let internal_proxy_server =
-        InternalServerImpl::new(storage_backend.clone(), data_handler.clone())
-            .await
-            .unwrap();
-    let internal_proxy_socket = internal_backend_host.parse().unwrap();
+    trace!("init replication handler");
+    let replication_handler = ReplicationHandler::new(
+        receiver,
+        storage_backend.clone(),
+        CONFIG.proxy.endpoint_id.to_string(),
+        cache.clone(),
+    );
+    tokio::spawn(async move {
+        let replication = replication_handler.run().await;
+        if let Err(err) = replication {
+            trace!("{err}");
+        };
+    });
 
-    match external_bundler_url {
-        Some(bundler_url) => {
-            let bundl = Bundler::new(backend_host, endpoint_id).await.unwrap();
-
-            let internal_bundler = InternalBundlerServiceImpl::new(bundl.clone());
-
-            let internal_proxy_server = ProxyServer::new(
-                Some(Arc::new(internal_bundler)),
-                Arc::new(internal_proxy_server),
-                internal_proxy_socket,
+    trace!("init s3 server");
+    let cache_clone = cache.clone();
+    let s3_server = if let Some(frontend) = &CONFIG.frontend {
+        Some(
+            s3_frontend::s3server::S3Server::new(
+                &frontend.server,
+                frontend.hostname.to_string(),
+                storage_backend.clone(),
+                cache,
             )
-            .await
-            .unwrap();
+            .await?,
+        )
+    } else {
+        None
+    };
+    trace!("init grpc server");
 
-            let axum_handle = run_axum(bundler_url, bundl.clone(), storage_backend.clone());
+    let proxy_grpc_addr = CONFIG.proxy.grpc_server.parse::<SocketAddr>()?;
 
-            log::info!("Starting proxy, dataserver and axum server");
-            let _end = match try_join!(
-                data_server.run(),
-                internal_proxy_server.serve(),
-                axum_handle
-            ) {
-                Ok(value) => value,
-                Err(err) => {
-                    log::error!("{}", err);
-                    return;
-                }
+    let grpc_server_handle = tokio::spawn(
+        async move {
+            let mut builder = Server::builder()
+                .add_service(DataproxyReplicationServiceServer::new(
+                    DataproxyReplicationServiceImpl::new(
+                        cache_clone.clone(),
+                        sender,
+                        storage_backend.clone(),
+                    ),
+                ))
+                .add_service(DataproxyUserServiceServer::new(
+                    DataproxyUserServiceImpl::new(cache_clone.clone()),
+                ));
+
+            if CONFIG.proxy.enable_ingest {
+                builder = builder.add_service(DataproxyIngestionServiceServer::new(
+                    DataproxyIngestionServiceImpl::new(cache_clone.clone(), storage_backend),
+                ));
+            }
+
+            if let Some(frontend) = &CONFIG.frontend {
+                builder = builder.add_service(BundlerServiceServer::new(BundlerServiceImpl::new(
+                    cache_clone.clone(),
+                    frontend.hostname.to_string(),
+                    true,
+                )));
             };
-        }
-        None => {
-            let internal_proxy_server =
-                ProxyServer::new(None, Arc::new(internal_proxy_server), internal_proxy_socket)
-                    .await
-                    .unwrap();
 
-            log::info!("Starting proxy and dataserver");
-            let _end = match try_join!(data_server.run(), internal_proxy_server.serve()) {
-                Ok(value) => value,
-                Err(err) => {
-                    log::error!("{}", err);
-                    return;
-                }
-            };
+            builder.serve(proxy_grpc_addr).await
         }
+        .instrument(info_span!("grpc_server_run")),
+    )
+    .map_err(|e| {
+        error!(error = ?e, msg = e.to_string());
+        anyhow!("an error occurred {e}")
+    });
+
+    if let Some(s3_server) = s3_server {
+        match try_join!(s3_server.run(), grpc_server_handle) {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                error!("{}", err);
+                Err(err)
+            }
+        }
+    } else {
+        grpc_server_handle.await??;
+        Ok(())
     }
 }
