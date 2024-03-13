@@ -53,6 +53,7 @@ use aruna_rust_api::api::storage::services::v2::GetObjectRequest;
 use aruna_rust_api::api::storage::services::v2::GetProjectRequest;
 use aruna_rust_api::api::storage::services::v2::GetPubkeysRequest;
 use aruna_rust_api::api::storage::services::v2::GetUserRedactedRequest;
+use aruna_rust_api::api::storage::services::v2::SetObjectHashesRequest;
 use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use aruna_rust_api::api::storage::services::v2::UpdateProjectKeyValuesRequest;
 use aruna_rust_api::api::storage::services::v2::UpdateReplicationStatusRequest;
@@ -1339,6 +1340,31 @@ impl GrpcQueryHandler {
 
         Ok(object)
     }
+
+
+    #[tracing::instrument(level = "trace", skip(self, id, hashes, token))]
+    pub async fn set_object_hashes(&self, id: &DieselUlid, hashes: Vec<Hash>, token: &str) -> Result<()> {
+        let mut req = Request::new(SetObjectHashesRequest {
+            object_id: id.to_string(),
+            hashes,
+        });
+
+        Self::add_token_to_md(req.metadata_mut(), token)?;
+
+        self.object_service
+            .clone()
+            .set_object_hashes(req)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, msg = e.to_string());
+                e
+            })?;
+
+        Ok(())
+    }
+
+
+
 }
 
 #[tracing::instrument(level = "trace", skip(res))]

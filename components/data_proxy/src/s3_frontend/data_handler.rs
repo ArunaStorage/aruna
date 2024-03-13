@@ -28,7 +28,6 @@ use tracing::error;
 use tracing::info_span;
 use tracing::trace;
 use tracing::Instrument;
-use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 
 #[derive(Debug)]
 pub struct DataHandler {}
@@ -249,9 +248,12 @@ impl DataHandler {
             },
         ];
 
-        if let Some(_handler) = cache.aruna_client.read().await.as_ref() {
+        if let Some(handler) = cache.aruna_client.read().await.as_ref() {
             // Set id of new location to object id to satisfy FK constraint
             // TODO: Update hashes etc.
+
+            handler.set_object_hashes(&object.id, hashes, &token).await?;
+
 
             cache.update_location(object.id, new_location).await?;
 

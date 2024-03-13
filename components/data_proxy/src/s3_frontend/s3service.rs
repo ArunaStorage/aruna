@@ -58,7 +58,6 @@ use tracing::info_span;
 use tracing::trace;
 use tracing::warn;
 use tracing::Instrument;
-use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 
 pub struct ArunaS3Service {
     backend: Arc<Box<dyn StorageBackend>>,
