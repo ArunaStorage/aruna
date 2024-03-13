@@ -10,66 +10,62 @@ license.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.81"
-aruna-rust-api = { git = "https://github.com/ArunaStorage/rust-api.git", branch = "pre/beta12" }
-pithos_lib = { git = "https://github.com/ArunaStorage/aruna-file.git", branch = "feat/pithos_rework" }
-async-channel = "2.2.0"
+ahash = {workspace = true}
+anyhow = {workspace = true}
+aruna-rust-api = {workspace = true}
+async-channel = {workspace = true}
 async-stream = "0.3.5"
-async-trait = "0.1.77"
-axum = "0.7.4"
-aws-config = "1.1.7"
-aws-sdk-s3 = "1.17.0"
-aws-smithy-http = "0.60.6"
-base64 = "0.22.0"
+async-trait = {workspace = true}
+aws-config =  {workspace = true}
+aws-sdk-s3 =  {workspace = true}
+aws-smithy-http = "0.60.7"
+base64 = {workspace = true}
 byteorder = "1.5.0"
 bytes = "1.5.0"
-chrono = "0.4.34"
-dotenvy = "0.15.7"
-futures = "0.3.30"
+cel-interpreter = {workspace = true}
+cel-parser = {workspace = true}
+chrono = {workspace = true}
+crossbeam-skiplist = "0.1.3"
+curve25519-dalek = "4.1.2"
+dashmap = {workspace = true}
+deadpool-postgres = {workspace = true}
+diesel-ulid = {workspace = true}
+digest = "0.10.7"
+dotenvy = {workspace = true}
+ed25519-dalek = { version = "2.1.1", features = ["pem"]}
+futures = {workspace = true}
 futures-channel = "0.3.30"
 futures-core = "0.3.30"
 futures-util = "0.3.30"
-hex = "0.4.3"
-hmac = "0.12.1"
+hex = {workspace = true}
+hmac = {workspace = true}
 http = "0.2.12"
 hyper = {version = "0.14.28", features = ["full"]}
+jsonwebtoken = {workspace = true}
+lazy_static = {workspace = true}
 md-5 = "0.10.6"
-rand = "0.8.5"
-reqwest = {version = "0.11.25", features = ["stream"]}
+mime_guess = "2.0.4"
+nom = "7.1.3"
+pithos_lib = { git = "https://github.com/ArunaStorage/aruna-file.git", branch = "feat/pithos_rework" }
+postgres-from-row = {workspace = true}
+postgres-types = {workspace = true}
+postgres_array = "0.11.1"
+prost-wkt-types = {workspace = true}
+rand = {workspace = true}
+reqsign = "0.14.9"
+reqwest = {workspace = true}
 s3s = "0.9.0"
-serde = {version = "1.0.197", features = ["derive"]}
-sha2 = {version = "0.10.8", features = ["std", "asm", "sha2-asm"]}
-tokio = {version = "1.36.0", features = ["full"]}
-tokio-stream = "0.1.14"
-tower = { version = "0.4.13", features = ["retry"] }
-tonic = {version = "0.11.0", features = ["tls", "tls-roots"]}
+serde = {workspace = true}
+serde_json = {workspace = true}
+sha2 = {workspace = true}
+time = {workspace = true}
+tokio = {workspace = true}
+tokio-postgres = {workspace = true}
+tokio-stream = {workspace = true}
+toml = "0.8.11"
+tonic = {workspace = true}
+tower = {workspace = true}
 tracing = "0.1.40"
 tracing-subscriber = {version = "0.3.18", features = ["env-filter", "time"]}
-url = "2.5.0"
+url = {workspace = true}
 zstd = "0.13.0"
-diesel-ulid = "0.3.1"
-tokio-postgres = { version = "0.7.10", features = ["with-uuid-1", "with-serde_json-1", "with-chrono-0_4"] }
-postgres-types = { version = "0.2.6", features = ["derive"] }
-postgres_array = "0.11.1"
-deadpool-postgres = "0.12.1"
-postgres-from-row = "=0.5.2"
-dashmap = "5.5.3"
-ahash = "0.8.11"
-jsonwebtoken = {version = "9.2.0", features = ["use_pem"]}
-prost-wkt-types = "0.5.0"
-time = "0.3.34"
-digest = "0.10.7"
-reqsign = "0.14.9"
-serde_json = "1.0.114"
-crossbeam-skiplist = "0.1.3"
-lazy_static = "1.4.0"
-toml = "0.8.11"
-cel-interpreter = "0.6.0"
-cel-parser = "0.6.0"
-nom = "7.1.3"
-mime_guess = "2.0.4"
-curve25519-dalek = "4.1.2"
-ed25519-dalek = { version = "2.1.1", features = ["pem"]}
-
-[profile.release]
-panic = 'abort'

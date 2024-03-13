@@ -80,7 +80,7 @@ impl CreateServiceAccountToken {
     }
 }
 
-pub trait GetTokenAndServiceAccountInfo {
+pub(crate) trait GetTokenAndServiceAccountInfo {
     fn get_unparsed_ids(&self) -> (String, String);
     fn get_ids(&self) -> Result<(DieselUlid, DieselUlid)> {
         let (service_account, token) = self.get_unparsed_ids();
@@ -119,7 +119,7 @@ impl GetTokenAndServiceAccountInfo for DeleteServiceAccountToken {
     }
 }
 
-pub trait GetServiceAccountInfo {
+pub(crate) trait GetServiceAccountInfo {
     fn get_unparsed_id(&self) -> String;
 
     fn get_id(&self) -> Result<DieselUlid> {
@@ -198,7 +198,7 @@ impl RemoveDataproxyAttributeSvcAccount {
 }
 
 // Helper trait to get infos needed for proxy interaction
-pub trait GetEndpointInteractionInfos {
+pub (crate) trait GetEndpointInteractionInfos {
     // Return request strings
     fn get_unparsed_ids(&self) -> (String, String);
     // Return service account ulid and endpoint ulid
