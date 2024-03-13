@@ -1,10 +1,16 @@
 use super::test_utils::rand_string;
 use anyhow::Result;
-use aruna_rust_api::api::dataproxy::services::v2::{CreateOrUpdateCredentialsRequest, CreateOrUpdateCredentialsResponse, dataproxy_user_service_server::{DataproxyUserService, DataproxyUserServiceServer}, GetCredentialsRequest, GetCredentialsResponse, PullReplicaRequest, PullReplicaResponse, PushReplicaRequest, PushReplicaResponse, ReplicationStatusRequest, ReplicationStatusResponse, RevokeCredentialsRequest, RevokeCredentialsResponse};
+use aruna_rust_api::api::dataproxy::services::v2::{
+    dataproxy_user_service_server::{DataproxyUserService, DataproxyUserServiceServer},
+    CreateOrUpdateCredentialsRequest, CreateOrUpdateCredentialsResponse, GetCredentialsRequest,
+    GetCredentialsResponse, PullReplicaRequest, PullReplicaResponse, PushReplicaRequest,
+    PushReplicaResponse, ReplicationStatusRequest, ReplicationStatusResponse,
+    RevokeCredentialsRequest, RevokeCredentialsResponse,
+};
 use std::net::SocketAddr;
 use tokio::task::AbortHandle;
-use tonic::{Request, Response, Status};
 use tonic::transport::Server;
+use tonic::{Request, Response, Status};
 
 #[allow(dead_code)]
 pub async fn start_server(address: SocketAddr) -> Result<AbortHandle> {
@@ -47,11 +53,17 @@ impl DataproxyUserService for DataProxyServiceImpl {
         }))
     }
 
-    async fn create_or_update_credentials(&self, _request: Request<CreateOrUpdateCredentialsRequest>) -> std::result::Result<Response<CreateOrUpdateCredentialsResponse>, Status> {
+    async fn create_or_update_credentials(
+        &self,
+        _request: Request<CreateOrUpdateCredentialsRequest>,
+    ) -> std::result::Result<Response<CreateOrUpdateCredentialsResponse>, Status> {
         todo!()
     }
 
-    async fn revoke_credentials(&self, _request: Request<RevokeCredentialsRequest>) -> std::result::Result<Response<RevokeCredentialsResponse>, Status> {
+    async fn revoke_credentials(
+        &self,
+        _request: Request<RevokeCredentialsRequest>,
+    ) -> std::result::Result<Response<RevokeCredentialsResponse>, Status> {
         todo!()
     }
 

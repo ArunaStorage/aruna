@@ -17,6 +17,10 @@ pub enum GetUser {
     GetUserRedacted(GetUserRedactedRequest),
 }
 
+pub enum DeleteProxyAttributeSource {
+    Proxy(DieselUlid),
+    User(DieselUlid),
+}
 impl RegisterUser {
     pub fn get_display_name(&self) -> String {
         self.0.display_name.clone()

@@ -1,12 +1,13 @@
 use crate::auth::permission_handler::{PermissionCheck, PermissionHandler};
 use crate::auth::structs::Context;
-use crate::auth::token_handler::{Action, Intent, TokenHandler};
+use crate::auth::token_handler::{Action, Intent, ProcessedToken, TokenHandler};
 use crate::caching::cache::Cache;
 use crate::database::enums::DbPermissionLevel;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::token_request_types::{CreateToken, DeleteToken, GetToken};
 use crate::middlelayer::user_request_types::{
-    ActivateUser, DeactivateUser, GetUser, RegisterUser, UpdateUserEmail, UpdateUserName,
+    ActivateUser, DeactivateUser, DeleteProxyAttributeSource, GetUser, RegisterUser,
+    UpdateUserEmail, UpdateUserName,
 };
 use crate::utils::conversions::users::{as_api_token, convert_token_to_proto};
 use crate::utils::grpc_utils::get_token_from_md;
@@ -522,10 +523,27 @@ impl UserService for UserServiceImpl {
             ..
         } = tonic_auth!(
             self.authorizer
-                .check_permissions_verbose(&token, vec![Context::default()])
+                .check_permissions_verbose(&token, vec![Context::self_ctx()])
                 .await,
             "Unauthorized"
         );
+
+        // Check if endpoint is in trusted_endpoints
+        let endpoint_id = tonic_invalid!(
+            DieselUlid::from_str(&inner_request.endpoint_id),
+            "Invalid endpoint id"
+        );
+        if !self
+            .cache
+            .get_user(&user_ulid)
+            .ok_or_else(|| Status::not_found("User not found"))?
+            .attributes
+            .0
+            .trusted_endpoints
+            .contains_key(&endpoint_id)
+        {
+            return Err(Status::invalid_argument("Endpoint is not trusted"));
+        };
 
         // Create token based on provided context
         let response_token = if let Some(context) = inner_request.context {
@@ -538,10 +556,7 @@ impl UserService for UserServiceImpl {
                                     &user_ulid,
                                     maybe_token.map(|token_id| token_id.to_string()), // Token_Id of user token; None if OIDC
                                     Some(Intent {
-                                        target: tonic_invalid!(
-                                            DieselUlid::from_str(&inner_request.endpoint_id),
-                                            "Invalid endpoint id format"
-                                        ),
+                                        target: endpoint_id,
                                         action: Action::CreateSecrets
                                     }),
                                 ),
@@ -559,24 +574,15 @@ impl UserService for UserServiceImpl {
             }
         } else if proxy_request {
             return Err(Status::invalid_argument("No context provided"));
-        } else if let Ok(endpoint_ulid) = DieselUlid::from_str(&inner_request.endpoint_id) {
-            tonic_internal!(
-                self.authorizer.token_handler.sign_dataproxy_slt(
-                    &user_ulid,
-                    maybe_token.map(|token_id| token_id.to_string()), // Token_Id of user token; None if OIDC
-                    Some(Intent {
-                        target: endpoint_ulid,
-                        action: Action::All
-                    }),
-                ),
-                "Token signing failed"
-            )
         } else {
             tonic_internal!(
                 self.authorizer.token_handler.sign_dataproxy_slt(
                     &user_ulid,
                     maybe_token.map(|token_id| token_id.to_string()), // Token_Id of user token; None if OIDC
-                    None,
+                    Some(Intent {
+                        target: endpoint_id,
+                        action: Action::All
+                    }),
                 ),
                 "Token signing failed"
             )
@@ -858,22 +864,29 @@ impl UserService for UserServiceImpl {
             "Token authentication error"
         );
 
-        let ctx = Context::self_ctx();
-        let user_id = tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]).await,
+        let ctx = Context::proxy();
+        let PermissionCheck { proxy_id, .. } = tonic_auth!(
+            self.authorizer
+                .check_permissions_verbose(&token, vec![ctx])
+                .await,
             "Unauthorized"
         );
+        let proxy_id = if let Some(id) = proxy_id {
+            id
+        } else {
+            return Err(Status::unauthenticated("Unauthorized"));
+        };
 
         // Remove trusted endpoints from user
         tonic_internal!(
             self.database_handler
-                .add_data_proxy_attribute(inner_request, user_id)
+                .add_data_proxy_attribute(inner_request, proxy_id)
                 .await,
             "Failed to add endpoint to user"
         );
 
         // Return response
-        return_with_log!(AddDataProxyAttributeUserResponse{});
+        return_with_log!(AddDataProxyAttributeUserResponse {});
     }
     async fn remove_data_proxy_attribute_user(
         &self,
@@ -889,23 +902,39 @@ impl UserService for UserServiceImpl {
             get_token_from_md(&request_metadata),
             "Token authentication error"
         );
-
-        let ctx = Context::self_ctx();
-        let user_id = tonic_auth!(
-            self.authorizer.check_permissions(&token, vec![ctx]).await,
+        let ProcessedToken {
+            main_id, is_proxy, ..
+        } = tonic_auth!(
+            self.token_handler.process_token(&token).await,
             "Unauthorized"
         );
+
+        let id = if is_proxy {
+            let ctx = Context::proxy();
+            tonic_auth!(
+                self.authorizer.check_permissions(&token, vec![ctx]).await,
+                "Unauthorized"
+            );
+            DeleteProxyAttributeSource::Proxy(main_id)
+        } else {
+            let ctx = Context::self_ctx();
+            let user_id = tonic_auth!(
+                self.authorizer.check_permissions(&token, vec![ctx]).await,
+                "Unauthorized"
+            );
+            DeleteProxyAttributeSource::User(user_id)
+        };
 
         // Remove trusted endpoints from user
         tonic_internal!(
             self.database_handler
-                .rm_data_proxy_attribute(inner_request, user_id)
+                .rm_data_proxy_attribute(inner_request, id)
                 .await,
             "Failed to add endpoint to user"
         );
 
         // Return response
-        return_with_log!(RemoveDataProxyAttributeUserResponse{});
+        return_with_log!(RemoveDataProxyAttributeUserResponse {});
     }
     async fn create_s3_credentials_user_token(
         &self,

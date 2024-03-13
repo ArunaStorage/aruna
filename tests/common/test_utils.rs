@@ -10,6 +10,7 @@ use aruna_rust_api::api::storage::{
         UpdateAuthorizationRequest,
     },
 };
+use aruna_server::database::dsls::object_dsl::Author;
 use aruna_server::{
     database::{
         dsls::{
@@ -36,7 +37,6 @@ use tonic::{
     metadata::{AsciiMetadataKey, AsciiMetadataValue},
     Request,
 };
-use aruna_server::database::dsls::object_dsl::Author;
 
 /* ----- Begin Testing Constants ---------- */
 #[allow(dead_code)]
@@ -121,7 +121,7 @@ pub fn new_object(user_id: DieselUlid, object_id: DieselUlid, object_type: Objec
         )])),
         data_license: ALL_RIGHTS_RESERVED.to_string(),
         metadata_license: ALL_RIGHTS_RESERVED.to_string(),
-        authors: Json(vec![Author{
+        authors: Json(vec![Author {
             first_name: "Jane".to_string(),
             last_name: "Doe".to_string(),
             email: Some("jane.doe@test.org".to_string()),
@@ -179,7 +179,7 @@ pub fn object_from_mapping(
         endpoints: Json(DashMap::default()),
         data_license: ALL_RIGHTS_RESERVED.to_string(),
         metadata_license: ALL_RIGHTS_RESERVED.to_string(),
-        authors: Json(vec![Author{
+        authors: Json(vec![Author {
             first_name: "Jane".to_string(),
             last_name: "Doe".to_string(),
             email: Some("jane.doe@test.org".to_string()),
@@ -275,13 +275,13 @@ pub async fn fast_track_grpc_project_create(
         preferred_endpoint: "".to_string(),
         default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
         metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
-        authors: vec![aruna_rust_api::api::storage::models::v2::Author{
+        authors: vec![aruna_rust_api::api::storage::models::v2::Author {
             first_name: "Jane".to_string(),
             last_name: "Doe".to_string(),
             email: Some("jane.doe@test.org".to_string()),
             orcid: None,
             id: None,
-        }], 
+        }],
     };
 
     let grpc_request = add_token(Request::new(create_request), token);
@@ -322,7 +322,7 @@ pub async fn fast_track_grpc_collection_create(
         parent: Some(parent),
         default_data_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
         metadata_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
-        authors: vec![aruna_rust_api::api::storage::models::v2::Author{
+        authors: vec![aruna_rust_api::api::storage::models::v2::Author {
             first_name: "Jane".to_string(),
             last_name: "Doe".to_string(),
             email: Some("jane.doe@test.org".to_string()),
@@ -369,7 +369,7 @@ pub async fn fast_track_grpc_dataset_create(
         parent: Some(parent),
         default_data_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
         metadata_license_tag: Some(ALL_RIGHTS_RESERVED.to_string()),
-        authors: vec![aruna_rust_api::api::storage::models::v2::Author{
+        authors: vec![aruna_rust_api::api::storage::models::v2::Author {
             first_name: "Jane".to_string(),
             last_name: "Doe".to_string(),
             email: Some("jane.doe@test.org".to_string()),

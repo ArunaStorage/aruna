@@ -22,12 +22,12 @@ use aruna_rust_api::api::storage::services::v2::project_service_server::ProjectS
 use aruna_rust_api::api::storage::services::v2::{
     ArchiveProjectRequest, ArchiveProjectResponse, CreateProjectRequest, CreateProjectResponse,
     DeleteProjectRequest, DeleteProjectResponse, GetProjectRequest, GetProjectResponse,
-    GetProjectsRequest, GetProjectsResponse, UpdateProjectAuthorsRequest, UpdateProjectAuthorsResponse,
-    UpdateProjectDataClassRequest, UpdateProjectDataClassResponse, UpdateProjectDescriptionRequest,
-    UpdateProjectDescriptionResponse, UpdateProjectKeyValuesRequest,
-    UpdateProjectKeyValuesResponse, UpdateProjectLicensesRequest, UpdateProjectLicensesResponse,
-    UpdateProjectNameRequest, UpdateProjectNameResponse, UpdateProjectTitleRequest,
-    UpdateProjectTitleResponse,
+    GetProjectsRequest, GetProjectsResponse, UpdateProjectAuthorsRequest,
+    UpdateProjectAuthorsResponse, UpdateProjectDataClassRequest, UpdateProjectDataClassResponse,
+    UpdateProjectDescriptionRequest, UpdateProjectDescriptionResponse,
+    UpdateProjectKeyValuesRequest, UpdateProjectKeyValuesResponse, UpdateProjectLicensesRequest,
+    UpdateProjectLicensesResponse, UpdateProjectNameRequest, UpdateProjectNameResponse,
+    UpdateProjectTitleRequest, UpdateProjectTitleResponse,
 };
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
@@ -249,7 +249,7 @@ impl ProjectService for ProjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&project.object.id)
-                .unwrap_or_default()
+                .unwrap_or_default(),
         }
         .into();
         let response = UpdateProjectNameResponse {
@@ -299,7 +299,7 @@ impl ProjectService for ProjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&project.object.id)
-                .unwrap_or_default()
+                .unwrap_or_default(),
         }
         .into();
 
@@ -350,7 +350,7 @@ impl ProjectService for ProjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&project.object.id)
-                .unwrap_or_default()
+                .unwrap_or_default(),
         }
         .into();
 
@@ -402,7 +402,7 @@ impl ProjectService for ProjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&project.object.id)
-                .unwrap_or_default()
+                .unwrap_or_default(),
         }
         .into();
         let response = UpdateProjectDataClassResponse {
@@ -499,7 +499,7 @@ impl ProjectService for ProjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&project.object.id)
-                .unwrap_or_default()
+                .unwrap_or_default(),
         }
         .into();
         let response = UpdateProjectLicensesResponse {

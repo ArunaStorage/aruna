@@ -1,4 +1,6 @@
-use super::update_request_types::{LicenseUpdate, SetHashes, UpdateAuthor, UpdateObject, UpdateTitle};
+use super::update_request_types::{
+    LicenseUpdate, SetHashes, UpdateAuthor, UpdateObject, UpdateTitle,
+};
 use crate::database::crud::CrudDb;
 use crate::database::dsls::hook_dsl::TriggerVariant;
 use crate::database::dsls::internal_relation_dsl::{
@@ -455,11 +457,9 @@ impl DatabaseHandler {
             }
             affected.insert(0, owr.clone());
             affected
-            
         } else {
             vec![owr.clone()]
         };
-
 
         // Trigger hooks for the 4 combinations:
         // 1. update in place & new key_vals
@@ -552,9 +552,12 @@ impl DatabaseHandler {
                 }
             });
         };
-        
+
         for object_with_relation in affected {
-            let hierarchies = object_with_relation.object.fetch_object_hierarchies(&client).await?;
+            let hierarchies = object_with_relation
+                .object
+                .fetch_object_hierarchies(&client)
+                .await?;
 
             // Try to emit object updated notification(s)
             if let Err(err) = self
@@ -570,7 +573,7 @@ impl DatabaseHandler {
                 // Log error, rollback transaction and return
                 log::error!("{}", err);
                 //transaction.rollback().await?;
-                return Err(anyhow::anyhow!("Notification emission failed"))
+                return Err(anyhow::anyhow!("Notification emission failed"));
             }
         }
         Ok((owr, is_new))
@@ -749,7 +752,7 @@ impl DatabaseHandler {
         let mut object = Object::get_object_with_relations(&id, &client).await?;
 
         // Set or Check hash?
-        if object.object.hashes.0.0.is_empty() {
+        if object.object.hashes.0 .0.is_empty() {
             // TODO: Set hash
             object.object.hashes = Json(request.get_hashes()?);
             object.object.update(&client).await?;
@@ -765,6 +768,5 @@ impl DatabaseHandler {
                 Err(anyhow!("Hashes do not match!"))
             }
         }
-
     }
 }

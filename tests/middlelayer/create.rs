@@ -328,8 +328,8 @@ async fn create_object() {
     assert_eq!(obj.object.description, "test".to_string());
     assert_eq!(obj.object.revision_number, 0);
     assert_eq!(obj.object.count, 1);
-    assert!(obj.object.title.is_empty()) ;
-    assert!(obj.object.authors.0.is_empty()) ;
+    assert!(obj.object.title.is_empty());
+    assert!(obj.object.authors.0.is_empty());
     assert!(!obj.object.dynamic);
     assert!(obj.object.hashes.0 .0.is_empty());
     assert!(obj.object.key_values.0 .0.is_empty());

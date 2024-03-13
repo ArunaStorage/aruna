@@ -1,4 +1,5 @@
 use aruna_rust_api::api::storage::models::v2::generic_resource;
+use aruna_server::database::dsls::object_dsl::Author;
 use aruna_server::{
     database::{
         dsls::object_dsl::{KeyValue, KeyValueVariant},
@@ -9,7 +10,6 @@ use aruna_server::{
 use chrono::NaiveDateTime;
 use diesel_ulid::DieselUlid;
 use rand::{seq::IteratorRandom, thread_rng, Rng};
-use aruna_server::database::dsls::object_dsl::Author;
 
 mod common;
 
@@ -138,7 +138,7 @@ fn generate_random_object_document() -> ObjectDocument {
         title: "this is a project_title".to_string(),
         description: "ChatGPT should create some hallucinated description of this project."
             .to_string(),
-        authors: vec![Author{
+        authors: vec![Author {
             first_name: "A".to_string(),
             last_name: "B".to_string(),
             email: Some("C".to_string()),

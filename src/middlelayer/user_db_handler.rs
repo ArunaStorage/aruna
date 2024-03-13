@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use crate::auth::token_handler::{Action, Intent, TokenHandler};
 use crate::database::crud::CrudDb;
 use crate::database::dsls::persistent_notification_dsl::{
     NotificationReference, NotificationReferences, PersistentNotification,
 };
-use crate::database::dsls::user_dsl::{OIDCMapping, User, UserAttributes};
+use crate::database::dsls::user_dsl::{DataProxyAttribute, OIDCMapping, User, UserAttributes};
 use crate::database::enums::{
     DataProxyFeature, DbPermissionLevel, NotificationReferenceType, ObjectMapping,
     PersistentNotificationVariant,
@@ -14,12 +15,14 @@ use crate::database::enums::{
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::endpoints_request_types::GetEP;
 use crate::middlelayer::user_request_types::{
-    ActivateUser, DeactivateUser, RegisterUser, UpdateUserEmail, UpdateUserName,
+    ActivateUser, DeactivateUser, DeleteProxyAttributeSource, RegisterUser, UpdateUserEmail,
+    UpdateUserName,
 };
 use anyhow::{anyhow, bail, Result};
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_client::DataproxyUserServiceClient;
 use aruna_rust_api::api::dataproxy::services::v2::{
-    CreateOrUpdateCredentialsRequest, GetCredentialsRequest, RevokeCredentialsRequest,
+    CreateOrUpdateCredentialsRequest, CreateOrUpdateCredentialsResponse, GetCredentialsRequest,
+    RevokeCredentialsRequest,
 };
 use aruna_rust_api::api::notification::services::v2::EventVariant;
 use aruna_rust_api::api::storage::services::v2::get_endpoint_request::Endpoint;
@@ -29,6 +32,7 @@ use aruna_rust_api::api::storage::services::v2::{
 };
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
+use tokio::sync::Notify;
 use tokio_postgres::GenericClient;
 use tonic::metadata::{AsciiMetadataKey, AsciiMetadataValue};
 use tonic::transport::{Channel, ClientTlsConfig};
@@ -196,6 +200,7 @@ impl DatabaseHandler {
         &self,
         user_id: DieselUlid,
         endpoint_id: DieselUlid,
+        notifier: Option<&Notify>,
     ) -> Result<User> {
         let client = self.database.get_client().await?;
 
@@ -216,7 +221,9 @@ impl DatabaseHandler {
             //transaction.rollback().await?;
             return Err(anyhow::anyhow!("Notification emission failed"));
         }
-
+        if let Some(notifier) = notifier {
+            notifier.notify_one();
+        }
         Ok(user)
     }
 
@@ -576,8 +583,14 @@ impl DatabaseHandler {
             }),
         )?;
 
+        let notifier = Arc::new(Notify::new());
         // Add endpoint to user
-        self.add_endpoint_to_user(user_id, endpoint.id).await?;
+        if !user.attributes.0.service_account {
+            self.add_endpoint_to_user(user_id, endpoint.id, Some(&notifier))
+                .await?;
+        }
+        //self.add_endpoint_to_user(user_id, endpoint.id).await?;
+        //notifier.notify_one();
 
         // Collect endpoint info
         let mut endpoint_host_url: String = String::new();
@@ -613,10 +626,16 @@ impl DatabaseHandler {
             AsciiMetadataValue::try_from(format!("Bearer {}", short_lived_token))?,
         );
 
-        let response = dp_conn
-            .create_or_update_credentials(credentials_request)
-            .await?
-            .into_inner();
+        let response = tokio::spawn(async move {
+            notifier.notified().await;
+            Ok::<CreateOrUpdateCredentialsResponse, Status>(
+                dp_conn
+                    .create_or_update_credentials(credentials_request)
+                    .await?
+                    .into_inner(),
+            )
+        })
+        .await??;
         // Try to emit user updated notification(s)
         if let Err(err) = self
             .natsio_handler
@@ -713,23 +732,6 @@ impl DatabaseHandler {
         token_handler: &TokenHandler,
     ) -> Result<()> {
         let endpoint_ulid = DieselUlid::from_str(&endpoint_id)?;
-        let user = self
-            .cache
-            .get_user(&user_id)
-            .ok_or_else(|| Status::not_found("User not found"))?;
-
-        // Service accounts are not allowed to get additional trusted endpoints
-        if user.attributes.0.service_account
-            && !user
-                .attributes
-                .0
-                .trusted_endpoints
-                .contains_key(&endpoint_ulid)
-        {
-            return Err(anyhow!(
-                "Service accounts are not allowed to remove predefined endpoints",
-            ));
-        }
         let endpoint = self
             .get_endpoint(GetEP(GetEndpointRequest {
                 endpoint: Some(Endpoint::EndpointId(endpoint_id)),
@@ -806,38 +808,64 @@ impl DatabaseHandler {
     pub async fn add_data_proxy_attribute(
         &self,
         request: AddDataProxyAttributeUserRequest,
-        user_id: DieselUlid,
+        proxy_id: DieselUlid,
     ) -> Result<()> {
-        let attribute = request
+        let attribute: DataProxyAttribute = request
             .attribute
             .ok_or_else(|| anyhow!("No attribute provided"))?
             .try_into()?;
-        let client = self.database.get_client().await?;
-        let user = User::add_data_proxy_attribute(&client, attribute, &user_id).await?;
-        self.cache.update_user(&user_id, user.clone());
-
-        // Try to emit user updated notification(s)
-        if let Err(err) = self
-            .natsio_handler
-            .register_user_event(&user, EventVariant::Updated)
-            .await
-        {
-            // Log error (rollback transaction and return)
-            log::error!("{}", err);
-            //transaction.rollback().await?;
-            return Err(anyhow::anyhow!("Notification emission failed"));
+        let user_id = DieselUlid::from_str(&request.user_id)?;
+        // Check if proxy is setting attribute for itself
+        if attribute.proxy_id != proxy_id {
+            return Err(anyhow!("Unauthorized"));
         }
-        Ok(())
+        let client = self.database.get_client().await?;
+        // Check if proxy is allowed to add attribute
+        let user = User::get(user_id, &client)
+            .await?
+            .ok_or_else(|| anyhow!("User not found"))?;
+        if !user.attributes.0.trusted_endpoints.contains_key(&proxy_id) {
+            Err(anyhow!("Unauthorized"))
+        } else {
+            let user = User::add_data_proxy_attribute(&client, attribute, &user_id).await?;
+            self.cache.update_user(&user_id, user.clone());
+
+            // Try to emit user updated notification(s)
+            if let Err(err) = self
+                .natsio_handler
+                .register_user_event(&user, EventVariant::Updated)
+                .await
+            {
+                // Log error (rollback transaction and return)
+                log::error!("{}", err);
+                //transaction.rollback().await?;
+                return Err(anyhow::anyhow!("Notification emission failed"));
+            }
+            Ok(())
+        }
     }
     pub async fn rm_data_proxy_attribute(
         &self,
         request: RemoveDataProxyAttributeUserRequest,
-        user_id: DieselUlid,
+        source: DeleteProxyAttributeSource,
     ) -> Result<()> {
         let client = self.database.get_client().await?;
-        let attribute = User::get(user_id, &client)
-            .await?
-            .ok_or_else(|| anyhow!("User not found"))?
+        let user = match source {
+            DeleteProxyAttributeSource::Proxy(proxy_id) => {
+                let user_id = DieselUlid::from_str(&request.user_id)?;
+                let user = User::get(user_id, &client)
+                    .await?
+                    .ok_or_else(|| anyhow!("User not found"))?;
+                if !user.attributes.0.trusted_endpoints.contains_key(&proxy_id) {
+                    return Err(anyhow!("Unauthorized"));
+                }
+                user
+            }
+            DeleteProxyAttributeSource::User(user_id) => User::get(user_id, &client)
+                .await?
+                .ok_or_else(|| anyhow!("User not found"))?,
+        };
+        let attribute = user
             .attributes
             .0
             .data_proxy_attribute
@@ -845,9 +873,10 @@ impl DatabaseHandler {
             .find(|a| {
                 a.proxy_id.to_string() == request.dataproxy_id
                     && a.attribute_name == request.attribute_name
-            }).ok_or_else(|| anyhow!("Attribute not found"))?;
-        let user = User::rm_data_proxy_attribute(&client, attribute, &user_id).await?;
-        self.cache.update_user(&user_id, user.clone());
+            })
+            .ok_or_else(|| anyhow!("Attribute not found"))?;
+        let user = User::rm_data_proxy_attribute(&client, attribute, &user.id).await?;
+        self.cache.update_user(&user.id, user.clone());
 
         // Try to emit user updated notification(s)
         if let Err(err) = self

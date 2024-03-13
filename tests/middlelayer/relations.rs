@@ -298,7 +298,7 @@ async fn test_modify_relations_constraint() {
         .modify_relations(obj, mod_lab.relations_to_add, mod_lab.relations_to_remove)
         .await
         .is_err());
-    
+
     // 3. removing legacy_project -> old_object relation should work, because there are valid version relations
     let valid = Relation {
         relation: Some(RelationEnum::Internal(APIInternalRelation {
@@ -321,6 +321,19 @@ async fn test_modify_relations_constraint() {
         .modify_relations(obj, mod_lab.relations_to_add, mod_lab.relations_to_remove)
         .await
         .is_ok());
-    assert!(db_handler.cache.get_object(&legacy_project_id).unwrap().outbound_belongs_to.0.is_empty());
-    assert!(Object::get_object_with_relations(&legacy_project_id, &client).await.unwrap().outbound_belongs_to.0.is_empty());
+    assert!(db_handler
+        .cache
+        .get_object(&legacy_project_id)
+        .unwrap()
+        .outbound_belongs_to
+        .0
+        .is_empty());
+    assert!(
+        Object::get_object_with_relations(&legacy_project_id, &client)
+            .await
+            .unwrap()
+            .outbound_belongs_to
+            .0
+            .is_empty()
+    );
 }

@@ -77,7 +77,7 @@ impl SnapshotResponse {
             .evaluate_rules(&project.resource_ids, transaction_client)
             .await?;
         transaction.commit().await?;
-        let objects = Object::get_objects_with_relations(&project.resource_ids,&client).await?;
+        let objects = Object::get_objects_with_relations(&project.resource_ids, &client).await?;
         Ok(objects)
     }
 

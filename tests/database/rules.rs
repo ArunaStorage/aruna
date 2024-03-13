@@ -1,10 +1,10 @@
-use diesel_ulid::DieselUlid;
+use crate::common::init;
+use crate::common::test_utils::{new_object, new_user};
 use aruna_server::database::crud::CrudDb;
 use aruna_server::database::dsls::internal_relation_dsl::InternalRelation;
 use aruna_server::database::dsls::rule_dsl::{Rule, RuleBinding};
 use aruna_server::database::enums::{ObjectMapping, ObjectType};
-use crate::common::init;
-use crate::common::test_utils::{new_object, new_user};
+use diesel_ulid::DieselUlid;
 
 #[tokio::test]
 async fn test_rules() {
@@ -35,21 +35,21 @@ async fn test_rules() {
     };
     new.create(&client).await.unwrap();
     second.create(&client).await.unwrap();
-    
+
     // - Get
     let new_created = Rule::get(new.id, &client).await.unwrap().unwrap();
     assert_eq!(new_created, new);
-    
+
     // - All
     let all = Rule::all(&client).await.unwrap();
     assert!(all.contains(&new));
     assert!(all.contains(&second));
-    
+
     // - Delete
     second.delete(&client).await.unwrap();
     let all = Rule::all(&client).await.unwrap();
     assert!(!all.contains(&second));
-    
+
     // - Update
     let updated = Rule {
         id: new.id,
@@ -70,7 +70,10 @@ async fn test_rule_bindings() {
     let client = db.get_client().await.unwrap();
     let project = DieselUlid::generate();
     let object = DieselUlid::generate();
-    let mut user = new_user(vec![ObjectMapping::PROJECT(project), ObjectMapping::OBJECT(object)]);
+    let mut user = new_user(vec![
+        ObjectMapping::PROJECT(project),
+        ObjectMapping::OBJECT(object),
+    ]);
     user.create(&client).await.unwrap();
     let mut new_project = new_object(user.id, project, ObjectType::PROJECT);
     let mut new_object = new_object(user.id, object, ObjectType::OBJECT);
@@ -84,7 +87,10 @@ async fn test_rule_bindings() {
         target_pid: object,
         target_type: ObjectType::OBJECT,
         target_name: new_object.name,
-    }.create(&client).await.unwrap();
+    }
+    .create(&client)
+    .await
+    .unwrap();
     let mut new = Rule {
         id: DieselUlid::generate(),
         rule_expressions: "true".to_string(),
@@ -119,10 +125,12 @@ async fn test_rule_bindings() {
     new_binding.create(&client).await.unwrap();
     second_binding.create(&client).await.unwrap();
 
-    // - Get: 
+    // - Get:
     // Always fails, because schema has defined 3 primary keys, and trait requires to return just one object, which is not always one.
     // Instead of returning only the first object, failing seems better, because choosing only the first entry is unexpected when using get
-    assert!(RuleBinding::get(new_binding.rule_id, &client).await.is_err());
+    assert!(RuleBinding::get(new_binding.rule_id, &client)
+        .await
+        .is_err());
 
     // - All
     let all = RuleBinding::all(&client).await.unwrap();
@@ -133,9 +141,11 @@ async fn test_rule_bindings() {
     second_binding.delete(&client).await.unwrap();
     let all = RuleBinding::all(&client).await.unwrap();
     assert!(!all.contains(&second_binding));
-    
+
     // - DeleteBy (rule id and origin id)
-    RuleBinding::delete_by(new.id, project, &client).await.unwrap();
+    RuleBinding::delete_by(new.id, project, &client)
+        .await
+        .unwrap();
     let all = RuleBinding::all(&client).await.unwrap();
     assert!(!all.contains(&new_binding));
 }

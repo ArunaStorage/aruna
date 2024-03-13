@@ -613,9 +613,11 @@ async fn test_updates() {
     let updated_project = Object::get(proj_id, client).await.unwrap().unwrap();
     create_project.data_class = new_dataclass;
     assert_eq!(updated_project, create_project);
-    
+
     let new_title = "NewTitle".to_string();
-    Object::update_title(&obj_id, new_title.clone(), client).await.unwrap();
+    Object::update_title(&obj_id, new_title.clone(), client)
+        .await
+        .unwrap();
     let new = Object::get(obj_id, client).await.unwrap().unwrap();
     transaction.commit().await.unwrap();
     assert_eq!(new.title, new_title)

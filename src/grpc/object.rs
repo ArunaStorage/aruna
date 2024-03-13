@@ -2,8 +2,16 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use aruna_rust_api::api::storage::models::v2::{generic_resource, Object};
-use aruna_rust_api::api::storage::services::v2::{CloneObjectRequest, CloneObjectResponse, CreateObjectRequest, CreateObjectResponse, DeleteObjectRequest, DeleteObjectResponse, FinishObjectStagingRequest, FinishObjectStagingResponse, GetDownloadUrlRequest, GetDownloadUrlResponse, GetObjectRequest, GetObjectResponse, GetObjectsRequest, GetObjectsResponse, GetUploadUrlRequest, GetUploadUrlResponse, SetObjectHashesRequest, SetObjectHashesResponse, UpdateObjectAuthorsRequest, UpdateObjectAuthorsResponse, UpdateObjectRequest, UpdateObjectResponse, UpdateObjectTitleRequest, UpdateObjectTitleResponse};
 use aruna_rust_api::api::storage::services::v2::object_service_server::ObjectService;
+use aruna_rust_api::api::storage::services::v2::{
+    CloneObjectRequest, CloneObjectResponse, CreateObjectRequest, CreateObjectResponse,
+    DeleteObjectRequest, DeleteObjectResponse, FinishObjectStagingRequest,
+    FinishObjectStagingResponse, GetDownloadUrlRequest, GetDownloadUrlResponse, GetObjectRequest,
+    GetObjectResponse, GetObjectsRequest, GetObjectsResponse, GetUploadUrlRequest,
+    GetUploadUrlResponse, SetObjectHashesRequest, SetObjectHashesResponse,
+    UpdateObjectAuthorsRequest, UpdateObjectAuthorsResponse, UpdateObjectRequest,
+    UpdateObjectResponse, UpdateObjectTitleRequest, UpdateObjectTitleResponse,
+};
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use tonic::{Request, Response, Result, Status};
@@ -19,10 +27,12 @@ use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::presigned_url_handler::{PresignedDownload, PresignedUpload};
-use crate::middlelayer::update_request_types::{SetHashes, UpdateAuthor, UpdateObject, UpdateTitle};
+use crate::middlelayer::update_request_types::{
+    SetHashes, UpdateAuthor, UpdateObject, UpdateTitle,
+};
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
-use crate::utils::grpc_utils::{get_id_and_ctx, IntoGenericInner};
 use crate::utils::grpc_utils::get_token_from_md;
+use crate::utils::grpc_utils::{get_id_and_ctx, IntoGenericInner};
 use crate::utils::search_utils;
 
 crate::impl_grpc_server!(ObjectServiceImpl, search_client: Arc<MeilisearchClient>);
@@ -92,7 +102,7 @@ impl ObjectService for ObjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&object_plus.object.id)
-                .unwrap_or_default()
+                .unwrap_or_default(),
         }
         .into();
 
@@ -255,7 +265,7 @@ impl ObjectService for ObjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&object.object.id)
-                .unwrap_or_default()
+                .unwrap_or_default(),
         }
         .into();
         let response = FinishObjectStagingResponse {
@@ -315,7 +325,7 @@ impl ObjectService for ObjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&object.object.id)
-                .unwrap_or_default()
+                .unwrap_or_default(),
         }
         .into();
         let response = UpdateObjectResponse {
@@ -365,7 +375,7 @@ impl ObjectService for ObjectServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&new.object.id)
-                .unwrap_or_default()
+                .unwrap_or_default(),
         }
         .into();
         let response = CloneObjectResponse {
@@ -521,10 +531,7 @@ impl ObjectService for ObjectServiceImpl {
         )
         .await;
 
-        let rules = self
-            .cache
-            .get_rule_bindings(&object_id)
-            .unwrap_or_default();
+        let rules = self.cache.get_rule_bindings(&object_id).unwrap_or_default();
         let generic_resource: generic_resource::Resource = ObjectWrapper {
             object_with_relations: object,
             rules,
@@ -569,10 +576,7 @@ impl ObjectService for ObjectServiceImpl {
         )
         .await;
 
-        let rules = self
-            .cache
-            .get_rule_bindings(&object_id)
-            .unwrap_or_default();
+        let rules = self.cache.get_rule_bindings(&object_id).unwrap_or_default();
         let generic_resource: generic_resource::Resource = ObjectWrapper {
             object_with_relations: object,
             rules,
@@ -584,7 +588,10 @@ impl ObjectService for ObjectServiceImpl {
         return_with_log!(response);
     }
 
-    async fn set_object_hashes(&self, request: Request<SetObjectHashesRequest>) -> std::result::Result<Response<SetObjectHashesResponse>, Status> {
+    async fn set_object_hashes(
+        &self,
+        request: Request<SetObjectHashesRequest>,
+    ) -> std::result::Result<Response<SetObjectHashesResponse>, Status> {
         log_received!(&request);
 
         let token = tonic_auth!(
@@ -613,17 +620,14 @@ impl ObjectService for ObjectServiceImpl {
             &self.cache,
             vec![ObjectDocument::from(object.object.clone())],
         )
-            .await;
+        .await;
 
-        let rules = self
-            .cache
-            .get_rule_bindings(&object_id)
-            .unwrap_or_default();
+        let rules = self.cache.get_rule_bindings(&object_id).unwrap_or_default();
         let generic_resource: generic_resource::Resource = ObjectWrapper {
             object_with_relations: object,
             rules,
         }
-            .into();
+        .into();
         let response = SetObjectHashesResponse {
             object: Some(generic_resource.into_inner()?),
         };

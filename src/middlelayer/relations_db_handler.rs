@@ -1,5 +1,7 @@
 use crate::caching::cache::Cache;
-use crate::database::dsls::internal_relation_dsl::{InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO, INTERNAL_RELATION_VARIANT_VERSION};
+use crate::database::dsls::internal_relation_dsl::{
+    InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO, INTERNAL_RELATION_VARIANT_VERSION,
+};
 use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::object_dsl::ObjectWithRelations;
 use crate::middlelayer::db_handler::DatabaseHandler;
@@ -33,7 +35,8 @@ impl DatabaseHandler {
         let mut client = self.database.get_client().await?;
         // Check if BelongsTo relations are removed and at least one Version or BelongsTo relation remains
         let check_relations: Vec<InternalRelation> = relations_remove
-            .internal.clone()
+            .internal
+            .clone()
             .into_iter()
             .filter(|ir| ir.relation_name == INTERNAL_RELATION_VARIANT_BELONGS_TO)
             .collect();
@@ -44,8 +47,15 @@ impl DatabaseHandler {
                 // Check if at least one belongs to
                 if target.inbound_belongs_to.0.len() < 2 {
                     // if not, are there any version relations?
-                    if !target.outbound.0.iter().any(|map| map.relation_name == INTERNAL_RELATION_VARIANT_VERSION) {
-                        return Err(anyhow!("Resources need at least one BelongsTo or Version relation!"));
+                    if !target
+                        .outbound
+                        .0
+                        .iter()
+                        .any(|map| map.relation_name == INTERNAL_RELATION_VARIANT_VERSION)
+                    {
+                        return Err(anyhow!(
+                            "Resources need at least one BelongsTo or Version relation!"
+                        ));
                     }
                 }
             }
@@ -60,7 +70,7 @@ impl DatabaseHandler {
                 transaction_client,
                 relations_add.external,
             )
-                .await?;
+            .await?;
         }
         if !relations_add.internal.is_empty() {
             InternalRelation::batch_create(&relations_add.internal, transaction_client).await?;
@@ -71,14 +81,14 @@ impl DatabaseHandler {
                 transaction_client,
                 relations_remove.external,
             )
-                .await?;
+            .await?;
         }
         if !relations_remove.internal.is_empty() {
             InternalRelation::batch_delete(
                 &relations_remove.internal.iter().map(|r| r.id).collect(),
                 transaction_client,
             )
-                .await?;
+            .await?;
         }
 
         self.evaluate_and_update_rules(
@@ -86,7 +96,7 @@ impl DatabaseHandler {
             &resource.id,
             transaction_client,
         )
-            .await?;
+        .await?;
         transaction.commit().await?;
 
         // Try to emit object updated notification(s)

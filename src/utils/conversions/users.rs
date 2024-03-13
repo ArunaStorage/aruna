@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use crate::database::{
     dsls::user_dsl::{
         APIToken, CustomAttributes as DBCustomAttributes,
@@ -15,6 +14,7 @@ use aruna_rust_api::api::storage::{
     services::v2::ServiceAccount,
 };
 use diesel_ulid::DieselUlid;
+use std::str::FromStr;
 
 // Conversion from database model user token to proto user
 impl From<DBUser> for User {
@@ -226,6 +226,5 @@ impl TryFrom<DataProxyAttribute> for DBDataProxyAttribute {
             signature: value.signature,
             proxy_id: DieselUlid::from_str(&value.proxy_id)?,
         })
-
     }
 }

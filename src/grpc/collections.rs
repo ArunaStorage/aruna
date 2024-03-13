@@ -105,7 +105,7 @@ impl CollectionService for CollectionServiceImpl {
             rules: self
                 .cache
                 .get_rule_bindings(&collection.object.id)
-                .unwrap_or_default()
+                .unwrap_or_default(),
         };
         let generic_collection: generic_resource::Resource = wrapped.into();
 

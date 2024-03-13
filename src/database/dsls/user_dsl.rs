@@ -418,7 +418,11 @@ impl User {
         Ok(rows.iter().map(User::from_row).collect::<Vec<_>>())
     }
 
-    pub async fn add_pubkey(pubkey: &String, user_id: &DieselUlid, client: &Client) -> Result<User> {
+    pub async fn add_pubkey(
+        pubkey: &String,
+        user_id: &DieselUlid,
+        client: &Client,
+    ) -> Result<User> {
         let query = "UPDATE users
             SET attributes = jsonb_set(attributes, '{pubkey}', $1)
             WHERE id = $2

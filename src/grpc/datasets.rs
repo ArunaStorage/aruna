@@ -1,18 +1,18 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use aruna_rust_api::api::storage::models::v2::{Dataset, generic_resource};
+use aruna_rust_api::api::storage::models::v2::{generic_resource, Dataset};
+use aruna_rust_api::api::storage::services::v2::dataset_service_server::DatasetService;
 use aruna_rust_api::api::storage::services::v2::{
     CreateDatasetRequest, CreateDatasetResponse, DeleteDatasetRequest, DeleteDatasetResponse,
     GetDatasetRequest, GetDatasetResponse, GetDatasetsRequest, GetDatasetsResponse,
-    SnapshotDatasetRequest, SnapshotDatasetResponse, UpdateDatasetAuthorsRequest, UpdateDatasetAuthorsResponse,
-    UpdateDatasetDataClassRequest, UpdateDatasetDataClassResponse, UpdateDatasetDescriptionRequest,
-    UpdateDatasetDescriptionResponse, UpdateDatasetKeyValuesRequest,
-    UpdateDatasetKeyValuesResponse, UpdateDatasetLicensesRequest, UpdateDatasetLicensesResponse,
-    UpdateDatasetNameRequest, UpdateDatasetNameResponse, UpdateDatasetTitleRequest,
-    UpdateDatasetTitleResponse,
+    SnapshotDatasetRequest, SnapshotDatasetResponse, UpdateDatasetAuthorsRequest,
+    UpdateDatasetAuthorsResponse, UpdateDatasetDataClassRequest, UpdateDatasetDataClassResponse,
+    UpdateDatasetDescriptionRequest, UpdateDatasetDescriptionResponse,
+    UpdateDatasetKeyValuesRequest, UpdateDatasetKeyValuesResponse, UpdateDatasetLicensesRequest,
+    UpdateDatasetLicensesResponse, UpdateDatasetNameRequest, UpdateDatasetNameResponse,
+    UpdateDatasetTitleRequest, UpdateDatasetTitleResponse,
 };
-use aruna_rust_api::api::storage::services::v2::dataset_service_server::DatasetService;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use tonic::{Request, Response, Result};
@@ -32,8 +32,8 @@ use crate::middlelayer::update_request_types::{
     UpdateTitle,
 };
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
-use crate::utils::grpc_utils::{get_id_and_ctx, IntoGenericInner, query};
 use crate::utils::grpc_utils::get_token_from_md;
+use crate::utils::grpc_utils::{get_id_and_ctx, query, IntoGenericInner};
 use crate::utils::search_utils;
 
 crate::impl_grpc_server!(DatasetServiceImpl, search_client: Arc<MeilisearchClient>);

@@ -4,7 +4,9 @@ use crate::database::crud::CrudDb;
 use crate::database::dsls::endpoint_dsl::Endpoint;
 use crate::database::dsls::internal_relation_dsl::InternalRelation;
 use crate::database::dsls::license_dsl::{License, ALL_RIGHTS_RESERVED};
-use crate::database::dsls::object_dsl::{Author, EndpointInfo, ExternalRelations, Hashes, KeyValues, Object};
+use crate::database::dsls::object_dsl::{
+    Author, EndpointInfo, ExternalRelations, Hashes, KeyValues, Object,
+};
 use crate::database::enums::{
     DbPermissionLevel, ObjectStatus, ObjectType, ReplicationStatus, ReplicationType,
 };
@@ -380,10 +382,30 @@ impl CreateRequest {
 
     fn get_authors(&self) -> Result<Json<Vec<Author>>> {
         Ok(match self {
-            CreateRequest::Project(req, _) => Json(req.authors.iter().map(|author| author.clone().try_into()).collect::<Result<Vec<Author>>>()?),
-            CreateRequest::Collection(req) => Json(req.authors.iter().map(|author| author.clone().try_into()).collect::<Result<Vec<Author>>>()?),
-            CreateRequest::Dataset(req) => Json(req.authors.iter().map(|author| author.clone().try_into()).collect::<Result<Vec<Author>>>()?),
-            CreateRequest::Object(req) => Json(req.authors.iter().map(|author| author.clone().try_into()).collect::<Result<Vec<Author>>>()?),
+            CreateRequest::Project(req, _) => Json(
+                req.authors
+                    .iter()
+                    .map(|author| author.clone().try_into())
+                    .collect::<Result<Vec<Author>>>()?,
+            ),
+            CreateRequest::Collection(req) => Json(
+                req.authors
+                    .iter()
+                    .map(|author| author.clone().try_into())
+                    .collect::<Result<Vec<Author>>>()?,
+            ),
+            CreateRequest::Dataset(req) => Json(
+                req.authors
+                    .iter()
+                    .map(|author| author.clone().try_into())
+                    .collect::<Result<Vec<Author>>>()?,
+            ),
+            CreateRequest::Object(req) => Json(
+                req.authors
+                    .iter()
+                    .map(|author| author.clone().try_into())
+                    .collect::<Result<Vec<Author>>>()?,
+            ),
         })
     }
     pub async fn as_new_db_object(

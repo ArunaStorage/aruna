@@ -12,11 +12,11 @@ use chrono::NaiveDateTime;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use futures::pin_mut;
+use itertools::Itertools;
 use postgres_from_row::FromRow;
 use postgres_types::{FromSql, Json, ToSql, Type};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
-use itertools::Itertools;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::{Client, CopyInSink};
 
@@ -570,7 +570,7 @@ impl Object {
             .collect();
         Ok(objects)
     }
-    
+
     pub async fn update_title(id: &DieselUlid, title: String, client: &Client) -> Result<()> {
         let query = "UPDATE objects
         SET title = $2
@@ -727,10 +727,7 @@ impl Object {
     }
 
     //ToDo: Docs
-    pub async fn archive(
-        ids: &Vec<DieselUlid>,
-        client: &Client,
-    ) -> Result<Vec<Object>> {
+    pub async fn archive(ids: &Vec<DieselUlid>, client: &Client) -> Result<Vec<Object>> {
         let query_one = " WITH o AS 
             (UPDATE objects 
             SET dynamic=false 
@@ -893,7 +890,7 @@ impl Object {
         Ok(())
     }
 }
-impl Eq for Hashes{}
+impl Eq for Hashes {}
 impl PartialEq for Hashes {
     fn eq(&self, other: &Self) -> bool {
         self.0.iter().all(|h| other.0.iter().contains(h))

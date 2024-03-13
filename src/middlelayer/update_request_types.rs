@@ -10,7 +10,17 @@ use crate::database::enums::{DataClass, ObjectType, ReplicationStatus};
 use ahash::RandomState;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::storage::services::v2::update_object_request::Parent as UpdateParent;
-use aruna_rust_api::api::storage::services::v2::{SetObjectHashesRequest, UpdateCollectionAuthorsRequest, UpdateCollectionDataClassRequest, UpdateCollectionDescriptionRequest, UpdateCollectionKeyValuesRequest, UpdateCollectionLicensesRequest, UpdateCollectionNameRequest, UpdateCollectionTitleRequest, UpdateDatasetAuthorsRequest, UpdateDatasetDataClassRequest, UpdateDatasetDescriptionRequest, UpdateDatasetKeyValuesRequest, UpdateDatasetLicensesRequest, UpdateDatasetNameRequest, UpdateDatasetTitleRequest, UpdateObjectAuthorsRequest, UpdateObjectRequest, UpdateObjectTitleRequest, UpdateProjectAuthorsRequest, UpdateProjectDataClassRequest, UpdateProjectDescriptionRequest, UpdateProjectKeyValuesRequest, UpdateProjectLicensesRequest, UpdateProjectNameRequest, UpdateProjectTitleRequest};
+use aruna_rust_api::api::storage::services::v2::{
+    SetObjectHashesRequest, UpdateCollectionAuthorsRequest, UpdateCollectionDataClassRequest,
+    UpdateCollectionDescriptionRequest, UpdateCollectionKeyValuesRequest,
+    UpdateCollectionLicensesRequest, UpdateCollectionNameRequest, UpdateCollectionTitleRequest,
+    UpdateDatasetAuthorsRequest, UpdateDatasetDataClassRequest, UpdateDatasetDescriptionRequest,
+    UpdateDatasetKeyValuesRequest, UpdateDatasetLicensesRequest, UpdateDatasetNameRequest,
+    UpdateDatasetTitleRequest, UpdateObjectAuthorsRequest, UpdateObjectRequest,
+    UpdateObjectTitleRequest, UpdateProjectAuthorsRequest, UpdateProjectDataClassRequest,
+    UpdateProjectDescriptionRequest, UpdateProjectKeyValuesRequest, UpdateProjectLicensesRequest,
+    UpdateProjectNameRequest, UpdateProjectTitleRequest,
+};
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -82,7 +92,6 @@ impl DataClassUpdate {
         Ok(id)
     }
 }
-
 
 impl NameUpdate {
     pub fn get_name(&self) -> Result<String> {

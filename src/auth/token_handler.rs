@@ -15,11 +15,11 @@ use log::error;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use std::error::Error;
 use std::fmt::Display;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::RwLock;
-use std::error::Error;
 
 use crate::caching::cache::Cache;
 use crate::caching::structs::PubKeyEnum;

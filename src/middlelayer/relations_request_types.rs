@@ -1,6 +1,8 @@
 use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
-use crate::database::dsls::internal_relation_dsl::{INTERNAL_RELATION_VARIANT_VERSION, InternalRelation};
+use crate::database::dsls::internal_relation_dsl::{
+    InternalRelation, INTERNAL_RELATION_VARIANT_VERSION,
+};
 use crate::database::dsls::object_dsl::{ExternalRelation, ObjectWithRelations};
 use crate::database::enums::DbPermissionLevel;
 use anyhow::{anyhow, Result};
@@ -51,7 +53,12 @@ impl ModifyRelations {
             ModifyRelations::convert_relations(&self.0.add_relations, resource_id, cache.clone())?;
         let (external_rm_relations, temp_rm_int_relations, mut removed_to_check) =
             ModifyRelations::convert_relations(&self.0.remove_relations, resource_id, cache)?;
-        if !temp_rm_int_relations.iter().filter(|ir| ir.relation_name == INTERNAL_RELATION_VARIANT_VERSION).collect::<Vec<&InternalRelation>>().is_empty() {
+        if !temp_rm_int_relations
+            .iter()
+            .filter(|ir| ir.relation_name == INTERNAL_RELATION_VARIANT_VERSION)
+            .collect::<Vec<&InternalRelation>>()
+            .is_empty()
+        {
             return Err(anyhow!("Cannot remove version relations"));
         }
 

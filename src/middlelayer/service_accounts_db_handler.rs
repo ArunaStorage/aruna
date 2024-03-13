@@ -1,37 +1,26 @@
-use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use super::db_handler::DatabaseHandler;
-use super::endpoints_request_types::GetEP;
 use super::service_account_request_types::{
     CreateServiceAccountToken, DeleteServiceAccount, DeleteServiceAccountToken,
-    DeleteServiceAccountTokens, GetS3CredentialsSVCAccount, SetServiceAccountPermission,
+    DeleteServiceAccountTokens,
 };
 use crate::auth::permission_handler::PermissionHandler;
-use crate::auth::token_handler::{Action, Intent};
 use crate::database::crud::CrudDb;
 use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::user_dsl::{User, UserAttributes};
-use crate::database::enums::{DataProxyFeature, ObjectMapping, ObjectType};
+use crate::database::enums::{ObjectMapping, ObjectType};
 use crate::middlelayer::service_account_request_types::CreateServiceAccount;
 use crate::middlelayer::token_request_types::CreateToken;
 use crate::utils::conversions::users::convert_token_to_proto;
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_client::DataproxyUserServiceClient;
-use aruna_rust_api::api::dataproxy::services::v2::GetCredentialsRequest;
-use aruna_rust_api::api::notification::services::v2::EventVariant;
 use aruna_rust_api::api::storage::models::v2::permission::ResourceId;
 use aruna_rust_api::api::storage::models::v2::{Permission, Token};
-use aruna_rust_api::api::storage::services::v2::get_endpoint_request::Endpoint;
-use aruna_rust_api::api::storage::services::v2::{
-    CreateApiTokenRequest, GetEndpointRequest, GetS3CredentialsSvcAccountResponse,
-};
+use aruna_rust_api::api::storage::services::v2::CreateApiTokenRequest;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
-use tonic::metadata::{AsciiMetadataKey, AsciiMetadataValue};
-use tonic::transport::{Channel, ClientTlsConfig};
 
 impl DatabaseHandler {
     pub async fn create_service_account(&self, request: CreateServiceAccount) -> Result<User> {
@@ -139,58 +128,6 @@ impl DatabaseHandler {
         ))
     }
 
-    pub async fn set_service_account_permission(
-        &self,
-        request: SetServiceAccountPermission,
-    ) -> Result<User> {
-        let (id, level) = request.get_permissions()?;
-        let service_account_id = DieselUlid::from_str(&request.0.svc_account_id)?;
-
-        // Check if resource for new permission exists and is a Project
-        let mut client = self.database.get_client().await?;
-        let object = Object::get(id, &client)
-            .await?
-            .ok_or_else(|| anyhow!("Resource not found"))?;
-        match object.object_type {
-            ObjectType::PROJECT => (),
-            _ => return Err(anyhow!("Resource is not a project")),
-        }
-
-        // Start transaction for service account permission update
-        let transaction = client.transaction().await?;
-        let transaction_client = transaction.client();
-
-        // Update service account in transaction to avoid broken state if something fails
-        User::remove_all_tokens(transaction_client, &service_account_id).await?;
-        User::remove_all_user_permissions(transaction_client, &service_account_id).await?;
-
-        let svc_account = User::add_user_permission(
-            transaction_client,
-            &service_account_id,
-            HashMap::from_iter([(object.id, level)]),
-        )
-        .await?;
-
-        // Commit transaction and update cache
-        transaction.commit().await?;
-        self.cache.update_user(&svc_account.id, svc_account.clone());
-
-        // Try to emit user updated notification(s)
-        if let Err(err) = self
-            .natsio_handler
-            .register_user_event(&svc_account, EventVariant::Updated)
-            .await
-        {
-            // Log error (rollback transaction and return)
-            log::error!("{}", err);
-            //transaction.rollback().await?;
-            return Err(anyhow::anyhow!("Notification emission failed"));
-        }
-
-        // Return updated service account
-        Ok(svc_account)
-    }
-
     pub async fn delete_service_account_token(
         &self,
         request: DeleteServiceAccountToken,
@@ -223,69 +160,5 @@ impl DatabaseHandler {
         service_account.delete(&client).await?;
         self.cache.remove_user(&service_account_id);
         Ok(())
-    }
-
-    pub async fn get_credentials_svc_account(
-        &self,
-        authorizer: Arc<PermissionHandler>,
-        request: GetS3CredentialsSVCAccount,
-    ) -> Result<GetS3CredentialsSvcAccountResponse> {
-        let (service_account_id, endpoint_id) = request.get_ids()?;
-
-        // CreateSecret Token for dataproxy
-        let dataproxy_token = authorizer.token_handler.sign_dataproxy_slt(
-            &service_account_id,
-            None, // Token_Id of user token; None if OIDC
-            Some(Intent {
-                target: endpoint_id,
-                action: Action::CreateSecrets,
-            }),
-        )?;
-        // Add endpoint to svc account
-        self.add_endpoint_to_user(service_account_id, endpoint_id)
-            .await?;
-
-        // Request S3 credentials from Dataproxy
-        let endpoint = self
-            .get_endpoint(GetEP(GetEndpointRequest {
-                endpoint: Some(Endpoint::EndpointId(endpoint_id.to_string())),
-            }))
-            .await?;
-        let mut endpoint_host_url: String = String::new();
-        let mut endpoint_s3_url: String = String::new();
-        for endpoint_config in endpoint.host_config.0 .0 {
-            match endpoint_config.feature {
-                DataProxyFeature::GRPC => endpoint_host_url = endpoint_config.url,
-                DataProxyFeature::S3 => endpoint_s3_url = endpoint_config.url,
-            }
-            if !endpoint_s3_url.is_empty() && !endpoint_host_url.is_empty() {
-                break;
-            }
-        }
-
-        // Check if dataproxy host url is tls
-        let dp_endpoint = if endpoint_host_url.starts_with("https") {
-            Channel::from_shared(endpoint_host_url)?.tls_config(ClientTlsConfig::new())?
-        } else {
-            Channel::from_shared(endpoint_host_url)?
-        };
-
-        // Request credentials from proxy
-        let mut dp_conn = DataproxyUserServiceClient::connect(dp_endpoint).await?;
-        let mut credentials_request = tonic::Request::new(GetCredentialsRequest {});
-        credentials_request.metadata_mut().append(
-            AsciiMetadataKey::from_bytes("Authorization".as_bytes())?,
-            AsciiMetadataValue::try_from(format!("Bearer {}", dataproxy_token))?,
-        );
-
-        let response = dp_conn
-            .get_credentials(credentials_request)
-            .await?
-            .into_inner();
-        Ok(GetS3CredentialsSvcAccountResponse {
-            s3_access_key: response.access_key,
-            s3_secret_key: response.secret_key,
-            s3_endpoint_url: endpoint_s3_url,
-        })
     }
 }

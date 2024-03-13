@@ -539,5 +539,4 @@ async fn update_object_test() {
         license_update.data_license_tag,
         Some(license_updated.object.data_license)
     )
-
 }
