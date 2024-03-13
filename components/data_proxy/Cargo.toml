@@ -1,7 +1,11 @@
 [package]
-edition = "2021"
-name = "aos_data_proxy"
-version = "2.0.0-rc.2"
+name = "data_proxy"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
