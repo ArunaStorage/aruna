@@ -32,7 +32,7 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
     volumes:
-      - ./tests/common/keycloak/realm.json:/opt/keycloak/data/import/realm.json
+      - ./components/server/tests/common/keycloak/realm.json:/opt/keycloak/data/import/realm.json
     command: "start-dev --import-realm"
   load_database:
     network_mode: "host"
@@ -42,8 +42,8 @@ services:
     restart: on-failure
     image: postgres:alpine3.18
     volumes:
-      - ./tests/common/initial_data.sql:/data/initial_data.sql
-      - ./src/database/schema.sql:/data/schema.sql
+      - ./components/server/tests/common/initial_data.sql:/data/initial_data.sql
+      - ./components/server/src/database/schema.sql:/data/schema.sql
     command: >
       sh -c "psql 'postgres://yugabyte@localhost:5433' -c 'DROP DATABASE IF EXISTS test' &&
              psql 'postgres://yugabyte@localhost:5433' -c 'CREATE DATABASE test' &&
