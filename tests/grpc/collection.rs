@@ -124,7 +124,7 @@ async fn grpc_get_collection() {
     assert!(response.is_err());
 
     // Try get Collection without token
-    get_request.collection_id = collection.id.clone();
+    get_request.collection_id.clone_from(&collection.id);
 
     let response = collection_service
         .get_collection(Request::new(get_request.clone()))

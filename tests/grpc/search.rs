@@ -40,7 +40,7 @@ async fn grpc_request_access() {
         message: "My message to you.".to_string(),
     };
 
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER2_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER2_OIDC_TOKEN);
 
     let response = service_block
         .search_service
@@ -52,7 +52,7 @@ async fn grpc_request_access() {
     // Request access of without token
     inner_request.resource_id = project_ulid.to_string();
 
-    let grpc_request = tonic::Request::new(inner_request.clone());
+    let grpc_request = Request::new(inner_request.clone());
 
     let response = service_block
         .search_service
@@ -62,7 +62,7 @@ async fn grpc_request_access() {
     assert!(response.is_err());
 
     // Request access of resource
-    let grpc_request = add_token(tonic::Request::new(inner_request.clone()), USER2_OIDC_TOKEN);
+    let grpc_request = add_token(Request::new(inner_request.clone()), USER2_OIDC_TOKEN);
 
     service_block
         .search_service
@@ -72,7 +72,7 @@ async fn grpc_request_access() {
 
     // Validate personal notification of user1
     let grpc_request = add_token(
-        tonic::Request::new(GetPersonalNotificationsRequest {}),
+        Request::new(GetPersonalNotificationsRequest {}),
         USER1_OIDC_TOKEN,
     );
 
@@ -195,7 +195,7 @@ async fn get_resource() {
     };
     let response = service_block
         .search_service
-        .get_resource(tonic::Request::new(public_request.clone()))
+        .get_resource(Request::new(public_request.clone()))
         .await
         .unwrap()
         .into_inner()
@@ -224,7 +224,7 @@ async fn get_resource() {
     };
     let response = service_block
         .search_service
-        .get_resources(tonic::Request::new(private_request.clone()))
+        .get_resources(Request::new(private_request.clone()))
         .await
         .unwrap()
         .into_inner()
@@ -263,7 +263,7 @@ async fn get_resource() {
     };
     let response = service_block
         .search_service
-        .get_resource(tonic::Request::new(confidential_request.clone()))
+        .get_resource(Request::new(confidential_request.clone()))
         .await;
     assert!(response.is_err());
 
@@ -273,7 +273,7 @@ async fn get_resource() {
     let response = service_block
         .search_service
         .get_resource(add_token(
-            tonic::Request::new(public_request.clone()),
+            Request::new(public_request.clone()),
             USER2_OIDC_TOKEN,
         ))
         .await
@@ -298,7 +298,7 @@ async fn get_resource() {
     let response = service_block
         .search_service
         .get_resources(add_token(
-            tonic::Request::new(private_request.clone()),
+            Request::new(private_request.clone()),
             USER2_OIDC_TOKEN,
         ))
         .await
@@ -335,7 +335,7 @@ async fn get_resource() {
     let response = service_block
         .search_service
         .get_resource(add_token(
-            tonic::Request::new(confidential_request.clone()),
+            Request::new(confidential_request.clone()),
             USER2_OIDC_TOKEN,
         ))
         .await;
@@ -347,7 +347,7 @@ async fn get_resource() {
     let response = service_block
         .search_service
         .get_resource(add_token(
-            tonic::Request::new(public_request),
+            Request::new(public_request),
             USER1_OIDC_TOKEN,
         ))
         .await
@@ -372,7 +372,7 @@ async fn get_resource() {
     let response = service_block
         .search_service
         .get_resources(add_token(
-            tonic::Request::new(private_request),
+            Request::new(private_request),
             USER1_OIDC_TOKEN,
         ))
         .await
@@ -409,7 +409,7 @@ async fn get_resource() {
     let response = service_block
         .search_service
         .get_resource(add_token(
-            tonic::Request::new(confidential_request),
+            Request::new(confidential_request),
             USER1_OIDC_TOKEN,
         ))
         .await

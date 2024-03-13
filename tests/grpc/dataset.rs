@@ -178,7 +178,7 @@ async fn grpc_get_dataset() {
     assert!(response.is_err());
 
     // Try get Dataset without token
-    get_request.dataset_id = dataset.id.clone();
+    get_request.dataset_id.clone_from(&dataset.id);
 
     let response = dataset_service
         .get_dataset(Request::new(get_request.clone()))

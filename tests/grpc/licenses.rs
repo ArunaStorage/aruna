@@ -184,8 +184,8 @@ async fn default_licenses() {
         .unwrap()
         .into_inner()
         .tag;
-    create_project_request.metadata_license_tag = license_tag.clone();
-    create_project_request.default_data_license_tag = license_tag.clone();
+    create_project_request.metadata_license_tag.clone_from(&license_tag);
+    create_project_request.default_data_license_tag.clone_from(&license_tag);
     let project = services
         .project_service
         .create_project(add_token(

@@ -69,8 +69,8 @@ async fn objects_and_licenses() {
         object_id,
         aruna_server::database::enums::ObjectType::PROJECT,
     );
-    object.data_license = license.tag.clone();
-    object.metadata_license = license.tag.clone();
+    object.data_license.clone_from(&license.tag);
+    object.metadata_license.clone_from(&license.tag);
     user.create(&client).await.unwrap();
     assert!(object.create(&client).await.is_err());
     // Test if it works after creating the license

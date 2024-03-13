@@ -331,7 +331,7 @@ async fn get_by() {
 
     let relation_one = test_utils::new_internal_relation(&create_project, &create_collection);
 
-    let rel_vec = vec![relation_one.clone()];
+    let rel_vec = [relation_one.clone()];
     Object::batch_create(&vec![create_project, create_collection], client)
         .await
         .unwrap();

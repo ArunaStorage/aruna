@@ -97,6 +97,6 @@ async fn general_object_stats_test() {
     assert!(!all_stats.is_empty());
 
     // Assert that last timestamp is greater than timestamp at the start of the test
-    let last_timestamp = get_last_refresh(&client).await.unwrap().timestamp_millis();
+    let last_timestamp = get_last_refresh(&client).await.unwrap().and_utc().timestamp_millis();
     assert!(last_timestamp > timestamp)
 }

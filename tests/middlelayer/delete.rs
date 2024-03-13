@@ -22,7 +22,7 @@ async fn delete_project() {
     let mut user = test_utils::new_user(vec![]);
     user.create(&client).await.unwrap();
     let project_id = DieselUlid::generate();
-    let mut project = test_utils::new_object(user.id, project_id, ObjectType::PROJECT);
+    let mut project = new_object(user.id, project_id, ObjectType::PROJECT);
     project.create(&client).await.unwrap();
 
     // test request
@@ -50,7 +50,7 @@ async fn delete_collection() {
     let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
     let collection_id = DieselUlid::generate();
-    let mut collection = test_utils::new_object(user.id, collection_id, ObjectType::COLLECTION);
+    let mut collection = new_object(user.id, collection_id, ObjectType::COLLECTION);
     collection.create(client).await.unwrap();
 
     // Test request
@@ -78,7 +78,7 @@ async fn delete_dataset() {
     let mut user = test_utils::new_user(vec![]);
     user.create(client).await.unwrap();
     let dataset_id = DieselUlid::generate();
-    let mut dataset = test_utils::new_object(user.id, dataset_id, ObjectType::DATASET);
+    let mut dataset = new_object(user.id, dataset_id, ObjectType::DATASET);
     dataset.create(client).await.unwrap();
 
     // Test request
@@ -111,10 +111,10 @@ async fn delete_object() {
     let mut objects: Vec<Object> = Vec::new();
 
     for o in [object_id, object_v1_id, object_v2_id] {
-        objects.push(test_utils::new_object(user.id, o, ObjectType::OBJECT));
+        objects.push(new_object(user.id, o, ObjectType::OBJECT));
     }
     let proj_id = DieselUlid::generate();
-    objects.push(test_utils::new_object(
+    objects.push(new_object(
         user.id,
         proj_id,
         ObjectType::PROJECT,

@@ -21,7 +21,7 @@ impl From<Hook> for HookInfo {
             hook_id: hook.id.to_string(),
             hook: Some(hook.as_api_hook()),
             trigger,
-            timeout: hook.timeout.timestamp_millis() as u64,
+            timeout: hook.timeout.and_utc().timestamp_millis() as u64,
             project_ids: hook.project_ids.iter().map(|id| id.to_string()).collect(),
         }
     }

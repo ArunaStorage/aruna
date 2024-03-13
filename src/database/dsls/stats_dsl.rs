@@ -179,7 +179,7 @@ pub async fn start_refresh_loop(
 
             // Wait in every case for refresh to finish for cache update
             while let Ok(last_refresh) = get_last_refresh(&client).await {
-                if last_refresh.timestamp_millis() >= current_timestamp {
+                if last_refresh.and_utc().timestamp_millis() >= current_timestamp {
                     // Fetch all ObjectStats, create diff with last loop iteration and update only changed
                     let object_stats =
                         BTreeSet::from_iter(match ObjectStats::get_all_stats(&client).await {

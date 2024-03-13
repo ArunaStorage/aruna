@@ -167,6 +167,7 @@ fn generate_random_object_document() -> ObjectDocument {
         data_class: DataClass::PUBLIC,
         created_at: NaiveDateTime::parse_from_str(&created_at, "%Y-%m-%d %H:%M:%S")
             .unwrap()
+            .and_utc()
             .timestamp(),
         dynamic: rng.gen_bool(0.5).to_string().parse::<bool>().unwrap(),
         metadata_license: "AllRightsReserved".to_string(),

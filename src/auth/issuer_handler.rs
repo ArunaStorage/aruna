@@ -72,7 +72,7 @@ impl Issuer {
     }
 
     pub async fn refresh_jwks(&mut self) -> Result<()> {
-        if self.last_updated + chrono::Duration::minutes(5) > Utc::now().naive_utc() {
+        if self.last_updated + chrono::Duration::try_minutes(5).ok_or_else(|| anyhow!("time conversion failed"))? > Utc::now().naive_utc() {
             bail!("JWKS was updated less than 5 minutes ago");
         }
 

@@ -61,12 +61,12 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
         if self
             .cache
             .get_object(&id)
-            .ok_or_else(|| tonic::Status::not_found("Project not found"))?
+            .ok_or_else(|| Status::not_found("Project not found"))?
             .object
             .object_type
             != ObjectType::PROJECT
         {
-            return Err(tonic::Status::invalid_argument(
+            return Err(Status::invalid_argument(
                 "Id does not match any projects",
             ));
         }
@@ -159,7 +159,7 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
             .0
             .tokens
             .get(&token_id)
-            .ok_or_else(|| tonic::Status::not_found("Token not found"))?;
+            .ok_or_else(|| Status::not_found("Token not found"))?;
         let (token_id, token) = token.pair();
         let token = Some(convert_token_to_proto(token_id, token.clone()));
         let response = GetServiceAccountTokenResponse { token };
@@ -380,9 +380,9 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
                 Some(ProtoContext::Copy(_)) => {
                     unimplemented!("Dataproxy data replication token creation not yet implemented")
                 }
-                _ => return Err(tonic::Status::invalid_argument("No context provided")),
+                _ => return Err(Status::invalid_argument("No context provided")),
             },
-            None => return Err(tonic::Status::invalid_argument("No context provided")),
+            None => return Err(Status::invalid_argument("No context provided")),
         };
 
         // Return token to user
@@ -395,7 +395,7 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     async fn add_pubkey_svc_account(
         &self,
         request: Request<AddPubkeySvcAccountRequest>,
-    ) -> Result<Response<AddPubkeySvcAccountResponse>, tonic::Status> {
+    ) -> Result<Response<AddPubkeySvcAccountResponse>, Status> {
         // Should only be done by Admins
         log_received!(&request);
         let token = tonic_auth!(
@@ -430,7 +430,7 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     async fn add_trusted_endpoints_svc_account(
         &self,
         request: Request<AddTrustedEndpointsSvcAccountRequest>,
-    ) -> Result<Response<AddTrustedEndpointsSvcAccountResponse>, tonic::Status> {
+    ) -> Result<Response<AddTrustedEndpointsSvcAccountResponse>, Status> {
         //Should only be done by Admins
         log_received!(&request);
         let token = tonic_auth!(
@@ -470,7 +470,7 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     async fn remove_trusted_endpoints_svc_account(
         &self,
         request: Request<RemoveTrustedEndpointsSvcAccountRequest>,
-    ) -> Result<Response<RemoveTrustedEndpointsSvcAccountResponse>, tonic::Status> {
+    ) -> Result<Response<RemoveTrustedEndpointsSvcAccountResponse>, Status> {
         // Should only be possible for Admins
         log_received!(&request);
         let token = tonic_auth!(
@@ -510,7 +510,7 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     async fn add_data_proxy_attribute_svc_account(
         &self,
         request: Request<AddDataProxyAttributeSvcAccountRequest>,
-    ) -> Result<Response<AddDataProxyAttributeSvcAccountResponse>, tonic::Status> {
+    ) -> Result<Response<AddDataProxyAttributeSvcAccountResponse>, Status> {
         log_received!(&request);
 
         // Consume gRPC request into its parts
@@ -555,7 +555,7 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
     async fn remove_data_proxy_attribute_svc_account(
         &self,
         request: Request<RemoveDataProxyAttributeSvcAccountRequest>,
-    ) -> Result<Response<RemoveDataProxyAttributeSvcAccountResponse>, tonic::Status> {
+    ) -> Result<Response<RemoveDataProxyAttributeSvcAccountResponse>, Status> {
         log_received!(&request);
 
         // Consume gRPC request into its parts

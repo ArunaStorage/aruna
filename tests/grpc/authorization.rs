@@ -76,7 +76,7 @@ async fn grpc_create_authorization() {
     assert!(response.is_err());
 
     // Add permission to user without token
-    inner_request.user_id = user.id.clone();
+    inner_request.user_id.clone_from(&user.id);
 
     let response = service_block
         .auth_service
@@ -475,7 +475,7 @@ async fn grpc_delete_authorization() {
     assert!(response.is_err());
 
     // Remove permission without token
-    inner_request.resource_id = project.id.clone();
+    inner_request.resource_id.clone_from(&project.id);
 
     let grpc_request = tonic::Request::new(inner_request.clone());
 
