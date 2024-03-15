@@ -47,7 +47,7 @@ impl RuleEngine {
         let mut object_package_expressions = vec![];
         let mut replication_inbound_expressions = vec![];
         let mut replication_outbound_expressions = vec![];
-        for rule in CONFIG.rules.iter() {
+        for rule in CONFIG.get_rules().iter() {
             match rule.target {
                 RuleTarget::ROOT => {
                     root_expressions.push(
