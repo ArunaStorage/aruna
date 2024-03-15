@@ -41,6 +41,34 @@ This repository is split into two components, the server and the data proxy.
 
 ## Getting started
 
+### How to run a local test instance
+
+Start the needed containers
+```bash
+docker compose up
+```
+Run the server
+```bash
+cd components/server
+cargo run --release
+```
+
+Run the proxy in a new instance
+```bash
+cd components/data_proxy
+cargo run --release
+```
+
+Alternatively you can build docker images for server and data proxy with
+```bash
+docker build -t server -f ./components/server/Dockerfile .
+docker build -t data_proxy -f ./components/data_proxy/Dockerfile .
+```
+
+
+
+### Interacting with aruna
+
 A detailed user guide is found in the [Documentation](https://arunastorage.github.io/documentation/latest/).
 
 **TLDR:**
