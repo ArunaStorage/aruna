@@ -69,6 +69,7 @@ docker build -t data_proxy -f ./components/data_proxy/Dockerfile .
 
 ### Interacting with aruna
 
+Test tokens can be found in `components/server/tests/common/keycloak/fake-tokens.md`.
 A detailed user guide is found in the [Documentation](https://arunastorage.github.io/documentation/latest/).
 
 **TLDR:**

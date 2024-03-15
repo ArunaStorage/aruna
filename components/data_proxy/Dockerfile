@@ -16,5 +16,6 @@ RUN apk upgrade
 RUN apk add libgcc gcompat ca-certificates libpq
 COPY --from=builder /build/target/release/data_proxy .
 COPY --from=builder /build/components/data_proxy/.env .
+COPY --from=builder /build/components/data_proxy/config.toml .
 COPY --from=builder /build/components/data_proxy/src/database/schema.sql .
 CMD [ "/run/data_proxy" ]
