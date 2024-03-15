@@ -14,7 +14,7 @@ license = "MIT OR Apache-2.0"
 [workspace.dependencies]
 ahash = "0.8.11"
 anyhow = "1.0.81"
-aruna-rust-api = { git = "https://github.com/ArunaStorage/rust-api.git", branch = "pre/beta12" }
+aruna-rust-api = "2.0.0-beta.12"
 async-channel = "2.2.0"
 async-trait = "0.1.77"
 aws-config = "1.1.7"

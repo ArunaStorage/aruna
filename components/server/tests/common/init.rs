@@ -45,7 +45,7 @@ pub struct ServiceBlock {
 #[allow(dead_code)]
 pub async fn init_database() -> Arc<Database> {
     // Load env
-    dotenvy::from_filename(".env").unwrap();
+    dotenvy::from_filename("../../.env").unwrap();
 
     // Init database connection
     let db = Database::new(
@@ -82,7 +82,7 @@ pub async fn init_cache(db: Arc<Database>, sync: bool) -> Arc<Cache> {
 #[allow(dead_code)]
 pub async fn init_nats_client() -> Arc<NatsIoHandler> {
     // Load env
-    dotenvy::from_filename(".env").unwrap();
+    dotenvy::from_filename("../../.env").unwrap();
 
     // Init NatsIoHandler
     let client = async_nats::connect(dotenvy::var("NATS_HOST").unwrap())
@@ -99,7 +99,7 @@ pub async fn init_nats_client() -> Arc<NatsIoHandler> {
 #[allow(dead_code)]
 pub async fn init_search_client() -> Arc<MeilisearchClient> {
     // Load env
-    dotenvy::from_filename(".env").unwrap();
+    dotenvy::from_filename("../../.env").unwrap();
 
     // Init MeilisearchClient
     let meilisearch_client = MeilisearchClient::new(
@@ -182,7 +182,7 @@ pub async fn init_permission_handler(
 #[allow(dead_code)]
 pub async fn init_endpoint_service() -> EndpointServiceImpl {
     // Load env
-    dotenvy::from_filename(".env").unwrap();
+    dotenvy::from_filename("../../.env").unwrap();
 
     // Init database connection
     let db_conn = init_database().await;
@@ -240,7 +240,7 @@ pub async fn init_endpoint_service() -> EndpointServiceImpl {
 #[allow(dead_code)]
 pub async fn init_project_service() -> ProjectServiceImpl {
     // Load env
-    dotenvy::from_filename(".env").unwrap();
+    dotenvy::from_filename("../../.env").unwrap();
 
     // Init database connection
     let db_conn = init_database().await;
