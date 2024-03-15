@@ -7,7 +7,12 @@ use crate::{
     },
 };
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::storage::services::v2::{AddDataProxyAttributeSvcAccountRequest, AddPubkeySvcAccountRequest, AddTrustedEndpointsSvcAccountRequest, CreateS3CredentialsSvcAccountRequest, DeleteS3CredentialsSvcAccountRequest, RemoveDataProxyAttributeSvcAccountRequest, RemoveDataProxyAttributeUserRequest, RemoveTrustedEndpointsSvcAccountRequest};
+use aruna_rust_api::api::storage::services::v2::{
+    AddDataProxyAttributeSvcAccountRequest, AddPubkeySvcAccountRequest,
+    AddTrustedEndpointsSvcAccountRequest, CreateS3CredentialsSvcAccountRequest,
+    DeleteS3CredentialsSvcAccountRequest, RemoveDataProxyAttributeSvcAccountRequest,
+    RemoveDataProxyAttributeUserRequest, RemoveTrustedEndpointsSvcAccountRequest,
+};
 use aruna_rust_api::api::storage::{
     models::v2::permission::ResourceId,
     services::v2::{
@@ -193,12 +198,11 @@ impl RemoveDataproxyAttributeSvcAccount {
             dataproxy_id: self.0.dataproxy_id,
             attribute_name: self.0.attribute_name,
         }
-        
     }
 }
 
 // Helper trait to get infos needed for proxy interaction
-pub (crate) trait GetEndpointInteractionInfos {
+pub(crate) trait GetEndpointInteractionInfos {
     // Return request strings
     fn get_unparsed_ids(&self) -> (String, String);
     // Return service account ulid and endpoint ulid

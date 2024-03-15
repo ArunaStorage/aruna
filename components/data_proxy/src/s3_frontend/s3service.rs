@@ -626,8 +626,7 @@ impl S3 for ArunaS3Service {
                 );
 
                 if let Some(key) = decryption_key {
-                    asrw = asrw
-                        .add_transformer(ChaCha20DecParts::new_with_lengths(key, parts));
+                    asrw = asrw.add_transformer(ChaCha20DecParts::new_with_lengths(key, parts));
                 }
 
                 if location.is_compressed() {

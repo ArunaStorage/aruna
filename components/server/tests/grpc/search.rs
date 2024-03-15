@@ -346,10 +346,7 @@ async fn get_resource() {
     //
     let response = service_block
         .search_service
-        .get_resource(add_token(
-            Request::new(public_request),
-            USER1_OIDC_TOKEN,
-        ))
+        .get_resource(add_token(Request::new(public_request), USER1_OIDC_TOKEN))
         .await
         .unwrap()
         .into_inner()
@@ -371,10 +368,7 @@ async fn get_resource() {
     assert_eq!(project.endpoints, public_project.endpoints);
     let response = service_block
         .search_service
-        .get_resources(add_token(
-            Request::new(private_request),
-            USER1_OIDC_TOKEN,
-        ))
+        .get_resources(add_token(Request::new(private_request), USER1_OIDC_TOKEN))
         .await
         .unwrap()
         .into_inner()

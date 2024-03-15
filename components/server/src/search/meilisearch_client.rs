@@ -84,7 +84,11 @@ impl From<DbObject> for ObjectDocument {
             size: db_object.content_len,
             labels: filtered_labels,
             data_class: db_object.data_class,
-            created_at: db_object.created_at.unwrap_or_default().and_utc().timestamp(),
+            created_at: db_object
+                .created_at
+                .unwrap_or_default()
+                .and_utc()
+                .timestamp(),
             dynamic: db_object.dynamic,
             metadata_license: db_object.metadata_license,
             data_license: db_object.data_license,

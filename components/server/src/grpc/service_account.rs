@@ -66,9 +66,7 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
             .object_type
             != ObjectType::PROJECT
         {
-            return Err(Status::invalid_argument(
-                "Id does not match any projects",
-            ));
+            return Err(Status::invalid_argument("Id does not match any projects"));
         }
         let ctx = vec![
             // Only Resource/Project Admins should be able to do this

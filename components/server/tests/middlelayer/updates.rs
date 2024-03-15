@@ -506,10 +506,7 @@ async fn update_object_test() {
         .await
         .unwrap();
     assert!(is_new_2);
-    assert_eq!(
-        new_2.object.revision_number,
-        new.object.revision_number + 1
-    );
+    assert_eq!(new_2.object.revision_number, new.object.revision_number + 1);
     assert_eq!(new_2.object.object_status, ObjectStatus::INITIALIZING);
 
     // test license update

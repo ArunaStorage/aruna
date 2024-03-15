@@ -170,7 +170,7 @@ impl DataHandler {
                     asr = asr.add_transformer(PithosTransformer::new());
                     asr = asr.add_transformer(FooterGenerator::new(None));
                 }
-                
+
                 let (final_sha, final_sha_recv) =
                     HashingTransformer::new_with_backchannel(Sha256::new(), "sha256".to_string());
 
@@ -178,7 +178,7 @@ impl DataHandler {
 
                 let (disk_size_probe, disk_size_stream) = SizeProbe::new();
                 asr = asr.add_transformer(disk_size_probe);
-                
+
                 asr.process().await.map_err(|e| {
                     error!(error = ?e, msg = e.to_string());
                     e
@@ -252,8 +252,9 @@ impl DataHandler {
             // Set id of new location to object id to satisfy FK constraint
             // TODO: Update hashes etc.
 
-            handler.set_object_hashes(&object.id, hashes, &token).await?;
-
+            handler
+                .set_object_hashes(&object.id, hashes, &token)
+                .await?;
 
             cache.update_location(object.id, new_location).await?;
 

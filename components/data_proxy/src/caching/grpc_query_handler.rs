@@ -1341,9 +1341,13 @@ impl GrpcQueryHandler {
         Ok(object)
     }
 
-
     #[tracing::instrument(level = "trace", skip(self, id, hashes, token))]
-    pub async fn set_object_hashes(&self, id: &DieselUlid, hashes: Vec<Hash>, token: &str) -> Result<()> {
+    pub async fn set_object_hashes(
+        &self,
+        id: &DieselUlid,
+        hashes: Vec<Hash>,
+        token: &str,
+    ) -> Result<()> {
         let mut req = Request::new(SetObjectHashesRequest {
             object_id: id.to_string(),
             hashes,
@@ -1362,9 +1366,6 @@ impl GrpcQueryHandler {
 
         Ok(())
     }
-
-
-
 }
 
 #[tracing::instrument(level = "trace", skip(res))]

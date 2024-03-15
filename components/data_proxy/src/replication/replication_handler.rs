@@ -21,10 +21,10 @@ use diesel_ulid::DieselUlid;
 use md5::{Digest, Md5};
 use pithos_lib::transformers::footer_extractor::FooterExtractor;
 use pithos_lib::{streamreadwrite::GenericStreamReadWriter, transformer::ReadWriter};
-use std::{str::FromStr, sync::Arc};
 use std::default::Default;
-use tokio::sync::RwLock;
+use std::{str::FromStr, sync::Arc};
 use tokio::pin;
+use tokio::sync::RwLock;
 use tracing::{info_span, trace, Instrument};
 
 pub struct ReplicationMessage {
@@ -60,21 +60,16 @@ pub struct ReplicationHandler {
 
 #[derive(Clone, Debug)]
 struct ObjectState {
-    sender:  Sender<DataChunk>,
-    receiver:  Receiver<DataChunk>,
-    state: ObjectStateStatus
+    sender: Sender<DataChunk>,
+    receiver: Receiver<DataChunk>,
+    state: ObjectStateStatus,
 }
 
 #[derive(Clone, Debug)]
 pub enum ObjectStateStatus {
     NotReceived,
-    Infos{
-        max_chunks: i64,
-        size: i64
-    },
+    Infos { max_chunks: i64, size: i64 },
 }
-
-
 
 impl ObjectState {
     pub fn new(sender: Sender<DataChunk>, receiver: Receiver<DataChunk>) -> Self {
@@ -85,18 +80,20 @@ impl ObjectState {
         }
     }
 
-    pub fn update_state(&mut self, max_chunks:i64, size:i64) {
-        self.state = ObjectStateStatus::Infos { max_chunks , size };
+    pub fn update_state(&mut self, max_chunks: i64, size: i64) {
+        self.state = ObjectStateStatus::Infos { max_chunks, size };
     }
 
     pub fn is_synced(&self) -> bool {
-        !matches!{self.state, ObjectStateStatus::NotReceived}
+        !matches! {self.state, ObjectStateStatus::NotReceived}
     }
 
     pub fn get_size(&self) -> Option<i64> {
-        if let ObjectStateStatus::Infos {size, ..} = self.state {
+        if let ObjectStateStatus::Infos { size, .. } = self.state {
             Some(size)
-        } else { None }
+        } else {
+            None
+        }
     }
 
     pub fn get_rcv(&self) -> Receiver<DataChunk> {
@@ -104,8 +101,8 @@ impl ObjectState {
     }
 
     pub fn get_chunks(&self) -> Result<i64> {
-        if let ObjectStateStatus::Infos {max_chunks,.. } = self.state {
-            if max_chunks > 0  {
+        if let ObjectStateStatus::Infos { max_chunks, .. } = self.state {
+            if max_chunks > 0 {
                 Ok(max_chunks)
             } else {
                 Err(anyhow!("Invalid max chunks received"))
@@ -120,8 +117,7 @@ impl ObjectState {
     }
 }
 
-type ObjectHandler =
-    Arc<DashMap<String, Arc<RwLock<ObjectState>>, RandomState>>;
+type ObjectHandler = Arc<DashMap<String, Arc<RwLock<ObjectState>>, RandomState>>;
 impl ReplicationHandler {
     #[tracing::instrument(level = "trace", skip(cache, backend, receiver))]
     pub fn new(
@@ -280,10 +276,10 @@ impl ReplicationHandler {
                     let (object_sdx, object_rcv) = async_channel::bounded(1000);
                     object_handler_map.insert(
                         object.to_string(),
-                        Arc::new(RwLock::new(
-                            ObjectState::new(object_sdx.clone(), object_rcv.clone())
-
-                        ))
+                        Arc::new(RwLock::new(ObjectState::new(
+                            object_sdx.clone(),
+                            object_rcv.clone(),
+                        ))),
                     );
                 }
 

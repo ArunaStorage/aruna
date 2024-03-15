@@ -114,11 +114,7 @@ async fn delete_object() {
         objects.push(new_object(user.id, o, ObjectType::OBJECT));
     }
     let proj_id = DieselUlid::generate();
-    objects.push(new_object(
-        user.id,
-        proj_id,
-        ObjectType::PROJECT,
-    ));
+    objects.push(new_object(user.id, proj_id, ObjectType::PROJECT));
 
     let proj_relations = InternalRelation {
         id: DieselUlid::generate(),

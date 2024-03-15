@@ -2,7 +2,10 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use super::db_handler::DatabaseHandler;
-use super::service_account_request_types::{CreateServiceAccountToken, DeleteServiceAccount, DeleteServiceAccountToken, DeleteServiceAccountTokens, GetServiceAccountInfo, GetTokenAndServiceAccountInfo};
+use super::service_account_request_types::{
+    CreateServiceAccountToken, DeleteServiceAccount, DeleteServiceAccountToken,
+    DeleteServiceAccountTokens, GetServiceAccountInfo, GetTokenAndServiceAccountInfo,
+};
 use crate::auth::permission_handler::PermissionHandler;
 use crate::database::crud::CrudDb;
 use crate::database::dsls::object_dsl::Object;
