@@ -37,11 +37,11 @@ mod auth;
 mod config;
 mod helpers;
 
-use std::backtrace::Backtrace;
 use crate::config::Config;
 use crate::data_backends::filesystem_backend::FSBackend;
 use crate::grpc_api::ingestion_service::DataproxyIngestionServiceImpl;
 use crate::replication::replication_handler::ReplicationHandler;
+use std::backtrace::Backtrace;
 
 lazy_static! {
     static ref CONFIG: Config = {
@@ -57,7 +57,6 @@ lazy_static! {
 #[tracing::instrument(level = "trace", skip())]
 #[tokio::main]
 async fn main() -> Result<()> {
-
     panic::set_hook(Box::new(|info| {
         //let stacktrace = Backtrace::capture();
         let stacktrace = Backtrace::force_capture();
