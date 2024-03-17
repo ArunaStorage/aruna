@@ -12,6 +12,7 @@ use grpc_api::{
     proxy_service::DataproxyReplicationServiceImpl, user_service::DataproxyUserServiceImpl,
 };
 use lazy_static::lazy_static;
+use std::panic;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::try_join;
 use tonic::transport::Server;
@@ -36,6 +37,7 @@ mod auth;
 mod config;
 mod helpers;
 
+use std::backtrace::Backtrace;
 use crate::config::Config;
 use crate::data_backends::filesystem_backend::FSBackend;
 use crate::grpc_api::ingestion_service::DataproxyIngestionServiceImpl;
@@ -55,11 +57,19 @@ lazy_static! {
 #[tracing::instrument(level = "trace", skip())]
 #[tokio::main]
 async fn main() -> Result<()> {
+
+    panic::set_hook(Box::new(|info| {
+        //let stacktrace = Backtrace::capture();
+        let stacktrace = Backtrace::force_capture();
+        println!("Got panic. @info:{}\n@stackTrace:{}", info, stacktrace);
+        std::process::abort();
+    }));
+
     dotenvy::from_filename(".env").ok();
 
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or("none".into())
-        .add_directive("aos_data_proxy=trace".parse()?);
+        .add_directive("data_proxy=trace".parse()?);
 
     let subscriber = tracing_subscriber::fmt()
         //.with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
