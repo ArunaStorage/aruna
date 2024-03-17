@@ -9,7 +9,7 @@ RUN apk add llvm cmake gcc ca-certificates libc-dev pkgconfig openssl-dev protoc
 COPY . .
 RUN cargo build --release -p aruna_server
 
-FROM rust:1-alpine
+FROM alpine:3.18
 WORKDIR /run
 RUN apk update
 RUN apk upgrade

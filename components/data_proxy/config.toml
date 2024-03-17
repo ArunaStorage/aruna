@@ -52,6 +52,6 @@ tmp="tmp12345" # Will generate a random temp bucket_name if not set
 # - {{PROXY_ID}} - The proxy ULID (lowercase)
 backend_scheme="s3://{{PROJECT_ID}}-{{PROJECT_NAME}}/{{COLLECTION_NAME}}/{{DATASET_NAME}}/{{RANDOM:10}}/{{OBJECT_NAME}}" 
 
-[[rules]]
-target="OBJECT" # ROOT, OBJECT, OBJECTPACKAGE, BUNDLE, REPLICATIONIN, REPLICATIONOUT,
-rule = 'input.object_hierarchy.project.name != "test"' # Example rule: Only allow projects that are not named "test"
+#[[rules]]
+#target="OBJECT" # ROOT, OBJECT, OBJECTPACKAGE, BUNDLE, REPLICATIONIN, REPLICATIONOUT,
+#rule = 'input.object_hierarchy.project.name != "test"' # Example rule: Only allow projects that are not named "test"

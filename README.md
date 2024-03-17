@@ -14,32 +14,66 @@ ___
 
 <br>
 
-# Aruna Object Storage - Server
+# Aruna Data Orchestration Engine
 
+**Aruna** is a geo-redundant data orchestration engine that manages scientific data and a rich set of associated metadata according to [FAIR](https://www.go-fair.org/fair-principles/) principles.
 
-**Aruna Object Storage** is a geo-redundant data lake storage system that manages scientific data and a rich set of associated metadata according to [FAIR](https://www.go-fair.org/fair-principles/) principles.
+It supports multiple data storage backends (e.g. S3, File ...) via [data proxies](https://github.com/ArunaStorage/aruna/tree/main/components/data_proxy) that expose an S3-compatible interface.
+The main [server](https://github.com/ArunaStorage/aruna/tree/main/components/server) handles metadata, user and resource hierarchies while the data proxies handle the data itself.
+Data proxies can communicate with each other in a peer-to-peer-like network and share data.
 
-It supports multiple data storage backends (e.g. S3, File ...) via a [DataProxy](https://github.com/ArunaStorage/DataProxy) that exposes a S3-compatible interface.
-
-This is the main repo for the server application of the Aruna Object Storage (AOS).
+This repository is split into two components, the server and the data proxy.
 
 ## Features
 
 - [FAIR](https://www.go-fair.org/fair-principles/), geo-redundant, data storage for multiple scientific domains
-- Organize your data objects in projects, collections and (optional) object_groups
-- Flexible, file format and data structure independent metadata annotations via labels and dedicated metadata files (e.g [schema.org](https://schema.org/))
-- Notification streams for all performed actions
+- Decentralized data storage system
+- Data proxy specific authorization rules to restrict access on the data side
+- Data proxy ingestion that can integrate existing data collections
+- Organization of your data objects into projects, collections and datasets
+- Flexible, file format and data structure independent metadata annotation via labels and dedicated metadata files (e.g. [schema.org](https://schema.org/))
+- Notification streams for all actions performed
 - Compatible with multiple (existing) data storage architectures (S3, File, ...)
-- S3-compatible API for pre-authenticated up- and download URLs
+- S3-compatible API for pre-authenticated upload and download URLs
 - REST-API and dedicated client libraries for Python, Rust, Go and Java
-- (planned) integrated scheduling of external workflows for data validation and transformation
+- Hook system to integrate  external workflows for data validation and transformation
+- Dedicated rule system to handle custom server-side authorization
 
 ## Getting started
 
-A detailed user guide is found in the [Documentation](https://arunastorage.github.io/Documentation/).
+### How to run a local test instance
+
+Start the needed containers
+```bash
+docker compose up
+```
+Run the server
+```bash
+cd components/server
+cargo run --release
+```
+
+Run the proxy in a new instance
+```bash
+cd components/data_proxy
+cargo run --release
+```
+
+Alternatively you can build docker images for server and data proxy with
+```bash
+docker build -t server -f ./components/server/Dockerfile .
+docker build -t data_proxy -f ./components/data_proxy/Dockerfile .
+```
+
+
+
+### Interacting with aruna
+
+Test tokens can be found in `components/server/tests/common/keycloak/fake-tokens.md`.
+A detailed user guide is found in the [Documentation](https://arunastorage.github.io/documentation/latest/).
 
 **TLDR:**
-- **REST**: see our [Swagger Documentation](https://api.aruna.nfdi-dev.gi.denbi.de/swagger-ui/)
+- **REST**: see our [Swagger Documentation](https://api.dev.aruna-storage.org/swagger-ui/)
 - **Python**: [PyPI](https://pypi.org/project/Aruna-Python-API/) 
 - **Rust**: [Crates.io](https://crates.io/crates/aruna-rust-api)
 - **Go**: [Go package](https://github.com/ArunaStorage/go-api/releases/)

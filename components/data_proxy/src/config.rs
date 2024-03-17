@@ -10,7 +10,7 @@ pub struct Config {
     pub persistence: Option<Persistence>,
     pub frontend: Option<Frontend>,
     pub backend: Backend,
-    pub rules: Vec<Rule>,
+    pub rules: Option<Vec<Rule>>,
 }
 
 impl Config {
@@ -28,6 +28,10 @@ impl Config {
         }
         backend.validate()?;
         Ok(())
+    }
+
+    pub fn get_rules(&self) -> Vec<Rule> {
+        self.rules.as_ref().map(|e| e.clone()).unwrap_or_default()
     }
 }
 
@@ -253,7 +257,7 @@ impl Backend {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RuleTarget {
     ROOT, // Info
     OBJECT,
@@ -263,7 +267,7 @@ pub enum RuleTarget {
     REPLICATIONOUT,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Rule {
     pub target: RuleTarget,
     pub rule: String,
