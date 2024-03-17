@@ -7,7 +7,7 @@ ENV RUSTFLAGS="-C target-feature=-crt-static"
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 RUN apk add llvm cmake gcc ca-certificates libc-dev pkgconfig openssl-dev protoc protobuf-dev protobuf-dev libpq-dev musl-dev git
 COPY . .
-RUN cargo build --release -p data_proxy
+RUN RUSTFLAGS="-Cpanic=abort" cargo build --release -p data_proxy
 
 FROM alpine:3.18
 WORKDIR /run
