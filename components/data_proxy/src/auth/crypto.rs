@@ -12,7 +12,7 @@ pub fn ed25519_to_x25519_pubkey(pubkey: &str) -> Result<[u8; 32]> {
     use curve25519_dalek::edwards::CompressedEdwardsY;
     let cey = CompressedEdwardsY::from_slice(pk.as_bytes())?;
     match cey.decompress() {
-        Some(ep) => Ok(ep.to_montgomery().as_bytes().clone()),
+        Some(ep) => Ok(*ep.to_montgomery().as_bytes()),
         None => bail!("Invalid public key"),
     }
 }

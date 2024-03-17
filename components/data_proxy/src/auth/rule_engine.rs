@@ -3,7 +3,6 @@ use crate::CONFIG;
 use anyhow::anyhow;
 use anyhow::Result;
 use cel_interpreter::Context;
-use cel_interpreter::ResolveResult;
 use cel_interpreter::Value;
 use cel_parser::ast::Expression;
 use tracing::error;
@@ -14,20 +13,6 @@ use super::rule_structs::PackageObjectRuleInput;
 use super::rule_structs::ReplicationIncomingRuleInput;
 use super::rule_structs::ReplicationOutgoingRuleInput;
 use super::rule_structs::RootRuleInput;
-
-pub trait AddExpression {
-    fn add_expression(self, other: Self) -> Self;
-    fn run(&self, ctx: &Context) -> ResolveResult;
-}
-
-impl AddExpression for Expression {
-    fn add_expression(self, other: Self) -> Self {
-        Expression::And(Box::new(self), Box::new(other))
-    }
-    fn run(&self, ctx: &Context) -> ResolveResult {
-        Value::resolve(&self, ctx)
-    }
-}
 
 #[allow(dead_code)]
 pub(super) struct RuleEngine {

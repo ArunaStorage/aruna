@@ -9,6 +9,7 @@ use std::str::FromStr;
 use tracing::error;
 
 pub trait ExtractAccessKeyPermissions {
+    #[allow(dead_code)]
     fn extract_access_key_permissions(
         &self,
     ) -> Result<Vec<(String, HashMap<DieselUlid, DbPermissionLevel>)>>;

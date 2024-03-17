@@ -393,12 +393,10 @@ impl S3 for ArunaS3Service {
 
         if let Some(dataset_id) = dataset_id {
             new_object.parents = Some(HashSet::from_iter([TypedRelation::Dataset(dataset_id)]));
-        } else {
-            if let Some(collection_id) = collection_id {
-                new_object.parents = Some(HashSet::from_iter([TypedRelation::Collection(
-                    collection_id,
-                )]));
-            }
+        } else if let Some(collection_id) = collection_id {
+            new_object.parents = Some(HashSet::from_iter([TypedRelation::Collection(
+                collection_id,
+            )]));
         }
 
         let mut object_id = new_object.id;
@@ -551,7 +549,7 @@ impl S3 for ArunaS3Service {
             let mut part_sizes = Vec::new();
             let parts = self
                 .cache
-                .get_parts(&location.upload_id.as_ref().ok_or_else(|| {
+                .get_parts(location.upload_id.as_ref().ok_or_else(|| {
                     error!(error = "Upload id must be specified");
                     s3_error!(InvalidPart, "Upload id must be specified")
                 })?);
@@ -819,7 +817,7 @@ impl S3 for ArunaS3Service {
             &self.cache,
             &delimiter,
             &prefix,
-            &project_name,
+            project_name,
             &start_after,
             max_keys,
         )
@@ -1303,12 +1301,10 @@ impl S3 for ArunaS3Service {
 
         if let Some(dataset_id) = dataset_id {
             new_object.parents = Some(HashSet::from_iter([TypedRelation::Dataset(dataset_id)]));
-        } else {
-            if let Some(collection_id) = collection_id {
-                new_object.parents = Some(HashSet::from_iter([TypedRelation::Collection(
-                    collection_id,
-                )]));
-            }
+        } else if let Some(collection_id) = collection_id {
+            new_object.parents = Some(HashSet::from_iter([TypedRelation::Collection(
+                collection_id,
+            )]));
         }
 
         // Fetch calculated hashes

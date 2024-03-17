@@ -34,10 +34,12 @@ use tracing::{debug, error, info_span, trace, Instrument};
 
 pub struct Cache {
     // Map DieselUlid as key and (User, Vec<String>) as value -> Vec<String> is a list of registered access keys -> access_keys
+    #[clippy::allow(type_complexity)]
     users: DashMap<DieselUlid, Arc<RwLock<(User, Vec<String>)>>, RandomState>,
     // Permissions Maybe TODO: Arc<RwLock<AccessKeyPermissions>>?
     access_keys: DashMap<String, Arc<RwLock<AccessKeyPermissions>>, RandomState>,
     // Map with ObjectId as key and Object as value
+    #[clippy::allow(type_complexity)]
     resources: DashMap<
         DieselUlid,
         (Arc<RwLock<Object>>, Arc<RwLock<Option<ObjectLocation>>>),
@@ -200,12 +202,11 @@ impl Cache {
     }
 
     pub async fn get_cache(&self) -> Result<Arc<Cache>> {
-        Ok(self
-            .self_arc
+        self.self_arc
             .read()
             .await
             .clone()
-            .ok_or_else(|| anyhow!("Cache not found"))?)
+            .ok_or_else(|| anyhow!("Cache not found"))
     }
 
     #[tracing::instrument(level = "trace", skip(self, database))]
@@ -213,12 +214,15 @@ impl Cache {
         let client = database.get_client().await?;
 
         let access_keys = AccessKeyPermissions::get_all(&client).await?;
-        let user_keys = access_keys.iter().fold(HashMap::new(), |mut map, elem| {
-            map.entry(elem.user_id)
-                .or_insert(Vec::new())
-                .push(elem.access_key.clone());
-            map
-        });
+        let user_keys = access_keys.iter().fold(
+            HashMap::new(),
+            |mut map: HashMap<DieselUlid, Vec<String>>, elem| {
+                map.entry(elem.user_id)
+                    .or_default()
+                    .push(elem.access_key.clone());
+                map
+            },
+        );
         for key in access_keys.into_iter() {
             let access_key = key.access_key.clone();
             let key = Arc::new(RwLock::new(key));
@@ -227,7 +231,7 @@ impl Cache {
         for user in User::get_all(&client).await? {
             let keys = user_keys.get(&user.user_id).cloned().unwrap_or_default();
             self.users
-                .insert(user.user_id.clone(), Arc::new(RwLock::new((user, keys))));
+                .insert(user.user_id, Arc::new(RwLock::new((user, keys))));
         }
         debug!("synced users");
 
@@ -338,7 +342,7 @@ impl Cache {
     ) -> Result<(String, String)> {
         let user = self
             .users
-            .get(&user_id)
+            .get(user_id)
             .ok_or_else(|| anyhow!("User not found"))?
             .clone();
         let permissions = if user_id.to_string().as_str() == access_key {
@@ -367,7 +371,7 @@ impl Cache {
             user_id: *user_id,
             is_service_account: user.read().await.0.is_service_account,
             secret: new_secret.clone(),
-            permissions: permissions,
+            permissions,
         };
 
         if let Some(pers) = self.persistence.read().await.as_ref() {
@@ -448,7 +452,7 @@ impl Cache {
 
     #[tracing::instrument(level = "trace", skip(self, res))]
     pub fn get_resource_by_path(&self, res: &str) -> Option<DieselUlid> {
-        self.paths.get(res).map(|e| e.value().clone())
+        self.paths.get(res).map(|e| *e.value())
     }
 
     #[tracing::instrument(level = "trace", skip(self, res))]
@@ -462,8 +466,8 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self, resource_id))]
     pub async fn get_location(&self, resource_id: &DieselUlid) -> Option<ObjectLocation> {
         let resource = self.resources.get(resource_id)?;
-        let location = resource.value().1.read().await.clone();
-        location
+        let location = resource.value().1.read().await;
+        location.clone()
     }
 
     #[tracing::instrument(level = "trace", skip(self, resource_id, with_intermediates))]
@@ -484,7 +488,7 @@ impl Cache {
         // VecDeque<(id, [Option<(String, DieselUlid)>; 4])>
         const ARRAY_REPEAT_VALUE: std::option::Option<(std::string::String, TypedId)> =
             None::<(String, TypedId)>;
-        let mut prefixes = VecDeque::from([(resource_id.clone(), [ARRAY_REPEAT_VALUE; 3])]);
+        let mut prefixes = VecDeque::from([(*resource_id, [ARRAY_REPEAT_VALUE; 3])]);
         let mut final_result = Vec::new();
         while let Some((id, visited)) = prefixes.pop_front() {
             if let Some(parents) = self.get_parents(&id.get_id()).await {
@@ -500,17 +504,17 @@ impl Cache {
                 }
             } else {
                 let mut current_path = String::new();
-                for x in 0..3 {
-                    match &visited[x] {
+                for (x, item) in visited.iter().enumerate() {
+                    match item {
                         Some((name, id)) => {
                             if !current_path.is_empty() {
                                 current_path.push('/');
                             }
-                            current_path.push_str(&name);
+                            current_path.push_str(name);
                             if with_intermediates {
-                                final_result.push((id.clone(), current_path.clone()));
+                                final_result.push((*id, current_path.clone()));
                             } else if x == 2 {
-                                final_result.push((id.clone(), current_path.clone()));
+                                final_result.push((*id, current_path.clone()));
                             }
                         }
                         None => continue,
@@ -527,7 +531,7 @@ impl Cache {
         resource_id: &TypedId,
         with_intermediates: bool,
     ) -> Vec<(TypedId, String)> {
-        let mut prefixes = VecDeque::from([(resource_id.clone(), "".to_string())]);
+        let mut prefixes = VecDeque::from([(*resource_id, "".to_string())]);
         let mut final_result = Vec::new();
         while let Some((id, name)) = prefixes.pop_front() {
             if let Some(children) = self.get_children(&id.get_id()).await {
@@ -778,7 +782,7 @@ impl Cache {
         for (old, new) in old_paths.into_iter().zip(new_paths.unwrap_or_default()) {
             let old_opt_entry = self.paths.remove(&old);
             if let Some(old_entry) = old_opt_entry {
-                self.paths.insert(new, old_entry.value().clone());
+                self.paths.insert(new, *old_entry.value());
             }
         }
         Ok(())
@@ -832,6 +836,7 @@ impl Cache {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
+    #[allow(clippy::type_complexity)]
     pub async fn get_resource(
         &self,
         resource_id: &DieselUlid,
@@ -861,7 +866,7 @@ impl Cache {
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_path(&self, path: &str) -> Option<DieselUlid> {
-        self.paths.get(path).map(|e| e.value().clone())
+        self.paths.get(path).map(|e| *e.value())
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -876,7 +881,7 @@ impl Cache {
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_path_range(&self, bucket_name: &str, skip: &str) -> Vec<(String, DieselUlid)> {
-        let prefix = format!("{}/", bucket_name.to_string());
+        let prefix = format!("{}/", bucket_name);
 
         self.paths
             .range(format!("{prefix}{skip}")..=format!("{prefix}~"))
@@ -886,7 +891,7 @@ impl Cache {
                         .strip_prefix(&prefix)
                         .unwrap_or_default()
                         .to_string(),
-                    e.value().clone(),
+                    *e.value(),
                 )
             })
             .collect()
@@ -928,12 +933,12 @@ impl Cache {
         &self,
         key_info: &AccessKeyPermissions,
         resource_id: &DieselUlid,
-        perm: DbPermissionLevel,
+        needed: DbPermissionLevel,
     ) -> Result<()> {
         if let Some(parents) = self.get_parents(resource_id).await {
             for (_, id) in parents {
-                if let Some(perm) = key_info.permissions.get(&id.get_id()) {
-                    if perm >= &perm {
+                if let Some(has) = key_info.permissions.get(&id.get_id()) {
+                    if *has >= needed {
                         return Ok(());
                     }
                 }
@@ -955,14 +960,14 @@ impl Cache {
         &self,
         id: &DieselUlid,
     ) -> Result<[Option<(DieselUlid, String)>; 4]> {
-        let mut id = id.clone();
+        let mut id = *id;
 
         let mut result = [
             None,
             None,
             None,
             Some((
-                id.clone(),
+                id,
                 self.get_resource_name(&id)
                     .await
                     .ok_or_else(|| anyhow!("Resource not found"))?,
@@ -972,16 +977,16 @@ impl Cache {
             if let Some((name, typed_id)) = r_id.first() {
                 match typed_id {
                     TypedId::Dataset(p_id) => {
-                        result[2] = Some((p_id.clone(), name.clone()));
-                        id = p_id.clone();
+                        result[2] = Some((*p_id, name.clone()));
+                        id = *p_id;
                     }
                     TypedId::Collection(p_id) => {
-                        result[1] = Some((p_id.clone(), name.clone()));
-                        id = p_id.clone();
+                        result[1] = Some((*p_id, name.clone()));
+                        id = *p_id;
                     }
                     TypedId::Project(p_id) => {
-                        result[0] = Some((p_id.clone(), name.clone()));
-                        id = p_id.clone();
+                        result[0] = Some((*p_id, name.clone()));
+                        id = *p_id;
                     }
                     _ => bail!("Unexpected parent type"),
                 }
@@ -993,8 +998,8 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self, id))]
     pub async fn get_location_cloned(&self, id: &DieselUlid) -> Option<ObjectLocation> {
         let (_, loc) = self.get_resource(id).await.ok()?;
-        let loc = loc.read().await.clone();
-        loc
+        let loc = loc.read().await;
+        loc.clone()
     }
 
     #[tracing::instrument(level = "trace", skip(self, starting_points))]
@@ -1058,7 +1063,7 @@ impl Cache {
 
             let binding = LocationBinding {
                 object_id,
-                location_id: location.id.clone(),
+                location_id: location.id,
             };
 
             binding
@@ -1079,7 +1084,7 @@ impl Cache {
             let (_, loc) = resource.value();
             let old_id = {
                 let reference = loc.read().await;
-                reference.as_ref().map(|e| e.id.clone())
+                reference.as_ref().map(|e| e.id)
             };
             *loc.write().await = Some(location.clone());
             old_id
@@ -1094,7 +1099,7 @@ impl Cache {
 
             let new_binding = LocationBinding {
                 object_id,
-                location_id: location.id.clone(),
+                location_id: location.id,
             };
 
             if let Some(old_id) = old_location_id {

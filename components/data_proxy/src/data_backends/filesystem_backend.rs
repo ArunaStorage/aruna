@@ -53,7 +53,7 @@ impl FSBackend {
 
         let temp = tmp
             .clone()
-            .unwrap_or_else(|| format!("/tmp").to_ascii_lowercase());
+            .unwrap_or_else(|| "/tmp".to_string().to_ascii_lowercase());
 
         let compiled_schema = CompiledVariant::new(backend_scheme.as_str())?;
 

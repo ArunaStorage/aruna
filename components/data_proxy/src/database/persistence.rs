@@ -222,9 +222,9 @@ pub async fn delete_parts_by_upload_id(client: &Client, upload_id: String) -> Re
 
 impl LocationBinding {
     pub async fn insert_binding(&self, client: &Client) -> Result<()> {
-        let query = format!(
-            "INSERT INTO location_bindings (object_id, location_id) VALUES ($1::UUID, $2::UUID);",
-        );
+        let query =
+            "INSERT INTO location_bindings (object_id, location_id) VALUES ($1::UUID, $2::UUID);"
+                .to_string();
         let prepared = client.prepare(&query).await.map_err(|e| {
             tracing::error!(error = ?e, msg = e.to_string());
             e
@@ -241,7 +241,7 @@ impl LocationBinding {
     }
 
     pub async fn _get_all(client: &Client) -> Result<Vec<Self>> {
-        let query = format!("SELECT * FROM location_bindings;");
+        let query = "SELECT * FROM location_bindings;".to_string();
         let prepared = client.prepare(&query).await.map_err(|e| {
             tracing::error!(error = ?e, msg = e.to_string());
             e
@@ -259,7 +259,7 @@ impl LocationBinding {
             .collect::<Vec<Self>>())
     }
     pub async fn get_by_object_id(object_id: &DieselUlid, client: &Client) -> Result<Option<Self>> {
-        let query = format!("SELECT * FROM location_bindings WHERE object_id = $1;");
+        let query = "SELECT * FROM location_bindings WHERE object_id = $1;".to_string();
         let prepared = client.prepare(&query).await.map_err(|e| {
             tracing::error!(error = ?e, msg = e.to_string());
             e
@@ -281,7 +281,7 @@ impl LocationBinding {
         location_id: &DieselUlid,
         client: &Client,
     ) -> Result<Vec<Self>> {
-        let query = format!("SELECT * FROM location_bindings WHERE location_id = $1;");
+        let query = "SELECT * FROM location_bindings WHERE location_id = $1;".to_string();
         let prepared = client.prepare(&query).await.map_err(|e| {
             tracing::error!(error = ?e, msg = e.to_string());
             e
@@ -303,7 +303,7 @@ impl LocationBinding {
     }
 
     pub async fn _delete_by_object_id(object_id: &DieselUlid, client: &Client) -> Result<()> {
-        let query = format!("DELETE FROM location_binding WHERE object_id = $1;");
+        let query = "DELETE FROM location_binding WHERE object_id = $1;".to_string();
         let prepared = client.prepare(&query).await.map_err(|e| {
             tracing::error!(error = ?e, msg = e.to_string());
             e

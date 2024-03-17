@@ -122,10 +122,8 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                             Some(message) => match message {
                                 Message::InitMessage(init) => {
                                     trace!(?init);
-                                    let msg = proxy_replication_service
-                                        .check_permissions(init, id)
-                                        .await
-                                        .map_err(|e| e);
+                                    let msg =
+                                        proxy_replication_service.check_permissions(init, id).await;
                                     object_input_send.send(msg).await.map_err(|e| {
                                         tracing::error!(error = ?e, msg = e.to_string());
                                         e
@@ -456,7 +454,7 @@ impl DataproxyReplicationServiceImpl {
         if let Some(auth) = self.cache.auth.read().await.as_ref() {
             // Returns claims.sub as id -> Can return UserIds or DataproxyIds
             // -> UserIds cannot be found in object.endpoints, so this should be safe
-            let (dataproxy_id, _, pk) = auth.check_permissions(&token).map_err(|_| {
+            let (dataproxy_id, _, pk) = auth.check_permissions(token).map_err(|_| {
                 error!(error = "DataProxy not authenticated");
                 tonic::Status::unauthenticated("DataProxy not authenticated")
             })?;

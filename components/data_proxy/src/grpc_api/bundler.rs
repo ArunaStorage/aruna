@@ -45,7 +45,7 @@ impl BundlerService for BundlerServiceImpl {
             // Check if permissions are valid
             let (u, tid, pk) = a.check_permissions(&token).map_err(|e| {
                 error!(error = ?e, msg = e.to_string());
-                tonic::Status::unauthenticated(format!("Unable to authenticate user"))
+                tonic::Status::unauthenticated("Unable to authenticate user".to_string())
             })?;
 
             if pk.is_proxy {
@@ -57,7 +57,7 @@ impl BundlerService for BundlerServiceImpl {
             let access_key = tid.unwrap_or_else(|| u.to_string());
             let permissions = self.cache.get_key_perms(&access_key).await.ok_or_else(|| {
                 error!("Missing permissions for user");
-                tonic::Status::unauthenticated(format!("Unable to authenticate user"))
+                tonic::Status::unauthenticated("Unable to authenticate user".to_string())
             })?;
 
             let request = request.into_inner();
@@ -68,7 +68,7 @@ impl BundlerService for BundlerServiceImpl {
                 .map(|id| {
                     DieselUlid::from_str(id.as_str()).map_err(|e| {
                         error!(error = ?e, msg = e.to_string());
-                        tonic::Status::invalid_argument(format!("Unable to parse resource_id"))
+                        tonic::Status::invalid_argument("Unable to parse resource_id".to_string())
                     })
                 })
                 .collect::<Result<Vec<DieselUlid>, tonic::Status>>()?;
@@ -79,7 +79,7 @@ impl BundlerService for BundlerServiceImpl {
                     .await
                     .map_err(|e| {
                         error!(error = ?e, msg = e.to_string());
-                        tonic::Status::unauthenticated(format!("Unable to authenticate user"))
+                        tonic::Status::unauthenticated("Unable to authenticate user".to_string())
                     })?;
             }
 

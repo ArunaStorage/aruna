@@ -436,12 +436,10 @@ impl AuthHandler {
                     .user_id(&user.user_id.to_string())
                     .permissions(&user.permissions);
                 Some(user).into()
+            } else if resource_states.require_object()?.data_class == DataClass::Public {
+                UserState::Anonymous
             } else {
-                if resource_states.require_object()?.data_class == DataClass::Public {
-                    UserState::Anonymous
-                } else {
-                    return Err(s3_error!(AccessDenied, "Missing access key"));
-                }
+                return Err(s3_error!(AccessDenied, "Missing access key"));
             };
 
         let result = self
@@ -477,7 +475,7 @@ impl AuthHandler {
         headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult, S3Error> {
         // Extract object name and "path"
-        let Some((object_name, path)) = key_name.split_once("/") else {
+        let Some((object_name, path)) = key_name.split_once('/') else {
             return Err(s3_error!(NoSuchKey, "No such object"));
         };
         // Extract the object id
@@ -547,7 +545,7 @@ impl AuthHandler {
         headers: &HeaderMap<HeaderValue>,
     ) -> Result<CheckAccessResult, S3Error> {
         // Extract object name and "path"
-        let Some((object_name, path)) = key_name.split_once("/") else {
+        let Some((object_name, path)) = key_name.split_once('/') else {
             return Err(s3_error!(NoSuchKey, "No such object"));
         };
         // Extract the bundle_id

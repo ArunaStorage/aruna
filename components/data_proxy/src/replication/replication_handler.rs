@@ -21,7 +21,6 @@ use diesel_ulid::DieselUlid;
 use md5::{Digest, Md5};
 use pithos_lib::transformers::footer_extractor::FooterExtractor;
 use pithos_lib::{streamreadwrite::GenericStreamReadWriter, transformer::ReadWriter};
-use std::default::Default;
 use std::{str::FromStr, sync::Arc};
 use tokio::pin;
 use tokio::sync::RwLock;
@@ -34,6 +33,7 @@ pub struct ReplicationMessage {
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone)]
 pub enum Direction {
+    #[allow(dead_code)]
     Push(DieselUlid),
     Pull(DieselUlid),
 }
@@ -480,7 +480,7 @@ impl ReplicationHandler {
                             }
                             for (id, object_state) in batch.iter() {
                                 trace!("processing: {}", id);
-                                let object_id = DieselUlid::from_str(&id)?;
+                                let object_id = DieselUlid::from_str(id)?;
 
                                 // The object gets queried
                                 let (object, location) =

@@ -12,7 +12,7 @@ use crate::structs::{AccessKeyPermissions, DbPermissionLevel, Object};
 pub(super) fn key_into_prefix(key: &str) -> Result<Vec<(String, String)>, S3Error> {
     let mut parts = Vec::new();
     let mut prefix = String::new();
-    for s in key.splitn(4, "/") {
+    for s in key.splitn(4, '/') {
         prefix.push_str(s);
         parts.push((prefix.clone(), s.to_string()));
         prefix.push('/');
@@ -30,7 +30,7 @@ pub(super) fn check_permissions(
     resource_id: &DieselUlid,
     perm: DbPermissionLevel,
 ) -> Result<(), S3Error> {
-    if key_info.permissions.get(&resource_id).ok_or_else(|| {
+    if key_info.permissions.get(resource_id).ok_or_else(|| {
         error!("No permissions found");
         s3_error!(AccessDenied, "Access Denied")
     })? < &perm

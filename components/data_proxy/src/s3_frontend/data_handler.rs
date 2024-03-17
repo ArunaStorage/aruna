@@ -45,7 +45,7 @@ impl DataHandler {
         path_level: Option<[Option<(DieselUlid, String)>; 4]>,
     ) -> Result<()> {
         let token = if let Some(handler) = cache.auth.read().await.as_ref() {
-            let Some(created_by) = object.created_by.clone() else {
+            let Some(created_by) = object.created_by else {
                 error!("No created_by found");
                 return Err(anyhow!("No created_by found"));
             };
@@ -126,7 +126,7 @@ impl DataHandler {
 
                 asr.add_message_receiver(rx).await?;
 
-                if let Some(key) = clone_key.clone() {
+                if let Some(key) = clone_key {
                     asr = asr.add_transformer(ChaCha20DecParts::new_with_lengths(key, part_lens));
                 }
 

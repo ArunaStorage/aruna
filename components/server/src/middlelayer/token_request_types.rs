@@ -36,10 +36,14 @@ impl CreateToken {
             name: self.0.name.clone(),
             created_at: chrono::Utc::now().naive_utc(),
             expires_at: if let Some(expiration) = &self.0.expires_at {
-                DateTime::from_timestamp(expiration.seconds, 0).map(|e| e.naive_utc()).ok_or_else(|| anyhow::anyhow!("Timestamp conversion failed"))?
+                DateTime::from_timestamp(expiration.seconds, 0)
+                    .map(|e| e.naive_utc())
+                    .ok_or_else(|| anyhow::anyhow!("Timestamp conversion failed"))?
             } else {
                 // Add 10 years to token lifetime if expiry unspecified
-                DateTime::from_timestamp(chrono::Utc::now().timestamp() + 315360000, 0).map(|e| e.naive_utc()).ok_or_else(|| anyhow::anyhow!("Timestamp conversion failed"))?
+                DateTime::from_timestamp(chrono::Utc::now().timestamp() + 315360000, 0)
+                    .map(|e| e.naive_utc())
+                    .ok_or_else(|| anyhow::anyhow!("Timestamp conversion failed"))?
             },
             object_id: resource_id,
             user_rights: user_right,

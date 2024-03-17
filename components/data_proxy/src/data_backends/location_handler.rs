@@ -35,9 +35,9 @@ pub enum Arguments {
 impl Arguments {
     pub fn with_hierarchy(&self, hierarchy: &[Option<(DieselUlid, String)>; 4]) -> Option<String> {
         match self {
-            Arguments::Project => hierarchy.get(0).cloned().flatten().map(|(_, b)| b),
+            Arguments::Project => hierarchy.first().cloned().flatten().map(|(_, b)| b),
             Arguments::ProjectId => hierarchy
-                .get(0)
+                .first()
                 .cloned()
                 .flatten()
                 .map(|(a, _)| a.to_string().to_ascii_lowercase()),
@@ -108,10 +108,10 @@ impl CompiledVariant {
             .filter_map(|x| x.with_hierarchy(&hierarchy))
         {
             if &bucket_string == "/" {
-                if bucket.is_empty() || bucket.ends_with("/") {
+                if bucket.is_empty() || bucket.ends_with('/') {
                     continue;
                 } else {
-                    bucket.push_str("/");
+                    bucket.push('/');
                 }
             }
             bucket.push_str(&bucket_string);
@@ -124,10 +124,10 @@ impl CompiledVariant {
             .filter_map(|x| x.with_hierarchy(&hierarchy))
         {
             if part_string == "/" {
-                if key.ends_with("/") {
+                if key.ends_with('/') {
                     continue;
                 } else {
-                    key.push_str("/");
+                    key.push('/');
                 }
             } else {
                 key.push_str(&part_string);
@@ -223,7 +223,7 @@ impl CompiledVariant {
             tag("{{OBJECT_NAME}}").map(|_| Arguments::Object),
             tag("{{OBJECT_ID}}").map(|_| Arguments::ObjectId),
             tag("{{PROXY_ID}}").map(|_| Arguments::EndpointId),
-            terminated(preceded(tag("{{RANDOM:"), u32), tag("}}")).map(|x| Arguments::Random(x)),
+            terminated(preceded(tag("{{RANDOM:"), u32), tag("}}")).map(Arguments::Random),
             tag("/").map(|_| Arguments::Slash),
             take_while(|c| c != '{' && c != '}' && c != '/')
                 .map(|x: &str| Arguments::Text(x.to_string())),

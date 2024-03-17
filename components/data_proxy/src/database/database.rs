@@ -29,8 +29,7 @@ impl Database {
         cfg.user = Some(user.to_string());
         cfg.password = Some(
             password
-                .as_ref()
-                .map(|p| p.clone())
+                .clone()
                 .ok_or_else(|| anyhow::anyhow!("password not found"))?,
         );
         cfg.dbname = Some(database.to_string());

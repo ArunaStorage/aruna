@@ -201,7 +201,7 @@ impl FileFormat {
         match self {
             FileFormat::RawEncrypted(key)
             | FileFormat::RawEncryptedCompressed(key)
-            | FileFormat::Pithos(key) => Some(key.clone()),
+            | FileFormat::Pithos(key) => Some(*key),
             _ => None,
         }
     }
@@ -210,7 +210,7 @@ impl FileFormat {
         match self {
             FileFormat::RawEncrypted(key)
             | FileFormat::RawEncryptedCompressed(key)
-            | FileFormat::Pithos(key) => EncryptionKey::new_same_key(key.clone()),
+            | FileFormat::Pithos(key) => EncryptionKey::new_same_key(*key),
             _ => EncryptionKey::default(),
         }
     }
@@ -312,7 +312,7 @@ impl Object {
         Self {
             id: DieselUlid::generate(),
             name,
-            object_status: object_status,
+            object_status,
             data_class: DataClass::Private,
             object_type,
             hashes: HashMap::default(),
@@ -352,7 +352,7 @@ impl Object {
                 .as_ref()
                 .map(|l| {
                     if let Some(key) = l.get_encryption_key() {
-                        EncryptionKey::new_same_key(key.clone())
+                        EncryptionKey::new_same_key(key)
                     } else {
                         EncryptionKey::default()
                     }
@@ -401,7 +401,7 @@ impl User {
         }
 
         for (k, _) in &other.tokens {
-            if let None = self.tokens.get(k) {
+            if self.tokens.get(k).is_none() {
                 to_delete.push(k.to_string());
             }
         }
@@ -420,7 +420,7 @@ pub fn perm_convert(perms: Vec<Permission>) -> HashMap<DieselUlid, DbPermissionL
                     | ResourceId::CollectionId(id)
                     | ResourceId::DatasetId(id)
                     | ResourceId::ObjectId(id) => Some((
-                        DieselUlid::from_str(&id).ok()?,
+                        DieselUlid::from_str(id).ok()?,
                         DbPermissionLevel::from(p.permission_level()),
                     )),
                 }
@@ -485,7 +485,7 @@ impl TryFrom<GrpcUser> for User {
                                 | Some(ResourceId::CollectionId(id))
                                 | Some(ResourceId::DatasetId(id))
                                 | Some(ResourceId::ObjectId(id)) => HashMap::from([(
-                                    DieselUlid::from_str(&id)?,
+                                    DieselUlid::from_str(id)?,
                                     DbPermissionLevel::from(perm.permission_level()),
                                 )]),
                                 _ => Err(anyhow!("Invalid resource id"))?,
@@ -496,7 +496,7 @@ impl TryFrom<GrpcUser> for User {
                     ))
                 })
                 .collect::<Result<HashMap<DieselUlid, HashMap<DieselUlid, DbPermissionLevel>>>>()?,
-            attributes: attributes,
+            attributes,
             is_service_account,
         })
     }
@@ -841,7 +841,7 @@ impl TryFrom<Collection> for Object {
         let versions = version.into_option();
 
         Ok(Object {
-            id: DieselUlid::from_str(&value.id).map_err(|e| e)?,
+            id: DieselUlid::from_str(&value.id)?,
             name: value.name.to_string(),
             title: value.title.to_string(),
             key_values: value.key_values.clone(),
@@ -1717,18 +1717,10 @@ pub enum UserState {
 }
 
 impl UserState {
-    pub fn get_access_key(&self) -> Option<String> {
-        match self {
-            UserState::Token { access_key, .. } => Some(access_key.to_string()),
-            UserState::Personal { user_id } => Some(user_id.to_string()),
-            _ => None,
-        }
-    }
-
     pub fn get_user_id(&self) -> Option<DieselUlid> {
         match self {
-            UserState::Token { user_id, .. } => Some(user_id.clone()),
-            UserState::Personal { user_id } => Some(user_id.clone()),
+            UserState::Token { user_id, .. } => Some(*user_id),
+            UserState::Personal { user_id } => Some(*user_id),
             _ => None,
         }
     }
@@ -1756,9 +1748,9 @@ impl UserState {
     }
 }
 
-impl Into<UserState> for Option<AccessKeyPermissions> {
-    fn into(self) -> UserState {
-        match self {
+impl From<Option<AccessKeyPermissions>> for UserState {
+    fn from(val: Option<AccessKeyPermissions>) -> Self {
+        match val {
             Some(perm) => {
                 if perm.access_key == perm.user_id.to_string() {
                     UserState::Personal {

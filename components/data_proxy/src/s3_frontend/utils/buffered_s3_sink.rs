@@ -47,7 +47,7 @@ impl BufferedS3Sink {
         tags: Option<Vec<PartETag>>,
         with_sender: bool,
     ) -> (Self, Option<Receiver<String>>) {
-        let t = tags.unwrap_or_else(Vec::new);
+        let t = tags.unwrap_or_default();
 
         let (sx, tx) = if with_sender {
             let (tx, sx) = async_channel::bounded(2);
@@ -238,7 +238,7 @@ impl Transformer for BufferedS3Sink {
         }
 
         if self.single_part_upload {
-            if finished && self.buffer.len() > 0 {
+            if finished && !self.buffer.is_empty() {
                 self.upload_part().await?;
                 if let Some(notifier) = &self.notifier {
                     notifier.send_read_writer(Message::Completed)?;
@@ -256,7 +256,7 @@ impl Transformer for BufferedS3Sink {
                 self.upload_part().await?;
             }
 
-            if finished && self.buffer.len() > 0 {
+            if finished && !self.buffer.is_empty() {
                 if self.upload_id.is_none() {
                     self.upload_single().await?;
                     if let Some(notifier) = &self.notifier {

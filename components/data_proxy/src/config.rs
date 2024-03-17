@@ -31,7 +31,7 @@ impl Config {
     }
 
     pub fn get_rules(&self) -> Vec<Rule> {
-        self.rules.as_ref().map(|e| e.clone()).unwrap_or_default()
+        self.rules.clone().unwrap_or_default()
     }
 }
 
@@ -152,7 +152,7 @@ impl Persistence {
             return Err(anyhow::anyhow!("schema cannot be empty"));
         }
 
-        if let None = password {
+        if password.is_none() {
             let env_var = dotenvy::var("POSTGRES_PASSWORD").map_err(|e| {
                 tracing::error!(error = ?e, msg = e.to_string());
                 e
@@ -202,7 +202,7 @@ impl Backend {
                 host,
                 ..
             } => {
-                if let None = host {
+                if host.is_none() {
                     let env_var = dotenvy::var("AWS_S3_HOST").map_err(|e| {
                         tracing::error!(error = ?e, msg = e.to_string());
                         e
@@ -210,7 +210,7 @@ impl Backend {
                     *host = Some(env_var);
                 }
 
-                if let None = access_key {
+                if access_key.is_none() {
                     let env_var = dotenvy::var("AWS_ACCESS_KEY_ID").map_err(|e| {
                         tracing::error!(error = ?e, msg = e.to_string(), "AWS_ACCESS_KEY_ID");
                         e
@@ -218,7 +218,7 @@ impl Backend {
                     *access_key = Some(env_var);
                 }
 
-                if let None = secret_key {
+                if secret_key.is_none() {
                     let env_var = dotenvy::var("AWS_SECRET_ACCESS_KEY").map_err(|e| {
                         tracing::error!(error = ?e, msg = e.to_string(), "AWS_SECRET_ACCESS");
                         e
