@@ -23,7 +23,7 @@ password = "yugabyte"
 schema = './src/database/schema.sql'
 
 [frontend]
-server="localhost:1337"
+server="0.0.0.0:1337"
 hostname="localhost:1337"
 
 [backend.s3]

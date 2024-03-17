@@ -34,12 +34,12 @@ use tracing::{debug, error, info_span, trace, Instrument};
 
 pub struct Cache {
     // Map DieselUlid as key and (User, Vec<String>) as value -> Vec<String> is a list of registered access keys -> access_keys
-    #[clippy::allow(type_complexity)]
+    #[allow(clippy::type_complexity)]
     users: DashMap<DieselUlid, Arc<RwLock<(User, Vec<String>)>>, RandomState>,
     // Permissions Maybe TODO: Arc<RwLock<AccessKeyPermissions>>?
     access_keys: DashMap<String, Arc<RwLock<AccessKeyPermissions>>, RandomState>,
     // Map with ObjectId as key and Object as value
-    #[clippy::allow(type_complexity)]
+    #[allow(clippy::type_complexity)]
     resources: DashMap<
         DieselUlid,
         (Arc<RwLock<Object>>, Arc<RwLock<Option<ObjectLocation>>>),
