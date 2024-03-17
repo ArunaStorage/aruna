@@ -14,7 +14,7 @@ use aruna_rust_api::api::hooks::services::v2::{internal_hook::InternalAction, Ad
 use aruna_rust_api::api::hooks::services::v2::{
     HookCallbackRequest, ListProjectHooksRequest, Method,
 };
-use chrono::NaiveDateTime;
+use chrono::{DateTime, NaiveDateTime};
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
 use regex::{Regex, RegexSet};
@@ -109,8 +109,7 @@ impl CreateHook {
     fn get_timeout(&self) -> Result<NaiveDateTime> {
         // Convert millis to seconds
         let time = self.0.timeout * 1000;
-        NaiveDateTime::from_timestamp_millis(time.try_into()?)
-            .ok_or_else(|| anyhow!("Invalid timeout provided"))
+        DateTime::from_timestamp_millis(time.try_into()?).map(|e| e.naive_utc()).ok_or_else(|| anyhow!("Invalid timeout provided"))
     }
     pub fn get_project_ids(&self) -> Result<Vec<DieselUlid>> {
         self.0
