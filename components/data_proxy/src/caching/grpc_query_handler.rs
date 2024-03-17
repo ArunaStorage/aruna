@@ -879,11 +879,11 @@ impl GrpcQueryHandler {
             MessageVariant::AnnouncementEvent(a_event) => {
                 self.process_announcements_event(a_event).await
             }
-        }.map_err(|e| {
+        }
+        .map_err(|e| {
             tracing::error!(error = ?e, msg = e.to_string(), "Error in processing message");
             e
         })
-
     }
 
     #[tracing::instrument(level = "trace", skip(self, message))]
