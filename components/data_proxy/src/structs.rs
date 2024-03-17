@@ -458,15 +458,17 @@ impl TryFrom<GrpcUser> for User {
             .map(|e| e.service_account)
             .unwrap_or_default();
 
+        let personal_permissions = perm_convert(
+            value
+                .attributes
+                .as_ref()
+                .map(|e| e.personal_permissions.clone())
+                .unwrap_or_default(),
+        );
+
         Ok(User {
             user_id: DieselUlid::from_str(&value.id)?,
-            personal_permissions: perm_convert(
-                value
-                    .attributes
-                    .as_ref()
-                    .map(|e| e.personal_permissions.clone())
-                    .unwrap_or_default(),
-            ),
+            personal_permissions: personal_permissions.clone(),
             tokens: value
                 .attributes
                 .as_ref()
@@ -488,7 +490,7 @@ impl TryFrom<GrpcUser> for User {
                                     DieselUlid::from_str(id)?,
                                     DbPermissionLevel::from(perm.permission_level()),
                                 )]),
-                                _ => Err(anyhow!("Invalid resource id"))?,
+                                None => personal_permissions.clone(),
                             }
                         } else {
                             Err(anyhow!("No permission found"))?
