@@ -85,7 +85,7 @@ impl ObjectStats {
 }
 
 pub async fn refresh_stats_view(client: &Client) -> Result<()> {
-    let query = "REFRESH MATERIALIZED VIEW CONCURRENTLY object_stats;";
+    let query = "REFRESH MATERIALIZED VIEW object_stats;";
     let prepared = client.prepare(query).await?;
 
     client.execute(&prepared, &[]).await?;
