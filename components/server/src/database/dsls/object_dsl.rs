@@ -18,8 +18,14 @@ use postgres_types::{FromSql, Json, ToSql, Type};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::Duration;
+use lazy_static::lazy_static;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::{Client, CopyInSink};
+
+lazy_static!(
+    pub static ref MAX_RETRIES: u64 = dotenvy::var("MAX_RETRIES").map(|var| var.parse::<u64>().unwrap_or(10)).unwrap_or(10);
+    pub static ref RETRY_TIMEOUT: u64 = dotenvy::var("RETRY_TIMEOUT").map(|var| var.parse::<u64>().unwrap_or(2)).unwrap_or(2);
+);
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 #[allow(non_camel_case_types)]
@@ -119,10 +125,6 @@ pub struct ObjectWithRelations {
     pub outbound: Json<DashMap<DieselUlid, InternalRelation, RandomState>>,
     pub outbound_belongs_to: Json<DashMap<DieselUlid, InternalRelation, RandomState>>,
 }
-
-pub const MAX_RETRIES: u64 = 10;
-pub const RETRY_TIMEOUT: u64 = 2;
-
 #[async_trait::async_trait]
 impl CrudDb for Object {
     async fn create(&mut self, client: &Client) -> Result<()> {
