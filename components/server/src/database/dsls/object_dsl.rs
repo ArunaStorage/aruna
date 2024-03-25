@@ -17,6 +17,7 @@ use postgres_from_row::FromRow;
 use postgres_types::{FromSql, Json, ToSql, Type};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::time::Duration;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::{Client, CopyInSink};
 
@@ -119,6 +120,9 @@ pub struct ObjectWithRelations {
     pub outbound_belongs_to: Json<DashMap<DieselUlid, InternalRelation, RandomState>>,
 }
 
+pub const MAX_RETRIES: u64 = 10;
+pub const RETRY_TIMEOUT: u64 = 2;
+
 #[async_trait::async_trait]
 impl CrudDb for Object {
     async fn create(&mut self, client: &Client) -> Result<()> {
@@ -162,10 +166,31 @@ impl CrudDb for Object {
     async fn get(id: impl PrimaryKey, client: &Client) -> Result<Option<Self>> {
         let query = "SELECT * FROM objects WHERE id = $1";
         let prepared = client.prepare(query).await?;
-        Ok(client
-            .query_opt(&prepared, &[&id])
-            .await?
-            .map(|e| Object::from_row(&e)))
+        let mut backoff_counter: u64 = 0;
+
+        while backoff_counter <= MAX_RETRIES {
+            match client
+                .query_opt(&prepared, &[&id])
+                .await {
+                Ok(query) => return Ok(query.map(|e| Object::from_row(&e))),
+                Err(err) => {
+                    if let Some(sql_error) = err.code() {
+                        match sql_error.code() {
+                            // => 40001 Error from yugabyte matches to 25P02
+                            "25P02" => {
+                                backoff_counter += 1;
+                                tokio::time::sleep(Duration::from_millis(RETRY_TIMEOUT ^ backoff_counter)).await;
+                            },
+                            code@ _ => {
+                                return Err(anyhow!(err));}
+                        }
+                    } else {
+                        return Err(anyhow!(err));
+                    }
+                }
+            }
+        }
+        Err(anyhow!("TODO"))
     }
 
     async fn all(client: &Client) -> Result<Vec<Self>> {
@@ -532,8 +557,29 @@ impl Object {
         WHERE o.id = $1
         GROUP BY o.id;";
         let prepared = client.prepare(query).await?;
-        let row = client.query_one(&prepared, &[&id]).await?;
-        Ok(ObjectWithRelations::from_row(&row))
+        let mut backoff_counter = 0;
+        while backoff_counter <= MAX_RETRIES {
+            match client.query_one(&prepared, &[&id]).await {
+                Ok(query) => return
+                    Ok(ObjectWithRelations::from_row(&query))
+                ,
+                Err(err) => {
+                    if let Some(sql_error) = err.code() {
+                        match sql_error.code() {
+                            "25P02" => {
+                                backoff_counter += 1;
+                                tokio::time::sleep(Duration::from_millis(RETRY_TIMEOUT ^ backoff_counter)).await;
+                            },
+                            code@ _ => {
+                                return Err(anyhow!(err));}
+                        }
+                    } else {
+                        return Err(anyhow!(err));
+                    }
+                }
+            }
+        }
+        Err(anyhow!("TODO"))
     }
 
     //ToDo: Docs
@@ -562,13 +608,32 @@ impl Object {
         let query_two = create_multi_query(&inserts);
         let query = format!("{query_one}{query_two}{query_three}");
         let prepared = client.prepare(&query).await?;
-        let objects = client
-            .query(&prepared, &inserts)
-            .await?
-            .iter()
-            .map(ObjectWithRelations::from_row)
-            .collect();
-        Ok(objects)
+
+        let mut backoff_counter = 0;
+        while backoff_counter <= MAX_RETRIES {
+            match client
+                .query(&prepared, &inserts)
+                .await {
+                Ok(query) => return
+                    Ok(query.iter().map(ObjectWithRelations::from_row).collect())
+                ,
+                Err(err) => {
+                    if let Some(sql_error) = err.code() {
+                        match sql_error.code() {
+                            "25P02" => {
+                                backoff_counter += 1;
+                                tokio::time::sleep(Duration::from_millis(RETRY_TIMEOUT ^ backoff_counter)).await;
+                            },
+                            code@ _ => {
+                                return Err(anyhow!(err));}
+                        }
+                    } else {
+                        return Err(anyhow!(err));
+                    }
+                }
+            }
+        }
+        Err(anyhow!("TODO"))
     }
 
     pub async fn update_title(id: &DieselUlid, title: String, client: &Client) -> Result<()> {
