@@ -170,7 +170,7 @@ impl CrudDb for Object {
         let prepared = client.prepare(query).await?;
         let mut backoff_counter: u64 = 0;
 
-        while backoff_counter <= MAX_RETRIES {
+        while backoff_counter <= *MAX_RETRIES {
             match client
                 .query_opt(&prepared, &[&id])
                 .await {
@@ -181,7 +181,7 @@ impl CrudDb for Object {
                             // => 40001 Error from yugabyte matches to 25P02
                             "25P02" => {
                                 backoff_counter += 1;
-                                tokio::time::sleep(Duration::from_millis(RETRY_TIMEOUT ^ backoff_counter)).await;
+                                tokio::time::sleep(Duration::from_millis(*RETRY_TIMEOUT ^ backoff_counter)).await;
                             },
                             code@ _ => {
                                 return Err(anyhow!(err));}
@@ -560,7 +560,7 @@ impl Object {
         GROUP BY o.id;";
         let prepared = client.prepare(query).await?;
         let mut backoff_counter = 0;
-        while backoff_counter <= MAX_RETRIES {
+        while backoff_counter <= *MAX_RETRIES {
             match client.query_one(&prepared, &[&id]).await {
                 Ok(query) => return
                     Ok(ObjectWithRelations::from_row(&query))
@@ -570,7 +570,7 @@ impl Object {
                         match sql_error.code() {
                             "25P02" => {
                                 backoff_counter += 1;
-                                tokio::time::sleep(Duration::from_millis(RETRY_TIMEOUT ^ backoff_counter)).await;
+                                tokio::time::sleep(Duration::from_millis(*RETRY_TIMEOUT ^ backoff_counter)).await;
                             },
                             code@ _ => {
                                 return Err(anyhow!(err));}
@@ -612,7 +612,7 @@ impl Object {
         let prepared = client.prepare(&query).await?;
 
         let mut backoff_counter = 0;
-        while backoff_counter <= MAX_RETRIES {
+        while backoff_counter <= *MAX_RETRIES {
             match client
                 .query(&prepared, &inserts)
                 .await {
@@ -624,7 +624,7 @@ impl Object {
                         match sql_error.code() {
                             "25P02" => {
                                 backoff_counter += 1;
-                                tokio::time::sleep(Duration::from_millis(RETRY_TIMEOUT ^ backoff_counter)).await;
+                                tokio::time::sleep(Duration::from_millis(*RETRY_TIMEOUT ^ backoff_counter)).await;
                             },
                             code@ _ => {
                                 return Err(anyhow!(err));}
