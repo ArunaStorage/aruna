@@ -4,7 +4,7 @@ on:
 name: test
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     name: test
     env:
       CARGO_NET_GIT_FETCH_WITH_CLI: true
