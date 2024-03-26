@@ -389,7 +389,6 @@ impl ServiceAccountService for ServiceAccountServiceImpl {
         };
         return_with_log!(response);
     }
-    // !!!!! TODO!!!!!
     async fn add_pubkey_svc_account(
         &self,
         request: Request<AddPubkeySvcAccountRequest>,
