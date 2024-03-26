@@ -183,7 +183,7 @@ impl CrudDb for Object {
                                 backoff_counter += 1;
                                 tokio::time::sleep(Duration::from_millis(*RETRY_TIMEOUT ^ backoff_counter)).await;
                             },
-                            code@ _ => {
+                            _code => {
                                 return Err(anyhow!(err));}
                         }
                     } else {
@@ -572,7 +572,7 @@ impl Object {
                                 backoff_counter += 1;
                                 tokio::time::sleep(Duration::from_millis(*RETRY_TIMEOUT ^ backoff_counter)).await;
                             },
-                            code@ _ => {
+                            _code => {
                                 return Err(anyhow!(err));}
                         }
                     } else {
@@ -626,7 +626,7 @@ impl Object {
                                 backoff_counter += 1;
                                 tokio::time::sleep(Duration::from_millis(*RETRY_TIMEOUT ^ backoff_counter)).await;
                             },
-                            code@ _ => {
+                            _code => {
                                 return Err(anyhow!(err));}
                         }
                     } else {
