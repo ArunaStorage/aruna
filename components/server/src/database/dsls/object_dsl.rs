@@ -13,19 +13,23 @@ use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use futures::pin_mut;
 use itertools::Itertools;
+use lazy_static::lazy_static;
 use postgres_from_row::FromRow;
 use postgres_types::{FromSql, Json, ToSql, Type};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::Duration;
-use lazy_static::lazy_static;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::{Client, CopyInSink};
 
-lazy_static!(
-    pub static ref MAX_RETRIES: u64 = dotenvy::var("MAX_RETRIES").map(|var| var.parse::<u64>().unwrap_or(10)).unwrap_or(10);
-    pub static ref RETRY_TIMEOUT: u64 = dotenvy::var("RETRY_TIMEOUT").map(|var| var.parse::<u64>().unwrap_or(2)).unwrap_or(2);
-);
+lazy_static! {
+    pub static ref MAX_RETRIES: u64 = dotenvy::var("MAX_RETRIES")
+        .map(|var| var.parse::<u64>().unwrap_or(10))
+        .unwrap_or(10);
+    pub static ref RETRY_TIMEOUT: u64 = dotenvy::var("RETRY_TIMEOUT")
+        .map(|var| var.parse::<u64>().unwrap_or(2))
+        .unwrap_or(2);
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 #[allow(non_camel_case_types)]
@@ -171,9 +175,7 @@ impl CrudDb for Object {
         let mut backoff_counter: u64 = 0;
 
         while backoff_counter <= *MAX_RETRIES {
-            match client
-                .query_opt(&prepared, &[&id])
-                .await {
+            match client.query_opt(&prepared, &[&id]).await {
                 Ok(query) => return Ok(query.map(|e| Object::from_row(&e))),
                 Err(err) => {
                     if let Some(sql_error) = err.code() {
@@ -181,10 +183,14 @@ impl CrudDb for Object {
                             // => 40001 Error from yugabyte matches to 25P02
                             "25P02" => {
                                 backoff_counter += 1;
-                                tokio::time::sleep(Duration::from_millis(*RETRY_TIMEOUT ^ backoff_counter)).await;
-                            },
+                                tokio::time::sleep(Duration::from_millis(
+                                    *RETRY_TIMEOUT ^ backoff_counter,
+                                ))
+                                .await;
+                            }
                             _code => {
-                                return Err(anyhow!(err));}
+                                return Err(anyhow!(err));
+                            }
                         }
                     } else {
                         return Err(anyhow!(err));
@@ -562,18 +568,20 @@ impl Object {
         let mut backoff_counter = 0;
         while backoff_counter <= *MAX_RETRIES {
             match client.query_one(&prepared, &[&id]).await {
-                Ok(query) => return
-                    Ok(ObjectWithRelations::from_row(&query))
-                ,
+                Ok(query) => return Ok(ObjectWithRelations::from_row(&query)),
                 Err(err) => {
                     if let Some(sql_error) = err.code() {
                         match sql_error.code() {
                             "25P02" => {
                                 backoff_counter += 1;
-                                tokio::time::sleep(Duration::from_millis(*RETRY_TIMEOUT ^ backoff_counter)).await;
-                            },
+                                tokio::time::sleep(Duration::from_millis(
+                                    *RETRY_TIMEOUT ^ backoff_counter,
+                                ))
+                                .await;
+                            }
                             _code => {
-                                return Err(anyhow!(err));}
+                                return Err(anyhow!(err));
+                            }
                         }
                     } else {
                         return Err(anyhow!(err));
@@ -613,21 +621,21 @@ impl Object {
 
         let mut backoff_counter = 0;
         while backoff_counter <= *MAX_RETRIES {
-            match client
-                .query(&prepared, &inserts)
-                .await {
-                Ok(query) => return
-                    Ok(query.iter().map(ObjectWithRelations::from_row).collect())
-                ,
+            match client.query(&prepared, &inserts).await {
+                Ok(query) => return Ok(query.iter().map(ObjectWithRelations::from_row).collect()),
                 Err(err) => {
                     if let Some(sql_error) = err.code() {
                         match sql_error.code() {
                             "25P02" => {
                                 backoff_counter += 1;
-                                tokio::time::sleep(Duration::from_millis(*RETRY_TIMEOUT ^ backoff_counter)).await;
-                            },
+                                tokio::time::sleep(Duration::from_millis(
+                                    *RETRY_TIMEOUT ^ backoff_counter,
+                                ))
+                                .await;
+                            }
                             _code => {
-                                return Err(anyhow!(err));}
+                                return Err(anyhow!(err));
+                            }
                         }
                     } else {
                         return Err(anyhow!(err));
