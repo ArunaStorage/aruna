@@ -49,6 +49,9 @@ services:
              psql 'postgres://yugabyte@localhost:5433' -c 'CREATE DATABASE test' &&
              psql 'postgres://yugabyte@localhost:5433/test' < /data/schema.sql &&
              psql 'postgres://yugabyte@localhost:5433/test' < /data/initial_data.sql"
-
-
-
+  wait4load_database:
+    depends_on:
+      load_database:
+        condition: service_completed_successfully
+    image: alpine
+    command: sh -c "Docker up and Database initialization done"  
