@@ -5,9 +5,11 @@ use crate::data_backends::storage_backend::StorageBackend;
 use anyhow::Result;
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
+use http::Method;
 use http::StatusCode;
 use hyper::service::Service;
 use hyper::Server;
+use s3s::s3_error;
 use s3s::service::S3Service;
 use s3s::service::S3ServiceBuilder;
 use s3s::service::SharedS3Service;
@@ -100,6 +102,22 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
 
     #[tracing::instrument(level = "trace", skip(self, req))]
     fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
+
+        // Catch OPTIONS requests
+        if req.method() == Method::OPTIONS {
+            let resp = Box::pin(async {
+                hyper::Response::builder()
+                    .header("Access-Control-Allow-Origin", "*")
+                    .header("Access-Control-Allow-Methods", "*")
+                    .header("Access-Control-Allow-Headers", "*")
+                    .body(s3s::Body::empty())
+                    .map_err(|_| s3_error!(InvalidRequest, "Invalid OPTIONS request"))
+            });
+
+            return resp
+        }
+
+
         let mut service = self.0.clone();
         let resp = service.call(req);
         let res = resp.map(|r| {
