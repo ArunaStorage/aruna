@@ -45,7 +45,7 @@ use url::Url;
 ///
 #[allow(clippy::too_many_arguments)]
 pub fn sign_url(
-    method: Method,
+    method: reqwest::Method,
     access_key: &str,
     secret_key: &str,
     ssl: bool,
@@ -127,7 +127,7 @@ pub fn sign_download_url(
     endpoint: &str,
 ) -> Result<String> {
     sign_url(
-        Method::GET,
+        reqwest::Method::GET,
         access_key,
         secret_key,
         ssl,
