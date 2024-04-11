@@ -3114,7 +3114,8 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 [[package]]
 name = "pithos_lib"
 version = "0.5.1"
-source = "git+https://github.com/ArunaStorage/aruna-file.git?branch=fix/ranges_updates#e138b2341c0029c7ff961b59207473f1cc72b7df"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a1b5af6ac1462acbd11fb3d7219edf8ef9a550ba17ec961fc16b3371a5b0b86"
 dependencies = [
  "anyhow",
  "async-channel 2.2.0",
