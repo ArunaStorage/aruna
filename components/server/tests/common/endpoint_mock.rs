@@ -57,32 +57,33 @@ impl DataproxyUserService for DataProxyServiceImpl {
         &self,
         _request: Request<CreateOrUpdateCredentialsRequest>,
     ) -> std::result::Result<Response<CreateOrUpdateCredentialsResponse>, Status> {
-        todo!()
+
+        Err(Status::unimplemented("Not implemented"))
     }
 
     async fn revoke_credentials(
         &self,
         _request: Request<RevokeCredentialsRequest>,
     ) -> std::result::Result<Response<RevokeCredentialsResponse>, Status> {
-        todo!()
+        Err(Status::unimplemented("Not implemented"))
     }
 
     async fn push_replica(
         &self,
         _request: Request<PushReplicaRequest>,
     ) -> Result<Response<PushReplicaResponse>, Status> {
-        todo!()
+        Err(Status::unimplemented("Not implemented"))
     }
     async fn pull_replica(
         &self,
         _request: Request<PullReplicaRequest>,
     ) -> Result<Response<PullReplicaResponse>, Status> {
-        todo!()
+        Err(Status::unimplemented("Not implemented"))
     }
     async fn replication_status(
         &self,
         _request: Request<ReplicationStatusRequest>,
     ) -> Result<Response<ReplicationStatusResponse>, Status> {
-        todo!()
+        Err(Status::unimplemented("Not implemented"))
     }
 }
