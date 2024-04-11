@@ -22,7 +22,7 @@ VALUES
 (
     '018AE07D-5F28-8EB6-3A0A-D37CE945E645', --01HBG7TQS8HTV3M2PKFKMMBSJ5
     'another-test-user',
-    '{"global_admin": false, "service_account": false, "tokens": {}, "trusted_endpoints": {}, "custom_attributes": [], "permissions": {}, "external_ids": [{ "external_id": "21e87c60-b05c-40b1-ac5c-982b52ab2865", "oidc_name":"http://localhost:1998/realms/test"}], "pubkey": "", "data_proxy_attribute": []}',
+    '{"global_admin": true, "service_account": false, "tokens": {"01HV1NYGX710QGH24NZQS9MQ3J": {"name": "regular-token", "pub_key": 1, "object_id": null, "created_at": "2024-04-09T14:59:44.167166599", "expires_at": "2034-04-07T14:59:44", "user_rights": "NONE"}}, "trusted_endpoints": {}, "custom_attributes": [], "permissions": {}, "external_ids": [{ "external_id": "f2dc16c9-b3b7-4fcc-84e1-5b1d82b1bf8d", "oidc_name":"http://keycloak.test:8080/realms/test"}], "pubkey": "", "data_proxy_attribute": []}',
     true
 );
 
