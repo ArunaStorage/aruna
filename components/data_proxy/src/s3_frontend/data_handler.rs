@@ -252,9 +252,9 @@ impl DataHandler {
             // Set id of new location to object id to satisfy FK constraint
             // TODO: Update hashes etc.
 
-            handler
-                .set_object_hashes(&object.id, hashes, &token)
-                .await?;
+            // handler
+            //     .set_object_hashes(&object.id, hashes, &token)
+            //     .await?;
 
             cache.update_location(object.id, new_location).await?;
 

@@ -283,9 +283,9 @@ dependencies = [
 
 [[package]]
 name = "async_zip"
-version = "0.0.16"
+version = "0.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "527207465fb6dcafbf661b0d4a51d0d2306c9d0c2975423079a6caa807930daf"
+checksum = "00b9f7252833d5ed4b00aa9604b563529dd5e11de9c23615de2dcdf91eb87b52"
 dependencies = [
  "async-compression",
  "chrono",
@@ -3113,8 +3113,8 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pithos_lib"
-version = "0.5.0"
-source = "git+https://github.com/ArunaStorage/aruna-file.git?branch=feat/pithos_rework#0d2bba00dda364775d8468d14f206e0c044b92e0"
+version = "0.5.1"
+source = "git+https://github.com/ArunaStorage/aruna-file.git?branch=fix/ranges_updates#e138b2341c0029c7ff961b59207473f1cc72b7df"
 dependencies = [
  "anyhow",
  "async-channel 2.2.0",
@@ -3122,7 +3122,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "async_zip",
- "base64 0.21.7",
+ "base64 0.22.0",
  "blake2",
  "borsh",
  "byteorder",

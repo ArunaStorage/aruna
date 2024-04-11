@@ -102,7 +102,6 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
 
     #[tracing::instrument(level = "trace", skip(self, req))]
     fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
-
         // Catch OPTIONS requests
         if req.method() == Method::OPTIONS {
             let resp = Box::pin(async {
@@ -114,9 +113,8 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
                     .map_err(|_| s3_error!(InvalidRequest, "Invalid OPTIONS request"))
             });
 
-            return resp
+            return resp;
         }
-
 
         let mut service = self.0.clone();
         let resp = service.call(req);

@@ -575,16 +575,24 @@ impl S3 for ArunaS3Service {
         };
 
         trace!("calculating ranges");
-        let (query_ranges, edit_list, actual_range) =
-            match calculate_ranges(req.input.range, content_length as u64, footer, &location) {
-                Ok((query_ranges, edit_list, _, actual_range)) => {
-                    (query_ranges, edit_list, actual_range)
-                }
-                Err(err) => {
-                    error!(error = ?err, "Unable to calculate ranges");
-                    return Err(s3_error!(InternalError, "Unable to calculate ranges"));
-                }
-            };
+        let (query_ranges, edit_list, actual_size, actual_range) = match calculate_ranges(
+            req.input.range,
+            content_length as u64,
+            parts
+                .first()
+                .map(|e| *e)
+                .unwrap_or_else(|| location.disk_content_len as u64),
+            footer,
+            &location,
+        ) {
+            Ok((query_ranges, edit_list, actual_size, actual_range)) => {
+                (query_ranges, edit_list, actual_size, actual_range)
+            }
+            Err(err) => {
+                error!(error = ?err, "Unable to calculate ranges");
+                return Err(s3_error!(InternalError, "Unable to calculate ranges"));
+            }
+        };
 
         let (accept_ranges, content_range) = if let Some(query_range) = actual_range {
             content_length = (query_range.to - query_range.from) as i64;
@@ -592,7 +600,7 @@ impl S3 for ArunaS3Service {
                 Some("bytes".to_string()),
                 Some(format!(
                     "bytes {}-{}/{}",
-                    query_range.from, query_range.to, content_length
+                    query_range.from, query_range.to, location.raw_content_len
                 )),
             )
         } else {
@@ -624,7 +632,10 @@ impl S3 for ArunaS3Service {
                 );
 
                 if let Some(key) = decryption_key {
-                    asrw = asrw.add_transformer(ChaCha20DecParts::new_with_lengths(key, parts));
+                    asrw = asrw.add_transformer(ChaCha20DecParts::new_with_lengths(
+                        key,
+                        vec![actual_size],
+                    ));
                 }
 
                 if location.is_compressed() {
