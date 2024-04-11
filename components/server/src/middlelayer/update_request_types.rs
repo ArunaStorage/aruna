@@ -583,6 +583,6 @@ impl SetHashes {
         Ok(DieselUlid::from_str(&self.0.object_id)?)
     }
     pub fn get_hashes(&self) -> Result<Hashes> {
-        todo!()
+        self.0.hashes.clone().try_into()
     }
 }
