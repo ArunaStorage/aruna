@@ -57,7 +57,6 @@ impl DataproxyUserService for DataProxyServiceImpl {
         &self,
         _request: Request<CreateOrUpdateCredentialsRequest>,
     ) -> std::result::Result<Response<CreateOrUpdateCredentialsResponse>, Status> {
-
         Err(Status::unimplemented("Not implemented"))
     }
 

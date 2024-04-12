@@ -489,10 +489,47 @@ impl S3 for ArunaS3Service {
         }
 
         let ObjectsState::Regular { states, location } = objects_state else {
-            return Err(s3_error!(
-                InternalError,
-                "Invalid object state, missing location"
-            ));
+            let (levels, e_tag) = match objects_state {
+                ObjectsState::Bundle { bundle, .. } => (
+                    self.cache
+                        .get_path_levels(bundle.ids.as_slice())
+                        .await
+                        .map_err(|_| {
+                            error!(error = "Unable to get path levels");
+                            s3_error!(InternalError, "Unable to get path levels")
+                        })?,
+                    format!("-{}", bundle.id),
+                ),
+                ObjectsState::Objects { root, .. } => (
+                    self.cache.get_path_levels(&[root.id]).await.map_err(|_| {
+                        error!(error = "Unable to get path levels");
+                        s3_error!(InternalError, "Unable to get path levels")
+                    })?,
+                    format!("-bundle-{}", root.id),
+                ),
+                _ => return Err(s3_error!(InternalError, "Invalid object state")),
+            };
+
+            let body = get_bundle(levels, self.backend.clone()).await;
+
+            let mut resp = S3Response::new(GetObjectOutput {
+                body,
+                last_modified: None,
+                e_tag: Some(e_tag),
+                ..Default::default()
+            });
+
+            resp.headers.insert(
+                hyper::header::TRANSFER_ENCODING,
+                HeaderValue::from_static("chunked"),
+            );
+
+            resp.headers.insert(
+                hyper::header::CONTENT_TYPE,
+                HeaderValue::from_static("application/octet-stream"),
+            );
+
+            return Ok(resp);
         };
 
         let location = location.ok_or_else(|| {
