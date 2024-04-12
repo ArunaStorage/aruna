@@ -456,40 +456,8 @@ impl S3 for ArunaS3Service {
                 s3_error!(InternalError, "No context found")
             })?;
 
-        if let ObjectsState::Bundle { bundle, .. } = objects_state {
-            let levels = self
-                .cache
-                .get_path_levels(bundle.ids.as_slice())
-                .await
-                .map_err(|_| {
-                    error!(error = "Unable to get path levels");
-                    s3_error!(InternalError, "Unable to get path levels")
-                })?;
-
-            let body = get_bundle(levels, self.backend.clone()).await;
-
-            let mut resp = S3Response::new(GetObjectOutput {
-                body,
-                last_modified: None,
-                e_tag: Some(format!("-{}", bundle.id)),
-                ..Default::default()
-            });
-
-            resp.headers.insert(
-                hyper::header::TRANSFER_ENCODING,
-                HeaderValue::from_static("chunked"),
-            );
-
-            resp.headers.insert(
-                hyper::header::CONTENT_TYPE,
-                HeaderValue::from_static("application/octet-stream"),
-            );
-
-            return Ok(resp);
-        }
-
         let ObjectsState::Regular { states, location } = objects_state else {
-            let (levels, e_tag) = match objects_state {
+            let (levels, name) = match objects_state {
                 ObjectsState::Bundle { bundle, .. } => (
                     self.cache
                         .get_path_levels(bundle.ids.as_slice())
@@ -498,14 +466,14 @@ impl S3 for ArunaS3Service {
                             error!(error = "Unable to get path levels");
                             s3_error!(InternalError, "Unable to get path levels")
                         })?,
-                    format!("-{}", bundle.id),
+                    format!("{}", bundle.id),
                 ),
                 ObjectsState::Objects { root, .. } => (
                     self.cache.get_path_levels(&[root.id]).await.map_err(|_| {
                         error!(error = "Unable to get path levels");
                         s3_error!(InternalError, "Unable to get path levels")
                     })?,
-                    format!("-bundle-{}", root.id),
+                    format!("{}", root.id),
                 ),
                 _ => return Err(s3_error!(InternalError, "Invalid object state")),
             };
@@ -515,7 +483,8 @@ impl S3 for ArunaS3Service {
             let mut resp = S3Response::new(GetObjectOutput {
                 body,
                 last_modified: None,
-                e_tag: Some(e_tag),
+                content_disposition: Some(format!(r#"attachment;filename="{}.tar.gz"#, name)),
+                e_tag: Some(format!("-{}", name)),
                 ..Default::default()
             });
 
@@ -698,6 +667,9 @@ impl S3 for ArunaS3Service {
             s3_error!(InternalError, "Internal processing error")
         })));
 
+
+        let mime = mime_guess::from_path(object.name.as_str()).first();
+
         let output = GetObjectOutput {
             body,
             accept_ranges,
@@ -706,6 +678,8 @@ impl S3 for ArunaS3Service {
             last_modified: None,
             e_tag: Some(format!("-{}", object.id)),
             version_id: None,
+            content_type: mime,
+            content_disposition: Some(format!(r#"attachment;filename="{}""#, object.name)),
             ..Default::default()
         };
         debug!(?output);
@@ -777,6 +751,7 @@ impl S3 for ArunaS3Service {
                     .into(),
             ),
             e_tag: Some(object.id.to_string()),
+            content_disposition: Some(format!(r#"attachment;filename="{}""#, object.name)),
             content_type: mime,
             ..Default::default()
         };
