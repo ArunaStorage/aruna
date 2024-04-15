@@ -19,6 +19,6 @@ impl DropBoxHandler {
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn run(self) -> Result<()> {
-        todo!()
+        bail!("Not implemented")
     }
 }

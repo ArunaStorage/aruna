@@ -497,7 +497,11 @@ impl AuthHandler {
         // Create the object state
         let objects_state = ObjectsState::new_objects(object.clone(), path.to_string());
         // Get the parents (For permissions check)
-        let parents = self.get_parents(&object_id).await;
+        let parents = if object.object_type == ObjectType::Project {
+            vec![TypedId::Project(object_id)] // If project, just check for itself
+        } else {
+            self.get_parents(&object_id).await
+        };
         let mut rule_builder = PackageObjectRuleInputBuilder::new(&self.rule_engine)
             .method(&Method::GET)
             .headers(headers)

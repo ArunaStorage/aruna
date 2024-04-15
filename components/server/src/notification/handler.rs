@@ -50,7 +50,7 @@ pub trait EventHandler {
         batch_size: u32,
     ) -> anyhow::Result<Vec<Message>>;
 
-    // Acknowledge messages as read so the will not be redelivered by consecutive message fetches.
+    // Acknowledge messages as read so they will not be redelivered by consecutive message fetches.
     async fn acknowledge_from_reply(&self, replies: Vec<Reply>) -> anyhow::Result<()>;
 
     // Creates an event stream handler depending on the underlying system

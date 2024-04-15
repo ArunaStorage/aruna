@@ -253,7 +253,9 @@ impl GrpcQueryHandler {
     pub async fn create_project(&self, object: DPObject, token: &str) -> Result<DPObject> {
         let mut req = Request::new(CreateProjectRequest::from(object));
 
-        req.get_mut().preferred_endpoint = self.endpoint_id.clone();
+        req.get_mut()
+            .preferred_endpoint
+            .clone_from(&self.endpoint_id);
         Self::add_token_to_md(req.metadata_mut(), token)?;
 
         let response = self

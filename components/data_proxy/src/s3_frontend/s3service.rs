@@ -456,22 +456,35 @@ impl S3 for ArunaS3Service {
                 s3_error!(InternalError, "No context found")
             })?;
 
-        if let ObjectsState::Bundle { bundle, .. } = objects_state {
-            let levels = self
-                .cache
-                .get_path_levels(bundle.ids.as_slice())
-                .await
-                .map_err(|_| {
-                    error!(error = "Unable to get path levels");
-                    s3_error!(InternalError, "Unable to get path levels")
-                })?;
+        let ObjectsState::Regular { states, location } = objects_state else {
+            let (levels, name) = match objects_state {
+                ObjectsState::Bundle { bundle, .. } => (
+                    self.cache
+                        .get_path_levels(bundle.ids.as_slice())
+                        .await
+                        .map_err(|_| {
+                            error!(error = "Unable to get path levels");
+                            s3_error!(InternalError, "Unable to get path levels")
+                        })?,
+                    format!("{}", bundle.id),
+                ),
+                ObjectsState::Objects { root, .. } => (
+                    self.cache.get_path_levels(&[root.id]).await.map_err(|_| {
+                        error!(error = "Unable to get path levels");
+                        s3_error!(InternalError, "Unable to get path levels")
+                    })?,
+                    format!("{}", root.id),
+                ),
+                _ => return Err(s3_error!(InternalError, "Invalid object state")),
+            };
 
             let body = get_bundle(levels, self.backend.clone()).await;
 
             let mut resp = S3Response::new(GetObjectOutput {
                 body,
                 last_modified: None,
-                e_tag: Some(format!("-{}", bundle.id)),
+                content_disposition: Some(format!(r#"attachment;filename="{}.tar.gz"#, name)),
+                e_tag: Some(format!("-{}", name)),
                 ..Default::default()
             });
 
@@ -486,13 +499,6 @@ impl S3 for ArunaS3Service {
             );
 
             return Ok(resp);
-        }
-
-        let ObjectsState::Regular { states, location } = objects_state else {
-            return Err(s3_error!(
-                InternalError,
-                "Invalid object state, missing location"
-            ));
         };
 
         let location = location.ok_or_else(|| {
@@ -575,16 +581,24 @@ impl S3 for ArunaS3Service {
         };
 
         trace!("calculating ranges");
-        let (query_ranges, edit_list, actual_range) =
-            match calculate_ranges(req.input.range, content_length as u64, footer, &location) {
-                Ok((query_ranges, edit_list, _, actual_range)) => {
-                    (query_ranges, edit_list, actual_range)
-                }
-                Err(err) => {
-                    error!(error = ?err, "Unable to calculate ranges");
-                    return Err(s3_error!(InternalError, "Unable to calculate ranges"));
-                }
-            };
+        let (query_ranges, edit_list, actual_size, actual_range) = match calculate_ranges(
+            req.input.range,
+            content_length as u64,
+            parts
+                .first()
+                .copied()
+                .unwrap_or(location.disk_content_len as u64),
+            footer,
+            &location,
+        ) {
+            Ok((query_ranges, edit_list, actual_size, actual_range)) => {
+                (query_ranges, edit_list, actual_size, actual_range)
+            }
+            Err(err) => {
+                error!(error = ?err, "Unable to calculate ranges");
+                return Err(s3_error!(InternalError, "Unable to calculate ranges"));
+            }
+        };
 
         let (accept_ranges, content_range) = if let Some(query_range) = actual_range {
             content_length = (query_range.to - query_range.from) as i64;
@@ -592,7 +606,7 @@ impl S3 for ArunaS3Service {
                 Some("bytes".to_string()),
                 Some(format!(
                     "bytes {}-{}/{}",
-                    query_range.from, query_range.to, content_length
+                    query_range.from, query_range.to, location.raw_content_len
                 )),
             )
         } else {
@@ -624,7 +638,10 @@ impl S3 for ArunaS3Service {
                 );
 
                 if let Some(key) = decryption_key {
-                    asrw = asrw.add_transformer(ChaCha20DecParts::new_with_lengths(key, parts));
+                    asrw = asrw.add_transformer(ChaCha20DecParts::new_with_lengths(
+                        key,
+                        vec![actual_size],
+                    ));
                 }
 
                 if location.is_compressed() {
@@ -650,6 +667,8 @@ impl S3 for ArunaS3Service {
             s3_error!(InternalError, "Internal processing error")
         })));
 
+        let mime = mime_guess::from_path(object.name.as_str()).first();
+
         let output = GetObjectOutput {
             body,
             accept_ranges,
@@ -658,6 +677,8 @@ impl S3 for ArunaS3Service {
             last_modified: None,
             e_tag: Some(format!("-{}", object.id)),
             version_id: None,
+            content_type: mime,
+            content_disposition: Some(format!(r#"attachment;filename="{}""#, object.name)),
             ..Default::default()
         };
         debug!(?output);
@@ -729,6 +750,7 @@ impl S3 for ArunaS3Service {
                     .into(),
             ),
             e_tag: Some(object.id.to_string()),
+            content_disposition: Some(format!(r#"attachment;filename="{}""#, object.name)),
             content_type: mime,
             ..Default::default()
         };

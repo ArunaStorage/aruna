@@ -122,7 +122,7 @@ impl RootRuleInputBuilder {
         if self.skip {
             return self;
         }
-        self.attributes = attributes.clone();
+        self.attributes.clone_from(attributes);
         self
     }
 
@@ -326,7 +326,7 @@ impl ObjectRuleInputBuilder {
                 object: self.object,
                 dataset: self.dataset,
                 collection: self.collection,
-                project: self.project.ok_or_else(|| anyhow!("project is required"))?,
+                project: self.project.unwrap_or_default(),
             },
             request: RequestInfo {
                 bucket: self.bucket,
@@ -380,7 +380,7 @@ impl PackageObjectRuleInputBuilder {
         if self.skip {
             return self;
         }
-        self.attributes = attributes.clone();
+        self.attributes.clone_from(attributes);
         self
     }
 
@@ -435,7 +435,7 @@ impl PackageObjectRuleInputBuilder {
                 permissions: self.permissions,
                 attributes: self.attributes,
             },
-            object: self.object.ok_or_else(|| anyhow!("object is required"))?,
+            object: self.object.unwrap_or_default(),
             parents: self.parents,
             request: RequestInfo {
                 bucket: false,
@@ -487,7 +487,7 @@ impl BundleRuleInputBuilder {
         if self.skip {
             return self;
         }
-        self.attributes = attributes.clone();
+        self.attributes.clone_from(attributes);
         self
     }
 
