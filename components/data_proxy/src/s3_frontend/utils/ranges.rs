@@ -21,7 +21,7 @@ pub fn calculate_ranges(
     location: &ObjectLocation,
 ) -> Result<(Option<String>, Option<Vec<u64>>, u64, Option<ArunaRange>)> {
     let Some(range) = input_range else {
-        return Ok((None, None, content_length, None));
+        return Ok((None, None, compressed_size, None));
     };
     let aruna_range = aruna_range_from_s3range(range, content_length);
     debug!(?aruna_range, "Calculated ArunaRange");
