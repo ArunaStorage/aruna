@@ -17,7 +17,8 @@ use tonic::Request;
 use crate::common::{
     init::init_service_block,
     test_utils::{
-        add_token, fast_track_grpc_collection_create, fast_track_grpc_project_create, rand_string, INVALID_OIDC_TOKEN, USER1_OIDC_TOKEN, USER1_ULID, USER2_OIDC_TOKEN, USER2_ULID
+        add_token, fast_track_grpc_collection_create, fast_track_grpc_project_create, rand_string,
+        INVALID_OIDC_TOKEN, USER1_OIDC_TOKEN, USER1_ULID, USER2_OIDC_TOKEN, USER2_ULID,
     },
 };
 

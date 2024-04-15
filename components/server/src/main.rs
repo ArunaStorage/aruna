@@ -87,7 +87,7 @@ pub async fn main() -> Result<()> {
     .await?;
     let token_handler_arc = Arc::new(token_handler);
     cache_arc.sync_cache(db_arc.clone()).await?;
-    
+
     // Init PermissionHandler
     let authorizer = PermissionHandler::new(cache_arc.clone(), token_handler_arc.clone());
     let auth_arc = Arc::new(authorizer);

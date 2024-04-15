@@ -122,7 +122,7 @@ impl RootRuleInputBuilder {
         if self.skip {
             return self;
         }
-        self.attributes = attributes.clone();
+        self.attributes.clone_from(attributes);
         self
     }
 
@@ -380,7 +380,7 @@ impl PackageObjectRuleInputBuilder {
         if self.skip {
             return self;
         }
-        self.attributes = attributes.clone();
+        self.attributes.clone_from(attributes);
         self
     }
 
@@ -487,7 +487,7 @@ impl BundleRuleInputBuilder {
         if self.skip {
             return self;
         }
-        self.attributes = attributes.clone();
+        self.attributes.clone_from(attributes);
         self
     }
 

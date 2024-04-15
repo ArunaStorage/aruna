@@ -586,8 +586,8 @@ impl S3 for ArunaS3Service {
             content_length as u64,
             parts
                 .first()
-                .map(|e| *e)
-                .unwrap_or_else(|| location.disk_content_len as u64),
+                .copied()
+                .unwrap_or(location.disk_content_len as u64),
             footer,
             &location,
         ) {
@@ -666,7 +666,6 @@ impl S3 for ArunaS3Service {
             error!(error = "Unable to wrap final_rcv");
             s3_error!(InternalError, "Internal processing error")
         })));
-
 
         let mime = mime_guess::from_path(object.name.as_str()).first();
 
