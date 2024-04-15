@@ -17,8 +17,7 @@ use tonic::Request;
 use crate::common::{
     init::init_service_block,
     test_utils::{
-        add_token, fast_track_grpc_collection_create, fast_track_grpc_project_create, rand_string,
-        USER1_OIDC_TOKEN, USER1_ULID, USER2_OIDC_TOKEN, USER2_ULID,
+        add_token, fast_track_grpc_collection_create, fast_track_grpc_project_create, rand_string, INVALID_OIDC_TOKEN, USER1_OIDC_TOKEN, USER1_ULID, USER2_OIDC_TOKEN, USER2_ULID
     },
 };
 
@@ -299,7 +298,7 @@ async fn get_resource() {
         .search_service
         .get_resources(add_token(
             Request::new(private_request.clone()),
-            USER2_OIDC_TOKEN,
+            INVALID_OIDC_TOKEN,
         ))
         .await
         .unwrap()
@@ -336,7 +335,7 @@ async fn get_resource() {
         .search_service
         .get_resource(add_token(
             Request::new(confidential_request.clone()),
-            USER2_OIDC_TOKEN,
+            INVALID_OIDC_TOKEN,
         ))
         .await;
     assert!(response.is_err());
