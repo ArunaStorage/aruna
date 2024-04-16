@@ -145,36 +145,40 @@ impl CreateRequest {
         Ok(container.0)
     }
 
-    pub fn get_internal_relations(
+    pub async fn get_internal_relations(
         &self,
         id: DieselUlid,
-        cache: Arc<Cache>,
+        transaction_client: &Client,
     ) -> Result<Vec<InternalRelation>> {
         match self {
-            CreateRequest::Project(req, _) => req
-                .relations
-                .iter()
-                .filter_map(filter_relations)
-                .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
-                .collect::<Result<Vec<InternalRelation>>>(),
-            CreateRequest::Collection(req) => req
-                .relations
-                .iter()
-                .filter_map(filter_relations)
-                .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
-                .collect::<Result<Vec<InternalRelation>>>(),
-            CreateRequest::Dataset(req) => req
-                .relations
-                .iter()
-                .filter_map(filter_relations)
-                .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
-                .collect::<Result<Vec<InternalRelation>>>(),
-            CreateRequest::Object(req) => req
-                .relations
-                .iter()
-                .filter_map(filter_relations)
-                .map(|ir| InternalRelation::from_api(ir, id, cache.clone()))
-                .collect::<Result<Vec<InternalRelation>>>(),
+            CreateRequest::Project(req, _) => {
+                let mut relations = Vec::new();
+                for ir in req.relations.iter().filter_map(filter_relations) {
+                    relations.push(InternalRelation::from_api(ir, id, transaction_client).await?)
+                }
+                Ok(relations)
+            }
+            CreateRequest::Collection(req) => {
+                let mut relations = Vec::new();
+                for ir in req.relations.iter().filter_map(filter_relations) {
+                    relations.push(InternalRelation::from_api(ir, id, transaction_client).await?)
+                }
+                Ok(relations)
+            }
+            CreateRequest::Dataset(req) => {
+                let mut relations = Vec::new();
+                for ir in req.relations.iter().filter_map(filter_relations) {
+                    relations.push(InternalRelation::from_api(ir, id, transaction_client).await?)
+                }
+                Ok(relations)
+            }
+            CreateRequest::Object(req) => {
+                let mut relations = Vec::new();
+                for ir in req.relations.iter().filter_map(filter_relations) {
+                    relations.push(InternalRelation::from_api(ir, id, transaction_client).await?)
+                }
+                Ok(relations)
+            }
         }
     }
     pub fn get_external_relations(&self) -> Vec<ExternalRelation> {

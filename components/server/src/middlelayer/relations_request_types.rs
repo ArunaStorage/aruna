@@ -1,5 +1,4 @@
 use crate::auth::structs::Context;
-use crate::caching::cache::Cache;
 use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_VERSION,
 };
@@ -10,7 +9,7 @@ use aruna_rust_api::api::storage::models::v2::{relation, Relation};
 use aruna_rust_api::api::storage::services::v2::ModifyRelationsRequest;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
-use std::sync::Arc;
+use tokio_postgres::Client;
 
 pub struct ModifyRelations(pub ModifyRelationsRequest);
 
@@ -36,10 +35,10 @@ impl ModifyRelations {
     pub fn get_id(&self) -> Result<DieselUlid> {
         Ok(DieselUlid::from_str(&self.0.resource_id)?)
     }
-    pub fn get_relations(
+    pub async fn get_relations(
         &self,
         resource: ObjectWithRelations,
-        cache: Arc<Cache>,
+        transaction_client: &Client,
     ) -> Result<RelationsToModify> {
         let resource_id = resource.object.id;
 
@@ -50,9 +49,19 @@ impl ModifyRelations {
         )];
 
         let (external_add_relations, internal_add_relations, mut added_to_check) =
-            ModifyRelations::convert_relations(&self.0.add_relations, resource_id, cache.clone())?;
+            ModifyRelations::convert_relations(
+                &self.0.add_relations,
+                resource_id,
+                transaction_client,
+            )
+            .await?;
         let (external_rm_relations, temp_rm_int_relations, mut removed_to_check) =
-            ModifyRelations::convert_relations(&self.0.remove_relations, resource_id, cache)?;
+            ModifyRelations::convert_relations(
+                &self.0.remove_relations,
+                resource_id,
+                transaction_client,
+            )
+            .await?;
         if !temp_rm_int_relations
             .iter()
             .filter(|ir| ir.relation_name == INTERNAL_RELATION_VARIANT_VERSION)
@@ -88,10 +97,10 @@ impl ModifyRelations {
             resources_to_check: ulids_to_check,
         })
     }
-    fn convert_relations(
+    async fn convert_relations(
         api_relations: &Vec<Relation>,
         resource_id: DieselUlid,
-        cache: Arc<Cache>,
+        transaction_client: &Client,
     ) -> Result<(Vec<ExternalRelation>, Vec<InternalRelation>, Vec<Context>)> {
         let mut external_relations: Vec<ExternalRelation> = Vec::new();
         let mut internal_relations: Vec<InternalRelation> = Vec::new();
@@ -110,11 +119,14 @@ impl ModifyRelations {
                         ));
                         internal_relations
                             // Try into generates a new ULID, so rm via ID does not work
-                            .push(InternalRelation::from_api(
-                                internal,
-                                resource_id,
-                                cache.clone(),
-                            )?);
+                            .push(
+                                InternalRelation::from_api(
+                                    internal,
+                                    resource_id,
+                                    transaction_client,
+                                )
+                                .await?,
+                            );
                     }
                 }
             }

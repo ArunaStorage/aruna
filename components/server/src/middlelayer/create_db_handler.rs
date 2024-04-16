@@ -14,7 +14,6 @@ use aruna_rust_api::api::notification::services::v2::EventVariant;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
-use postgres_types::Json;
 use tokio_postgres::Client;
 
 impl DatabaseHandler {
@@ -61,7 +60,7 @@ impl DatabaseHandler {
         object.create(transaction_client).await?;
 
         // Create internal relation for parent and add user permissions for resource
-        let (parent, internal_relation): (
+        let (parent, _internal_relation): (
             Option<ObjectWithRelations>,
             DashMap<DieselUlid, InternalRelation, RandomState>,
         ) = match request.get_type() {
@@ -153,13 +152,7 @@ impl DatabaseHandler {
         }
 
         // Create DTO which combines the object and its internal relations
-        let owr = ObjectWithRelations {
-            object: object.clone(),
-            inbound: Json(DashMap::default()),
-            inbound_belongs_to: Json(internal_relation.clone()),
-            outbound: Json(DashMap::default()),
-            outbound_belongs_to: Json(DashMap::default()),
-        };
+        let owr = Object::get_object_with_relations(&object.id, &client).await?;
 
         // Update cache
         self.cache.add_object(owr.clone());
@@ -326,7 +319,9 @@ impl DatabaseHandler {
         transaction_client: &Client,
     ) -> Result<Vec<DieselUlid>> {
         // Create specified relations
-        let internal_relations = request.get_internal_relations(object.id, self.cache.clone())?;
+        let internal_relations = request
+            .get_internal_relations(object.id, transaction_client)
+            .await?;
         InternalRelation::batch_create(&internal_relations, transaction_client).await?;
         // Collect affected objects
         let mut affected: Vec<DieselUlid> = Vec::new();
