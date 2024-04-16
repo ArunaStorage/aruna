@@ -42,7 +42,7 @@ impl RelationsService for RelationsServiceImpl {
 
         let (resource, labels_info) = tonic_invalid!(
             self.database_handler
-                .get_resource(request, self.cache.clone())
+                .get_resource(request)
                 .await,
             "Request not valid"
         );

@@ -146,7 +146,7 @@ impl HookHandler {
                         );
                         let (resource, labels_info) = self
                             .database_handler
-                            .get_resource(request, self.database_handler.cache.clone())
+                            .get_resource(request)
                             .await?;
                         if let Err(e) = self
                             .database_handler

@@ -326,7 +326,7 @@ impl DatabaseHandler {
         transaction_client: &Client,
     ) -> Result<Vec<DieselUlid>> {
         // Create specified relations
-        let internal_relations = request.get_internal_relations(object.id, self.cache.clone())?;
+        let internal_relations = request.get_internal_relations(object.id, transaction_client).await?;
         InternalRelation::batch_create(&internal_relations, transaction_client).await?;
         // Collect affected objects
         let mut affected: Vec<DieselUlid> = Vec::new();

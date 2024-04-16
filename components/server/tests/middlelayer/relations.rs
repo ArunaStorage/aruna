@@ -95,8 +95,7 @@ async fn test_modify() {
         });
     }
 
-    let cache = db_handler.cache.clone();
-    let (obj, mod_lab) = db_handler.get_resource(request, cache).await.unwrap();
+    let (obj, mod_lab) = db_handler.get_resource(request).await.unwrap();
     let owr = db_handler
         .modify_relations(obj, mod_lab.relations_to_add, mod_lab.relations_to_remove)
         .await
@@ -269,8 +268,7 @@ async fn test_modify_relations_constraint() {
         remove_relations: vec![invalid],
     });
 
-    let cache = db_handler.cache.clone();
-    let (obj, mod_lab) = db_handler.get_resource(request, cache).await.unwrap();
+    let (obj, mod_lab) = db_handler.get_resource(request).await.unwrap();
     assert!(db_handler
         .modify_relations(obj, mod_lab.relations_to_add, mod_lab.relations_to_remove)
         .await
@@ -292,8 +290,7 @@ async fn test_modify_relations_constraint() {
         remove_relations: vec![invalid],
     });
 
-    let cache = db_handler.cache.clone();
-    let (obj, mod_lab) = db_handler.get_resource(request, cache).await.unwrap();
+    let (obj, mod_lab) = db_handler.get_resource(request).await.unwrap();
     assert!(db_handler
         .modify_relations(obj, mod_lab.relations_to_add, mod_lab.relations_to_remove)
         .await
@@ -315,8 +312,7 @@ async fn test_modify_relations_constraint() {
         remove_relations: vec![valid],
     });
 
-    let cache = db_handler.cache.clone();
-    let (obj, mod_lab) = db_handler.get_resource(request, cache).await.unwrap();
+    let (obj, mod_lab) = db_handler.get_resource(request).await.unwrap();
     assert!(db_handler
         .modify_relations(obj, mod_lab.relations_to_add, mod_lab.relations_to_remove)
         .await

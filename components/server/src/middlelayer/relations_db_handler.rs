@@ -1,4 +1,3 @@
-use crate::caching::cache::Cache;
 use crate::database::dsls::internal_relation_dsl::{
     InternalRelation, INTERNAL_RELATION_VARIANT_BELONGS_TO, INTERNAL_RELATION_VARIANT_VERSION,
 };
@@ -12,7 +11,6 @@ use ahash::HashSet;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::notification::services::v2::EventVariant;
 use diesel_ulid::DieselUlid;
-use std::sync::Arc;
 
 impl DatabaseHandler {
     pub async fn modify_relations(
@@ -136,14 +134,13 @@ impl DatabaseHandler {
     pub async fn get_resource(
         &self,
         request: ModifyRelations,
-        cache: Arc<Cache>,
     ) -> Result<(Object, RelationsToModify)> {
         let client = self.database.get_client().await?;
         let id = request.get_id()?;
         let resource = Object::get_object_with_relations(&id, &client).await?;
         Ok((
             resource.object.clone(),
-            request.get_relations(resource, cache)?,
+            request.get_relations(resource, &client).await?, // Client instead of transaction client is okay here, because only get requests are made before modifications
         ))
     }
 }
