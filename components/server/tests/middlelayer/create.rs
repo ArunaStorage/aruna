@@ -1,5 +1,8 @@
 use crate::common::init::init_database_handler_middlelayer;
 use crate::common::test_utils;
+use aruna_rust_api::api::storage::models::v2::{
+    relation, InternalRelationVariant, Relation, RelationDirection, ResourceVariant,
+};
 use aruna_rust_api::api::storage::services::v2::create_collection_request::Parent as CollectionParent;
 use aruna_rust_api::api::storage::services::v2::create_dataset_request::Parent as DatasetParent;
 use aruna_rust_api::api::storage::services::v2::create_object_request::Parent as ObjectParent;
@@ -7,8 +10,9 @@ use aruna_rust_api::api::storage::services::v2::{
     CreateCollectionRequest, CreateDatasetRequest, CreateObjectRequest, CreateProjectRequest,
 };
 use aruna_server::database::crud::CrudDb;
+use aruna_server::database::dsls::internal_relation_dsl::INTERNAL_RELATION_VARIANT_METADATA;
 use aruna_server::database::dsls::license_dsl::ALL_RIGHTS_RESERVED;
-use aruna_server::database::dsls::object_dsl::EndpointInfo;
+use aruna_server::database::dsls::object_dsl::{EndpointInfo, Object};
 use aruna_server::database::enums::{DataClass, ObjectStatus, ObjectType, ReplicationStatus};
 use aruna_server::middlelayer::create_request_types::CreateRequest;
 use diesel_ulid::DieselUlid;
@@ -345,4 +349,121 @@ async fn create_object() {
     assert!(obj.inbound_belongs_to.0.get(&parent.object.id).is_some());
     assert!(obj.outbound.0.is_empty());
     assert!(obj.outbound_belongs_to.0.is_empty());
+}
+#[tokio::test]
+async fn create_object_with_relations() {
+    // init
+    let db_handler = init_database_handler_middlelayer().await;
+    let client = &db_handler.database.get_client().await.unwrap();
+    let cache = &db_handler.cache;
+
+    // create user
+    let mut user = test_utils::new_user(vec![]);
+    user.create(client).await.unwrap();
+
+    let default_endpoint = DieselUlid::generate();
+    let parent_name = random_name().to_lowercase();
+    let parent = CreateRequest::Project(
+        CreateProjectRequest {
+            name: parent_name,
+            title: "".to_string(),
+            description: "test".to_string(),
+            key_values: vec![],
+            relations: vec![],
+            data_class: 1,
+            preferred_endpoint: "".to_string(),
+            metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+            default_data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+            authors: vec![],
+        },
+        default_endpoint.to_string(),
+    );
+    let (parent, _) = db_handler
+        .create_resource(parent, user.id, false)
+        .await
+        .unwrap();
+    cache.add_object(parent.clone());
+
+    // test requests
+    // Create first object
+    let object_name = random_name();
+    let request = CreateRequest::Object(CreateObjectRequest {
+        name: object_name.clone(),
+        title: "".to_string(),
+        description: "test".to_string(),
+        key_values: vec![],
+        relations: vec![],
+        data_class: 1,
+        hashes: vec![],
+        parent: Some(ObjectParent::ProjectId(parent.object.id.to_string())),
+        metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        authors: vec![],
+    });
+    let (obj_1, _) = db_handler
+        .create_resource(request, user.id, false)
+        .await
+        .unwrap();
+
+    // Create second object
+    let object_name = random_name();
+    let request = CreateRequest::Object(CreateObjectRequest {
+        name: object_name.clone(),
+        title: "".to_string(),
+        description: "test".to_string(),
+        key_values: vec![],
+        relations: vec![Relation {
+            relation: Some(relation::Relation::Internal(
+                aruna_rust_api::api::storage::models::v2::InternalRelation {
+                    resource_id: obj_1.object.id.to_string(),
+                    resource_variant: ResourceVariant::Object as i32,
+                    defined_variant: InternalRelationVariant::Metadata as i32,
+                    custom_variant: None,
+                    direction: RelationDirection::Outbound as i32,
+                },
+            )),
+        }],
+        data_class: 1,
+        hashes: vec![],
+        parent: Some(ObjectParent::ProjectId(parent.object.id.to_string())),
+        metadata_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        data_license_tag: ALL_RIGHTS_RESERVED.to_string(),
+        authors: vec![],
+    });
+    let (obj_2, _) = db_handler
+        .create_resource(request, user.id, false)
+        .await
+        .unwrap();
+
+    let updated_obj_1 = Object::get_object_with_relations(&obj_1.object.id, client)
+        .await
+        .unwrap();
+    let updated_obj_1_cached = db_handler.cache.get_object(&obj_1.object.id).unwrap();
+
+    assert_eq!(updated_obj_1, updated_obj_1_cached);
+    let outbound_relation = obj_2.outbound.0.iter().next().unwrap();
+    // Check if relation is set in second object
+    assert_eq!(
+        outbound_relation.relation_name,
+        INTERNAL_RELATION_VARIANT_METADATA
+    );
+    assert_eq!(outbound_relation.target_pid, obj_1.object.id);
+    assert_eq!(outbound_relation.target_pid, updated_obj_1.object.id);
+    assert_eq!(outbound_relation.target_pid, updated_obj_1_cached.object.id);
+
+    // Check if relation is set in database for first object
+    let outbound_relation = updated_obj_1.inbound.0.iter().next().unwrap();
+    assert_eq!(
+        outbound_relation.relation_name,
+        INTERNAL_RELATION_VARIANT_METADATA
+    );
+    assert_eq!(outbound_relation.origin_pid, obj_2.object.id);
+
+    // Check if relation is set in cache for first object
+    let outbound_relation = updated_obj_1_cached.inbound.0.iter().next().unwrap();
+    assert_eq!(
+        outbound_relation.relation_name,
+        INTERNAL_RELATION_VARIANT_METADATA
+    );
+    assert_eq!(outbound_relation.origin_pid, obj_2.object.id);
 }
