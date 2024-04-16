@@ -41,9 +41,7 @@ impl RelationsService for RelationsServiceImpl {
         let request = ModifyRelations(request.into_inner());
 
         let (resource, labels_info) = tonic_invalid!(
-            self.database_handler
-                .get_resource(request)
-                .await,
+            self.database_handler.get_resource(request).await,
             "Request not valid"
         );
         tonic_auth!(

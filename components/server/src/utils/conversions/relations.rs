@@ -1,5 +1,6 @@
-use std::{str::FromStr};
+use std::str::FromStr;
 
+use crate::database::dsls::object_dsl::Object;
 use crate::{
     auth::structs::Context,
     database::{
@@ -26,7 +27,6 @@ use aruna_rust_api::api::storage::models::v2::{
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use tokio_postgres::Client;
-use crate::database::dsls::object_dsl::Object;
 
 pub fn from_db_internal_relation(internal: InternalRelation, inbound: bool) -> Relation {
     let (direction, resource_variant, resource_id) = if inbound {
@@ -127,13 +127,18 @@ impl InternalRelation {
     ) -> Result<Self> {
         match api_rel.direction() {
             aruna_rust_api::api::storage::models::v2::RelationDirection::Inbound => {
-                let self_obj = Object::get_object_with_relations(&related, transaction_client).await?;
-                    // .get_object(&related)
-                    // .ok_or_else(|| anyhow!("self_obj not found"))?;
-                let other_obj = Object::get_object_with_relations(&DieselUlid::from_str(&api_rel.resource_id)?, transaction_client).await?;
-                 //    cache
-                 //    .get_object(&DieselUlid::from_str(&api_rel.resource_id)?)
-                 //    .ok_or_else(|| anyhow!("other_obj not found"))?;
+                let self_obj =
+                    Object::get_object_with_relations(&related, transaction_client).await?;
+                // .get_object(&related)
+                // .ok_or_else(|| anyhow!("self_obj not found"))?;
+                let other_obj = Object::get_object_with_relations(
+                    &DieselUlid::from_str(&api_rel.resource_id)?,
+                    transaction_client,
+                )
+                .await?;
+                //    cache
+                //    .get_object(&DieselUlid::from_str(&api_rel.resource_id)?)
+                //    .ok_or_else(|| anyhow!("other_obj not found"))?;
 
                 if self_obj.object.object_type == other_obj.object.object_type
                     && api_rel.defined_variant == InternalRelationVariant::BelongsTo as i32
@@ -156,11 +161,16 @@ impl InternalRelation {
                 })
             }
             aruna_rust_api::api::storage::models::v2::RelationDirection::Outbound => {
-                let other_obj = Object::get_object_with_relations(&related, transaction_client).await?;
+                let other_obj =
+                    Object::get_object_with_relations(&related, transaction_client).await?;
                 //     cache
                 //     .get_object(&related)
                 //     .ok_or_else(|| anyhow!("self_obj not found"))?;
-                let self_obj = Object::get_object_with_relations(&DieselUlid::from_str(&api_rel.resource_id)?, transaction_client).await?;
+                let self_obj = Object::get_object_with_relations(
+                    &DieselUlid::from_str(&api_rel.resource_id)?,
+                    transaction_client,
+                )
+                .await?;
                 //     cache
                 //     .get_object(&DieselUlid::from_str(&api_rel.resource_id)?)
                 //     .ok_or_else(|| anyhow!("other_obj not found"))?;

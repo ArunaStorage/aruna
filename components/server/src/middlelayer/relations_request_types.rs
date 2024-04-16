@@ -49,9 +49,19 @@ impl ModifyRelations {
         )];
 
         let (external_add_relations, internal_add_relations, mut added_to_check) =
-            ModifyRelations::convert_relations(&self.0.add_relations, resource_id, transaction_client).await?;
+            ModifyRelations::convert_relations(
+                &self.0.add_relations,
+                resource_id,
+                transaction_client,
+            )
+            .await?;
         let (external_rm_relations, temp_rm_int_relations, mut removed_to_check) =
-            ModifyRelations::convert_relations(&self.0.remove_relations, resource_id, transaction_client).await?;
+            ModifyRelations::convert_relations(
+                &self.0.remove_relations,
+                resource_id,
+                transaction_client,
+            )
+            .await?;
         if !temp_rm_int_relations
             .iter()
             .filter(|ir| ir.relation_name == INTERNAL_RELATION_VARIANT_VERSION)
@@ -109,11 +119,14 @@ impl ModifyRelations {
                         ));
                         internal_relations
                             // Try into generates a new ULID, so rm via ID does not work
-                            .push(InternalRelation::from_api(
-                                internal,
-                                resource_id,
-                                transaction_client,
-                            ).await?);
+                            .push(
+                                InternalRelation::from_api(
+                                    internal,
+                                    resource_id,
+                                    transaction_client,
+                                )
+                                .await?,
+                            );
                     }
                 }
             }

@@ -153,48 +153,32 @@ impl CreateRequest {
         match self {
             CreateRequest::Project(req, _) => {
                 let mut relations = Vec::new();
-                for ir in  req
-                     .relations
-                     .iter()
-                     .filter_map(filter_relations) {
-                    
+                for ir in req.relations.iter().filter_map(filter_relations) {
                     relations.push(InternalRelation::from_api(ir, id, transaction_client).await?)
                 }
                 Ok(relations)
-            },
+            }
             CreateRequest::Collection(req) => {
                 let mut relations = Vec::new();
-                for ir in  req
-                     .relations
-                     .iter()
-                     .filter_map(filter_relations) {
-                    
+                for ir in req.relations.iter().filter_map(filter_relations) {
                     relations.push(InternalRelation::from_api(ir, id, transaction_client).await?)
                 }
                 Ok(relations)
-            },
+            }
             CreateRequest::Dataset(req) => {
                 let mut relations = Vec::new();
-                for ir in  req
-                     .relations
-                     .iter()
-                     .filter_map(filter_relations) {
-                    
+                for ir in req.relations.iter().filter_map(filter_relations) {
                     relations.push(InternalRelation::from_api(ir, id, transaction_client).await?)
                 }
                 Ok(relations)
-            },
+            }
             CreateRequest::Object(req) => {
                 let mut relations = Vec::new();
-                for ir in  req
-                     .relations
-                     .iter()
-                     .filter_map(filter_relations) {
-                    
+                for ir in req.relations.iter().filter_map(filter_relations) {
                     relations.push(InternalRelation::from_api(ir, id, transaction_client).await?)
                 }
                 Ok(relations)
-            },
+            }
         }
     }
     pub fn get_external_relations(&self) -> Vec<ExternalRelation> {
