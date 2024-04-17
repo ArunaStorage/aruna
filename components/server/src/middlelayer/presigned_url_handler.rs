@@ -124,6 +124,7 @@ impl DatabaseHandler {
         authorizer: Arc<PermissionHandler>,
         request: PresignedDownload,
         user_id: DieselUlid,
+        token: Option<DieselUlid>,
     ) -> Result<String> {
         let object_id = request.get_id()?;
         let (project_id, bucket_name, key) =
@@ -145,7 +146,7 @@ impl DatabaseHandler {
         }
 
         let (_, endpoint_s3_url, ssl, credentials) =
-            DatabaseHandler::get_credentials(authorizer, user_id, None, endpoint).await?;
+            DatabaseHandler::get_credentials(authorizer, user_id, token, endpoint).await?;
         let url = sign_download_url(
             &credentials.access_key,
             &credentials.secret_key,
