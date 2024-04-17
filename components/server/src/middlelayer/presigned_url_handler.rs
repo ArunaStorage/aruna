@@ -162,6 +162,7 @@ impl DatabaseHandler {
         request: PresignedUpload,
         authorizer: Arc<PermissionHandler>,
         user_id: DieselUlid,
+        token: Option<DieselUlid>,
     ) -> Result<String> {
         let object_id = request.get_id()?;
         let multipart = request.get_multipart();
@@ -172,7 +173,7 @@ impl DatabaseHandler {
 
         let endpoint = self.get_project_endpoint(project_id, cache.clone()).await?;
         let (endpoint_host_url, endpoint_s3_url, ssl, credentials) =
-            DatabaseHandler::get_credentials(authorizer, user_id, None, endpoint).await?;
+            DatabaseHandler::get_credentials(authorizer, user_id, token, endpoint).await?;
         let upload_id = if multipart {
             DatabaseHandler::impersonated_multi_upload_init(
                 &credentials.access_key,

@@ -127,9 +127,9 @@ impl ObjectService for ObjectServiceImpl {
         let request = PresignedUpload(request.into_inner());
 
         let object_id = tonic_invalid!(request.get_id(), "Invalid id");
-        let user_id = tonic_auth!(
+        let PermissionCheck { user_id, token, .. } = tonic_auth!(
             self.authorizer
-                .check_permissions(
+                .check_permissions_verbose(
                     &token,
                     vec![Context::res_ctx(object_id, DbPermissionLevel::WRITE, true)]
                 )
@@ -144,6 +144,7 @@ impl ObjectService for ObjectServiceImpl {
                     request,
                     self.authorizer.clone(),
                     user_id,
+                    token,
                 )
                 .await,
             "Error while building presigned url"
