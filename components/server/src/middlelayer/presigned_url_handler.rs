@@ -124,6 +124,7 @@ impl DatabaseHandler {
         authorizer: Arc<PermissionHandler>,
         request: PresignedDownload,
         user_id: DieselUlid,
+        token: Option<DieselUlid>,
     ) -> Result<String> {
         let object_id = request.get_id()?;
         let (project_id, bucket_name, key) =
@@ -145,7 +146,7 @@ impl DatabaseHandler {
         }
 
         let (_, endpoint_s3_url, ssl, credentials) =
-            DatabaseHandler::get_credentials(authorizer, user_id, None, endpoint).await?;
+            DatabaseHandler::get_credentials(authorizer, user_id, token, endpoint).await?;
         let url = sign_download_url(
             &credentials.access_key,
             &credentials.secret_key,
@@ -162,6 +163,7 @@ impl DatabaseHandler {
         request: PresignedUpload,
         authorizer: Arc<PermissionHandler>,
         user_id: DieselUlid,
+        token: Option<DieselUlid>,
     ) -> Result<String> {
         let object_id = request.get_id()?;
         let multipart = request.get_multipart();
@@ -172,7 +174,7 @@ impl DatabaseHandler {
 
         let endpoint = self.get_project_endpoint(project_id, cache.clone()).await?;
         let (endpoint_host_url, endpoint_s3_url, ssl, credentials) =
-            DatabaseHandler::get_credentials(authorizer, user_id, None, endpoint).await?;
+            DatabaseHandler::get_credentials(authorizer, user_id, token, endpoint).await?;
         let upload_id = if multipart {
             DatabaseHandler::impersonated_multi_upload_init(
                 &credentials.access_key,
