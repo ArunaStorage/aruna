@@ -156,7 +156,7 @@ impl SearchService for SearchServiceImpl {
                     let mut permission = PermissionLevel::Read;
                     for (id, perm) in user.attributes.0.permissions.clone() {
                         let all_subs = self.cache.get_subresources(&id).unwrap_or_default(); // This is empty if unwrap fails -> should not affect anything
-                        if all_subs.iter().contains(&id) {
+                        if all_subs.contains(&resource_ulid) {
                             let tmp_perm: DbPermissionLevel = match perm {
                                 ObjectMapping::OBJECT(perm) => perm,
                                 ObjectMapping::COLLECTION(perm) => perm,
