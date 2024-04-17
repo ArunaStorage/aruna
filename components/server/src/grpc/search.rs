@@ -153,7 +153,7 @@ impl SearchService for SearchServiceImpl {
                     (object, permission, bindings)
                 }
                 Err(_) => {
-                    let mut permission = PermissionLevel::Read;
+                    let mut permission = PermissionLevel::None;
                     for (id, perm) in user.attributes.0.permissions.clone() {
                         let all_subs = self.cache.get_subresources(&id).unwrap_or_default(); // This is empty if unwrap fails -> should not affect anything
                         if all_subs.contains(&resource_ulid) {
@@ -206,7 +206,7 @@ impl SearchService for SearchServiceImpl {
                 .collect::<Vec<_>>();
 
             object_plus.object.key_values = Json(KeyValues(stripped_labels));
-            (object_plus, PermissionLevel::Read, bindings)
+            (object_plus, PermissionLevel::None, bindings)
         };
         self.cache.add_stats_to_object(&mut object_plus);
 
@@ -299,7 +299,7 @@ impl SearchService for SearchServiceImpl {
                         objects.push((object, permission, bindings));
                     }
                     Err(_) => {
-                        let mut permission = PermissionLevel::Read;
+                        let mut permission = PermissionLevel::None;
                         for (id, perm) in user.attributes.0.permissions.clone() {
                             let all_subs = self.cache.get_subresources(&id).unwrap_or_default();
                             if all_subs.iter().contains(&id) {
@@ -354,7 +354,7 @@ impl SearchService for SearchServiceImpl {
                     .collect::<Vec<_>>();
 
                 object_plus.object.key_values = Json(KeyValues(stripped_labels));
-                objects.push((object_plus, PermissionLevel::Read, bindings));
+                objects.push((object_plus, PermissionLevel::None, bindings));
             }
             objects
         };
