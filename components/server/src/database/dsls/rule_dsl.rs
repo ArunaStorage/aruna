@@ -52,7 +52,7 @@ impl CrudDb for Rule {
         let query = "SELECT * FROM rules WHERE id = $1";
         let prepared = client.prepare(query).await?;
         Ok(client
-            .query_opt(&prepared, &[&id])
+            .query_opt(&prepared, &[&&id])
             .await?
             .map(|e| Rule::from_row(&e)))
     }

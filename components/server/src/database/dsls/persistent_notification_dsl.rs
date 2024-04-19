@@ -64,7 +64,7 @@ impl CrudDb for PersistentNotification {
         let prepared = client.prepare(query).await?;
 
         Ok(client
-            .query_opt(&prepared, &[&id])
+            .query_opt(&prepared, &[&&id])
             .await?
             .map(|e| PersistentNotification::from_row(&e)))
     }

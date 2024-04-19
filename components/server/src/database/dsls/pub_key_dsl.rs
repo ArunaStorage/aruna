@@ -26,7 +26,7 @@ impl CrudDb for PubKey {
         let query = "SELECT * FROM pub_keys WHERE id = $1";
         let prepared = client.prepare(query).await?;
         Ok(client
-            .query_opt(&prepared, &[&id])
+            .query_opt(&prepared, &[&&id])
             .await?
             .map(|e| PubKey::from_row(&e)))
     }

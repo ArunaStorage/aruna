@@ -37,7 +37,7 @@ impl CrudDb for IdentityProvider {
         let prepared = client.prepare(query).await?;
 
         Ok(client
-            .query_opt(&prepared, &[&issuer_name])
+            .query_opt(&prepared, &[&&issuer_name])
             .await?
             .map(|e| IdentityProvider::from_row(&e)))
     }

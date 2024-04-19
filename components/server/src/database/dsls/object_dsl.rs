@@ -175,7 +175,7 @@ impl CrudDb for Object {
         let mut backoff_counter: u64 = 0;
 
         while backoff_counter <= *MAX_RETRIES {
-            match client.query_opt(&prepared, &[&id]).await {
+            match client.query_opt(&prepared, &[&&id]).await {
                 Ok(query) => return Ok(query.map(|e| Object::from_row(&e))),
                 Err(err) => {
                     if let Some(sql_error) = err.code() {

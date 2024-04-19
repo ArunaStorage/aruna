@@ -73,7 +73,7 @@ impl CrudDb for InternalRelation {
         let query = "SELECT * FROM internal_relations WHERE id = $1";
         let prepared = client.prepare(query).await?;
         Ok(client
-            .query_opt(&prepared, &[&id])
+            .query_opt(&prepared, &[&&id])
             .await?
             .map(|e| InternalRelation::from_row(&e)))
     }
