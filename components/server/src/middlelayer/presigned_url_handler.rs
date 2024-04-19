@@ -7,7 +7,9 @@ use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::endpoints_request_types::GetEP;
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_client::DataproxyUserServiceClient;
-use aruna_rust_api::api::dataproxy::services::v2::{GetCredentialsRequest, GetCredentialsResponse};
+use aruna_rust_api::api::dataproxy::services::v2::{
+    CreateOrUpdateCredentialsRequest, GetCredentialsRequest, GetCredentialsResponse,
+};
 use aruna_rust_api::api::storage::services::v2::get_endpoint_request::Endpoint as APIEndpointEnum;
 use aruna_rust_api::api::storage::services::v2::{
     GetDownloadUrlRequest, GetEndpointRequest, GetUploadUrlRequest,
@@ -30,39 +32,6 @@ use url::Url;
 pub struct PresignedUpload(pub GetUploadUrlRequest);
 pub struct PresignedDownload(pub GetDownloadUrlRequest);
 impl DatabaseHandler {
-    pub async fn create_and_add_s3_credentials(
-        &self,
-        cache: Arc<Cache>,
-        authorizer: Arc<PermissionHandler>,
-        object_id: DieselUlid,
-        user_id: DieselUlid,
-        token_id: Option<DieselUlid>,
-    ) -> Result<GetCredentialsResponse> {
-        let (project_id, ..) = DatabaseHandler::get_path(object_id, cache.clone()).await?;
-        let endpoint = self.get_project_endpoint(project_id, cache.clone()).await?;
-
-        // Not sure if this is needed
-        // Check if user trusts endpoint
-        let user = cache
-            .get_user(&user_id)
-            .ok_or_else(|| anyhow!("User not found"))?;
-        if !user
-            .attributes
-            .0
-            .trusted_endpoints
-            .contains_key(&endpoint.id)
-        {
-            return Err(anyhow!("User does not trust endpoint"));
-        }
-        let (_, _, _, credentials) = DatabaseHandler::get_credentials(
-            authorizer.clone(),
-            user_id,
-            token_id,
-            endpoint.clone(),
-        )
-        .await?;
-        Ok(credentials)
-    }
     pub async fn get_presigned_download_with_credentials(
         &self,
         cache: Arc<Cache>,
@@ -70,31 +39,16 @@ impl DatabaseHandler {
         request: PresignedDownload,
         user_id: DieselUlid,
         token_id: Option<DieselUlid>,
-    ) -> Result<(String, Option<GetCredentialsResponse>)> {
+    ) -> Result<(String, GetCredentialsResponse)> {
         let object_id = request.get_id()?;
+
         let (project_id, bucket_name, key) =
             DatabaseHandler::get_path(object_id, cache.clone()).await?;
         let endpoint = self.get_project_endpoint(project_id, cache.clone()).await?;
-
-        // Not sure if this is needed
-        // Check if user trusts endpoint
-        let user = cache
-            .get_user(&user_id)
-            .ok_or_else(|| anyhow!("User not found"))?;
-        if !user
-            .attributes
-            .0
-            .trusted_endpoints
-            .contains_key(&endpoint.id)
-        {
-            return Err(anyhow!("User does not trust endpoint"));
-        }
-
-        // TODO: Optimizing
-        let (_, endpoint_s3_url, ssl, credentials) =
-            DatabaseHandler::get_credentials(authorizer.clone(), user_id, None, endpoint.clone())
-                .await?;
-
+        let (_, endpoint_s3_url, ssl, credentials) = DatabaseHandler::get_or_create_credentials(
+            authorizer, user_id, token_id, endpoint, true,
+        )
+        .await?;
         let url = sign_download_url(
             &credentials.access_key,
             &credentials.secret_key,
@@ -103,19 +57,6 @@ impl DatabaseHandler {
             &key,
             &endpoint_s3_url,
         )?;
-        let credentials = match token_id {
-            Some(_) => {
-                let (_, _, _, credentials) = DatabaseHandler::get_credentials(
-                    authorizer.clone(),
-                    user_id,
-                    token_id,
-                    endpoint.clone(),
-                )
-                .await?;
-                Some(credentials)
-            }
-            None => None,
-        };
         Ok((url, credentials))
     }
     pub async fn get_presigned_download(
@@ -146,7 +87,8 @@ impl DatabaseHandler {
         }
 
         let (_, endpoint_s3_url, ssl, credentials) =
-            DatabaseHandler::get_credentials(authorizer, user_id, token, endpoint).await?;
+            DatabaseHandler::get_or_create_credentials(authorizer, user_id, token, endpoint, true)
+                .await?;
         let url = sign_download_url(
             &credentials.access_key,
             &credentials.secret_key,
@@ -174,7 +116,8 @@ impl DatabaseHandler {
 
         let endpoint = self.get_project_endpoint(project_id, cache.clone()).await?;
         let (endpoint_host_url, endpoint_s3_url, ssl, credentials) =
-            DatabaseHandler::get_credentials(authorizer, user_id, token, endpoint).await?;
+            DatabaseHandler::get_or_create_credentials(authorizer, user_id, token, endpoint, true)
+                .await?;
         let upload_id = if multipart {
             DatabaseHandler::impersonated_multi_upload_init(
                 &credentials.access_key,
@@ -289,11 +232,12 @@ impl DatabaseHandler {
         .await
     }
 
-    pub async fn get_credentials(
+    pub async fn get_or_create_credentials(
         authorizer: Arc<PermissionHandler>,
         user_id: DieselUlid,
         token_id: Option<DieselUlid>,
         project_endpoint: Endpoint,
+        allow_create: bool,
     ) -> Result<(String, String, bool, GetCredentialsResponse)> {
         // Get s3 creds with slt:
         // 1. Create short-lived token with intent
@@ -359,10 +303,30 @@ impl DatabaseHandler {
         );
 
         debug!("Send Request to DataProxy");
-        let response = dp_conn
-            .get_credentials(credentials_request)
-            .await?
-            .into_inner();
+        let response = match dp_conn.get_credentials(credentials_request).await {
+            Ok(response) => response.into_inner(),
+            Err(e) => {
+                if e.code() == tonic::Code::Unauthenticated && allow_create {
+                    debug!("Credentials not available, creating a new one.");
+                    let mut credentials_request = Request::new(CreateOrUpdateCredentialsRequest {});
+                    credentials_request.metadata_mut().append(
+                        AsciiMetadataKey::from_bytes("Authorization".as_bytes())?,
+                        AsciiMetadataValue::try_from(format!("Bearer {}", slt))?,
+                    );
+                    let response = dp_conn
+                        .create_or_update_credentials(credentials_request)
+                        .await?
+                        .into_inner();
+                    GetCredentialsResponse {
+                        access_key: response.access_key,
+                        secret_key: response.secret_key,
+                    }
+                } else {
+                    log::error!("Error getting credentials from Dataproxy: {}", e);
+                    return Err(anyhow!("Error getting credentials from Dataproxy: {}", e));
+                }
+            }
+        };
         debug!("{:#?}", response);
 
         Ok((endpoint_host_url, endpoint_s3_url, ssl, response))

@@ -182,13 +182,6 @@ impl HookHandler {
                 let (secret, download, pubkey_serial, upload_credentials) = self
                     .get_template_input(object.clone(), hook.clone(), user_id)
                     .await?;
-                let (access_key, secret_key) = match upload_credentials {
-                    Some(ref creds) => (
-                        Some(creds.access_key.to_string()),
-                        Some(creds.secret_key.to_string()),
-                    ),
-                    None => (None, None),
-                };
 
                 // Create & send request
                 let base_request = match method {
@@ -220,8 +213,8 @@ impl HookHandler {
                             secret,
                             download,
                             pubkey_serial: pubkey_serial.into(),
-                            access_key,
-                            secret_key,
+                            access_key: Some(upload_credentials.access_key),
+                            secret_key: Some(upload_credentials.secret_key),
                         })?;
                         base_request.json(&json)
                     }
@@ -385,88 +378,53 @@ impl HookHandler {
         object: ObjectWithRelations,
         hook: HookWithAssociatedProject,
         user_id: DieselUlid,
-    ) -> Result<(String, Option<String>, i16, Option<GetCredentialsResponse>)> {
+    ) -> Result<(String, Option<String>, i16, GetCredentialsResponse)> {
         let object_id = object.object.id;
         // This creates only presigned download urls for available objects.
         // If ObjectType is not OBJECT, only s3 credentials are generated.
         // This should allow for generic external hooks that can also be
         // triggered for other ObjectTypes than OBJECTs
-        let (secret, download, pubkey_serial, upload_credentials) =
-            match (object.object.object_type, &object.object.object_status) {
-                // Get download url and s3-credentials for upload
-                (ObjectType::OBJECT, ObjectStatus::AVAILABLE) => {
-                    let (secret, pubkey_serial) = self
-                        .authorizer
-                        .token_handler
-                        .sign_hook_secret(self.database_handler.cache.clone(), object_id, hook.id)
-                        .await?;
-                    // Create append only s3-credentials
-                    let append_only_token = APIToken {
-                        pub_key: pubkey_serial.into(),
-                        name: format!("{}-append_only", hook.id),
-                        created_at: chrono::Utc::now().naive_utc(),
-                        expires_at: hook.timeout,
-                        // TODO: Custom resource permissions for hooks
-                        object_id: Some(ObjectMapping::PROJECT(hook.project_id)),
-                        user_rights: crate::database::enums::DbPermissionLevel::APPEND,
-                    };
-                    let token_id = self
-                        .database_handler
-                        .create_hook_token(&user_id, append_only_token)
-                        .await?;
-
-                    // Create download url for response
-                    let request = PresignedDownload(GetDownloadUrlRequest {
-                        object_id: object_id.to_string(),
-                    });
-                    let (download, upload_credentials) = self
-                        .database_handler
-                        .get_presigned_download_with_credentials(
-                            self.database_handler.cache.clone(),
-                            self.authorizer.clone(),
-                            request,
-                            user_id,
-                            Some(token_id),
-                        )
-                        .await?;
-                    let download = Some(download);
-                    (secret, download, pubkey_serial, upload_credentials)
-                }
-                // Get only s3-credentials for upload
-                (_, _) => {
-                    let (secret, pubkey_serial) = self
-                        .authorizer
-                        .token_handler
-                        .sign_hook_secret(self.database_handler.cache.clone(), object_id, hook.id)
-                        .await?;
-                    // Create append only s3-credentials
-                    let append_only_token = APIToken {
-                        pub_key: pubkey_serial.into(),
-                        name: format!("{}-append_only", hook.id),
-                        created_at: chrono::Utc::now().naive_utc(),
-                        expires_at: hook.timeout,
-                        // TODO: Custom resource permissions for hooks
-                        object_id: Some(ObjectMapping::PROJECT(hook.project_id)),
-                        user_rights: crate::database::enums::DbPermissionLevel::APPEND,
-                    };
-                    let token_id = self
-                        .database_handler
-                        .create_hook_token(&user_id, append_only_token)
-                        .await?;
-                    // Create download url for response
-                    let upload_credentials = self
-                        .database_handler
-                        .create_and_add_s3_credentials(
-                            self.database_handler.cache.clone(),
-                            self.authorizer.clone(),
-                            object_id,
-                            user_id,
-                            Some(token_id),
-                        )
-                        .await?;
-                    (secret, None, pubkey_serial, Some(upload_credentials))
-                }
+        let (secret, download, pubkey_serial, upload_credentials) = {
+            let (secret, pubkey_serial) = self
+                .authorizer
+                .token_handler
+                .sign_hook_secret(self.database_handler.cache.clone(), object_id, hook.id)
+                .await?;
+            // Create append only s3-credentials
+            let append_only_token = APIToken {
+                pub_key: pubkey_serial.into(),
+                name: format!("{}-append_only", hook.id),
+                created_at: chrono::Utc::now().naive_utc(),
+                expires_at: hook.timeout,
+                // TODO: Custom resource permissions for hooks
+                object_id: Some(ObjectMapping::PROJECT(hook.project_id)),
+                user_rights: crate::database::enums::DbPermissionLevel::APPEND,
             };
+            let token_id = self
+                .database_handler
+                .create_hook_token(&user_id, append_only_token)
+                .await?;
+
+            // Create download url for response
+            let request = PresignedDownload(GetDownloadUrlRequest {
+                object_id: object_id.to_string(),
+            });
+            let (download, upload_credentials) = self
+                .database_handler
+                .get_presigned_download_with_credentials(
+                    self.database_handler.cache.clone(),
+                    self.authorizer.clone(),
+                    request,
+                    user_id,
+                    Some(token_id),
+                )
+                .await?;
+            let download = match (object.object.object_type, &object.object.object_status) {
+                (ObjectType::OBJECT, ObjectStatus::AVAILABLE) => Some(download),
+                _ => None,
+            };
+            (secret, download, pubkey_serial, upload_credentials)
+        };
         Ok((secret, download, pubkey_serial, upload_credentials))
     }
 }
