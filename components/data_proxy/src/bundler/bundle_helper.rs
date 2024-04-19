@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::{data_backends::storage_backend::StorageBackend, structs::ObjectLocation};
+use ahash::HashSet;
 use futures_util::TryStreamExt;
 use pithos_lib::helpers::notifications::Message;
 use pithos_lib::{
@@ -18,9 +19,31 @@ use tracing::{debug, info_span, trace, Instrument};
 
 #[tracing::instrument(level = "trace", skip(path_level_vec, backend))]
 pub async fn get_bundle(
-    path_level_vec: Vec<(String, Option<ObjectLocation>)>,
+    mut path_level_vec: Vec<(String, Option<ObjectLocation>)>,
     backend: Arc<Box<dyn StorageBackend>>,
 ) -> Option<StreamingBlob> {
+    let mut uniques = HashSet::default();
+
+    let mut final_levels = Vec::new();
+
+    for (name, loc) in path_level_vec.drain(..) {
+        if uniques.contains(&name) {
+            continue;
+        }
+        uniques.insert(name.clone());
+        let name = name.strip_prefix("/").unwrap_or(&name).to_string();
+        if loc.is_some() {
+            final_levels.push((name, loc.clone()));
+            continue;
+        }
+
+        if !name.ends_with("/") {
+            final_levels.push((format!("{}/", name.clone()), loc.clone()));
+            continue;
+        }
+    }
+
+    trace!(?final_levels);
     let (file_info_sender, file_info_receiver) = async_channel::bounded(10);
     let (data_tx, data_sx) = async_channel::bounded(10);
     let (final_sender, final_receiver) = async_channel::bounded(10);
@@ -29,9 +52,9 @@ pub async fn get_bundle(
 
     tokio::spawn(
         async move {
-            let mut counter = 1; // Start with 1 for comparison with len()
-            let len = path_level_vec.len();
-            for (name, loc) in path_level_vec {
+            let mut counter = 0; // Start with 1 for comparison with len()
+            let len = final_levels.len();
+            for (name, loc) in final_levels {
                 trace!(object = name, ?loc);
                 let data_tx_clone = data_tx.clone();
                 let file_info_sender_clone = file_info_sender.clone();
