@@ -5,25 +5,26 @@ use crate::data_backends::storage_backend::StorageBackend;
 use anyhow::Result;
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
+use http::HeaderValue;
 use http::Method;
 use http::StatusCode;
 use hyper::service::Service;
-use hyper::Server;
+use hyper_util::rt::TokioExecutor;
+use hyper_util::rt::TokioIo;
+use hyper_util::server::conn::auto::Builder as ConnBuilder;
 use s3s::s3_error;
 use s3s::service::S3Service;
 use s3s::service::S3ServiceBuilder;
 use s3s::service::SharedS3Service;
 use s3s::Body;
 use s3s::S3Error;
+use tokio::net::TcpListener;
 use std::convert::Infallible;
 use std::future::ready;
 use std::future::Ready;
-use std::task::{Context, Poll};
-use std::{net::TcpListener, sync::Arc};
+use std::sync::Arc;
 use tracing::error;
 use tracing::info;
-use tracing::info_span;
-use tracing::Instrument;
 
 pub struct S3Server {
     s3service: S3Service,
@@ -63,45 +64,50 @@ impl S3Server {
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn run(self) -> Result<()> {
         // Run server
-        let listener = TcpListener::bind(&self.address).map_err(|e| {
+        let listener = TcpListener::bind(&self.address).await.map_err(|e| {
             error!(error = ?e, msg = e.to_string());
             tonic::Status::unauthenticated(e.to_string())
         })?;
-        let server = Server::from_tcp(listener)
-            .map_err(|e| {
-                error!(error = ?e, msg = e.to_string());
-                tonic::Status::unauthenticated(e.to_string())
-            })?
-            .serve(WrappingService(self.s3service.into_shared()).into_make_service());
-        info!("server is running at http(s)://{}/", self.address);
-        Ok(tokio::spawn(server)
-            .instrument(info_span!("s3_server_run"))
-            .await
-            .map_err(|e| {
-                error!(error = ?e, msg = e.to_string());
-                tonic::Status::unauthenticated(e.to_string())
-            })?
-            .map_err(|e| {
-                error!(error = ?e, msg = e.to_string());
-                tonic::Status::unauthenticated(e.to_string())
-            })?)
+
+        let local_addr = listener.local_addr()?;
+
+        let service = WrappingService(self.s3service.into_shared());
+
+        let connection = ConnBuilder::new(TokioExecutor::new());
+
+        let server = async move {
+            loop {
+                let (socket, _) = match listener.accept().await {
+                    Ok(ok) => ok,
+                    Err(err) => {
+                        tracing::error!("error accepting connection: {err}");
+                        continue;
+                    }
+                };
+                let service = service.clone();
+                let conn = connection.clone();
+                tokio::spawn(async move {
+                    let _ = conn.serve_connection(TokioIo::new(socket), service).await;
+                });
+            }
+        };
+
+        let _task = tokio::spawn(server);
+        info!("server is running at http://{local_addr}");
+
+        Ok(())
     }
 }
 
-impl Service<hyper::Request<hyper::Body>> for WrappingService {
+impl Service<hyper::Request<hyper::body::Incoming>> for WrappingService {
     type Response = hyper::Response<Body>;
 
     type Error = S3Error;
 
     type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
-    #[tracing::instrument(level = "trace", skip(self))]
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
     #[tracing::instrument(level = "trace", skip(self, req))]
-    fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
+    fn call(&self, req: hyper::Request<hyper::body::Incoming>) -> Self::Future {
         // Catch OPTIONS requests
         if req.method() == Method::OPTIONS {
             let resp = Box::pin(async {
@@ -116,13 +122,19 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
             return resp;
         }
 
-        let mut service = self.0.clone();
+        let service = self.0.clone();
         let resp = service.call(req);
         let res = resp.map(|r| {
             r.map(|mut r| {
                 if r.headers().contains_key("Transfer-Encoding") {
                     r.headers_mut().remove("Content-Length");
                 }
+
+                let headers = r.headers_mut();
+                headers.insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
+                headers.insert("Access-Control-Allow-Methods", HeaderValue::from_static("*"));
+                headers.insert("Access-Control-Allow-Headers", HeaderValue::from_static("*"));
+                
 
                 // Workaround to return 206 (Partial Content) for range responses
                 if r.headers().contains_key("Content-Range")
@@ -166,12 +178,7 @@ impl<T, S: Clone> Service<T> for MakeService<S> {
     type Future = Ready<Result<Self::Response, Self::Error>>;
 
     #[tracing::instrument(level = "trace", skip(self))]
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    #[tracing::instrument(level = "trace", skip(self))]
-    fn call(&mut self, _: T) -> Self::Future {
+    fn call(&self, _: T) -> Self::Future {
         ready(Ok(self.0.clone()))
     }
 }

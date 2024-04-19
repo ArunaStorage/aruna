@@ -19,6 +19,9 @@ use aws_sdk_s3::{
     Client,
 };
 use diesel_ulid::DieselUlid;
+use futures::TryStreamExt;
+use http_body_util::StreamBody;
+use hyper::body::Frame;
 use rand::Rng;
 use tracing::error;
 
@@ -99,8 +102,12 @@ impl StorageBackend for S3Backend {
         self.check_and_create_bucket(location.bucket.clone())
             .await?;
 
-        let hyper_body = hyper::Body::wrap_stream(recv);
-        let bytestream = ByteStream::from(SdkBody::from_body_0_4(hyper_body));
+        let mapped = recv.map_ok(|element| {
+            Frame::data(element)
+        });
+
+        let hyper_body = StreamBody::new(mapped);
+        let bytestream = ByteStream::from(SdkBody::from_body_1_x(hyper_body));
 
         match self
             .s3_client
@@ -209,8 +216,12 @@ impl StorageBackend for S3Backend {
         content_len: i64,
         part_number: i32,
     ) -> Result<PartETag> {
-        let hyper_body = hyper::Body::wrap_stream(recv);
-        let bytestream = ByteStream::from(SdkBody::from_body_0_4(hyper_body));
+
+        let mapped = recv.map_ok(|element| {
+            Frame::data(element)
+        });
+        let hyper_body = StreamBody::new(mapped);
+        let bytestream = ByteStream::from(SdkBody::from_body_1_x(hyper_body));
 
         let upload = self
             .s3_client
