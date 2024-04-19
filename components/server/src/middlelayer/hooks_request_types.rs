@@ -322,7 +322,7 @@ impl CustomTemplate {
         object: &Object,
         secret: String,
         download_url: Option<String>,
-        upload_credentials: Option<GetCredentialsResponse>,
+        upload_credentials: GetCredentialsResponse,
         pubkey_serial: i32,
     ) -> Result<String> {
         let object_status = match object.object_status {
@@ -339,10 +339,10 @@ impl CustomTemplate {
             DataClass::WORKSPACE => "WORKSPACE".to_string(),
             DataClass::CONFIDENTIAL => "CONFIDENTIAL".to_string(),
         };
-        let (access_key, secret_key) = match upload_credentials {
-            Some(creds) => (creds.access_key, creds.secret_key),
-            None => (String::new(), String::new()),
-        };
+        let GetCredentialsResponse {
+            access_key,
+            secret_key,
+        } = upload_credentials;
         let download_url = download_url.unwrap_or_default();
         let replacement_pairs = [
             (r"\{\{secret\}\}", secret),

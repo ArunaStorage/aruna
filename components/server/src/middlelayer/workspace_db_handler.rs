@@ -130,8 +130,14 @@ impl DatabaseHandler {
                 access_key,
                 secret_key,
             },
-        ) = DatabaseHandler::get_credentials(authorizer.clone(), service_user.id, None, default)
-            .await?;
+        ) = DatabaseHandler::get_or_create_credentials(
+            authorizer.clone(),
+            service_user.id,
+            None,
+            default,
+            false,
+        )
+        .await?;
 
         Ok((workspace.id, access_key, secret_key, token_secret))
     }
