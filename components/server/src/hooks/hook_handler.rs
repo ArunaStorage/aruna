@@ -29,6 +29,7 @@ use async_channel::Receiver;
 use diesel_ulid::DieselUlid;
 use reqwest::header::CONTENT_TYPE;
 use std::sync::Arc;
+use std::time::Duration;
 
 #[derive(Clone)]
 pub struct HookHandler {
@@ -207,7 +208,7 @@ impl HookHandler {
                 // Put everything into template
                 let data_request = match template {
                     TemplateVariant::Basic => {
-                        let json = serde_json::to_string(&BasicTemplate {
+                        let input = BasicTemplate {
                             hook_id: hook.id,
                             object: object_wrapper.into(),
                             secret,
@@ -215,8 +216,8 @@ impl HookHandler {
                             pubkey_serial: pubkey_serial.into(),
                             access_key: Some(upload_credentials.access_key),
                             secret_key: Some(upload_credentials.secret_key),
-                        })?;
-                        base_request.json(&json)
+                        };
+                        base_request.json(&input)
                     }
                     TemplateVariant::Custom(template) => {
                         let template = CustomTemplate::create_custom_template(
@@ -404,6 +405,8 @@ impl HookHandler {
                 .database_handler
                 .create_hook_token(&user_id, append_only_token)
                 .await?;
+
+            tokio::time::sleep(Duration::from_secs(10)).await;
 
             // Create download url for response
             let request = PresignedDownload(GetDownloadUrlRequest {
