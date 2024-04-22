@@ -42,16 +42,13 @@ impl DatabaseHandler {
         user_id: DieselUlid,
         token_id: Option<DieselUlid>,
     ) -> Result<(String, GetCredentialsResponse)> {
-        dbg!("Start");
         let object_id = request.get_id()?;
 
         let (project_id, bucket_name, key) =
             DatabaseHandler::get_path(object_id, cache.clone()).await?;
 
-        dbg!("path");
         let endpoint = self.get_project_endpoint(project_id, cache.clone()).await?;
 
-        dbg!("endpoint");
         let mut backoff_counter = 0;
         while backoff_counter <= *MAX_RETRIES {
             match DatabaseHandler::get_or_create_credentials(
@@ -65,7 +62,6 @@ impl DatabaseHandler {
             {
                 Ok(response) => {
                     let (_, endpoint_s3_url, ssl, credentials) = response;
-                    dbg!("get/create creds");
                     let url = sign_download_url(
                         &credentials.access_key,
                         &credentials.secret_key,
@@ -74,7 +70,6 @@ impl DatabaseHandler {
                         &key,
                         &endpoint_s3_url,
                     )?;
-                    dbg!("sign url");
                     return Ok((url, credentials));
                 }
                 Err(err) => {
