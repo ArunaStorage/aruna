@@ -2,6 +2,7 @@ use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::token_handler::{Action, Intent};
 use crate::caching::cache::Cache;
 use crate::database::dsls::endpoint_dsl::{Endpoint, HostConfig};
+use crate::database::dsls::object_dsl::{MAX_RETRIES, RETRY_TIMEOUT};
 use crate::database::enums::{DataProxyFeature, ObjectMapping};
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::endpoints_request_types::GetEP;
@@ -24,6 +25,7 @@ use reqsign::{AwsCredential, AwsV4Signer};
 use reqwest::Method;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 use tonic::metadata::{AsciiMetadataKey, AsciiMetadataValue};
 use tonic::transport::{Channel, ClientTlsConfig};
 use tonic::Request;
@@ -40,24 +42,51 @@ impl DatabaseHandler {
         user_id: DieselUlid,
         token_id: Option<DieselUlid>,
     ) -> Result<(String, GetCredentialsResponse)> {
+        dbg!("Start");
         let object_id = request.get_id()?;
 
         let (project_id, bucket_name, key) =
             DatabaseHandler::get_path(object_id, cache.clone()).await?;
+
+        dbg!("path");
         let endpoint = self.get_project_endpoint(project_id, cache.clone()).await?;
-        let (_, endpoint_s3_url, ssl, credentials) = DatabaseHandler::get_or_create_credentials(
-            authorizer, user_id, token_id, endpoint, true,
-        )
-        .await?;
-        let url = sign_download_url(
-            &credentials.access_key,
-            &credentials.secret_key,
-            ssl,
-            &bucket_name,
-            &key,
-            &endpoint_s3_url,
-        )?;
-        Ok((url, credentials))
+
+        dbg!("endpoint");
+        let mut backoff_counter = 0;
+        while backoff_counter <= *MAX_RETRIES {
+            match DatabaseHandler::get_or_create_credentials(
+                authorizer.clone(),
+                user_id,
+                token_id,
+                endpoint.clone(),
+                true,
+            )
+            .await
+            {
+                Ok(response) => {
+                    let (_, endpoint_s3_url, ssl, credentials) = response;
+                    dbg!("get/create creds");
+                    let url = sign_download_url(
+                        &credentials.access_key,
+                        &credentials.secret_key,
+                        ssl,
+                        &bucket_name,
+                        &key,
+                        &endpoint_s3_url,
+                    )?;
+                    dbg!("sign url");
+                    return Ok((url, credentials));
+                }
+                Err(err) => {
+                    log::error!("{}", err);
+                    backoff_counter += 1;
+                    tokio::time::sleep(Duration::from_millis(*RETRY_TIMEOUT ^ backoff_counter))
+                        .await;
+                    continue;
+                }
+            }
+        }
+        Err(anyhow!("Error presigning download url"))
     }
     pub async fn get_presigned_download(
         &self,
