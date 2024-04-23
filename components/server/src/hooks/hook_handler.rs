@@ -405,8 +405,6 @@ impl HookHandler {
                 .create_hook_token(&user_id, append_only_token)
                 .await?;
 
-            // tokio::time::sleep(Duration::from_secs(10)).await;
-
             // Create download url for response
             let request = PresignedDownload(GetDownloadUrlRequest {
                 object_id: object_id.to_string(),
