@@ -29,7 +29,6 @@ use async_channel::Receiver;
 use diesel_ulid::DieselUlid;
 use reqwest::header::CONTENT_TYPE;
 use std::sync::Arc;
-use std::time::Duration;
 
 #[derive(Clone)]
 pub struct HookHandler {
