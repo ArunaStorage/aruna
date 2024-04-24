@@ -552,7 +552,7 @@ impl Cache {
     pub async fn get_all_deactivated(&self) -> Vec<APIUser> {
         self.check_lock();
         Vec::from_iter(self.user_cache.iter().filter_map(|u| {
-            if u.active {
+            if !u.active {
                 Some(u.clone().into())
             } else {
                 None
