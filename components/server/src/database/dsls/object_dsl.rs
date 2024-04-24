@@ -184,7 +184,7 @@ impl CrudDb for Object {
                             "25P02" => {
                                 backoff_counter += 1;
                                 tokio::time::sleep(Duration::from_millis(
-                                    *RETRY_TIMEOUT ^ backoff_counter,
+                                    RETRY_TIMEOUT.pow(backoff_counter as u32),
                                 ))
                                 .await;
                             }
@@ -575,7 +575,7 @@ impl Object {
                             "25P02" => {
                                 backoff_counter += 1;
                                 tokio::time::sleep(Duration::from_millis(
-                                    *RETRY_TIMEOUT ^ backoff_counter,
+                                    RETRY_TIMEOUT.pow(backoff_counter as u32),
                                 ))
                                 .await;
                             }
@@ -629,7 +629,7 @@ impl Object {
                             "25P02" => {
                                 backoff_counter += 1;
                                 tokio::time::sleep(Duration::from_millis(
-                                    *RETRY_TIMEOUT ^ backoff_counter,
+                                    RETRY_TIMEOUT.pow(backoff_counter as u32),
                                 ))
                                 .await;
                             }

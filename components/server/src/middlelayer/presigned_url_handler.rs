@@ -75,8 +75,10 @@ impl DatabaseHandler {
                 Err(err) => {
                     log::error!("{}", err);
                     backoff_counter += 1;
-                    tokio::time::sleep(Duration::from_millis(*RETRY_TIMEOUT ^ backoff_counter))
-                        .await;
+                    tokio::time::sleep(Duration::from_millis(
+                        RETRY_TIMEOUT.pow(backoff_counter as u32),
+                    ))
+                    .await;
                     continue;
                 }
             }
