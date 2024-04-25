@@ -642,7 +642,7 @@ impl Cache {
         let proxy_user = User::try_from(user)?;
         let (to_update, to_delete) = if let Some(user) = self.users.get(&user_id) {
             let mut user = user.value().write().await;
-            let comparison = user.0.compare_permissions(&proxy_user);
+            let comparison = proxy_user.compare_permissions(&user.0);
             let new_keys = user
                 .1
                 .iter()
@@ -658,7 +658,6 @@ impl Cache {
             );
             (vec![], vec![])
         };
-        trace!(?to_update);
         for key in to_delete {
             self.access_keys.remove(&key);
             if let Some(persistence) = self.persistence.read().await.as_ref() {
@@ -667,11 +666,12 @@ impl Cache {
             }
         }
         for key in to_update {
-            let access_key_ref = if let Some(access_key) = self.access_keys.get(&key.0) {
-                access_key.value().clone()
-            } else {
-                continue;
-            };
+            let access_key_ref = self
+                .access_keys
+                .get(&key.0)
+                .ok_or_else(|| anyhow!("Access key not found"))?
+                .value()
+                .clone();
             let mut access_key = access_key_ref.write().await;
             access_key.permissions = key.1;
             if let Some(persistence) = self.persistence.read().await.as_ref() {
