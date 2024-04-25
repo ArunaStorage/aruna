@@ -658,6 +658,7 @@ impl Cache {
             );
             (vec![], vec![])
         };
+        trace!(?to_update);
         for key in to_delete {
             self.access_keys.remove(&key);
             if let Some(persistence) = self.persistence.read().await.as_ref() {
@@ -666,12 +667,11 @@ impl Cache {
             }
         }
         for key in to_update {
-            let access_key_ref = self
-                .access_keys
-                .get(&key.0)
-                .ok_or_else(|| anyhow!("Access key not found"))?
-                .value()
-                .clone();
+            let access_key_ref = if let Some(access_key) = self.access_keys.get(&key.0) {
+                access_key.value().clone()
+            } else {
+                continue;
+            };
             let mut access_key = access_key_ref.write().await;
             access_key.permissions = key.1;
             if let Some(persistence) = self.persistence.read().await.as_ref() {
