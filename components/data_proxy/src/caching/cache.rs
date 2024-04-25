@@ -642,6 +642,8 @@ impl Cache {
         let proxy_user = User::try_from(user)?;
         let (to_update, to_delete) = if let Some(user) = self.users.get(&user_id) {
             let mut user = user.value().write().await;
+            trace!(?proxy_user, "GRPC  USER");
+            trace!(user=?user.0, "DATABASE USER");
             let comparison = proxy_user.compare_permissions(&user.0);
             let new_keys = user
                 .1
