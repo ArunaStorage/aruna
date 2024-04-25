@@ -642,7 +642,7 @@ impl Cache {
         let proxy_user = User::try_from(user)?;
         let (to_update, to_delete) = if let Some(user) = self.users.get(&user_id) {
             let mut user = user.value().write().await;
-            let comparison = proxy_user.compare_permissions(&user.0);
+            let comparison = user.0.compare_permissions(&proxy_user);
             let new_keys = user
                 .1
                 .iter()

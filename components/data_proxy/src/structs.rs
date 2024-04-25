@@ -375,8 +375,8 @@ pub struct User {
 
 impl User {
     pub fn compare_permissions(
-        &self,
-        other: &User,
+        &self,        // GRPC user
+        other: &User, // database user
     ) -> (
         Vec<(String, HashMap<DieselUlid, DbPermissionLevel>)>,
         Vec<String>,
