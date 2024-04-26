@@ -352,7 +352,7 @@ impl ObjectService for ObjectServiceImpl {
         let object_id = tonic_invalid!(request.get_object_id(), "Invalid object id");
         let (parent_id, parent_mapping) = tonic_invalid!(request.get_parent(), "Invalid object id");
         let parent_ctx = Context::res_ctx(parent_id, DbPermissionLevel::APPEND, true);
-        let object_ctx = Context::res_ctx(parent_id, DbPermissionLevel::READ, true);
+        let object_ctx = Context::res_ctx(object_id, DbPermissionLevel::READ, true);
         let user_id = tonic_auth!(
             self.authorizer
                 .check_permissions(&token, vec![parent_ctx, object_ctx])
