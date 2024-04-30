@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use std::collections::hash_map::RandomState;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -17,11 +18,13 @@ use async_nats::jetstream::{stream::Stream, Context, Message};
 use async_trait::async_trait;
 use diesel_ulid::DieselUlid;
 use futures::future::try_join_all;
-use futures::StreamExt;
+use futures::{StreamExt, TryStreamExt};
 use prost::bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
-use crate::database::dsls::object_dsl::{Hierarchy, ObjectWithRelations};
+use crate::database::dsls::object_dsl::{
+    Hierarchy, ObjectWithRelations, MAX_RETRIES, RETRY_TIMEOUT,
+};
 use crate::database::dsls::user_dsl::User;
 use crate::utils::grpc_utils::{checksum_resource, checksum_user, generic_object_without_rules};
 
@@ -239,6 +242,31 @@ impl EventHandler for NatsIoHandler {
 
         // Return empty Ok to signal success
         Ok(())
+    }
+
+    async fn wait_for_acknowledgement(&self, subject: &str) -> anyhow::Result<()> {
+        // Get consumers
+        let mut backoff_counter = 0;
+        'outer: while backoff_counter <= *MAX_RETRIES {
+            let mut info = self.stream.consumers();
+            while let Some(consumer) = info.try_next().await? {
+                // Match consumers to proxy ids
+                if consumer.config.filter_subject.ends_with(&subject) {
+                    // Wait for sync
+                    if consumer.num_ack_pending != 0 {
+                        backoff_counter += 1;
+                        tokio::time::sleep(Duration::from_millis(
+                            RETRY_TIMEOUT.pow(backoff_counter as u32),
+                        ))
+                        .await;
+                        continue 'outer;
+                    } else {
+                        return Ok(());
+                    }
+                };
+            }
+        }
+        Err(anyhow!("Could not sync with {subject}"))
     }
 }
 

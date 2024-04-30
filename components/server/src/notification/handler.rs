@@ -62,6 +62,9 @@ pub trait EventHandler {
 
     // Deletes a stream group which is represented through a Nats.io Jetstream consumer.
     async fn delete_event_consumer(&self, event_consumer_id: String) -> anyhow::Result<()>;
+
+    // Waits for a specific consumer to acknowledge all messages
+    async fn wait_for_acknowledgement(&self, subject: &str) -> anyhow::Result<()>;
 }
 
 // An EventStreamHandler handles the message stream based on StreamGroups/Consumers
