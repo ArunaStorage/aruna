@@ -28,9 +28,7 @@ impl TryFrom<i32> for KeyValueVariant {
             1 => Ok(KeyValueVariant::LABEL),
             2 => Ok(KeyValueVariant::STATIC_LABEL),
             3 => Ok(KeyValueVariant::HOOK),
-            4 => Err(anyhow!(
-                "Can't create HookStatus without outside of hook callbacks"
-            )),
+            4 => Err(anyhow!("Can't create HookStatus outside of hook callbacks")),
             _ => Err(anyhow!("KeyValue variant not defined.")),
         }
     }

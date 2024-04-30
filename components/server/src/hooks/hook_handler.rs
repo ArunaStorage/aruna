@@ -27,6 +27,7 @@ use aruna_rust_api::api::storage::services::v2::{
 };
 use async_channel::Receiver;
 use diesel_ulid::DieselUlid;
+use log::log;
 use reqwest::header::CONTENT_TYPE;
 use std::sync::Arc;
 
@@ -233,7 +234,11 @@ impl HookHandler {
                             .body(template)
                     }
                 };
-                data_request.send().await?;
+                if let Err(e) = data_request.send().await {
+                    log::error!("External hook error: {e}");
+                    self.add_status(&hook, &object, HookStatusVariant::ERROR(e.to_string()))
+                        .await?;
+                };
             }
         };
         Ok(())
