@@ -287,8 +287,7 @@ impl DatabaseHandler {
 
         // Update cache
         let updated = Object::get_object_with_relations(&object_id, &client).await?;
-        self.cache.upsert_object(&object_id, updated);
-        // TODO: Send notification with updated status
+        self.cache.upsert_object(&object_id, updated.clone());
         if let Err(err) = self
             .natsio_handler
             .register_resource_event(

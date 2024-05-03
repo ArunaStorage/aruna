@@ -56,7 +56,6 @@ impl DatabaseHandler {
         };
         user.create(&client).await?;
         self.cache.update_user(&user_id, user.clone());
-        // TODO: Updated User notification
         if let Err(err) = self
             .natsio_handler
             .register_user_event(&user, EventVariant::Created)
@@ -134,8 +133,6 @@ impl DatabaseHandler {
             expires_at,
         )?;
 
-        // TODO: Updated User notification
-
         if let Err(err) = self
             .natsio_handler
             .register_user_event(&service_account, EventVariant::Updated)
@@ -160,9 +157,9 @@ impl DatabaseHandler {
         let client = self.database.get_client().await?;
         let service_account =
             User::remove_user_token(&client, &service_account_id, &token_id).await?;
-        self.cache.update_user(&service_account_id, service_account);
+        self.cache
+            .update_user(&service_account_id, service_account.clone());
 
-        // TODO: Updated User notification
         if let Err(err) = self
             .natsio_handler
             .register_user_event(&service_account, EventVariant::Updated)
@@ -186,7 +183,6 @@ impl DatabaseHandler {
         self.cache
             .update_user(&service_account_id, service_account.clone());
 
-        // TODO: Updated User notification
         if let Err(err) = self
             .natsio_handler
             .register_user_event(&service_account, EventVariant::Updated)
@@ -209,7 +205,6 @@ impl DatabaseHandler {
         service_account.delete(&client).await?;
         self.cache.remove_user(&service_account_id);
 
-        // TODO: Updated User notification
         if let Err(err) = self
             .natsio_handler
             .register_user_event(&service_account, EventVariant::Deleted)
