@@ -8,6 +8,7 @@ use crate::database::dsls::workspaces_dsl::WorkspaceTemplate;
 use crate::database::enums::{DataClass, ObjectMapping};
 use crate::middlelayer::token_request_types::CreateToken;
 use crate::middlelayer::workspace_request_types::{CreateTemplate, CreateWorkspace};
+use crate::notification::handler::EventHandler;
 use crate::{database::crud::CrudDb, middlelayer::db_handler::DatabaseHandler};
 use anyhow::{anyhow, Ok, Result};
 use aruna_rust_api::api::dataproxy::services::v2::{GetCredentialsRequest, GetCredentialsResponse};
@@ -72,7 +73,9 @@ impl DatabaseHandler {
         let mut workspace = CreateWorkspace::make_project(template, endpoints.clone());
 
         workspace.create(transaction_client).await?;
-        Hook::add_workspace_to_hook(workspace.id, &hooks, transaction_client).await?;
+        if !hooks.is_empty() {
+            Hook::add_workspace_to_hook(workspace.id, &hooks, transaction_client).await?;
+        }
 
         // Create service account
         let mut service_user = CreateWorkspace::create_service_account(endpoints, workspace.id);
@@ -99,9 +102,15 @@ impl DatabaseHandler {
             .await?;
 
         // Update service account without explicit fetch
-        service_user.attributes.0.tokens.insert(token_ulid, token);
-        self.cache
-            .update_user(&service_user.id, service_user.clone());
+        // This is not needed, because create_token() updates cache
+        // service_user.attributes.0.tokens.insert(token_ulid, token);
+        // self.cache
+        //     .update_user(&service_user.id, service_user.clone());
+
+        // Wait for ack of default proxy, so that create credentials does not fail
+        self.natsio_handler
+            .wait_for_acknowledgement(&default.id.to_string())
+            .await?;
 
         // Sign token
         let token_secret =
