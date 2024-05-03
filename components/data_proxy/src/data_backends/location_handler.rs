@@ -100,7 +100,7 @@ impl CompiledVariant {
         }
     }
 
-    pub fn into_names(&self, hierarchy: [Option<(DieselUlid, String)>; 4]) -> (String, String) {
+    pub fn to_names(&self, hierarchy: [Option<(DieselUlid, String)>; 4]) -> (String, String) {
         let mut bucket = String::new();
         for bucket_string in self
             .bucket_arguments

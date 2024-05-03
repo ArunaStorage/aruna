@@ -106,9 +106,13 @@ async fn create_and_delete_workspace() {
     // Create & mock endpoints
     // -> Default endpoint
     let default_endpoint = "01H81W0ZMB54YEP5711Q2BK46V".to_string();
-    let default_task = endpoint_mock::start_server("0.0.0.0:50052".parse::<SocketAddr>().unwrap())
-        .await
-        .unwrap();
+    let default_task = endpoint_mock::start_server(
+        db_handler.natsio_handler.clone(),
+        "0.0.0.0:50052".parse::<SocketAddr>().unwrap(),
+        default_endpoint.clone(),
+    )
+    .await
+    .unwrap();
     // -> Custom endpoint
     let request = CreateEP(CreateEndpointRequest {
         name: "workspace_test_endpoint".to_string(),
@@ -124,9 +128,13 @@ async fn create_and_delete_workspace() {
         }],
     });
     let (ep, _pk) = db_handler.create_endpoint(request).await.unwrap();
-    let second_task = endpoint_mock::start_server("0.0.0.0:50098".parse::<SocketAddr>().unwrap())
-        .await
-        .unwrap();
+    let second_task = endpoint_mock::start_server(
+        db_handler.natsio_handler.clone(),
+        "0.0.0.0:50098".parse::<SocketAddr>().unwrap(),
+        ep.id.to_string(),
+    )
+    .await
+    .unwrap();
 
     // Create hooks
     let mut hook = Hook {
@@ -347,9 +355,13 @@ pub async fn claim_workspace() {
         }],
     });
     let (ep, _pk) = db_handler.create_endpoint(request).await.unwrap();
-    let endpoint_task = endpoint_mock::start_server("0.0.0.0:50099".parse::<SocketAddr>().unwrap())
-        .await
-        .unwrap();
+    let endpoint_task = endpoint_mock::start_server(
+        db_handler.natsio_handler.clone(),
+        "0.0.0.0:50099".parse::<SocketAddr>().unwrap(),
+        ep.id.to_string(),
+    )
+    .await
+    .unwrap();
     let template = CreateTemplate(CreateWorkspaceTemplateRequest {
         owner_id: creator.id.to_string(),
         prefix: "test".to_string(),

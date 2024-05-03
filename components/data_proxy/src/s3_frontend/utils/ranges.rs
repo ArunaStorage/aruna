@@ -38,8 +38,8 @@ pub fn calculate_ranges(
             return Err(anyhow!("File not decrypted"));
         };
         let (mut a, b) = file.get_range_and_filter_by_range(pithos_lib::helpers::structs::Range {
-            from: aruna_range.from as u64,
-            to: aruna_range.to as u64,
+            from: aruna_range.from,
+            to: aruna_range.to,
         });
 
         if a.to > compressed_size {

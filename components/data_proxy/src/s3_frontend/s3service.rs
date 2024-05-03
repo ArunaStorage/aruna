@@ -287,7 +287,7 @@ impl S3 for ArunaS3Service {
 
         let (states, _) = objects_state.require_regular()?;
 
-        let (_, collection, dataset, object, location_state) = states.into_new_or_existing()?;
+        let (_, collection, dataset, object, location_state) = states.to_new_or_existing()?;
 
         trace!(?collection, ?dataset, ?object);
 
@@ -1069,7 +1069,7 @@ impl S3 for ArunaS3Service {
             s3_error!(InvalidObjectState, "Missing CheckAccess extension")
         })?;
 
-        match user_state.get_user_id() {
+        return match user_state.get_user_id() {
             Some(user_id) => {
                 let mut buckets = Vec::new();
                 for o in self
@@ -1096,18 +1096,16 @@ impl S3 for ArunaS3Service {
                 } else {
                     Some(buckets)
                 };
-                return Ok(S3Response::new(ListBucketsOutput {
+                Ok(S3Response::new(ListBucketsOutput {
                     buckets: bs,
                     owner: Some(Owner {
                         display_name: None,
                         id: Some(user_id.to_string()),
                     }),
-                }));
+                }))
             }
-            None => {
-                return Err(s3_error!(InvalidAccessKeyId, "Invalid access key / user"));
-            }
-        }
+            None => Err(s3_error!(InvalidAccessKeyId, "Invalid access key / user")),
+        };
     }
 
     #[tracing::instrument(err, skip(self, req))]
@@ -1144,7 +1142,7 @@ impl S3 for ArunaS3Service {
 
         let (states, _) = objects_state.require_regular()?;
 
-        let (_, collection, dataset, object, location_state) = states.into_new_or_existing()?;
+        let (_, collection, dataset, object, location_state) = states.to_new_or_existing()?;
 
         let (mut new_object, was_init) = match object {
             NewOrExistingObject::Existing(ob) => {

@@ -86,7 +86,7 @@ impl DatabaseHandler {
         self.cache.add_user(service_user.id, service_user.clone());
 
         // Create token
-        let (token_ulid, token) = self
+        let (token_ulid, _) = self
             .create_token(
                 &service_user.id,
                 authorizer.token_handler.get_current_pubkey_serial() as i32,

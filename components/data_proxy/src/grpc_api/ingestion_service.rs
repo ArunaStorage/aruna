@@ -33,7 +33,7 @@ impl DataproxyIngestionService for DataproxyIngestionServiceImpl {
     async fn ingest_existing_object(
         &self,
         request: tonic::Request<IngestExistingObjectRequest>,
-    ) -> std::result::Result<tonic::Response<IngestExistingObjectResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<IngestExistingObjectResponse>, tonic::Status> {
         let user_id = if let Some(a) = self.cache.auth.read().await.as_ref() {
             let token = get_token_from_md(request.metadata()).map_err(|e| {
                 error!(error = ?e, msg = e.to_string());

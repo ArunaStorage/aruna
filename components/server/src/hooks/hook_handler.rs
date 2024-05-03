@@ -13,7 +13,7 @@ use crate::{
     auth::permission_handler::PermissionHandler,
     database::dsls::{
         hook_dsl::{HookStatusValues, HookStatusVariant, HookWithAssociatedProject},
-        object_dsl::{KeyValue, KeyValueVariant, Object, ObjectWithRelations},
+        object_dsl::{KeyValue, ObjectWithRelations},
     },
     middlelayer::db_handler::DatabaseHandler,
 };

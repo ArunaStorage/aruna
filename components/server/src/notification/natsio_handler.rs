@@ -245,26 +245,52 @@ impl EventHandler for NatsIoHandler {
     }
 
     async fn wait_for_acknowledgement(&self, subject: &str) -> anyhow::Result<()> {
-        // Get consumers
         let mut backoff_counter = 0;
+        // store consumers in hashmap
+        let mut hash_set = HashSet::new();
         'outer: while backoff_counter <= *MAX_RETRIES {
+            // Get consumers
             let mut info = self.stream.consumers();
-            while let Some(consumer) = info.try_next().await? {
-                // Match consumers to proxy ids
-                if consumer.config.filter_subject.ends_with(&subject) {
-                    // Wait for sync
-                    if consumer.num_ack_pending != 0 {
-                        backoff_counter += 1;
-                        tokio::time::sleep(Duration::from_millis(
-                            RETRY_TIMEOUT.pow(backoff_counter as u32),
-                        ))
-                        .await;
-                        continue 'outer;
+            'inner: while let Some(consumer) = info.try_next().await? {
+                // returns false when already in hashmap
+                if hash_set.insert(consumer.name) {
+                    // Match consumers to proxy ids
+                    if consumer.config.filter_subject.ends_with(&subject) {
+                        // Wait for sync
+                        if consumer.num_ack_pending != 0 {
+                            backoff_counter += 1;
+                            tokio::time::sleep(Duration::from_millis(
+                                RETRY_TIMEOUT.pow(backoff_counter as u32),
+                            ))
+                            .await;
+                            continue 'outer;
+                        } else {
+                            // consumer is synced
+                            return Ok(());
+                        }
                     } else {
-                        return Ok(());
-                    }
-                };
+                        // Iterate over next consumer info
+                        continue 'inner;
+                    };
+                } else {
+                    // If all consumers are visited and none ends with wanted subject,
+                    // either wait for timeout or new consumer config
+                    backoff_counter += 1;
+                    tokio::time::sleep(Duration::from_millis(
+                        RETRY_TIMEOUT.pow(backoff_counter as u32),
+                    ))
+                    .await;
+                    continue 'outer;
+                }
             }
+            // If try_next() does not return anything,
+            // either wait for timeout or wait for updated consumers config
+            backoff_counter += 1;
+            tokio::time::sleep(Duration::from_millis(
+                RETRY_TIMEOUT.pow(backoff_counter as u32),
+            ))
+            .await;
+            continue 'outer;
         }
         Err(anyhow!("Could not sync with {subject}"))
     }

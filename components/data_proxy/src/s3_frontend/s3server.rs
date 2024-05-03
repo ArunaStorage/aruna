@@ -109,7 +109,7 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
                     .header("Access-Control-Allow-Origin", "*")
                     .header("Access-Control-Allow-Methods", "*")
                     .header("Access-Control-Allow-Headers", "*")
-                    .body(s3s::Body::empty())
+                    .body(Body::empty())
                     .map_err(|_| s3_error!(InvalidRequest, "Invalid OPTIONS request"))
             });
 

@@ -64,7 +64,7 @@ pub fn get_token_from_md(md: &MetadataMap) -> Result<String> {
         .get("Authorization")
         .ok_or(anyhow!("Metadata token not found"))
         .map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?
         .to_str()?;

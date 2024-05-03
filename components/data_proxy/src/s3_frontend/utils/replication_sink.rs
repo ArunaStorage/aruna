@@ -21,7 +21,7 @@ pub struct ReplicationSink {
     maximum_chunks: usize,
     chunk_counter: usize, // One chunk contains multiple blocks
     sender: TokioSender<Result<PullReplicationResponse, tonic::Status>>,
-    error_recv: async_channel::Receiver<Option<(i64, String)>>,
+    error_recv: Receiver<Option<(i64, String)>>,
     buffer: BytesMut,
     is_finished: bool,
     bytes_counter: u64,
@@ -39,7 +39,7 @@ impl ReplicationSink {
         object_id: String,
         chunks: usize,
         sender: TokioSender<Result<PullReplicationResponse, tonic::Status>>,
-        error_recv: async_channel::Receiver<Option<(i64, String)>>,
+        error_recv: Receiver<Option<(i64, String)>>,
     ) -> ReplicationSink {
         ReplicationSink {
             maximum_chunks: chunks,
@@ -107,7 +107,7 @@ impl ReplicationSink {
         let message = PullReplicationResponse {
             message: Some(Message::Chunk(Chunk {
                 object_id: self.object_id.clone(),
-                chunk_idx: (self.chunk_counter as i64),
+                chunk_idx: self.chunk_counter as i64,
                 data,
                 checksum: hex::encode(result),
             })),

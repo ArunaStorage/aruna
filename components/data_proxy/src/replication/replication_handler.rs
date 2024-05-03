@@ -569,7 +569,7 @@ impl ReplicationHandler {
                                                         Message::ErrorMessage(
                                                             aruna_rust_api::api::dataproxy::services::v2::ErrorMessage {
                                                                 error: Some(
-                                                                    error_message::Error::Abort(aruna_rust_api::api::dataproxy::services::v2::Empty{})
+                                                                    error_message::Error::Abort(Empty{})
                                                                 )
                                                             }
                                                         )
@@ -629,7 +629,7 @@ impl ReplicationHandler {
                                                         Message::ErrorMessage(
                                                             aruna_rust_api::api::dataproxy::services::v2::ErrorMessage {
                                                                 error: Some(
-                                                                    error_message::Error::Abort(aruna_rust_api::api::dataproxy::services::v2::Empty{})
+                                                                    error_message::Error::Abort(Empty{})
                                                                 )
                                                             }
                                                         )
@@ -652,7 +652,7 @@ impl ReplicationHandler {
                                                         Message::ErrorMessage(
                                                             aruna_rust_api::api::dataproxy::services::v2::ErrorMessage {
                                                                 error: Some(
-                                                                    error_message::Error::Abort(aruna_rust_api::api::dataproxy::services::v2::Empty{})
+                                                                    error_message::Error::Abort(Empty{})
                                                                 )
                                                             }
                                                         )
@@ -671,9 +671,7 @@ impl ReplicationHandler {
                     // Send finish message if everything was processed
                     request_sender
                         .send(PullReplicationRequest {
-                            message: Some(Message::FinishMessage(
-                                aruna_rust_api::api::dataproxy::services::v2::Empty {},
-                            )),
+                            message: Some(Message::FinishMessage(Empty {})),
                         })
                         .await
                         .map_err(|e| {
