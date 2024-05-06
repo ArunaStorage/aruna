@@ -49,11 +49,36 @@ pub const STREAM_SUBJECTS: [&str; 5] = [
 // Enum for internal events that are only of interest for the ArunaServer instances
 pub enum ServerEvents {
     MVREFRESH(i64), // UTC timestamp_seconds
-                    // TODO: Missing event variants
-                    // - RuleUpdate,
-                    // - HookUpdate,
-                    // - LicenceUpdate,
-                    // - WorkspaceUpdate
+
+    // TODO: Missing event variants
+    CACHEUPDATE(CacheUpdate),
+    // RuleUpdate(RuleUpdate),
+    // HookUpdate(HookUpdate),
+    // LicenceUpdate(LicenceUpdate),
+    // WorkspaceUpdate(WorkspaceUpdate),
+    // - Persistent notifications?
+    // - stream consumers?
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct CacheUpdate {
+    pub action: Action,
+    pub resource: UpdateResource,
+}
+#[derive(Deserialize, Serialize)]
+pub enum Action {
+    Created,
+    Updated,
+    Deleted,
+}
+#[derive(Deserialize, Serialize)]
+pub enum UpdateResource {
+    Rule(DieselUlid),
+    RuleBinding {
+        binding: DieselUlid,
+        resource: DieselUlid,
+        rule: DieselUlid,
+    },
 }
 // ----------------------------------------------------------- //
 
@@ -535,6 +560,7 @@ impl NatsIoHandler {
         // Create subject depending on ServerEvent
         let (subject, message) = match event_variant {
             ServerEvents::MVREFRESH(_) => ("AOS.SERVER.MVREFRESH", Bytes::from(message_json)),
+            ServerEvents::CACHEUPDATE(_) => ("AOS.SERVER.CACHEUPDATE", Bytes::from(message_json)),
         };
 
         // Publish message in Nats.io

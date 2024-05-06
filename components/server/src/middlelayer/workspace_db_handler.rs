@@ -5,7 +5,8 @@ use crate::database::dsls::hook_dsl::Hook;
 use crate::database::dsls::object_dsl::Object;
 use crate::database::dsls::user_dsl::User;
 use crate::database::dsls::workspaces_dsl::WorkspaceTemplate;
-use crate::database::enums::{DataClass, ObjectMapping};
+use crate::database::enums::{DataClass, ObjectMapping, ObjectType};
+use crate::middlelayer::delete_request_types::DeleteRequest;
 use crate::middlelayer::token_request_types::CreateToken;
 use crate::middlelayer::workspace_request_types::{CreateTemplate, CreateWorkspace};
 use crate::notification::handler::EventHandler;
@@ -14,7 +15,9 @@ use anyhow::{anyhow, Ok, Result};
 use aruna_rust_api::api::dataproxy::services::v2::{GetCredentialsRequest, GetCredentialsResponse};
 use aruna_rust_api::api::notification::services::v2::EventVariant;
 use aruna_rust_api::api::storage::models::v2::{Permission, PermissionLevel};
-use aruna_rust_api::api::storage::services::v2::{ClaimWorkspaceRequest, CreateApiTokenRequest};
+use aruna_rust_api::api::storage::services::v2::{
+    ClaimWorkspaceRequest, CreateApiTokenRequest, DeleteProjectRequest,
+};
 use diesel_ulid::DieselUlid;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -71,6 +74,7 @@ impl DatabaseHandler {
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
         let mut workspace = CreateWorkspace::make_project(template, endpoints.clone());
+        // TODO: Register resource event
 
         workspace.create(transaction_client).await?;
         if !hooks.is_empty() {
@@ -100,6 +104,36 @@ impl DatabaseHandler {
                 }),
             )
             .await?;
+
+        // Create events for resource and user creation
+        let hierarchy = workspace.fetch_object_hierarchies(&client).await?;
+        let workspace_with_relations =
+            Object::get_object_with_relations(&workspace.id, &client).await?;
+        // Add workspace to cache
+        self.cache.add_object(workspace_with_relations.clone());
+        let block_id = DieselUlid::generate();
+
+        if let Err(err) = self
+            .natsio_handler
+            .register_resource_event(
+                &workspace_with_relations,
+                hierarchy,
+                EventVariant::Created,
+                Some(&block_id),
+            )
+            .await
+        {
+            log::error!("{}", err);
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&service_user, EventVariant::Created)
+            .await
+        {
+            log::error!("{}", err);
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
 
         // Update service account without explicit fetch
         // This is not needed, because create_token() updates cache
@@ -159,11 +193,16 @@ impl DatabaseHandler {
         let client = self.database.get_client().await?;
 
         // Get and delete workspace instance
-        let workspace = Object::get(workspace_id, &client)
-            .await?
-            .ok_or_else(|| anyhow!("Workspace not found"))?;
-        workspace.delete(&client).await?;
-        self.cache.remove_object(&workspace_id);
+        let workspace = Object::get_object_with_relations(&workspace_id, &client).await?;
+        if !matches!(workspace.object.object_type, ObjectType::PROJECT)
+            || !matches!(workspace.object.data_class, DataClass::WORKSPACE)
+        {
+            return Err(anyhow!("Not allowed to delete non workspace projects"));
+        }
+        let request = DeleteRequest::Project(DeleteProjectRequest {
+            project_id: workspace_id.to_string(),
+        });
+        self.delete_resource(request).await?;
 
         // Get and delete service account
         let user = User::get(service_account, &client)
@@ -171,6 +210,16 @@ impl DatabaseHandler {
             .ok_or_else(|| anyhow!("User not found"))?;
         self.cache.remove_user(&service_account);
         user.delete(&client).await?;
+
+        // Resource events are handled by delete_resource()
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Deleted)
+            .await
+        {
+            log::error!("{}", err);
+            return Err(anyhow!("Notification emission failed"));
+        }
 
         Ok(())
     }
@@ -251,6 +300,14 @@ impl DatabaseHandler {
                 log::error!("{}", err);
                 return Err(anyhow::anyhow!("Notification emission failed"));
             }
+        }
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Updated)
+            .await
+        {
+            log::error!("{}", err);
+            return Err(anyhow!("Notification emission failed"));
         }
 
         Ok(())

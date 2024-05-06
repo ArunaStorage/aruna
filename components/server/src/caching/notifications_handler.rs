@@ -19,7 +19,9 @@ use log::{debug, error};
 use time::OffsetDateTime;
 
 use crate::database::dsls::pub_key_dsl::PubKey;
-use crate::notification::natsio_handler::ServerEvents;
+use crate::database::dsls::rule_dsl::{Rule, RuleBinding};
+use crate::notification::natsio_handler::{Action, CacheUpdate, ServerEvents, UpdateResource};
+use crate::notification::utils::build_rule;
 use crate::search::meilisearch_client::{MeilisearchClient, ObjectDocument};
 use crate::utils::search_utils;
 use crate::{
@@ -91,7 +93,13 @@ impl NotificationHandler {
                             }
                         };
 
-                        let _ = process_server_event(msg_variant, sender_arc.clone()).await;
+                        let _ = process_server_event(
+                            &database_clone,
+                            &cache_clone,
+                            msg_variant,
+                            sender_arc.clone(),
+                        )
+                        .await;
                     } else {
                         // Deserialize messages in gRPC definitions
                         let msg_variant = match serde_json::from_slice(
@@ -349,6 +357,8 @@ async fn process_announcement_event(
 }
 
 async fn process_server_event(
+    db_handler: &Arc<Database>,
+    cache: &Arc<Cache>,
     server_event: ServerEvents,
     sender: Arc<Sender<i64>>,
 ) -> anyhow::Result<()> {
@@ -361,6 +371,40 @@ async fn process_server_event(
                 )
             }
         }
+        ServerEvents::CACHEUPDATE(CacheUpdate { resource, action }) => match action {
+            Action::Created | Action::Updated => match resource {
+                UpdateResource::Rule(id) => {
+                    let client = db_handler.get_client().await?;
+                    let rule = Rule::get(id, &client)
+                        .await?
+                        .ok_or_else(|| anyhow!("Rule not found"))?;
+                    let cached = build_rule(rule)?;
+                    cache.insert_rule(&id, cached);
+                }
+                UpdateResource::RuleBinding { binding: id, .. } => {
+                    let client = db_handler.get_client().await?;
+                    let binding = RuleBinding::get(id, &client)
+                        .await?
+                        .ok_or_else(|| anyhow!("Rule not found"))?;
+                    let resource_ids = if binding.cascading {
+                        let mut ids = vec![binding.origin_id];
+                        ids.append(&mut cache.get_subresources(&binding.origin_id)?);
+                        ids
+                    } else {
+                        vec![binding.origin_id]
+                    };
+                    cache.insert_rule_binding(resource_ids, binding);
+                }
+            },
+            Action::Deleted => match resource {
+                UpdateResource::Rule(id) => {
+                    cache.delete_rule(&id);
+                }
+                UpdateResource::RuleBinding { resource, rule, .. } => {
+                    cache.remove_rule_bindings(resource, rule);
+                }
+            },
+        },
     }
 
     Ok(())

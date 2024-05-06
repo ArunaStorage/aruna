@@ -2,9 +2,10 @@ use crate::database::crud::{CrudDb, PrimaryKey};
 use anyhow::Result;
 use async_trait::async_trait;
 use postgres_from_row::FromRow;
+use serde::{Deserialize, Serialize};
 use tokio_postgres::Client;
 
-#[derive(FromRow, Debug, Clone, PartialEq)]
+#[derive(FromRow, Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct License {
     pub tag: String,
     pub name: String,

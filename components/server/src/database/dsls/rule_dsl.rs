@@ -14,7 +14,7 @@ pub struct RuleBinding {
     pub cascading: bool,
 }
 
-#[derive(FromRow, FromSql, Debug, Clone, ToSql, PartialEq, Eq)]
+#[derive(FromRow, FromSql, Debug, Clone, ToSql, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Rule {
     pub id: DieselUlid,
     pub rule_expressions: String,
