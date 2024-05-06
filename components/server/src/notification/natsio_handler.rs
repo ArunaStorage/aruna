@@ -49,15 +49,7 @@ pub const STREAM_SUBJECTS: [&str; 5] = [
 // Enum for internal events that are only of interest for the ArunaServer instances
 pub enum ServerEvents {
     MVREFRESH(i64), // UTC timestamp_seconds
-
-    // TODO: Missing event variants
     CACHEUPDATE(CacheUpdate),
-    // RuleUpdate(RuleUpdate),
-    // HookUpdate(HookUpdate),
-    // LicenceUpdate(LicenceUpdate),
-    // WorkspaceUpdate(WorkspaceUpdate),
-    // - Persistent notifications?
-    // - stream consumers?
 }
 
 #[derive(Deserialize, Serialize)]

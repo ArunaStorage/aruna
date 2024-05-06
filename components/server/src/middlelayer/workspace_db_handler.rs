@@ -74,7 +74,6 @@ impl DatabaseHandler {
         let transaction = client.transaction().await?;
         let transaction_client = transaction.client();
         let mut workspace = CreateWorkspace::make_project(template, endpoints.clone());
-        // TODO: Register resource event
 
         workspace.create(transaction_client).await?;
         if !hooks.is_empty() {
