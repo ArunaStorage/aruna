@@ -11,16 +11,14 @@ use anyhow::{anyhow, bail};
 use chrono::NaiveDateTime;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
-use futures::pin_mut;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use postgres_from_row::FromRow;
-use postgres_types::{FromSql, Json, ToSql, Type};
+use postgres_types::{FromSql, Json, ToSql};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::Duration;
-use tokio_postgres::binary_copy::BinaryCopyInWriter;
-use tokio_postgres::{Client, CopyInSink};
+use tokio_postgres::Client;
 
 lazy_static! {
     pub static ref MAX_RETRIES: u64 = dotenvy::var("MAX_RETRIES")
@@ -861,7 +859,7 @@ impl Object {
     }
 
     //ToDo: Docs
-    pub async fn batch_create(objects: &Vec<Object>, client: &Client) -> Result<()> {
+    pub async fn batch_create(objects: &[Object], client: &Client) -> Result<()> {
         // This is ugly but may solve our batch_create problems
         let query = "INSERT INTO objects
         (id, revision_number, name, title, description, created_by, authors, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints, metadata_license, data_license)
