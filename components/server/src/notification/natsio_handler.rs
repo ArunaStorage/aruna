@@ -49,31 +49,42 @@ pub const STREAM_SUBJECTS: [&str; 5] = [
 // Enum for internal events that are only of interest for the ArunaServer instances
 pub enum ServerEvents {
     MVREFRESH(i64), // UTC timestamp_seconds
-    CACHEUPDATE(CacheUpdate),
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct CacheUpdate {
-    pub action: Action,
-    pub resource: UpdateResource,
+    CACHEUPDATE(Action),
 }
 #[derive(Deserialize, Serialize)]
 pub enum Action {
-    Created,
-    Updated,
-    Deleted,
+    Created(Created),
+    Updated(Updated),
+    Deleted(Deleted),
 }
 #[derive(Deserialize, Serialize)]
-pub enum UpdateResource {
+pub enum Created {
     Rule(DieselUlid),
     RuleBinding {
-        binding: DieselUlid,
-        resource: DieselUlid,
-        rule: DieselUlid,
+        rule_id: DieselUlid,
+        origin_id: DieselUlid,
+        resource_id: DieselUlid,
     },
 }
-// ----------------------------------------------------------- //
+#[derive(Deserialize, Serialize)]
+pub enum Updated {
+    Rule(DieselUlid),
+    RuleBinding {
+        rule_id: DieselUlid,
+        origin_id: DieselUlid,
+        resource_id: DieselUlid,
+    },
+}
+#[derive(Deserialize, Serialize)]
+pub enum Deleted {
+    Rule(DieselUlid),
+    RuleBinding {
+        rule_id: DieselUlid,
+        resource_id: DieselUlid,
+    },
+}
 
+// ----------------------------------------------------------- //
 pub struct NatsIoHandler {
     jetstream_context: Context,
     stream: Stream,

@@ -2,6 +2,7 @@ use crate::caching::structs::CachedRule;
 use crate::database::dsls::rule_dsl::RuleBinding;
 use crate::database::{crud::CrudDb, dsls::object_dsl::Object};
 use crate::middlelayer::rule_request_types::{CreateRuleBinding, DeleteRuleBinding, UpdateRule};
+use crate::notification::natsio_handler::{Action, Created, Deleted, ServerEvents, Updated};
 use ahash::HashSet;
 use anyhow::{anyhow, Ok, Result};
 use cel_interpreter::Value;
@@ -54,6 +55,22 @@ impl DatabaseHandler {
                 }
             }
         }
+        for binding in inherited_rules {
+            if let Err(err) = self
+                .natsio_handler
+                .register_server_event(ServerEvents::CACHEUPDATE(Action::Updated(
+                    Updated::RuleBinding {
+                        rule_id: binding.rule_id,
+                        origin_id: binding.origin_id,
+                        resource_id: binding.object_id,
+                    },
+                )))
+                .await
+            {
+                log::error!("{}", err);
+                return Err(anyhow::anyhow!("Notification emission failed"));
+            }
+        }
         Ok(())
     }
 
@@ -85,6 +102,16 @@ impl DatabaseHandler {
         let id = rule.rule.id;
         rule.rule.create(&client).await?;
         self.cache.insert_rule(&id, rule.clone());
+        if let Err(err) = self
+            .natsio_handler
+            .register_server_event(ServerEvents::CACHEUPDATE(Action::Created(Created::Rule(
+                id,
+            ))))
+            .await
+        {
+            log::error!("{}", err);
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
         Ok(id)
     }
 
@@ -97,6 +124,17 @@ impl DatabaseHandler {
         let updated = request.merge(&rule)?;
         updated.rule.update(&client).await?;
         self.cache.insert_rule(&updated.rule.id, updated.clone());
+        // TODO: Update rule event
+        if let Err(err) = self
+            .natsio_handler
+            .register_server_event(ServerEvents::CACHEUPDATE(Action::Updated(Updated::Rule(
+                updated.rule.id,
+            ))))
+            .await
+        {
+            log::error!("{}", err);
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
         Ok(updated)
     }
 
@@ -104,6 +142,16 @@ impl DatabaseHandler {
         let client = self.database.get_client().await?;
         rule.rule.delete(&client).await?;
         self.cache.delete_rule(&rule.rule.id);
+        if let Err(err) = self
+            .natsio_handler
+            .register_server_event(ServerEvents::CACHEUPDATE(Action::Deleted(Deleted::Rule(
+                rule.rule.id,
+            ))))
+            .await
+        {
+            log::error!("{}", err);
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
         Ok(())
     }
 
@@ -118,7 +166,22 @@ impl DatabaseHandler {
         } else {
             vec![binding.origin_id]
         };
-        self.cache.insert_rule_binding(resource_ids, binding);
+        self.cache
+            .insert_rule_binding(resource_ids, binding.clone());
+        if let Err(err) = self
+            .natsio_handler
+            .register_server_event(ServerEvents::CACHEUPDATE(Action::Created(
+                Created::RuleBinding {
+                    rule_id: binding.rule_id,
+                    origin_id: binding.origin_id,
+                    resource_id: binding.object_id,
+                },
+            )))
+            .await
+        {
+            log::error!("{}", err);
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
         Ok(())
     }
     pub async fn delete_rule_binding(&self, request: DeleteRuleBinding) -> Result<()> {
@@ -126,6 +189,19 @@ impl DatabaseHandler {
         let (resource_id, rule_id) = request.get_ids()?;
         RuleBinding::delete_by(rule_id, resource_id, &client).await?;
         self.cache.remove_rule_bindings(resource_id, rule_id);
+        if let Err(err) = self
+            .natsio_handler
+            .register_server_event(ServerEvents::CACHEUPDATE(Action::Deleted(
+                Deleted::RuleBinding {
+                    rule_id,
+                    resource_id,
+                },
+            )))
+            .await
+        {
+            log::error!("{}", err);
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
         Ok(())
     }
     async fn evaluate_additional_rules(
