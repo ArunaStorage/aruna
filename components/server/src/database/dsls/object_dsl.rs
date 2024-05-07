@@ -862,65 +862,117 @@ impl Object {
 
     //ToDo: Docs
     pub async fn batch_create(objects: &Vec<Object>, client: &Client) -> Result<()> {
-        //let query = "INSERT INTO objects
-        //    (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints)
-        //    VALUES $1;";
-        let query = "COPY objects \
+        // This is ugly but may solve our batch_create problems
+        let query = "INSERT INTO objects
         (id, revision_number, name, title, description, created_by, authors, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints, metadata_license, data_license)
-        FROM STDIN BINARY";
-        let sink: CopyInSink<_> = client.copy_in(query).await?;
-        let writer = BinaryCopyInWriter::new(
-            sink,
-            &[
-                Type::UUID,
-                Type::INT4,
-                Type::VARCHAR,
-                Type::VARCHAR,
-                Type::VARCHAR,
-                Type::UUID,
-                Type::JSONB,
-                Type::INT8,
-                Type::INT8,
-                Type::JSONB,
-                ObjectStatus::get_type(),
-                DataClass::get_type(),
-                ObjectType::get_type(),
-                Type::JSONB,
-                Type::JSONB,
-                Type::BOOL,
-                Type::JSONB,
-                Type::VARCHAR,
-                Type::VARCHAR,
-            ],
-        );
-        pin_mut!(writer);
-        for object in objects {
-            writer
-                .as_mut()
-                .write(&[
-                    &object.id,
-                    &object.revision_number,
-                    &object.name,
-                    &object.title,
-                    &object.description,
-                    &object.created_by,
-                    &object.authors,
-                    &object.content_len,
-                    &object.count,
-                    &object.key_values,
-                    &object.object_status,
-                    &object.data_class,
-                    &object.object_type,
-                    &object.external_relations,
-                    &object.hashes,
-                    &object.dynamic,
-                    &object.endpoints,
-                    &object.metadata_license,
-                    &object.data_license,
-                ])
-                .await?;
+        VALUES";
+        let mut query_list = String::new();
+        let mut object_list = Vec::<&(dyn ToSql + Sync)>::new();
+        let mut counter = 1;
+        for (idx, object) in objects.iter().enumerate() {
+            let mut object_row = "(".to_string();
+            if idx == objects.len() - 1 {
+                for i in 1..20 {
+                    if i == 19 {
+                        object_row.push_str(format!("${counter});").as_str());
+                    } else {
+                        object_row.push_str(format!("${counter},").as_str());
+                    }
+                    counter += 1;
+                }
+            } else {
+                for i in 1..20 {
+                    if i == 19 {
+                        object_row.push_str(format!("${counter}),").as_str());
+                    } else {
+                        object_row.push_str(format!("${counter},").as_str());
+                    }
+                    counter += 1;
+                }
+            }
+            query_list.push_str(&object_row);
+            object_list.append(&mut vec![
+                &object.id,
+                &object.revision_number,
+                &object.name,
+                &object.title,
+                &object.description,
+                &object.created_by,
+                &object.authors,
+                &object.content_len,
+                &object.count,
+                &object.key_values,
+                &object.object_status,
+                &object.data_class,
+                &object.object_type,
+                &object.external_relations,
+                &object.hashes,
+                &object.dynamic,
+                &object.endpoints,
+                &object.metadata_license,
+                &object.data_license,
+            ]);
         }
-        writer.finish().await?;
+        let query = [query, &query_list].join("");
+        let prepared = client.prepare(query.as_str()).await?;
+        client.execute(&prepared, &object_list).await?;
+        // This fails our tests because COPY in can error when run in parallel
+        // let query = "COPY objects \
+        // (id, revision_number, name, title, description, created_by, authors, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints, metadata_license, data_license)
+        // FROM STDIN BINARY";
+        // let sink: CopyInSink<_> = client.copy_in(query).await?;
+        // let writer = BinaryCopyInWriter::new(
+        //     sink,
+        //     &[
+        //         Type::UUID,
+        //         Type::INT4,
+        //         Type::VARCHAR,
+        //         Type::VARCHAR,
+        //         Type::VARCHAR,
+        //         Type::UUID,
+        //         Type::JSONB,
+        //         Type::INT8,
+        //         Type::INT8,
+        //         Type::JSONB,
+        //         ObjectStatus::get_type(),
+        //         DataClass::get_type(),
+        //         ObjectType::get_type(),
+        //         Type::JSONB,
+        //         Type::JSONB,
+        //         Type::BOOL,
+        //         Type::JSONB,
+        //         Type::VARCHAR,
+        //         Type::VARCHAR,
+        //     ],
+        // );
+        // pin_mut!(writer);
+        // for object in objects {
+        //     writer
+        //         .as_mut()
+        //         .write(&[
+        //             &object.id,
+        //             &object.revision_number,
+        //             &object.name,
+        //             &object.title,
+        //             &object.description,
+        //             &object.created_by,
+        //             &object.authors,
+        //             &object.content_len,
+        //             &object.count,
+        //             &object.key_values,
+        //             &object.object_status,
+        //             &object.data_class,
+        //             &object.object_type,
+        //             &object.external_relations,
+        //             &object.hashes,
+        //             &object.dynamic,
+        //             &object.endpoints,
+        //             &object.metadata_license,
+        //             &object.data_license,
+        //         ])
+        //         .await?;
+        // }
+        // writer.finish().await?;
         Ok(())
     }
 
