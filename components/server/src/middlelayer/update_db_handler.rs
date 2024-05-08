@@ -372,9 +372,13 @@ impl DatabaseHandler {
             };
             new.push(version);
             // Delete all relations for old object
-            InternalRelation::batch_delete(&delete, transaction_client).await?;
+            if !delete.is_empty() {
+                InternalRelation::batch_delete(&delete, transaction_client).await?;
+            }
             // Create all relations for new_object
-            InternalRelation::batch_create(&new, transaction_client).await?;
+            if !new.is_empty() {
+                InternalRelation::batch_create(&new, transaction_client).await?;
+            }
             // Add parent if updated
             if let Some(p) = request.parent.clone() {
                 let mut relation = UpdateObject::add_parent_relation(

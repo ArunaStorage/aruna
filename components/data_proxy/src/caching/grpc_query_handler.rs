@@ -115,22 +115,22 @@ impl GrpcQueryHandler {
         let endpoint = if server_url.starts_with("https") {
             Channel::from_shared(server_url)
                 .map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
+                    error!(error = ?e, msg = e.to_string());
                     e
                 })?
                 .tls_config(ClientTlsConfig::new())
                 .map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
+                    error!(error = ?e, msg = e.to_string());
                     e
                 })?
         } else {
             Channel::from_shared(server_url).map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
         };
         let channel = endpoint.connect().await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
 
@@ -158,7 +158,7 @@ impl GrpcQueryHandler {
             .await
             .as_ref()
             .ok_or_else(|| {
-                tracing::error!(error = "No auth found");
+                error!(error = "No auth found");
                 anyhow!("No auth found")
             })?
             .sign_notification_token()?;
@@ -194,11 +194,11 @@ impl GrpcQueryHandler {
 impl GrpcQueryHandler {
     pub fn add_token_to_md(md: &mut MetadataMap, token: &str) -> Result<()> {
         let key = AsciiMetadataKey::from_bytes("authorization".as_bytes()).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         let value = AsciiMetadataValue::try_from(format!("Bearer {}", token)).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         md.append(key, value);
@@ -219,13 +219,13 @@ impl GrpcQueryHandler {
             .get_user_redacted(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner()
             .user
             .ok_or_else(|| {
-                tracing::error!(error = "Unknown user");
+                error!(error = "Unknown user");
                 anyhow!("Unknown user")
             })?;
         Ok(user)
@@ -242,7 +242,7 @@ impl GrpcQueryHandler {
             .get_pubkeys(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner()
@@ -264,13 +264,13 @@ impl GrpcQueryHandler {
             .create_project(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner()
             .project
             .ok_or_else(|| {
-                tracing::error!(error = "unknown project");
+                error!(error = "unknown project");
                 anyhow!("unknown project")
             })?;
 
@@ -294,13 +294,13 @@ impl GrpcQueryHandler {
             .get_project(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner()
             .project
             .ok_or_else(|| {
-                tracing::error!(error = "unknown project");
+                error!(error = "unknown project");
                 anyhow!("unknown project")
             })
     }
@@ -318,13 +318,13 @@ impl GrpcQueryHandler {
             .get_collection(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner()
             .collection
             .ok_or_else(|| {
-                tracing::error!(error = "unknown collection");
+                error!(error = "unknown collection");
                 anyhow!("unknown collection")
             })
     }
@@ -341,13 +341,13 @@ impl GrpcQueryHandler {
             .create_collection(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner()
             .collection
             .ok_or_else(|| {
-                tracing::error!(error = "unknown collection");
+                error!(error = "unknown collection");
                 anyhow!("unknown collection")
             })?;
 
@@ -371,13 +371,13 @@ impl GrpcQueryHandler {
             .get_dataset(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner()
             .dataset
             .ok_or_else(|| {
-                tracing::error!(error = "unknown dataset");
+                error!(error = "unknown dataset");
                 anyhow!("unknown dataset")
             })
     }
@@ -394,13 +394,13 @@ impl GrpcQueryHandler {
             .create_dataset(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner()
             .dataset
             .ok_or_else(|| {
-                tracing::error!(error = "unknown dataset");
+                error!(error = "unknown dataset");
                 anyhow!("unknown dataset")
             })?;
 
@@ -424,13 +424,13 @@ impl GrpcQueryHandler {
             .get_object(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner()
             .object
             .ok_or_else(|| {
-                tracing::error!(error = "unknown object");
+                error!(error = "unknown object");
                 anyhow!("unknown object")
             })
     }
@@ -449,13 +449,13 @@ impl GrpcQueryHandler {
             .create_object(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner()
             .object
             .ok_or_else(|| {
-                tracing::error!(error = "unknown object");
+                error!(error = "unknown object");
                 anyhow!("unknown object")
             })?;
 
@@ -500,7 +500,7 @@ impl GrpcQueryHandler {
             .update_project_key_values(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
         Ok(())
@@ -531,7 +531,7 @@ impl GrpcQueryHandler {
             .update_object(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner();
@@ -571,13 +571,13 @@ impl GrpcQueryHandler {
             .finish_object_staging(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner()
             .object
             .ok_or_else(|| {
-                tracing::error!(error = "unknown object");
+                error!(error = "unknown object");
                 anyhow!("unknown object")
             })?;
 
@@ -608,7 +608,7 @@ impl GrpcQueryHandler {
             .create_object(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner()
@@ -634,7 +634,7 @@ impl GrpcQueryHandler {
             .finish_object_staging(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner()
@@ -667,7 +667,7 @@ impl GrpcQueryHandler {
             .get_event_message_stream(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
 
@@ -682,13 +682,13 @@ impl GrpcQueryHandler {
             .full_sync_endpoint(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner();
         let mut resources = Vec::new();
         while let Some(full_sync_message) = full_sync_stream.message().await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })? {
             debug!("received full_sync_message");
@@ -742,7 +742,7 @@ impl GrpcQueryHandler {
                         .acknowledge_message_batch(req)
                         .await
                         .map_err(|e| {
-                            tracing::error!(error = ?e, msg = e.to_string());
+                            error!(error = ?e, msg = e.to_string());
                             e
                         })?;
                     debug!("acknowledged message");
@@ -774,7 +774,7 @@ impl GrpcQueryHandler {
             .get_endpoint(get_ep_request)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner();
@@ -792,32 +792,32 @@ impl GrpcQueryHandler {
             })?;
         let channel = if config.ssl {
             let proxy_channel = Channel::from_shared(config.url.clone()).map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
             let tls_config = ClientTlsConfig::new();
             proxy_channel
                 .tls_config(tls_config)
                 .map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
+                    error!(error = ?e, msg = e.to_string());
                     e
                 })?
                 .connect()
                 .await
                 .map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
+                    error!(error = ?e, msg = e.to_string());
                     e
                 })?
         } else {
             Channel::from_shared(config.url.clone())
                 .map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
+                    error!(error = ?e, msg = e.to_string());
                     e
                 })?
                 .connect()
                 .await
                 .map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
+                    error!(error = ?e, msg = e.to_string());
                     e
                 })?
         };
@@ -838,7 +838,7 @@ impl GrpcQueryHandler {
             .pull_replication(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner();
@@ -846,7 +846,7 @@ impl GrpcQueryHandler {
             .send(init_request)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
         Ok((request_stream_sender, response_stream))
@@ -864,7 +864,7 @@ impl GrpcQueryHandler {
             .update_replication_status(request)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
         Ok(())
@@ -883,7 +883,7 @@ impl GrpcQueryHandler {
             }
         }
         .map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string(), "Error in processing message");
+            error!(error = ?e, msg = e.to_string(), "Error in processing message");
             e
         })
     }
@@ -949,7 +949,7 @@ impl GrpcQueryHandler {
                             let object = self
                                 .get_project(
                                     &DieselUlid::from_str(&r.resource_id).map_err(|e| {
-                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        error!(error = ?e, msg = e.to_string());
                                         e
                                     })?,
                                     r.checksum,
@@ -962,7 +962,7 @@ impl GrpcQueryHandler {
                             let object = self
                                 .get_collection(
                                     &DieselUlid::from_str(&r.resource_id).map_err(|e| {
-                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        error!(error = ?e, msg = e.to_string());
                                         e
                                     })?,
                                     r.checksum,
@@ -974,7 +974,7 @@ impl GrpcQueryHandler {
                             let object = self
                                 .get_dataset(
                                     &DieselUlid::from_str(&r.resource_id).map_err(|e| {
-                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        error!(error = ?e, msg = e.to_string());
                                         e
                                     })?,
                                     r.checksum,
@@ -986,7 +986,7 @@ impl GrpcQueryHandler {
                             let object = self
                                 .get_object(
                                     &DieselUlid::from_str(&r.resource_id).map_err(|e| {
-                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        error!(error = ?e, msg = e.to_string());
                                         e
                                     })?,
                                     r.checksum,
@@ -1040,12 +1040,12 @@ impl GrpcQueryHandler {
                             Some(ep_id) => {
                                 let direction = Direction::Pull(
                                     DieselUlid::from_str(&object.id).map_err(|e| {
-                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        error!(error = ?e, msg = e.to_string());
                                         e
                                     })?,
                                 );
                                 let endpoint_id = DieselUlid::from_str(ep_id).map_err(|e| {
-                                    tracing::error!(error = ?e, msg = e.to_string());
+                                    error!(error = ?e, msg = e.to_string());
                                     e
                                 })?;
 
@@ -1057,7 +1057,7 @@ impl GrpcQueryHandler {
                                     })
                                     .await
                                     .map_err(|e| {
-                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        error!(error = ?e, msg = e.to_string());
                                         e
                                     })?;
                             }
@@ -1070,7 +1070,7 @@ impl GrpcQueryHandler {
                                 })
                                 .await
                                 .map_err(|e| {
-                                    tracing::error!(error = ?e, msg = e.to_string());
+                                    error!(error = ?e, msg = e.to_string());
                                     e
                                 })?;
                             }
@@ -1093,12 +1093,12 @@ impl GrpcQueryHandler {
                             Some(ep_id) => {
                                 let direction = Direction::Pull(
                                     DieselUlid::from_str(&object.id).map_err(|e| {
-                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        error!(error = ?e, msg = e.to_string());
                                         e
                                     })?,
                                 );
                                 let endpoint_id = DieselUlid::from_str(ep_id).map_err(|e| {
-                                    tracing::error!(error = ?e, msg = e.to_string());
+                                    error!(error = ?e, msg = e.to_string());
                                     e
                                 })?;
                                 self.cache
@@ -1109,7 +1109,7 @@ impl GrpcQueryHandler {
                                     })
                                     .await
                                     .map_err(|e| {
-                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        error!(error = ?e, msg = e.to_string());
                                         e
                                     })?;
                             }
@@ -1122,7 +1122,7 @@ impl GrpcQueryHandler {
                                 })
                                 .await
                                 .map_err(|e| {
-                                    tracing::error!(error = ?e, msg = e.to_string());
+                                    error!(error = ?e, msg = e.to_string());
                                     e
                                 })?;
                             }
@@ -1184,13 +1184,13 @@ impl GrpcQueryHandler {
             .create_collection(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner()
             .collection
             .ok_or_else(|| {
-                tracing::error!(error = "unknown collection");
+                error!(error = "unknown collection");
                 anyhow!("unknown collection")
             })?;
 
@@ -1249,13 +1249,13 @@ impl GrpcQueryHandler {
             .create_dataset(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner()
             .dataset
             .ok_or_else(|| {
-                tracing::error!(error = "unknown collection");
+                error!(error = "unknown collection");
                 anyhow!("unknown collection")
             })?;
 
@@ -1305,13 +1305,13 @@ impl GrpcQueryHandler {
             .create_object(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner()
             .object
             .ok_or_else(|| {
-                tracing::error!(error = "unknown object");
+                error!(error = "unknown object");
                 anyhow!("unknown object")
             })?;
 
@@ -1330,13 +1330,13 @@ impl GrpcQueryHandler {
             .finish_object_staging(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?
             .into_inner()
             .object
             .ok_or_else(|| {
-                tracing::error!(error = "unknown object");
+                error!(error = "unknown object");
                 anyhow!("unknown object")
             })?;
 
@@ -1366,7 +1366,7 @@ impl GrpcQueryHandler {
             .set_object_hashes(req)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
 

@@ -2,16 +2,18 @@ use crate::caching::structs::ObjectWrapper;
 use crate::database::dsls::hook_dsl::{
     BasicTemplate, Credentials, ExternalHook, TemplateVariant, TriggerVariant,
 };
+use crate::database::dsls::object_dsl::KeyValueVariant::HOOK_STATUS;
 use crate::database::dsls::user_dsl::APIToken;
 use crate::database::enums::{ObjectMapping, ObjectStatus, ObjectType};
 use crate::middlelayer::hooks_request_types::CustomTemplate;
 use crate::middlelayer::presigned_url_handler::PresignedDownload;
 use crate::middlelayer::relations_request_types::ModifyRelations;
+use crate::notification::handler::EventHandler;
 use crate::{
     auth::permission_handler::PermissionHandler,
     database::dsls::{
         hook_dsl::{HookStatusValues, HookStatusVariant, HookWithAssociatedProject},
-        object_dsl::{KeyValue, KeyValueVariant, Object, ObjectWithRelations},
+        object_dsl::{KeyValue, ObjectWithRelations},
     },
     middlelayer::db_handler::DatabaseHandler,
 };
@@ -81,7 +83,7 @@ impl HookHandler {
         let object_id = object.object.id;
 
         // Add running status:
-        self.add_status(&hook, &object, HookStatusVariant::RUNNING)
+        self.add_or_replace_status(&hook, &object, HookStatusVariant::RUNNING)
             .await?;
 
         match hook.hook.0 {
@@ -98,7 +100,7 @@ impl HookHandler {
                             )
                             .await
                         {
-                            self.add_status(
+                            self.add_or_replace_status(
                                 &hook,
                                 &object,
                                 HookStatusVariant::ERROR(e.to_string()),
@@ -106,7 +108,7 @@ impl HookHandler {
                             .await?;
                         } else {
                             // Add finished status
-                            self.add_status(&hook, &object, HookStatusVariant::FINISHED)
+                            self.add_or_replace_status(&hook, &object, HookStatusVariant::FINISHED)
                                 .await?;
                         }
                     }
@@ -121,7 +123,7 @@ impl HookHandler {
                             )
                             .await
                         {
-                            self.add_status(
+                            self.add_or_replace_status(
                                 &hook,
                                 &object,
                                 HookStatusVariant::ERROR(e.to_string()),
@@ -129,7 +131,7 @@ impl HookHandler {
                             .await?;
                         } else {
                             // Add finished status
-                            self.add_status(&hook, &object, HookStatusVariant::FINISHED)
+                            self.add_or_replace_status(&hook, &object, HookStatusVariant::FINISHED)
                                 .await?;
                         }
                     }
@@ -155,14 +157,14 @@ impl HookHandler {
                             )
                             .await
                         {
-                            self.add_status(
+                            self.add_or_replace_status(
                                 &hook,
                                 &object,
                                 HookStatusVariant::ERROR(e.to_string()),
                             )
                             .await?;
                         } else {
-                            self.add_status(&hook, &object, HookStatusVariant::FINISHED)
+                            self.add_or_replace_status(&hook, &object, HookStatusVariant::FINISHED)
                                 .await?;
                         }
                     }
@@ -207,7 +209,7 @@ impl HookHandler {
                 // Put everything into template
                 let data_request = match template {
                     TemplateVariant::Basic => {
-                        let json = serde_json::to_string(&BasicTemplate {
+                        let input = BasicTemplate {
                             hook_id: hook.id,
                             object: object_wrapper.into(),
                             secret,
@@ -215,8 +217,8 @@ impl HookHandler {
                             pubkey_serial: pubkey_serial.into(),
                             access_key: Some(upload_credentials.access_key),
                             secret_key: Some(upload_credentials.secret_key),
-                        })?;
-                        base_request.json(&json)
+                        };
+                        base_request.json(&input)
                     }
                     TemplateVariant::Custom(template) => {
                         let template = CustomTemplate::create_custom_template(
@@ -233,7 +235,15 @@ impl HookHandler {
                             .body(template)
                     }
                 };
-                data_request.send().await?;
+                if let Err(e) = data_request.send().await {
+                    log::error!("External hook error: {e}");
+                    self.add_or_replace_status(
+                        &hook,
+                        &object,
+                        HookStatusVariant::ERROR(e.to_string()),
+                    )
+                    .await?;
+                };
             }
         };
         Ok(())
@@ -324,7 +334,7 @@ impl HookHandler {
         Ok(())
     }
 
-    async fn add_status(
+    async fn add_or_replace_status(
         &self,
         hook: &HookWithAssociatedProject,
         object: &ObjectWithRelations,
@@ -340,10 +350,27 @@ impl HookHandler {
         let hook_status = KeyValue {
             key: hook.id.to_string(),
             value: serde_json::to_string(&status_value)?,
-            variant: KeyValueVariant::HOOK_STATUS,
+            variant: HOOK_STATUS,
         };
-        object.object.key_values.0 .0.push(hook_status.clone());
-        Object::add_key_value(&object.object.id, &client, hook_status.clone()).await?;
+        if object
+            .object
+            .key_values
+            .0
+             .0
+            .iter_mut()
+            .find_map(|kv| {
+                if (kv.key == hook.name) && (kv.variant == HOOK_STATUS) {
+                    *kv = hook_status.clone();
+                    Some(kv)
+                } else {
+                    None
+                }
+            })
+            .is_none()
+        {
+            object.object.key_values.0 .0.push(hook_status.clone())
+        }
+        object.object.update(&client).await?;
         self.database_handler
             .cache
             .upsert_object(&object.object.id, object.clone());
@@ -405,6 +432,19 @@ impl HookHandler {
                 .create_hook_token(&user_id, append_only_token)
                 .await?;
 
+            let associated_project = hook.project_id;
+
+            let endpoint = self
+                .database_handler
+                .get_fullsync_endpoint(associated_project)
+                .await?;
+
+            self.database_handler
+                .natsio_handler
+                .wait_for_acknowledgement(&endpoint.id.to_string())
+                .await?;
+            dbg!("waited for ack");
+
             // Create download url for response
             let request = PresignedDownload(GetDownloadUrlRequest {
                 object_id: object_id.to_string(),
@@ -412,11 +452,12 @@ impl HookHandler {
             let (download, upload_credentials) = self
                 .database_handler
                 .get_presigned_download_with_credentials(
-                    self.database_handler.cache.clone(),
                     self.authorizer.clone(),
                     request,
                     user_id,
                     Some(token_id),
+                    hook.project_id,
+                    endpoint,
                 )
                 .await?;
             let download = match (object.object.object_type, &object.object.object_status) {

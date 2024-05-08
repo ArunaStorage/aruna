@@ -7,14 +7,50 @@ use aruna_rust_api::api::dataproxy::services::v2::{
     PushReplicaResponse, ReplicationStatusRequest, ReplicationStatusResponse,
     RevokeCredentialsRequest, RevokeCredentialsResponse,
 };
+use aruna_server::notification::natsio_handler::NatsIoHandler;
+use async_nats::jetstream::consumer::DeliverPolicy;
+use chrono::Utc;
+use diesel_ulid::DieselUlid;
+use futures::TryStreamExt;
 use std::net::SocketAddr;
+use std::sync::Arc;
+use time::OffsetDateTime;
 use tokio::task::AbortHandle;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
 #[allow(dead_code)]
-pub async fn start_server(address: SocketAddr) -> Result<AbortHandle> {
+pub async fn start_server(
+    notification_handler: Arc<NatsIoHandler>,
+    address: SocketAddr,
+    endpoint_id: String,
+) -> Result<AbortHandle> {
     let task = tokio::spawn(async move {
+        tokio::spawn({
+            async move {
+                // Create ephemeral pull consumer which fetches only messages from the time of startup
+                let pull_consumer = notification_handler
+                    .create_internal_consumer(
+                        DieselUlid::generate(),
+                        format!("AOS.ENDPOINT.{}", endpoint_id),
+                        DeliverPolicy::ByStartTime {
+                            start_time: OffsetDateTime::from_unix_timestamp(Utc::now().timestamp())
+                                .unwrap(),
+                        },
+                        true,
+                    )
+                    .await
+                    .unwrap();
+
+                let mut messages = pull_consumer.messages().await.unwrap();
+                while let Some(msg) = messages.try_next().await.unwrap() {
+                    notification_handler
+                        .acknowledge_raw(msg.reply.as_ref().unwrap())
+                        .await
+                        .unwrap();
+                }
+            }
+        });
         Server::builder()
             .add_service(DataproxyUserServiceServer::new(DataProxyServiceImpl::new()))
             .serve(address)

@@ -137,7 +137,7 @@ impl Cache {
                 GrpcQueryHandler::new(url, cache.clone(), self_id.to_string())
                     .await
                     .map_err(|e| {
-                        tracing::error!(error = ?e, msg = e.to_string());
+                        error!(error = ?e, msg = e.to_string());
                         e
                     })?,
             );
@@ -486,8 +486,7 @@ impl Cache {
         // /foo/bar: id-foo/bar
 
         // VecDeque<(id, [Option<(String, DieselUlid)>; 4])>
-        const ARRAY_REPEAT_VALUE: std::option::Option<(std::string::String, TypedId)> =
-            None::<(String, TypedId)>;
+        const ARRAY_REPEAT_VALUE: Option<(String, TypedId)> = None::<(String, TypedId)>;
         let mut prefixes = VecDeque::from([(*resource_id, [ARRAY_REPEAT_VALUE; 3])]);
         let mut final_result = Vec::new();
         while let Some((id, visited)) = prefixes.pop_front() {
@@ -627,7 +626,7 @@ impl Cache {
             .pubkeys
             .get(&kid)
             .ok_or_else(|| {
-                tracing::error!(error = "Pubkey not found");
+                error!(error = "Pubkey not found");
                 anyhow!("Pubkey not found")
             })?
             .clone())
@@ -636,12 +635,14 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn upsert_user(self: Arc<Cache>, user: GrpcUser) -> Result<()> {
         let user_id = DieselUlid::from_str(&user.id).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         let proxy_user = User::try_from(user)?;
         let (to_update, to_delete) = if let Some(user) = self.users.get(&user_id) {
             let mut user = user.value().write().await;
+            trace!(?proxy_user, "GRPC  USER");
+            trace!(user=?user.0, "DATABASE USER");
             let comparison = proxy_user.compare_permissions(&user.0);
             let new_keys = user
                 .1
@@ -658,6 +659,7 @@ impl Cache {
             );
             (vec![], vec![])
         };
+        trace!(?to_update);
         for key in to_delete {
             self.access_keys.remove(&key);
             if let Some(persistence) = self.persistence.read().await.as_ref() {
@@ -666,12 +668,12 @@ impl Cache {
             }
         }
         for key in to_update {
-            let access_key_ref = self
-                .access_keys
-                .get(&key.0)
-                .ok_or_else(|| anyhow!("Access key not found"))?
-                .value()
-                .clone();
+            trace!(?key);
+            let access_key_ref = if let Some(key) = self.access_keys.get(&key.0) {
+                key.value().clone()
+            } else {
+                continue;
+            };
             let mut access_key = access_key_ref.write().await;
             access_key.permissions = key.1;
             if let Some(persistence) = self.persistence.read().await.as_ref() {

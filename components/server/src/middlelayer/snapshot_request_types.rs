@@ -96,8 +96,12 @@ impl SnapshotResponse {
             .map(|o| o.id)
             .collect();
         updated.push(collection.collection.id);
-        Object::batch_create(&collection.datasets, transaction_client).await?;
-        InternalRelation::batch_create(&collection.relations, transaction_client).await?;
+        if !collection.datasets.is_empty() {
+            Object::batch_create(&collection.datasets, transaction_client).await?;
+        }
+        if !collection.relations.is_empty() {
+            InternalRelation::batch_create(&collection.relations, transaction_client).await?;
+        }
         handler.evaluate_rules(&updated, transaction_client).await?;
         transaction.commit().await?;
         let results = Object::get_objects_with_relations(&updated, &client).await?;

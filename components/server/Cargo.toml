@@ -14,7 +14,7 @@ ahash = {workspace = true}
 anyhow = {workspace = true}
 aruna-rust-api = {workspace = true}
 async-channel = {workspace = true}
-async-nats = "0.34.0"
+async-nats = "0.35.0"
 async-trait = {workspace = true}
 aws-config =  {workspace = true}
 aws-sdk-s3 =  {workspace = true}
@@ -36,9 +36,9 @@ hmac = {workspace = true}
 itertools = "0.12.1"
 jsonwebtoken = {workspace = true}
 lazy_static = {workspace = true}
-lettre = "0.11.6"
+lettre = "0.11.7"
 log = "0.4.21"
-meilisearch-sdk = "0.25.0"
+meilisearch-sdk = "0.26.0"
 postgres-from-row = {workspace = true}
 postgres-types = {workspace = true}
 prost = "0.12.4"
@@ -52,7 +52,7 @@ rusty_ulid = "2.0.0"
 serde = {workspace = true}
 serde_json = {workspace = true}
 sha2 = {workspace = true}
-simple_logger = "4.3.3"
+simple_logger = "5.0.0"
 time = {workspace = true}
 tokio = {workspace = true}
 tokio-postgres = {workspace = true}

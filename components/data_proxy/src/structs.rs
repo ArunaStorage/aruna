@@ -27,6 +27,7 @@ use s3s::dto::CreateBucketInput;
 use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
 use s3s::{s3_error, S3Error};
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
@@ -69,17 +70,17 @@ pub enum DbPermissionLevel {
     Admin,
 }
 
-impl ToString for DbPermissionLevel {
-    #[tracing::instrument(level = "trace", skip(self))]
-    fn to_string(&self) -> String {
-        match self {
+impl Display for DbPermissionLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
             DbPermissionLevel::Deny => "deny".to_string(),
             DbPermissionLevel::None => "none".to_string(),
             DbPermissionLevel::Read => "read".to_string(),
             DbPermissionLevel::Append => "append".to_string(),
             DbPermissionLevel::Write => "write".to_string(),
             DbPermissionLevel::Admin => "admin".to_string(),
-        }
+        };
+        write!(f, "{}", str)
     }
 }
 
@@ -321,7 +322,7 @@ impl Object {
             dynamic: true,
             parents: parent.map(|p| HashSet::from([p])),
             // object with gRPC response
-            created_at: Some(chrono::Utc::now().naive_utc()),
+            created_at: Some(Utc::now().naive_utc()),
             ..Default::default()
         }
     }
@@ -375,8 +376,8 @@ pub struct User {
 
 impl User {
     pub fn compare_permissions(
-        &self,
-        other: &User,
+        &self,        // GRPC user
+        other: &User, // database user
     ) -> (
         Vec<(String, HashMap<DieselUlid, DbPermissionLevel>)>,
         Vec<String>,
@@ -584,22 +585,14 @@ impl TryFrom<&Relation> for TypedRelation {
                 let resource_id = DieselUlid::from_str(&int.resource_id)?;
 
                 match int.resource_variant() {
-                    aruna_rust_api::api::storage::models::v2::ResourceVariant::Unspecified => {
+                    ResourceVariant::Unspecified => {
                         error!("Invalid target");
                         Err(anyhow!("Invalid target"))
                     }
-                    aruna_rust_api::api::storage::models::v2::ResourceVariant::Project => {
-                        Ok(Self::Project(resource_id))
-                    }
-                    aruna_rust_api::api::storage::models::v2::ResourceVariant::Collection => {
-                        Ok(Self::Collection(resource_id))
-                    }
-                    aruna_rust_api::api::storage::models::v2::ResourceVariant::Dataset => {
-                        Ok(Self::Dataset(resource_id))
-                    }
-                    aruna_rust_api::api::storage::models::v2::ResourceVariant::Object => {
-                        Ok(Self::Object(resource_id))
-                    }
+                    ResourceVariant::Project => Ok(Self::Project(resource_id)),
+                    ResourceVariant::Collection => Ok(Self::Collection(resource_id)),
+                    ResourceVariant::Dataset => Ok(Self::Dataset(resource_id)),
+                    ResourceVariant::Object => Ok(Self::Object(resource_id)),
                 }
             }
         }
@@ -674,7 +667,7 @@ impl TryFrom<Resource> for Object {
             Resource::Object(o) => Object::try_from(o),
         }
         .map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })
     }
@@ -688,7 +681,7 @@ impl TryFrom<&DataEndpoint> for Endpoint {
         Ok(Endpoint {
             id: DieselUlid::from_str(&value.id)?,
             variant: match value.variant.as_ref().ok_or_else(|| {
-                tracing::error!(error = "No endpoint sync variant found");
+                error!(error = "No endpoint sync variant found");
                 anyhow!("No endpoint sync variant found")
             })? {
                 aruna_rust_api::api::storage::models::v2::data_endpoint::Variant::FullSync(
@@ -769,7 +762,7 @@ impl TryFrom<Project> for Object {
 
         Ok(Object {
             id: DieselUlid::from_str(&value.id).map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?,
             name: value.name.to_string(),
@@ -1084,7 +1077,7 @@ impl From<CreateBucketInput> for Object {
             metadata_license: ALL_RIGHTS_RESERVED.to_string(), // Default for now
             data_license: ALL_RIGHTS_RESERVED.to_string(),     // Default for now
             endpoints: vec![],
-            created_at: Some(chrono::Utc::now().naive_utc()), // Now for default
+            created_at: Some(Utc::now().naive_utc()), // Now for default
             ..Default::default()
         }
     }
@@ -1177,7 +1170,7 @@ impl Object {
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn project_get_headers(
         &self,
-        request_method: &http::Method,
+        request_method: &Method,
         header: &http::HeaderMap<HeaderValue>,
     ) -> Option<HashMap<String, String>> {
         if self.object_type != ObjectType::Project {
@@ -1542,7 +1535,7 @@ impl ResourceStates {
         ]
     }
 
-    pub fn into_new_or_existing(
+    pub fn to_new_or_existing(
         &self,
     ) -> Result<
         (

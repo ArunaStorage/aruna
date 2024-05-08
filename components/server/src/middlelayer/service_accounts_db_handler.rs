@@ -15,6 +15,7 @@ use crate::middlelayer::service_account_request_types::CreateServiceAccount;
 use crate::middlelayer::token_request_types::CreateToken;
 use crate::utils::conversions::users::convert_token_to_proto;
 use anyhow::{anyhow, Result};
+use aruna_rust_api::api::notification::services::v2::EventVariant;
 use aruna_rust_api::api::storage::models::v2::permission::ResourceId;
 use aruna_rust_api::api::storage::models::v2::{Permission, Token};
 use aruna_rust_api::api::storage::services::v2::CreateApiTokenRequest;
@@ -55,6 +56,16 @@ impl DatabaseHandler {
         };
         user.create(&client).await?;
         self.cache.update_user(&user_id, user.clone());
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&user, EventVariant::Created)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
         Ok(user)
     }
 
@@ -122,6 +133,16 @@ impl DatabaseHandler {
             expires_at,
         )?;
 
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&service_account, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
         Ok((
             Some(convert_token_to_proto(&token_ulid, token)),
             token_secret,
@@ -136,7 +157,19 @@ impl DatabaseHandler {
         let client = self.database.get_client().await?;
         let service_account =
             User::remove_user_token(&client, &service_account_id, &token_id).await?;
-        self.cache.update_user(&service_account_id, service_account);
+        self.cache
+            .update_user(&service_account_id, service_account.clone());
+
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&service_account, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
         Ok(())
     }
 
@@ -147,7 +180,19 @@ impl DatabaseHandler {
         let service_account_id = request.get_id()?;
         let client = self.database.get_client().await?;
         let service_account = User::remove_all_tokens(&client, &service_account_id).await?;
-        self.cache.update_user(&service_account_id, service_account);
+        self.cache
+            .update_user(&service_account_id, service_account.clone());
+
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&service_account, EventVariant::Updated)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
         Ok(())
     }
 
@@ -159,6 +204,17 @@ impl DatabaseHandler {
             .ok_or_else(|| anyhow!("User not found"))?;
         service_account.delete(&client).await?;
         self.cache.remove_user(&service_account_id);
+
+        if let Err(err) = self
+            .natsio_handler
+            .register_user_event(&service_account, EventVariant::Deleted)
+            .await
+        {
+            // Log error (rollback transaction and return)
+            log::error!("{}", err);
+            //transaction.rollback().await?;
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        }
         Ok(())
     }
 }

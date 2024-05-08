@@ -13,18 +13,18 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 ahash = "0.8.11"
-anyhow = "1.0.82"
+anyhow = "1.0.83"
 aruna-rust-api = "2.0.0-beta.12"
 async-channel = "2.2.1"
 async-trait = "0.1.80"
-aws-config = "1.2.0"
-aws-sdk-s3 = "1.23.0"
-base64 = "0.22.0"
+aws-config = "1.3.0"
+aws-sdk-s3 = "1.26.0"
+base64 = "0.22.1"
 cel-interpreter = "0.7.0"
 cel-parser = "0.6.0"
 chrono = "0.4.38"
 dashmap = {version = "5.5.3", features = ["serde"]}
-deadpool-postgres = "0.13.0"
+deadpool-postgres = "0.13.2"
 diesel-ulid = "0.3.1"
 dotenvy = "0.15.7"
 futures = "0.3.30"
@@ -37,9 +37,9 @@ postgres-types = { version = "0.2.6", features = ["derive"] }
 prost-wkt-types = "0.5.1"
 rand = "0.8.5"
 reqsign = { version = "0.15.0"}
-reqwest = { version = "0.12.3", features = ["stream", "json"] }
-serde = { version = "1.0.198", features = ["derive"] }
-serde_json = { version = "1.0.116", features = ["raw_value"] }
+reqwest = { version = "0.12.4", features = ["stream", "json"] }
+serde = { version = "1.0.201", features = ["derive"] }
+serde_json = { version = "1.0.117", features = ["raw_value"] }
 sha2 = {version = "0.10.8", features = ["std", "asm", "sha2-asm"]}
 time = "0.3.36"
 tokio = { version = "1.37.0", features = ["full"] }

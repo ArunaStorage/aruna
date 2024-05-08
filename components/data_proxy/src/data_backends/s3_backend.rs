@@ -22,7 +22,7 @@ use diesel_ulid::DieselUlid;
 use futures::TryStreamExt;
 use http_body_util::StreamBody;
 use hyper::body::Frame;
-use rand::Rng;
+use rand::random;
 use tracing::error;
 
 #[allow(dead_code)]
@@ -102,9 +102,7 @@ impl StorageBackend for S3Backend {
         self.check_and_create_bucket(location.bucket.clone())
             .await?;
 
-        let mapped = recv.map_ok(|element| {
-            Frame::data(element)
-        });
+        let mapped = recv.map_ok(|element| Frame::data(element));
 
         let hyper_body = StreamBody::new(mapped);
         let bytestream = ByteStream::from(SdkBody::from_body_1_x(hyper_body));
@@ -158,12 +156,12 @@ impl StorageBackend for S3Backend {
             //trace!(len = ?bytes.as_ref().map(|e| e.len()), "Sending bytes");
             sender
                 .send(Ok(bytes.map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
+                    error!(error = ?e, msg = e.to_string());
                     e
                 })?))
                 .await
                 .map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
+                    error!(error = ?e, msg = e.to_string());
                     e
                 })?;
         }
@@ -180,7 +178,7 @@ impl StorageBackend for S3Backend {
             .send()
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
         Ok(object.content_length().unwrap_or_default())
@@ -200,7 +198,7 @@ impl StorageBackend for S3Backend {
             .send()
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
 
@@ -216,10 +214,7 @@ impl StorageBackend for S3Backend {
         content_len: i64,
         part_number: i32,
     ) -> Result<PartETag> {
-
-        let mapped = recv.map_ok(|element| {
-            Frame::data(element)
-        });
+        let mapped = recv.map_ok(|element| Frame::data(element));
         let hyper_body = StreamBody::new(mapped);
         let bytestream = ByteStream::from(SdkBody::from_body_1_x(hyper_body));
 
@@ -235,7 +230,7 @@ impl StorageBackend for S3Backend {
             .send()
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
 
@@ -306,7 +301,7 @@ impl StorageBackend for S3Backend {
             .send()
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
         Ok(())
@@ -340,7 +335,7 @@ impl StorageBackend for S3Backend {
             });
         }
 
-        let (bucket, key) = self.schema.into_names(names);
+        let (bucket, key) = self.schema.to_names(names);
 
         let file_format =
             FileFormat::from_bools(self.use_pithos, self.encryption, self.compression);
@@ -379,6 +374,6 @@ impl S3Backend {
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_random_bucket(&self) -> String {
-        format!("{}-{:x}", self.endpoint_id, rand::thread_rng().gen::<u8>()).to_ascii_lowercase()
+        format!("{}-{:x}", self.endpoint_id, random::<u8>()).to_ascii_lowercase()
     }
 }

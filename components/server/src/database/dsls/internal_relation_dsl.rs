@@ -3,12 +3,10 @@ use crate::database::enums::ObjectMapping;
 use crate::utils::database_utils::create_multi_query;
 use anyhow::Result;
 use diesel_ulid::DieselUlid;
-use futures::pin_mut;
 use postgres_from_row::FromRow;
-use postgres_types::{FromSql, ToSql, Type};
+use postgres_types::{FromSql, ToSql};
 use serde::{Deserialize, Serialize};
-use tokio_postgres::binary_copy::BinaryCopyInWriter;
-use tokio_postgres::{Client, CopyInSink};
+use tokio_postgres::Client;
 
 use super::super::enums::ObjectType;
 
@@ -114,7 +112,48 @@ impl InternalRelation {
         client.execute(&prepared, &[&old, &new]).await?;
         Ok(())
     }
-    pub async fn batch_create(relations: &Vec<InternalRelation>, client: &Client) -> Result<()> {
+    pub async fn batch_create(relations: &[InternalRelation], client: &Client) -> Result<()> {
+        // This is ugly but may solve our batch_create problems
+        let query = "INSERT INTO internal_relations
+        (id, origin_pid, origin_type, relation_name, target_pid, target_type, target_name)
+        VALUES";
+        let mut query_list = String::new();
+        let mut relation_list = Vec::<&(dyn ToSql + Sync)>::new();
+        for (idx, relation) in relations.iter().enumerate() {
+            let mut relation_row = format!(
+                "(${}, ${}, ${}, ${}, ${}, ${}, ${})",
+                1 + (7 * idx),
+                2 + (7 * idx),
+                3 + (7 * idx),
+                4 + (7 * idx),
+                5 + (7 * idx),
+                6 + (7 * idx),
+                7 + (7 * idx)
+            );
+            if idx == relations.len() - 1 {
+                relation_row.push(';');
+            } else {
+                relation_row.push(',');
+            }
+            query_list.push_str(&relation_row);
+            relation_list.append(&mut vec![
+                &relation.id,
+                &relation.origin_pid,
+                &relation.origin_type,
+                &relation.relation_name,
+                &relation.target_pid,
+                &relation.target_type,
+                &relation.target_name,
+            ]);
+        }
+        let query = [query, &query_list].join("");
+        let prepared = client.prepare(query.as_str()).await?;
+        client.execute(&prepared, &relation_list).await?;
+        /*
+        This randomly fails in our tests but is the more performant option suggested by tokio_postgres.
+        Potentially needs to be debugged, replacing the 'ugly' solution, to address performance concerns
+        in the long run
+
         let query = "COPY internal_relations (id, origin_pid, origin_type, relation_name, target_pid, target_type, target_name)\
         FROM STDIN BINARY;";
         let sink: CopyInSink<_> = client.copy_in(query).await?;
@@ -146,6 +185,7 @@ impl InternalRelation {
                 .await?;
         }
         writer.finish().await?;
+        */
         Ok(())
     }
 

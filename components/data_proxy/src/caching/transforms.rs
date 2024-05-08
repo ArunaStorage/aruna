@@ -27,7 +27,7 @@ impl GetId for ResourceId {
             | ResourceId::CollectionId(a)
             | ResourceId::DatasetId(a)
             | ResourceId::ObjectId(a) => Ok(DieselUlid::from_str(a).map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?),
         }

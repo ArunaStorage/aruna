@@ -287,7 +287,20 @@ impl DatabaseHandler {
 
         // Update cache
         let updated = Object::get_object_with_relations(&object_id, &client).await?;
-        self.cache.upsert_object(&object_id, updated);
+        self.cache.upsert_object(&object_id, updated.clone());
+        if let Err(err) = self
+            .natsio_handler
+            .register_resource_event(
+                &updated,
+                updated.object.fetch_object_hierarchies(&client).await?,
+                EventVariant::Updated,
+                Some(&DieselUlid::generate()), // block_id for deduplication
+            )
+            .await
+        {
+            log::error!("{}", err);
+            return Err(anyhow::anyhow!("Notification emission failed"));
+        };
         Ok(())
     }
     pub async fn get_replication_status(

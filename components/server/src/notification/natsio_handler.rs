@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use std::collections::hash_map::RandomState;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -17,11 +18,13 @@ use async_nats::jetstream::{stream::Stream, Context, Message};
 use async_trait::async_trait;
 use diesel_ulid::DieselUlid;
 use futures::future::try_join_all;
-use futures::StreamExt;
+use futures::{StreamExt, TryStreamExt};
 use prost::bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
-use crate::database::dsls::object_dsl::{Hierarchy, ObjectWithRelations};
+use crate::database::dsls::object_dsl::{
+    Hierarchy, ObjectWithRelations, MAX_RETRIES, RETRY_TIMEOUT,
+};
 use crate::database::dsls::user_dsl::User;
 use crate::utils::grpc_utils::{checksum_resource, checksum_user, generic_object_without_rules};
 
@@ -46,9 +49,42 @@ pub const STREAM_SUBJECTS: [&str; 5] = [
 // Enum for internal events that are only of interest for the ArunaServer instances
 pub enum ServerEvents {
     MVREFRESH(i64), // UTC timestamp_seconds
+    CACHEUPDATE(Action),
 }
-// ----------------------------------------------------------- //
+#[derive(Deserialize, Serialize)]
+pub enum Action {
+    Created(Created),
+    Updated(Updated),
+    Deleted(Deleted),
+}
+#[derive(Deserialize, Serialize)]
+pub enum Created {
+    Rule(DieselUlid),
+    RuleBinding {
+        rule_id: DieselUlid,
+        origin_id: DieselUlid,
+        resource_id: DieselUlid,
+    },
+}
+#[derive(Deserialize, Serialize)]
+pub enum Updated {
+    Rule(DieselUlid),
+    RuleBinding {
+        rule_id: DieselUlid,
+        origin_id: DieselUlid,
+        resource_id: DieselUlid,
+    },
+}
+#[derive(Deserialize, Serialize)]
+pub enum Deleted {
+    Rule(DieselUlid),
+    RuleBinding {
+        rule_id: DieselUlid,
+        resource_id: DieselUlid,
+    },
+}
 
+// ----------------------------------------------------------- //
 pub struct NatsIoHandler {
     jetstream_context: Context,
     stream: Stream,
@@ -239,6 +275,58 @@ impl EventHandler for NatsIoHandler {
 
         // Return empty Ok to signal success
         Ok(())
+    }
+
+    async fn wait_for_acknowledgement(&self, subject: &str) -> anyhow::Result<()> {
+        let mut backoff_counter = 0;
+        'outer: while backoff_counter <= *MAX_RETRIES {
+            // Get consumers
+            let mut info = self.stream.consumers();
+            // store consumers in hashmap
+            let mut hash_set = HashSet::new();
+            // iterate over consumer info
+            'inner: while let Some(consumer) = info.try_next().await? {
+                // returns false when already in hashmap
+                if hash_set.insert(consumer.name) {
+                    // Match consumers to proxy ids
+                    if consumer.config.filter_subject.ends_with(&subject) {
+                        // Wait for sync
+                        if consumer.num_ack_pending != 0 {
+                            backoff_counter += 1;
+                            tokio::time::sleep(Duration::from_millis(
+                                RETRY_TIMEOUT.pow(backoff_counter as u32),
+                            ))
+                            .await;
+                            continue 'outer;
+                        } else {
+                            // consumer is synced
+                            return Ok(());
+                        }
+                    } else {
+                        // Iterate over next consumer info
+                        continue 'inner;
+                    };
+                } else {
+                    // If all consumers are visited and none ends with wanted subject,
+                    // either wait for timeout or new consumer config
+                    backoff_counter += 1;
+                    tokio::time::sleep(Duration::from_millis(
+                        RETRY_TIMEOUT.pow(backoff_counter as u32),
+                    ))
+                    .await;
+                    continue 'outer;
+                }
+            }
+            // If try_next() does not return anything,
+            // either wait for timeout or wait for updated consumers config
+            backoff_counter += 1;
+            tokio::time::sleep(Duration::from_millis(
+                RETRY_TIMEOUT.pow(backoff_counter as u32),
+            ))
+            .await;
+            continue 'outer;
+        }
+        Err(anyhow!("Could not sync with {subject}"))
     }
 }
 
@@ -476,6 +564,7 @@ impl NatsIoHandler {
         // Create subject depending on ServerEvent
         let (subject, message) = match event_variant {
             ServerEvents::MVREFRESH(_) => ("AOS.SERVER.MVREFRESH", Bytes::from(message_json)),
+            ServerEvents::CACHEUPDATE(_) => ("AOS.SERVER.CACHEUPDATE", Bytes::from(message_json)),
         };
 
         // Publish message in Nats.io

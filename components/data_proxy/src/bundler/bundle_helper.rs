@@ -50,6 +50,8 @@ pub async fn get_bundle(
     let final_sender_clone = final_sender.clone();
     let final_receiver_clone = final_receiver.clone();
 
+    trace!(?path_level_vec, "Starting bundle creation");
+
     tokio::spawn(
         async move {
             let mut counter = 0; // Start with 1 for comparison with len()
