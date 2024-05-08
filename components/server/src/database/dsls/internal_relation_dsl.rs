@@ -119,27 +119,21 @@ impl InternalRelation {
         VALUES";
         let mut query_list = String::new();
         let mut relation_list = Vec::<&(dyn ToSql + Sync)>::new();
-        let mut counter = 1;
         for (idx, relation) in relations.iter().enumerate() {
-            let mut relation_row = "(".to_string();
+            let mut relation_row = format!(
+                "(${}, ${}, ${}, ${}, ${}, ${}, ${})",
+                1 + (7 * idx),
+                2 + (7 * idx),
+                3 + (7 * idx),
+                4 + (7 * idx),
+                5 + (7 * idx),
+                6 + (7 * idx),
+                7 + (7 * idx)
+            );
             if idx == relations.len() - 1 {
-                for i in 1..8 {
-                    if i == 7 {
-                        relation_row.push_str(format!("${counter});").as_str());
-                    } else {
-                        relation_row.push_str(format!("${counter},").as_str());
-                    }
-                    counter += 1;
-                }
+                relation_row.push(';');
             } else {
-                for i in 1..8 {
-                    if i == 7 {
-                        relation_row.push_str(format!("${counter}),").as_str());
-                    } else {
-                        relation_row.push_str(format!("${counter},").as_str());
-                    }
-                    counter += 1;
-                }
+                relation_row.push(',');
             }
             query_list.push_str(&relation_row);
             relation_list.append(&mut vec![
@@ -155,37 +149,43 @@ impl InternalRelation {
         let query = [query, &query_list].join("");
         let prepared = client.prepare(query.as_str()).await?;
         client.execute(&prepared, &relation_list).await?;
-        // let query = "COPY internal_relations (id, origin_pid, origin_type, relation_name, target_pid, target_type, target_name)\
-        // FROM STDIN BINARY;";
-        // let sink: CopyInSink<_> = client.copy_in(query).await?;
-        // let writer = BinaryCopyInWriter::new(
-        //     sink,
-        //     &[
-        //         Type::UUID,
-        //         Type::UUID,
-        //         ObjectType::get_type(),
-        //         Type::VARCHAR,
-        //         Type::UUID,
-        //         ObjectType::get_type(),
-        //         Type::VARCHAR,
-        //     ],
-        // );
-        // pin_mut!(writer);
-        // for relation in relations {
-        //     writer
-        //         .as_mut()
-        //         .write(&[
-        //             &relation.id,
-        //             &relation.origin_pid,
-        //             &relation.origin_type,
-        //             &relation.relation_name,
-        //             &relation.target_pid,
-        //             &relation.target_type,
-        //             &relation.target_name,
-        //         ])
-        //         .await?;
-        // }
-        // writer.finish().await?;
+        /*
+        This randomly fails in our tests but is the more performant option suggested by tokio_postgres.
+        Potentially needs to be debugged, replacing the 'ugly' solution, to address performance concerns
+        in the long run
+
+        let query = "COPY internal_relations (id, origin_pid, origin_type, relation_name, target_pid, target_type, target_name)\
+        FROM STDIN BINARY;";
+        let sink: CopyInSink<_> = client.copy_in(query).await?;
+        let writer = BinaryCopyInWriter::new(
+            sink,
+            &[
+                Type::UUID,
+                Type::UUID,
+                ObjectType::get_type(),
+                Type::VARCHAR,
+                Type::UUID,
+                ObjectType::get_type(),
+                Type::VARCHAR,
+            ],
+        );
+        pin_mut!(writer);
+        for relation in relations {
+            writer
+                .as_mut()
+                .write(&[
+                    &relation.id,
+                    &relation.origin_pid,
+                    &relation.origin_type,
+                    &relation.relation_name,
+                    &relation.target_pid,
+                    &relation.target_type,
+                    &relation.target_name,
+                ])
+                .await?;
+        }
+        writer.finish().await?;
+        */
         Ok(())
     }
 
