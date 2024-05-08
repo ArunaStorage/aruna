@@ -1,3 +1,5 @@
+use crate::caching::structs::CachedRule;
+use anyhow::anyhow;
 use aruna_rust_api::api::notification::services::v2::{announcement_event::EventVariant, Reply};
 use base64::{engine::general_purpose, Engine};
 use diesel_ulid::DieselUlid;
@@ -6,6 +8,7 @@ use rand::{distributions::Alphanumeric, Rng};
 use sha2::Sha256;
 use xxhash_rust::xxh3::xxh3_128;
 
+use crate::database::dsls::rule_dsl::Rule;
 use crate::database::{dsls::object_dsl::Hierarchy, enums::ObjectType};
 
 use super::handler::EventType;
@@ -186,6 +189,16 @@ pub fn validate_reply_msg(reply: Reply, secret: String) -> anyhow::Result<bool> 
 
     // Check if hmacs are equal
     Ok(base64_hmac == reply.hmac)
+}
+
+/// Builds CachedRule for cache update
+/// expects:
+///     - Rule
+/// results:
+///     - CachedRule with compiled expression from expression field
+pub fn build_rule(rule: Rule) -> anyhow::Result<CachedRule> {
+    let compiled = cel_parser::parse(&rule.rule_expressions).map_err(|e| anyhow!(e.to_string()))?;
+    Ok(CachedRule { rule, compiled })
 }
 
 #[cfg(test)]

@@ -18,6 +18,7 @@ use crate::middlelayer::user_request_types::{
     ActivateUser, DeactivateUser, DeleteProxyAttributeSource, RegisterUser, UpdateUserEmail,
     UpdateUserName,
 };
+use crate::notification::handler::EventHandler;
 use anyhow::{anyhow, bail, Result};
 use aruna_rust_api::api::dataproxy::services::v2::dataproxy_user_service_client::DataproxyUserServiceClient;
 use aruna_rust_api::api::dataproxy::services::v2::{
@@ -589,6 +590,10 @@ impl DatabaseHandler {
             self.add_endpoint_to_user(user_id, endpoint.id, Some(&notifier))
                 .await?;
         }
+
+        self.natsio_handler
+            .wait_for_acknowledgement(&endpoint.id.to_string())
+            .await?;
         //self.add_endpoint_to_user(user_id, endpoint.id).await?;
         //notifier.notify_one();
 

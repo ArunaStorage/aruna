@@ -19,10 +19,10 @@ use aws_sdk_s3::{
     Client,
 };
 use diesel_ulid::DieselUlid;
+use rand::random;
 use futures::TryStreamExt;
 use http_body_util::StreamBody;
 use hyper::body::Frame;
-use rand::Rng;
 use tracing::error;
 
 #[allow(dead_code)]
@@ -158,12 +158,12 @@ impl StorageBackend for S3Backend {
             //trace!(len = ?bytes.as_ref().map(|e| e.len()), "Sending bytes");
             sender
                 .send(Ok(bytes.map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
+                    error!(error = ?e, msg = e.to_string());
                     e
                 })?))
                 .await
                 .map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
+                    error!(error = ?e, msg = e.to_string());
                     e
                 })?;
         }
@@ -180,7 +180,7 @@ impl StorageBackend for S3Backend {
             .send()
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
         Ok(object.content_length().unwrap_or_default())
@@ -200,7 +200,7 @@ impl StorageBackend for S3Backend {
             .send()
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
 
@@ -235,7 +235,7 @@ impl StorageBackend for S3Backend {
             .send()
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
 
@@ -306,7 +306,7 @@ impl StorageBackend for S3Backend {
             .send()
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
         Ok(())
@@ -340,7 +340,7 @@ impl StorageBackend for S3Backend {
             });
         }
 
-        let (bucket, key) = self.schema.into_names(names);
+        let (bucket, key) = self.schema.to_names(names);
 
         let file_format =
             FileFormat::from_bools(self.use_pithos, self.encryption, self.compression);
@@ -379,6 +379,6 @@ impl S3Backend {
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_random_bucket(&self) -> String {
-        format!("{}-{:x}", self.endpoint_id, rand::thread_rng().gen::<u8>()).to_ascii_lowercase()
+        format!("{}-{:x}", self.endpoint_id, random::<u8>()).to_ascii_lowercase()
     }
 }

@@ -125,7 +125,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                     let msg =
                                         proxy_replication_service.check_permissions(init, id).await;
                                     object_input_send.send(msg).await.map_err(|e| {
-                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        error!(error = ?e, msg = e.to_string());
                                         e
                                     })?;
                                 }
@@ -137,7 +137,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                         .send(AckSync::ObjectInit(object_id))
                                         .await
                                         .map_err(|e| {
-                                            tracing::error!(error = ?e, msg = e.to_string());
+                                            error!(error = ?e, msg = e.to_string());
                                             e
                                         })?;
                                 }
@@ -151,11 +151,11 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                         .send(AckSync::ObjectChunk(object_id, chunk_idx))
                                         .await
                                         .map_err(|e| {
-                                            tracing::error!(error = ?e, msg = e.to_string());
+                                            error!(error = ?e, msg = e.to_string());
                                             e
                                         })?;
                                     retry_send.send(None).await.map_err(|e| {
-                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        error!(error = ?e, msg = e.to_string());
                                         e
                                     })?;
                                 }
@@ -251,7 +251,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                         *lock = true;
                                     }
                                     object_ack_send.send(AckSync::Finish).await.map_err(|e| {
-                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        error!(error = ?e, msg = e.to_string());
                                         e
                                     })?;
                                     return Ok(());
@@ -287,7 +287,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                     }
                     AckSync::Finish => {
                         object_sync_send.send(sync_map.clone()).await.map_err(|e| {
-                            tracing::error!(error = ?e, msg = e.to_string());
+                            error!(error = ?e, msg = e.to_string());
                             e
                         })?;
                     }
@@ -309,13 +309,13 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                 match object_input_rcv.recv().await {
                     // Errors
                     Err(err) => {
-                        if *finished_state_handler.lock().await {
+                        return if *finished_state_handler.lock().await {
                             // Technically no error, because rcv was closed because sender finished
-                            return Ok(());
+                            Ok(())
                         } else {
                             trace!(?err);
-                            return Err(anyhow!("Receiving from closed channel"));
-                        }
+                            Err(anyhow!("Receiving from closed channel"))
+                        };
                     }
                     Ok(Err(err)) => {
                         error!("{err}");
@@ -327,7 +327,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                             )))
                             .await
                             .map_err(|e| {
-                                tracing::error!(error = ?e, msg = e.to_string());
+                                error!(error = ?e, msg = e.to_string());
                                 e
                             })?;
                     }
@@ -363,7 +363,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                 }))
                                 .await
                                 .map_err(|e| {
-                                    tracing::error!(error = ?e, msg = e.to_string());
+                                    error!(error = ?e, msg = e.to_string());
                                     e
                                 })?;
                             trace!("Send object info into stream");
@@ -379,7 +379,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                 )
                                 .await
                                 .map_err(|e| {
-                                    tracing::error!(error = ?e, msg = e.to_string());
+                                    error!(error = ?e, msg = e.to_string());
                                     e
                                 })?;
                             trace!("Send data into stream");
@@ -394,7 +394,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                         )))
                                         .await
                                         .map_err(|e| {
-                                            tracing::error!(error = ?e, msg = e.to_string());
+                                            error!(error = ?e, msg = e.to_string());
                                             e
                                         })?;
                                 }
@@ -407,7 +407,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                             )))
                                             .await
                                             .map_err(|e| {
-                                                tracing::error!(error = ?e, msg = e.to_string());
+                                                error!(error = ?e, msg = e.to_string());
                                                 e
                                             })?;
                                     }
@@ -540,7 +540,7 @@ impl DataproxyReplicationServiceImpl {
                     .get_object(location_clone, None, object_sender)
                     .await
                     .map_err(|e| {
-                        tracing::error!(error = ?e, msg = e.to_string());
+                        error!(error = ?e, msg = e.to_string());
                         e
                     })
             }
@@ -570,7 +570,7 @@ impl DataproxyReplicationServiceImpl {
                     if !location.is_pithos() {
                         asrw = asrw.add_transformer(ChaCha20Dec::new_with_fixed(key).map_err(
                             |e| {
-                                tracing::error!(error = ?e, msg = e.to_string());
+                                error!(error = ?e, msg = e.to_string());
                                 e
                             },
                         )?);
@@ -591,7 +591,7 @@ impl DataproxyReplicationServiceImpl {
 
                 // Add decryption transformer
                 asrw.process().await.map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
+                    error!(error = ?e, msg = e.to_string());
                     e
                 })?;
 
@@ -601,7 +601,7 @@ impl DataproxyReplicationServiceImpl {
         )
         .await
         .map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
 
@@ -614,7 +614,7 @@ impl DataproxyReplicationServiceImpl {
             .get_object(location.clone(), Some("-131072".to_string()), footer_sender)
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
 

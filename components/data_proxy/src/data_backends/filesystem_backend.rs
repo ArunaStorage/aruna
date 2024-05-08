@@ -352,7 +352,7 @@ impl StorageBackend for FSBackend {
             });
         }
 
-        let (bucket, key) = self.schema.into_names(names);
+        let (bucket, key) = self.schema.to_names(names);
 
         let file_format =
             FileFormat::from_bools(self.use_pithos, self.encryption, self.compression);

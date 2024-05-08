@@ -125,7 +125,7 @@ impl BufferedS3Sink {
             .send(Ok(self.buffer.split().freeze()))
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
 
@@ -149,12 +149,12 @@ impl BufferedS3Sink {
         let expected_len: i64 = self.buffer.len() as i64;
         let location_clone = self.target_location.clone();
         let pnumber = self.part_number.ok_or_else(|| {
-            tracing::error!(error = "PartNumber expected");
+            error!(error = "PartNumber expected");
             anyhow!("PartNumber expected")
         })?;
 
         let up_id = self.upload_id.clone().ok_or_else(|| {
-            tracing::error!(error = "Upload ID not found");
+            error!(error = "Upload ID not found");
             anyhow!("Upload ID not found")
         })?;
 
@@ -162,7 +162,7 @@ impl BufferedS3Sink {
         sender
             .try_send(Ok(self.buffer.split().freeze()))
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
 
@@ -177,7 +177,7 @@ impl BufferedS3Sink {
         .await??;
         if let Some(s) = &self.sender {
             s.send(tag.etag.to_string()).await.map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
         }
@@ -191,7 +191,7 @@ impl BufferedS3Sink {
     async fn finish_multipart(&mut self) -> Result<()> {
         trace!("Finishing multipart");
         let up_id = self.upload_id.clone().ok_or_else(|| {
-            tracing::error!(error = "Upload ID not found");
+            error!(error = "Upload ID not found");
             anyhow!("Upload ID not found")
         })?;
         self.backend
@@ -202,7 +202,7 @@ impl BufferedS3Sink {
             )
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
         debug!(up_id, "finished multipart");

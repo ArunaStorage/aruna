@@ -2,7 +2,7 @@ use crate::auth::permission_handler::PermissionHandler;
 use crate::auth::token_handler::{Action, Intent};
 use crate::caching::cache::Cache;
 use crate::database::dsls::endpoint_dsl::{Endpoint, HostConfig};
-use crate::database::enums::{DataProxyFeature, ObjectMapping};
+use crate::database::enums::{DataProxyFeature, ObjectMapping, ReplicationType};
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::endpoints_request_types::GetEP;
 use anyhow::{anyhow, Result};
@@ -19,6 +19,7 @@ use aws_sdk_s3::config::Credentials;
 use aws_sdk_s3::Client;
 use aws_types::region::Region;
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
 use log::debug;
 use reqsign::{AwsCredential, AwsV4Signer};
 use reqwest::Method;
@@ -34,19 +35,28 @@ pub struct PresignedDownload(pub GetDownloadUrlRequest);
 impl DatabaseHandler {
     pub async fn get_presigned_download_with_credentials(
         &self,
-        cache: Arc<Cache>,
         authorizer: Arc<PermissionHandler>,
         request: PresignedDownload,
         user_id: DieselUlid,
         token_id: Option<DieselUlid>,
+        associated_project: DieselUlid,
+        endpoint: Endpoint,
     ) -> Result<(String, GetCredentialsResponse)> {
         let object_id = request.get_id()?;
 
-        let (project_id, bucket_name, key) =
-            DatabaseHandler::get_path(object_id, cache.clone()).await?;
-        let endpoint = self.get_project_endpoint(project_id, cache.clone()).await?;
+        let (_project_id, bucket_name, key) = DatabaseHandler::get_path_for_associated_project(
+            associated_project,
+            object_id,
+            self.cache.clone(),
+        )
+        .await?;
+
         let (_, endpoint_s3_url, ssl, credentials) = DatabaseHandler::get_or_create_credentials(
-            authorizer, user_id, token_id, endpoint, true,
+            authorizer.clone(),
+            user_id,
+            token_id,
+            endpoint.clone(),
+            true,
         )
         .await?;
         let url = sign_download_url(
@@ -70,7 +80,7 @@ impl DatabaseHandler {
         let object_id = request.get_id()?;
         let (project_id, bucket_name, key) =
             DatabaseHandler::get_path(object_id, cache.clone()).await?;
-        let endpoint = self.get_project_endpoint(project_id, cache.clone()).await?;
+        let endpoint = self.get_fullsync_endpoint(project_id).await?;
 
         // Not sure if this is needed
         // Check if user trusts endpoint
@@ -114,7 +124,7 @@ impl DatabaseHandler {
         let (project_id, bucket_name, key) =
             DatabaseHandler::get_path(object_id, cache.clone()).await?;
 
-        let endpoint = self.get_project_endpoint(project_id, cache.clone()).await?;
+        let endpoint = self.get_fullsync_endpoint(project_id).await?;
         let (endpoint_host_url, endpoint_s3_url, ssl, credentials) =
             DatabaseHandler::get_or_create_credentials(authorizer, user_id, token, endpoint, true)
                 .await?;
@@ -210,24 +220,89 @@ impl DatabaseHandler {
         }
         Ok(path)
     }
-    async fn get_project_endpoint(
-        &self,
+    async fn get_path_for_associated_project(
         project_id: DieselUlid,
+        object_id: DieselUlid,
         cache: Arc<Cache>,
-    ) -> Result<Endpoint> {
+    ) -> Result<(DieselUlid, String, String)> {
+        let paths = cache.upstream_dfs_iterative(&object_id)?;
+        let path_components = paths
+            .iter()
+            .find(|c| c.iter().contains(&ObjectMapping::PROJECT(project_id)))
+            .ok_or_else(|| {
+                anyhow!("No path found for project {project_id} and object {object_id}")
+            })?;
+        let mut project_id = DieselUlid::default();
+        let mut project_name = String::new();
+        let mut collection_name = String::new();
+        let mut dataset_name = String::new();
+        let mut object_name = String::new();
+        for component in path_components {
+            match component {
+                ObjectMapping::PROJECT(id) => {
+                    project_name = cache
+                        .get_object(id)
+                        .ok_or_else(|| anyhow!("Parent not found"))?
+                        .object
+                        .name;
+                    project_id = *id
+                }
+                ObjectMapping::COLLECTION(id) => {
+                    collection_name = cache
+                        .get_object(id)
+                        .ok_or_else(|| anyhow!("Parent not found"))?
+                        .object
+                        .name
+                }
+                ObjectMapping::DATASET(id) => {
+                    dataset_name = cache
+                        .get_object(id)
+                        .ok_or_else(|| anyhow!("Parent not found"))?
+                        .object
+                        .name
+                }
+                ObjectMapping::OBJECT(id) => {
+                    object_name = cache
+                        .get_object(id)
+                        .ok_or_else(|| anyhow!("Parent not found"))?
+                        .object
+                        .name
+                }
+            }
+        }
+        let key = if project_name.is_empty() || object_name.is_empty() {
+            return Err(anyhow!("No project or object found"));
+        } else {
+            match (!collection_name.is_empty(), !dataset_name.is_empty()) {
+                (true, true) => {
+                    format!("{}/{}/{}", collection_name, dataset_name, object_name)
+                }
+                (false, true) => format!("{}/{}", dataset_name, object_name),
+                (true, false) => {
+                    format!("{}/{}", collection_name, object_name)
+                }
+                (false, false) => object_name,
+            }
+        };
+        Ok((project_id, project_name, key))
+    }
+    pub async fn get_fullsync_endpoint(&self, object_id: DieselUlid) -> Result<Endpoint> {
         // Only gets first endpoint
-        let project_endpoint = *Vec::from_iter(
-            &cache
-                .get_object(&project_id)
-                .ok_or_else(|| anyhow!("Parent project not found"))?
+        let endpoint = *Vec::from_iter(
+            self.cache
+                .get_object(&object_id)
+                .ok_or_else(|| anyhow!("Object not found"))?
                 .object
                 .endpoints
                 .0,
-        )[0]
-        .key();
+        )
+        .iter()
+        .find(|(_, ep)| matches!(ep.replication, ReplicationType::FullSync))
+        .ok_or_else(|| anyhow!("No full sync endpoint found"))?
+        .0;
         // Fetch endpoint from cache/database
         self.get_endpoint(GetEP(GetEndpointRequest {
-            endpoint: Some(APIEndpointEnum::EndpointId(project_endpoint.to_string())),
+            endpoint: Some(APIEndpointEnum::EndpointId(endpoint.to_string())),
         }))
         .await
     }

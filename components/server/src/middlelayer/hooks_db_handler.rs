@@ -75,7 +75,7 @@ impl DatabaseHandler {
         // Client creation
         let mut client = self.database.get_client().await?;
 
-        let mut object = Object::get(object_id, &client)
+        let object = Object::get(object_id, &client)
             .await?
             .ok_or_else(|| anyhow!("Object not found"))?;
 
@@ -151,8 +151,10 @@ impl DatabaseHandler {
                 return Err(anyhow!("Hook not found"));
             }
         } else {
+            let mut owr = Object::get_object_with_relations(&object_id, transaction_client).await?;
             // Update status
-            let kvs = object
+            let kvs = owr
+                .object
                 .key_values
                 .0
                  .0
@@ -170,8 +172,8 @@ impl DatabaseHandler {
                     }
                 })
                 .collect::<Result<Vec<KeyValue>>>()?;
-            object.key_values = Json(crate::database::dsls::object_dsl::KeyValues(kvs.clone()));
-            object.update(transaction_client).await?;
+            owr.object.key_values = Json(crate::database::dsls::object_dsl::KeyValues(kvs.clone()));
+            owr.object.update(transaction_client).await?;
 
             transaction.commit().await?;
             kvs
@@ -245,7 +247,11 @@ impl DatabaseHandler {
                     for filter in h.trigger.0.filter.clone() {
                         match filter {
                             Filter::Name(name) => {
-                                let regex = Regex::new(&name)?;
+                                let regex = if let Ok(regex) = Regex::new(&name) {
+                                    regex
+                                } else {
+                                    continue;
+                                };
                                 if regex.is_match(&object.object.name) {
                                     is_match = true;
                                     break;
@@ -257,8 +263,16 @@ impl DatabaseHandler {
                                 value,
                                 variant,
                             }) => {
-                                let key_regex = Regex::new(&key)?;
-                                let value_regex = Regex::new(&value)?;
+                                let key_regex = if let Ok(regex) = Regex::new(&key) {
+                                    regex
+                                } else {
+                                    continue;
+                                };
+                                let value_regex = if let Ok(regex) = Regex::new(&value) {
+                                    regex
+                                } else {
+                                    continue;
+                                };
                                 for label in labels {
                                     if (label.variant == variant)
                                         && (key_regex.is_match(&label.key))
@@ -283,7 +297,10 @@ impl DatabaseHandler {
             Ok(())
         } else {
             for hook in hooks {
-                let user_id = hook.owner;
+                let user_id = match self.cache.get_object(&hook.project_id) {
+                    Some(project) => project.object.created_by,
+                    None => return Ok(()),
+                };
                 let message = HookMessage {
                     hook,
                     object: object.clone(),

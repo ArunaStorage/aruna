@@ -14,7 +14,7 @@ pub struct RuleBinding {
     pub cascading: bool,
 }
 
-#[derive(FromRow, FromSql, Debug, Clone, ToSql, PartialEq, Eq)]
+#[derive(FromRow, FromSql, Debug, Clone, ToSql, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Rule {
     pub id: DieselUlid,
     pub rule_expressions: String,
@@ -146,5 +146,19 @@ impl RuleBinding {
         let prepared = client.prepare(query).await?;
         client.execute(&prepared, &[&rule_id, &origin_id]).await?;
         Ok(())
+    }
+
+    pub async fn get_by(
+        rule_id: DieselUlid,
+        origin_id: DieselUlid,
+        resource_id: DieselUlid,
+        client: &Client,
+    ) -> Result<Option<RuleBinding>> {
+        let query = "SELECT * FROM rule_bindings WHERE rule_id = $1 AND origin_id = $2 AND resource_id = $3;";
+        let prepared = client.prepare(query).await?;
+        Ok(client
+            .query_opt(&prepared, &[&rule_id, &origin_id, &resource_id])
+            .await?
+            .map(|e| RuleBinding::from_row(&e)))
     }
 }

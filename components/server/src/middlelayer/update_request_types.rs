@@ -4,7 +4,8 @@ use crate::database::dsls::internal_relation_dsl::{
 };
 use crate::database::dsls::license_dsl::License;
 use crate::database::dsls::object_dsl::{
-    Author, EndpointInfo, Hashes, KeyValue as DBKeyValue, KeyValues, Object, ObjectWithRelations,
+    Author, EndpointInfo, Hashes, KeyValue as DBKeyValue, KeyValueVariant, KeyValues, Object,
+    ObjectWithRelations,
 };
 use crate::database::enums::{DataClass, ObjectType, ReplicationStatus};
 use ahash::RandomState;
@@ -23,6 +24,7 @@ use aruna_rust_api::api::storage::services::v2::{
 };
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
 use std::str::FromStr;
 use tokio_postgres::Client;
 
@@ -271,6 +273,13 @@ impl UpdateObject {
         Ok(match self.0.add_key_values.is_empty() {
             false => {
                 let kv = &self.0.add_key_values;
+                if kv
+                    .iter()
+                    .map(|kv| kv.variant)
+                    .contains(&(KeyValueVariant::HOOK_STATUS as i32))
+                {
+                    return Err(anyhow!("Cannot add hook status without triggering hooks"));
+                }
                 kv.try_into()?
             }
             true => old.key_values.0,
@@ -287,6 +296,14 @@ impl UpdateObject {
         let add_kv = &self.0.add_key_values;
         let remove_kv: KeyValues = rm_kv.try_into()?;
         let mut add_kv: KeyValues = add_kv.try_into()?;
+        if add_kv
+            .0
+            .iter()
+            .map(|kv| &kv.variant)
+            .contains(&KeyValueVariant::HOOK_STATUS)
+        {
+            return Err(anyhow!("Cannot add hook status without triggering hooks"));
+        }
         let mut key_values: Vec<DBKeyValue> = old
             .key_values
             .0
