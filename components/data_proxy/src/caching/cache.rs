@@ -137,7 +137,7 @@ impl Cache {
                 GrpcQueryHandler::new(url, cache.clone(), self_id.to_string())
                     .await
                     .map_err(|e| {
-                        tracing::error!(error = ?e, msg = e.to_string());
+                        error!(error = ?e, msg = e.to_string());
                         e
                     })?,
             );
@@ -486,8 +486,7 @@ impl Cache {
         // /foo/bar: id-foo/bar
 
         // VecDeque<(id, [Option<(String, DieselUlid)>; 4])>
-        const ARRAY_REPEAT_VALUE: std::option::Option<(std::string::String, TypedId)> =
-            None::<(String, TypedId)>;
+        const ARRAY_REPEAT_VALUE: Option<(String, TypedId)> = None::<(String, TypedId)>;
         let mut prefixes = VecDeque::from([(*resource_id, [ARRAY_REPEAT_VALUE; 3])]);
         let mut final_result = Vec::new();
         while let Some((id, visited)) = prefixes.pop_front() {
@@ -627,7 +626,7 @@ impl Cache {
             .pubkeys
             .get(&kid)
             .ok_or_else(|| {
-                tracing::error!(error = "Pubkey not found");
+                error!(error = "Pubkey not found");
                 anyhow!("Pubkey not found")
             })?
             .clone())
@@ -636,7 +635,7 @@ impl Cache {
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn upsert_user(self: Arc<Cache>, user: GrpcUser) -> Result<()> {
         let user_id = DieselUlid::from_str(&user.id).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         let proxy_user = User::try_from(user)?;

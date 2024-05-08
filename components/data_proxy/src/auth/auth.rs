@@ -141,7 +141,7 @@ impl AuthHandler {
             encode_secret
         );
         let encoding_key = EncodingKey::from_ed_pem(private_pem.as_bytes()).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
 
@@ -162,17 +162,17 @@ impl AuthHandler {
             .kid
             .ok_or_else(|| anyhow!("Unspecified kid"))
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
         let (pk, dec_key) = self
             .cache
             .get_pubkey(i32::from_str(&kid).map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?)
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
         let claims = self.extract_claims(token, &dec_key)?;
@@ -205,7 +205,7 @@ impl AuthHandler {
             // No intent, no Dataproxy/Action check
             Ok((
                 DieselUlid::from_str(&claims.sub).map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
+                    error!(error = ?e, msg = e.to_string());
                     e
                 })?,
                 claims.tid,
@@ -229,7 +229,7 @@ impl AuthHandler {
             &validation, //&Validation::new(Algorithm::EdDSA)
         )
         .map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         Ok(token.claims)
@@ -647,7 +647,7 @@ impl AuthHandler {
         };
 
         self.sign_token(claims).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })
     }
@@ -670,7 +670,7 @@ impl AuthHandler {
         };
 
         self.sign_token(claims).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })
     }
@@ -696,7 +696,7 @@ impl AuthHandler {
         };
 
         self.sign_token(claims).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })
     }
@@ -709,7 +709,7 @@ impl AuthHandler {
         };
 
         let token = jsonwebtoken::encode(&header, &claims, &self.encoding_key.1).map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
 

@@ -68,7 +68,7 @@ pub trait WithGenericBytes<
             Self::get_table()
         );
         let prepared = client.prepare(&query).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
 
@@ -76,7 +76,7 @@ pub trait WithGenericBytes<
             .query(&prepared, &[&generic.id, &generic.data])
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
         Ok(())
@@ -88,11 +88,11 @@ pub trait WithGenericBytes<
     {
         let query = format!("SELECT * FROM {};", Self::get_table());
         let prepared = client.prepare(&query).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         let rows = client.query(&prepared, &[]).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         Ok(rows
@@ -118,11 +118,11 @@ pub trait WithGenericBytes<
     {
         let query = format!("SELECT * FROM {} WHERE id = $1;", Self::get_table());
         let prepared = client.prepare(&query).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         let row = client.query_one(&prepared, &[&id]).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         match Self::try_from(GenericBytes {
@@ -144,11 +144,11 @@ pub trait WithGenericBytes<
     {
         let query = format!("SELECT * FROM {} WHERE id = $1;", Self::get_table());
         let prepared = client.prepare(&query).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         let row = client.query_opt(&prepared, &[&id]).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
 
@@ -173,11 +173,11 @@ pub trait WithGenericBytes<
     async fn delete(id: &X, client: &Client) -> Result<()> {
         let query = format!("DELETE FROM {} WHERE id = $1;", Self::get_table());
         let prepared = client.prepare(&query).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         client.execute(&prepared, &[&id]).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         Ok(())
@@ -186,11 +186,11 @@ pub trait WithGenericBytes<
     async fn delete_all(client: &Client) -> Result<()> {
         let query = format!("DELETE FROM {};", Self::get_table());
         let prepared = client.prepare(&query).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         client.execute(&prepared, &[]).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         Ok(())
@@ -226,7 +226,7 @@ impl LocationBinding {
             "INSERT INTO location_bindings (object_id, location_id) VALUES ($1::UUID, $2::UUID);"
                 .to_string();
         let prepared = client.prepare(&query).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
 
@@ -234,7 +234,7 @@ impl LocationBinding {
             .query(&prepared, &[&self.object_id, &self.location_id])
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
         Ok(())
@@ -243,11 +243,11 @@ impl LocationBinding {
     pub async fn _get_all(client: &Client) -> Result<Vec<Self>> {
         let query = "SELECT * FROM location_bindings;".to_string();
         let prepared = client.prepare(&query).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         let rows = client.query(&prepared, &[]).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         Ok(rows
@@ -261,14 +261,14 @@ impl LocationBinding {
     pub async fn get_by_object_id(object_id: &DieselUlid, client: &Client) -> Result<Option<Self>> {
         let query = "SELECT * FROM location_bindings WHERE object_id = $1;".to_string();
         let prepared = client.prepare(&query).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         let row = client
             .query_opt(&prepared, &[&object_id])
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
         Ok(row.map(|row| Self {
@@ -283,14 +283,14 @@ impl LocationBinding {
     ) -> Result<Vec<Self>> {
         let query = "SELECT * FROM location_bindings WHERE location_id = $1;".to_string();
         let prepared = client.prepare(&query).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         let row = client
             .query(&prepared, &[&location_id])
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
         Ok(row
@@ -305,14 +305,14 @@ impl LocationBinding {
     pub async fn _delete_by_object_id(object_id: &DieselUlid, client: &Client) -> Result<()> {
         let query = "DELETE FROM location_binding WHERE object_id = $1;".to_string();
         let prepared = client.prepare(&query).await.map_err(|e| {
-            tracing::error!(error = ?e, msg = e.to_string());
+            error!(error = ?e, msg = e.to_string());
             e
         })?;
         client
             .execute(&prepared, &[&object_id])
             .await
             .map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
+                error!(error = ?e, msg = e.to_string());
                 e
             })?;
         Ok(())

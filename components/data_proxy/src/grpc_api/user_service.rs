@@ -96,7 +96,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
     async fn revoke_credentials(
         &self,
         request: tonic::Request<RevokeCredentialsRequest>,
-    ) -> std::result::Result<tonic::Response<RevokeCredentialsResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<RevokeCredentialsResponse>, tonic::Status> {
         return if let Some(a) = self.cache.auth.read().await.as_ref() {
             let token = get_token_from_md(request.metadata()).map_err(|e| {
                 error!(error = ?e, msg = e.to_string());
@@ -150,8 +150,7 @@ impl DataproxyUserService for DataproxyUserServiceImpl {
     async fn create_or_update_credentials(
         &self,
         request: tonic::Request<CreateOrUpdateCredentialsRequest>,
-    ) -> std::result::Result<tonic::Response<CreateOrUpdateCredentialsResponse>, tonic::Status>
-    {
+    ) -> Result<tonic::Response<CreateOrUpdateCredentialsResponse>, tonic::Status> {
         return if let Some(a) = self.cache.auth.read().await.as_ref() {
             let token = get_token_from_md(request.metadata()).map_err(|e| {
                 error!(error = ?e, msg = e.to_string());

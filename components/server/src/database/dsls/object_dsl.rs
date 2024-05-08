@@ -11,16 +11,14 @@ use anyhow::{anyhow, bail};
 use chrono::NaiveDateTime;
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
-use futures::pin_mut;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use postgres_from_row::FromRow;
-use postgres_types::{FromSql, Json, ToSql, Type};
+use postgres_types::{FromSql, Json, ToSql};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::Duration;
-use tokio_postgres::binary_copy::BinaryCopyInWriter;
-use tokio_postgres::{Client, CopyInSink};
+use tokio_postgres::Client;
 
 lazy_static! {
     pub static ref MAX_RETRIES: u64 = dotenvy::var("MAX_RETRIES")
@@ -861,10 +859,55 @@ impl Object {
     }
 
     //ToDo: Docs
-    pub async fn batch_create(objects: &Vec<Object>, client: &Client) -> Result<()> {
-        //let query = "INSERT INTO objects
-        //    (id, revision_number, name, description, created_by, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints)
-        //    VALUES $1;";
+    pub async fn batch_create(objects: &[Object], client: &Client) -> Result<()> {
+        // This is ugly but may solve our batch_create problems
+        let query = "INSERT INTO objects
+        (id, revision_number, name, title, description, created_by, authors, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints, metadata_license, data_license)
+        VALUES";
+        let mut query_list = String::new();
+        let mut object_list = Vec::<&(dyn ToSql + Sync)>::new();
+        for (idx, object) in objects.iter().enumerate() {
+            let mut object_row= format!("(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
+                                          1+(19*idx), 2+(19*idx), 3+(19*idx), 4+(19*idx), 5+(19*idx), 6+(19*idx), 7+(19*idx),
+                                          8+(19*idx), 9+(19*idx), 10+(19*idx), 11+(19*idx), 12+(19*idx), 13+(19*idx),
+                                          14+(19*idx), 15+(19*idx), 16+(19*idx), 17+(19*idx), 18+(19*idx), 19+(19*idx)
+            );
+            if idx == objects.len() - 1 {
+                object_row.push(';');
+            } else {
+                object_row.push(',');
+            }
+            query_list.push_str(&object_row);
+            object_list.append(&mut vec![
+                &object.id,
+                &object.revision_number,
+                &object.name,
+                &object.title,
+                &object.description,
+                &object.created_by,
+                &object.authors,
+                &object.content_len,
+                &object.count,
+                &object.key_values,
+                &object.object_status,
+                &object.data_class,
+                &object.object_type,
+                &object.external_relations,
+                &object.hashes,
+                &object.dynamic,
+                &object.endpoints,
+                &object.metadata_license,
+                &object.data_license,
+            ]);
+        }
+        let query = [query, &query_list].join("");
+        let prepared = client.prepare(query.as_str()).await?;
+        client.execute(&prepared, &object_list).await?;
+        /*
+        This randomly fails in our tests but is the more performant option suggested by tokio_postgres.
+        Potentially needs to be debugged, replacing the 'ugly' solution, to address performance concerns
+        in the long run
+
         let query = "COPY objects \
         (id, revision_number, name, title, description, created_by, authors, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints, metadata_license, data_license)
         FROM STDIN BINARY";
@@ -921,6 +964,7 @@ impl Object {
                 .await?;
         }
         writer.finish().await?;
+        */
         Ok(())
     }
 
