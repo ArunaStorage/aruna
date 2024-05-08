@@ -2924,9 +2924,9 @@ checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 
 [[package]]
 name = "petgraph"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1d3afd2628e69da2be385eb6f2fd57c8ac7977ceeff6dc166ff1657b0e386a9"
+checksum = "b4c5cc86750666a3ed20bdaf5ca2a0344f9c67674cae0515bec2da16fbaa47db"
 dependencies = [
  "fixedbitset",
  "indexmap 2.2.6",
@@ -2994,7 +2994,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 [[package]]
 name = "pithos_lib"
 version = "0.5.1"
-source = "git+https://github.com/ArunaStorage/pithos?branch=fix/tar_streaming#5578f1ba14a70f5f9a3a0d884269f742779feb39"
+source = "git+https://github.com/ArunaStorage/pithos?branch=fix/tar_streaming#a02222ce78f590bae73631e82f31d8f8a5ff2e86"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -3018,6 +3018,7 @@ dependencies = [
  "pin-project",
  "rand_core",
  "scrypt",
+ "serde",
  "sha1",
  "sha2",
  "tar",

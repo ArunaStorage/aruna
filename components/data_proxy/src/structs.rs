@@ -22,6 +22,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use diesel_ulid::DieselUlid;
 use http::{HeaderValue, Method};
 use pithos_lib::helpers::structs::{EncryptionKey, FileContext};
+use pithos_lib::pithos::structs::{EncryptionMetadata, EndOfFileMetadata};
 use rand::RngCore;
 use s3s::dto::CreateBucketInput;
 use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
@@ -163,7 +164,7 @@ pub enum FileFormat {
     RawEncrypted([u8; 32]),
     RawCompressed,
     RawEncryptedCompressed([u8; 32]),
-    Pithos([u8; 32]),
+    Pithos((EncryptionMetadata, EndOfFileMetadata)),
 }
 
 impl FileFormat {
@@ -207,11 +208,12 @@ impl FileFormat {
         }
     }
 
-    pub fn get_encryption_key_as_enc_key(&self) -> EncryptionKey {
+    pub fn get_encryption_key_as_enc_key(&self) -> Vec<EncryptionKey> {
         match self {
             FileFormat::RawEncrypted(key)
             | FileFormat::RawEncryptedCompressed(key)
-            | FileFormat::Pithos(key) => EncryptionKey::new_same_key(*key),
+            => vec![EncryptionKey::new_same_key(*key)],
+            FileFormat::Pithos((keys, _)) => ,
             _ => EncryptionKey::default(),
         }
     }

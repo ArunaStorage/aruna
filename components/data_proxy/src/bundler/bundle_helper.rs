@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use crate::{data_backends::storage_backend::StorageBackend, structs::ObjectLocation};
 use ahash::HashSet;
 use futures_util::TryStreamExt;
@@ -50,7 +51,7 @@ pub async fn get_bundle(
     let final_sender_clone = final_sender.clone();
     let final_receiver_clone = final_receiver.clone();
 
-    trace!(?path_level_vec, "Starting bundle creation");
+    trace!(?final_levels, "Starting bundle creation");
 
     tokio::spawn(
         async move {
@@ -118,6 +119,7 @@ pub async fn get_bundle(
                 data_clone,
                 AsyncSenderSink::new(final_sender_clone.clone()),
             )
+            .add_transformer(DebugTransformer::new("init"))
             .add_transformer(ChaCha20Dec::new().map_err(|e| {
                 tracing::error!(error = ?e, msg = e.to_string());
                 e
