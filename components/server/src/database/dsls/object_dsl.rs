@@ -866,27 +866,16 @@ impl Object {
         VALUES";
         let mut query_list = String::new();
         let mut object_list = Vec::<&(dyn ToSql + Sync)>::new();
-        let mut counter = 1;
         for (idx, object) in objects.iter().enumerate() {
-            let mut object_row = "(".to_string();
+            let mut object_row= format!("(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
+                                          1+(19*idx), 2+(19*idx), 3+(19*idx), 4+(19*idx), 5+(19*idx), 6+(19*idx), 7+(19*idx),
+                                          8+(19*idx), 9+(19*idx), 10+(19*idx), 11+(19*idx), 12+(19*idx), 13+(19*idx),
+                                          14+(19*idx), 15+(19*idx), 16+(19*idx), 17+(19*idx), 18+(19*idx), 19+(19*idx)
+            );
             if idx == objects.len() - 1 {
-                for i in 1..20 {
-                    if i == 19 {
-                        object_row.push_str(format!("${counter});").as_str());
-                    } else {
-                        object_row.push_str(format!("${counter},").as_str());
-                    }
-                    counter += 1;
-                }
+                object_row.push(';');
             } else {
-                for i in 1..20 {
-                    if i == 19 {
-                        object_row.push_str(format!("${counter}),").as_str());
-                    } else {
-                        object_row.push_str(format!("${counter},").as_str());
-                    }
-                    counter += 1;
-                }
+                object_row.push(',');
             }
             query_list.push_str(&object_row);
             object_list.append(&mut vec![
@@ -914,63 +903,68 @@ impl Object {
         let query = [query, &query_list].join("");
         let prepared = client.prepare(query.as_str()).await?;
         client.execute(&prepared, &object_list).await?;
-        // This fails our tests because COPY in can error when run in parallel
-        // let query = "COPY objects \
-        // (id, revision_number, name, title, description, created_by, authors, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints, metadata_license, data_license)
-        // FROM STDIN BINARY";
-        // let sink: CopyInSink<_> = client.copy_in(query).await?;
-        // let writer = BinaryCopyInWriter::new(
-        //     sink,
-        //     &[
-        //         Type::UUID,
-        //         Type::INT4,
-        //         Type::VARCHAR,
-        //         Type::VARCHAR,
-        //         Type::VARCHAR,
-        //         Type::UUID,
-        //         Type::JSONB,
-        //         Type::INT8,
-        //         Type::INT8,
-        //         Type::JSONB,
-        //         ObjectStatus::get_type(),
-        //         DataClass::get_type(),
-        //         ObjectType::get_type(),
-        //         Type::JSONB,
-        //         Type::JSONB,
-        //         Type::BOOL,
-        //         Type::JSONB,
-        //         Type::VARCHAR,
-        //         Type::VARCHAR,
-        //     ],
-        // );
-        // pin_mut!(writer);
-        // for object in objects {
-        //     writer
-        //         .as_mut()
-        //         .write(&[
-        //             &object.id,
-        //             &object.revision_number,
-        //             &object.name,
-        //             &object.title,
-        //             &object.description,
-        //             &object.created_by,
-        //             &object.authors,
-        //             &object.content_len,
-        //             &object.count,
-        //             &object.key_values,
-        //             &object.object_status,
-        //             &object.data_class,
-        //             &object.object_type,
-        //             &object.external_relations,
-        //             &object.hashes,
-        //             &object.dynamic,
-        //             &object.endpoints,
-        //             &object.metadata_license,
-        //             &object.data_license,
-        //         ])
-        //         .await?;
-        // }
-        // writer.finish().await?;
+        /*
+        This randomly fails in our tests but is the more performant option suggested by tokio_postgres.
+        Potentially needs to be debugged, replacing the 'ugly' solution, to address performance concerns
+        in the long run
+
+        let query = "COPY objects \
+        (id, revision_number, name, title, description, created_by, authors, content_len, count, key_values, object_status, data_class, object_type, external_relations, hashes, dynamic, endpoints, metadata_license, data_license)
+        FROM STDIN BINARY";
+        let sink: CopyInSink<_> = client.copy_in(query).await?;
+        let writer = BinaryCopyInWriter::new(
+            sink,
+            &[
+                Type::UUID,
+                Type::INT4,
+                Type::VARCHAR,
+                Type::VARCHAR,
+                Type::VARCHAR,
+                Type::UUID,
+                Type::JSONB,
+                Type::INT8,
+                Type::INT8,
+                Type::JSONB,
+                ObjectStatus::get_type(),
+                DataClass::get_type(),
+                ObjectType::get_type(),
+                Type::JSONB,
+                Type::JSONB,
+                Type::BOOL,
+                Type::JSONB,
+                Type::VARCHAR,
+                Type::VARCHAR,
+            ],
+        );
+        pin_mut!(writer);
+        for object in objects {
+            writer
+                .as_mut()
+                .write(&[
+                    &object.id,
+                    &object.revision_number,
+                    &object.name,
+                    &object.title,
+                    &object.description,
+                    &object.created_by,
+                    &object.authors,
+                    &object.content_len,
+                    &object.count,
+                    &object.key_values,
+                    &object.object_status,
+                    &object.data_class,
+                    &object.object_type,
+                    &object.external_relations,
+                    &object.hashes,
+                    &object.dynamic,
+                    &object.endpoints,
+                    &object.metadata_license,
+                    &object.data_license,
+                ])
+                .await?;
+        }
+        writer.finish().await?;
+        */
         Ok(())
     }
 
