@@ -279,11 +279,12 @@ impl EventHandler for NatsIoHandler {
 
     async fn wait_for_acknowledgement(&self, subject: &str) -> anyhow::Result<()> {
         let mut backoff_counter = 0;
-        // store consumers in hashmap
-        let mut hash_set = HashSet::new();
         'outer: while backoff_counter <= *MAX_RETRIES {
             // Get consumers
             let mut info = self.stream.consumers();
+            // store consumers in hashmap
+            let mut hash_set = HashSet::new();
+            // iterate over consumer info
             'inner: while let Some(consumer) = info.try_next().await? {
                 // returns false when already in hashmap
                 if hash_set.insert(consumer.name) {

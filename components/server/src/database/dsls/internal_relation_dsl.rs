@@ -3,12 +3,10 @@ use crate::database::enums::ObjectMapping;
 use crate::utils::database_utils::create_multi_query;
 use anyhow::Result;
 use diesel_ulid::DieselUlid;
-use futures::pin_mut;
 use postgres_from_row::FromRow;
-use postgres_types::{FromSql, ToSql, Type};
+use postgres_types::{FromSql, ToSql};
 use serde::{Deserialize, Serialize};
-use tokio_postgres::binary_copy::BinaryCopyInWriter;
-use tokio_postgres::{Client, CopyInSink};
+use tokio_postgres::Client;
 
 use super::super::enums::ObjectType;
 
@@ -114,38 +112,80 @@ impl InternalRelation {
         client.execute(&prepared, &[&old, &new]).await?;
         Ok(())
     }
-    pub async fn batch_create(relations: &Vec<InternalRelation>, client: &Client) -> Result<()> {
-        let query = "COPY internal_relations (id, origin_pid, origin_type, relation_name, target_pid, target_type, target_name)\
-        FROM STDIN BINARY;";
-        let sink: CopyInSink<_> = client.copy_in(query).await?;
-        let writer = BinaryCopyInWriter::new(
-            sink,
-            &[
-                Type::UUID,
-                Type::UUID,
-                ObjectType::get_type(),
-                Type::VARCHAR,
-                Type::UUID,
-                ObjectType::get_type(),
-                Type::VARCHAR,
-            ],
-        );
-        pin_mut!(writer);
-        for relation in relations {
-            writer
-                .as_mut()
-                .write(&[
-                    &relation.id,
-                    &relation.origin_pid,
-                    &relation.origin_type,
-                    &relation.relation_name,
-                    &relation.target_pid,
-                    &relation.target_type,
-                    &relation.target_name,
-                ])
-                .await?;
+    pub async fn batch_create(relations: &[InternalRelation], client: &Client) -> Result<()> {
+        // This is ugly but may solve our batch_create problems
+        let query = "INSERT INTO internal_relations
+        (id, origin_pid, origin_type, relation_name, target_pid, target_type, target_name)
+        VALUES";
+        let mut query_list = String::new();
+        let mut relation_list = Vec::<&(dyn ToSql + Sync)>::new();
+        let mut counter = 1;
+        for (idx, relation) in relations.iter().enumerate() {
+            let mut relation_row = "(".to_string();
+            if idx == relations.len() - 1 {
+                for i in 1..8 {
+                    if i == 7 {
+                        relation_row.push_str(format!("${counter});").as_str());
+                    } else {
+                        relation_row.push_str(format!("${counter},").as_str());
+                    }
+                    counter += 1;
+                }
+            } else {
+                for i in 1..8 {
+                    if i == 7 {
+                        relation_row.push_str(format!("${counter}),").as_str());
+                    } else {
+                        relation_row.push_str(format!("${counter},").as_str());
+                    }
+                    counter += 1;
+                }
+            }
+            query_list.push_str(&relation_row);
+            relation_list.append(&mut vec![
+                &relation.id,
+                &relation.origin_pid,
+                &relation.origin_type,
+                &relation.relation_name,
+                &relation.target_pid,
+                &relation.target_type,
+                &relation.target_name,
+            ]);
         }
-        writer.finish().await?;
+        let query = [query, &query_list].join("");
+        let prepared = client.prepare(query.as_str()).await?;
+        client.execute(&prepared, &relation_list).await?;
+        // let query = "COPY internal_relations (id, origin_pid, origin_type, relation_name, target_pid, target_type, target_name)\
+        // FROM STDIN BINARY;";
+        // let sink: CopyInSink<_> = client.copy_in(query).await?;
+        // let writer = BinaryCopyInWriter::new(
+        //     sink,
+        //     &[
+        //         Type::UUID,
+        //         Type::UUID,
+        //         ObjectType::get_type(),
+        //         Type::VARCHAR,
+        //         Type::UUID,
+        //         ObjectType::get_type(),
+        //         Type::VARCHAR,
+        //     ],
+        // );
+        // pin_mut!(writer);
+        // for relation in relations {
+        //     writer
+        //         .as_mut()
+        //         .write(&[
+        //             &relation.id,
+        //             &relation.origin_pid,
+        //             &relation.origin_type,
+        //             &relation.relation_name,
+        //             &relation.target_pid,
+        //             &relation.target_type,
+        //             &relation.target_name,
+        //         ])
+        //         .await?;
+        // }
+        // writer.finish().await?;
         Ok(())
     }
 
