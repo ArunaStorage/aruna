@@ -179,6 +179,7 @@ pub enum Backend {
         encryption: bool,
         compression: bool,
         deduplication: bool,
+        force_path_style: Option<bool>,
         dropbox_bucket: Option<String>,
         backend_scheme: String,
         tmp: Option<String>,
