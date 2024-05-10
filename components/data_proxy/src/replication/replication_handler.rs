@@ -168,10 +168,13 @@ impl ReplicationHandler {
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await; // TODO: set to 30 secs
                 let batch = queue.clone();
 
-                let result = self.process(batch).await.map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
-                    e
-                })?;
+                let result = match self.process(batch).await {
+                    Ok(res) => res,
+                    Err(err) => {
+                        tracing::error!(error = ?err, msg = err.to_string());
+                        continue;
+                    }
+                };
                 // Remove processed entries from shared map
                 for (id, objects) in result {
                     queue.alter(&id, |_, directions| {
