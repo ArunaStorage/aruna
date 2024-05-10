@@ -21,8 +21,9 @@ use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use diesel_ulid::DieselUlid;
 use http::{HeaderValue, Method};
+use pithos_lib::helpers::notifications::DirOrFileIdx;
 use pithos_lib::helpers::structs::{EncryptionKey, FileContext};
-use pithos_lib::pithos::structs::{EncryptionMetadata, EndOfFileMetadata};
+use pithos_lib::pithos::structs::{DecryptedKeys, EncryptionPacket, EndOfFileMetadata};
 use rand::RngCore;
 use s3s::dto::CreateBucketInput;
 use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
@@ -41,11 +42,6 @@ use crate::CONFIG;
 
 /* ----- Constants ----- */
 pub const ALL_RIGHTS_RESERVED: &str = "AllRightsReserved";
-
-#[tracing::instrument(level = "trace", skip())]
-pub fn type_name_of<T>(_: T) -> &'static str {
-    std::any::type_name::<T>()
-}
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Bundle {
@@ -74,12 +70,12 @@ pub enum DbPermissionLevel {
 impl Display for DbPermissionLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let str = match self {
-            DbPermissionLevel::Deny => "deny".to_string(),
-            DbPermissionLevel::None => "none".to_string(),
-            DbPermissionLevel::Read => "read".to_string(),
-            DbPermissionLevel::Append => "append".to_string(),
-            DbPermissionLevel::Write => "write".to_string(),
-            DbPermissionLevel::Admin => "admin".to_string(),
+            DbPermissionLevel::Deny => "deny",
+            DbPermissionLevel::None => "none",
+            DbPermissionLevel::Read => "read",
+            DbPermissionLevel::Append => "append",
+            DbPermissionLevel::Write => "write",
+            DbPermissionLevel::Admin => "admin",
         };
         write!(f, "{}", str)
     }
@@ -164,21 +160,30 @@ pub enum FileFormat {
     RawEncrypted([u8; 32]),
     RawCompressed,
     RawEncryptedCompressed([u8; 32]),
-    Pithos((EncryptionMetadata, EndOfFileMetadata)),
+    Pithos((EncryptionPacket, Option<EndOfFileMetadata>)),
 }
 
 impl FileFormat {
-    pub fn from_bools(allow_pithos: bool, allow_encryption: bool, allow_compression: bool) -> Self {
+    pub fn from_bools(
+        allow_pithos: bool,
+        allow_encryption: bool,
+        allow_compression: bool,
+    ) -> Result<Self> {
         let mut enc_key = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut enc_key);
 
-        match (allow_pithos, allow_encryption, allow_compression) {
-            (true, _, _) => FileFormat::Pithos(enc_key),
+        let keys = DecryptedKeys {
+            keys: vec![(enc_key, DirOrFileIdx::File(0))],
+        };
+        let encrypted = keys.encrypt(CONFIG.proxy.get_public_key_x25519()?, None)?;
+
+        Ok(match (allow_pithos, allow_encryption, allow_compression) {
+            (true, _, _) => FileFormat::Pithos((encrypted, None)),
             (false, true, false) => FileFormat::RawEncrypted(enc_key),
             (false, false, true) => FileFormat::RawCompressed,
             (false, true, true) => FileFormat::RawEncryptedCompressed(enc_key),
             _ => FileFormat::Raw,
-        }
+        })
     }
 
     pub fn is_encrypted(&self) -> bool {
@@ -201,21 +206,22 @@ impl FileFormat {
 
     pub fn get_encryption_key(&self) -> Option<[u8; 32]> {
         match self {
-            FileFormat::RawEncrypted(key)
-            | FileFormat::RawEncryptedCompressed(key)
-            | FileFormat::Pithos(key) => Some(*key),
+            FileFormat::RawEncrypted(key) | FileFormat::RawEncryptedCompressed(key) => Some(*key),
+            FileFormat::Pithos((packet, _)) => {
+                let keys = packet
+                    .clone()
+                    .decrypt(&CONFIG.proxy.get_private_key_x25519().ok()?);
+                keys.map(|e| e.keys.get(0).map(|e| e.0)).flatten()
+            }
             _ => None,
         }
     }
 
     pub fn get_encryption_key_as_enc_key(&self) -> Vec<EncryptionKey> {
-        match self {
-            FileFormat::RawEncrypted(key)
-            | FileFormat::RawEncryptedCompressed(key)
-            => vec![EncryptionKey::new_same_key(*key)],
-            FileFormat::Pithos((keys, _)) => ,
-            _ => EncryptionKey::default(),
-        }
+        let Some(key) = self.get_encryption_key() else {
+            return vec![];
+        };
+        vec![EncryptionKey::new_same_key(key)]
     }
 }
 

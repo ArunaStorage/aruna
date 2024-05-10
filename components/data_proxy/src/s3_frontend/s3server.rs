@@ -18,11 +18,11 @@ use s3s::service::S3ServiceBuilder;
 use s3s::service::SharedS3Service;
 use s3s::Body;
 use s3s::S3Error;
-use tokio::net::TcpListener;
 use std::convert::Infallible;
 use std::future::ready;
 use std::future::Ready;
 use std::sync::Arc;
+use tokio::net::TcpListener;
 use tracing::error;
 use tracing::info;
 
@@ -132,9 +132,14 @@ impl Service<hyper::Request<hyper::body::Incoming>> for WrappingService {
 
                 let headers = r.headers_mut();
                 headers.insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
-                headers.insert("Access-Control-Allow-Methods", HeaderValue::from_static("*"));
-                headers.insert("Access-Control-Allow-Headers", HeaderValue::from_static("*"));
-                
+                headers.insert(
+                    "Access-Control-Allow-Methods",
+                    HeaderValue::from_static("*"),
+                );
+                headers.insert(
+                    "Access-Control-Allow-Headers",
+                    HeaderValue::from_static("*"),
+                );
 
                 // Workaround to return 206 (Partial Content) for range responses
                 if r.headers().contains_key("Content-Range")

@@ -864,11 +864,10 @@ impl ReplicationHandler {
             e
         })?;
         if let Some(keys) = footer.encryption_keys {
-            if let Some((key, _)) = keys.keys.first() {
-                location.file_format = FileFormat::Pithos(*key);
-            } else {
-                return Err(anyhow!("Unable to extract key"));
-            }
+            location.file_format = FileFormat::Pithos((
+                keys.encrypt(CONFIG.proxy.get_public_key_x25519()?, None)?,
+                Some(footer.eof_metadata.clone()),
+            ));
         } else {
             return Err(anyhow!("Unable to extract keys"));
         };

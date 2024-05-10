@@ -11,7 +11,7 @@ use aruna_rust_api::api::storage::models::v2::{
 use diesel_ulid::DieselUlid;
 use log::debug;
 use meilisearch_sdk::{
-    indexes::Index, settings::PaginationSetting, task_info::TaskInfo, client::Client, tasks::Task,
+    client::Client, indexes::Index, settings::PaginationSetting, task_info::TaskInfo, tasks::Task,
 };
 use prost_wkt_types::Timestamp;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
