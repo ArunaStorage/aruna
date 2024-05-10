@@ -16,7 +16,7 @@ use pithos_lib::{
 };
 use s3s::{dto::StreamingBlob, s3_error};
 use tokio::pin;
-use tracing::{debug, info_span, trace, Instrument};
+use tracing::{debug, error, info_span, trace, Instrument};
 
 #[tracing::instrument(level = "trace", skip(path_level_vec, backend))]
 pub async fn get_bundle(
@@ -69,7 +69,10 @@ pub async fn get_bundle(
                             compressed_size: location.disk_content_len as u64,
                             decompressed_size: location.raw_content_len as u64,
                             compression: location.file_format.is_compressed(),
-                            encryption_key: location.file_format.get_encryption_key_as_enc_key(),
+                            encryption_key: location.file_format.get_encryption_key_as_enc_key().get(0).ok_or_else(|| {
+                                error!("No encryption key found");
+                                anyhow::anyhow!("No encryption key found")
+                            })?.clone(),
                             ..Default::default()
                         }))
                         .await
