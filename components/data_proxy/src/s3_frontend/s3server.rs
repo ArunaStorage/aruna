@@ -2,7 +2,7 @@ use super::auth::AuthProvider;
 use super::s3service::ArunaS3Service;
 use crate::caching::cache;
 use crate::data_backends::storage_backend::StorageBackend;
-use crate::CONFIG;
+use crate::CORS_REGEX;
 use anyhow::Result;
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
@@ -11,7 +11,6 @@ use http::Method;
 use http::StatusCode;
 use hyper::service::Service;
 use hyper::Server;
-use regex::Regex;
 use s3s::s3_error;
 use s3s::service::S3Service;
 use s3s::service::S3ServiceBuilder;
@@ -122,14 +121,9 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
         // Check if response gets CORS header pass
         let mut origin_exception = false;
         if let Some(origin) = req.headers().get("Origin") {
-            if let Some(frontend) = &CONFIG.frontend {
-                if let Some(cors_exception) = &frontend.cors_exception {
-                    let cors_regex =
-                        Regex::new(cors_exception).expect("CORS exception regex invalid");
-
-                    origin_exception =
-                        cors_regex.is_match(origin.to_str().expect("Invalid Origin header"));
-                }
+            if let Some(cors_regex) = &*CORS_REGEX {
+                origin_exception =
+                    cors_regex.is_match(origin.to_str().expect("Invalid Origin header"));
             }
         }
 
