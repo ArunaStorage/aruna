@@ -2,6 +2,7 @@ use super::auth::AuthProvider;
 use super::s3service::ArunaS3Service;
 use crate::caching::cache;
 use crate::data_backends::storage_backend::StorageBackend;
+use crate::CONFIG;
 use anyhow::Result;
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
@@ -10,7 +11,6 @@ use http::Method;
 use http::StatusCode;
 use hyper::service::Service;
 use hyper::Server;
-use lazy_static::lazy_static;
 use regex::Regex;
 use s3s::s3_error;
 use s3s::service::S3Service;
@@ -27,17 +27,6 @@ use tracing::error;
 use tracing::info;
 use tracing::info_span;
 use tracing::Instrument;
-
-lazy_static! {
-    pub static ref CORS_EXCEPTION: Option<Regex> = {
-        dotenvy::from_filename(".env").ok();
-        if let Ok(regex) = dotenvy::var("CORS_EXCEPTION") {
-            Some(Regex::new(&regex).expect("CORS exception regex must be valid"))
-        } else {
-            None
-        }
-    };
-}
 
 pub struct S3Server {
     s3service: S3Service,
@@ -131,12 +120,18 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
         }
 
         // Check if response gets CORS header pass
-        let mut cors_exception = false;
+        let mut origin_exception = false;
         if let Some(origin) = req.headers().get("Origin") {
-            if let Some(regex) = &*CORS_EXCEPTION {
-                cors_exception = regex.is_match(origin.to_str().unwrap())
+            if let Some(frontend) = &CONFIG.frontend {
+                if let Some(cors_exception) = &frontend.cors_exception {
+                    let cors_regex =
+                        Regex::new(cors_exception).expect("CORS exception regex invalid");
+
+                    origin_exception =
+                        cors_regex.is_match(origin.to_str().expect("Invalid Origin header"));
+                }
             }
-        };
+        }
 
         let mut service = self.0.clone();
         let resp = service.call(req);
@@ -155,7 +150,7 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
                 }
 
                 // Add CORS * if request origin matches exception regex
-                if cors_exception {
+                if origin_exception {
                     r.headers_mut()
                         .append("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
                     r.headers_mut().append(
