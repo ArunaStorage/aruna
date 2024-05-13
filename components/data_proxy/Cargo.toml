@@ -52,6 +52,7 @@ postgres-types = {workspace = true}
 postgres_array = "0.11.1"
 prost-wkt-types = {workspace = true}
 rand = {workspace = true}
+regex = "1.10.4"
 reqsign = "0.15.0"
 reqwest = {workspace = true}
 s3s = "0.9.0"

@@ -1127,7 +1127,7 @@ impl S3 for ArunaS3Service {
         let CheckAccessResult {
             objects_state,
             user_state,
-            ..
+            headers,
         } = req
             .extensions
             .get::<CheckAccessResult>()
@@ -1433,7 +1433,20 @@ impl S3 for ArunaS3Service {
             ..Default::default()
         };
         debug!(?output);
-        Ok(S3Response::new(output))
+
+        let mut resp = S3Response::new(output);
+        if let Some(headers) = headers {
+            for (k, v) in headers {
+                resp.headers.insert(
+                    HeaderName::from_bytes(k.as_bytes())
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header name"))?,
+                    HeaderValue::from_str(&v)
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header value"))?,
+                );
+            }
+        }
+
+        Ok(resp)
     }
 
     #[tracing::instrument(err)]
@@ -1457,7 +1470,11 @@ impl S3 for ArunaS3Service {
             }
         };
 
-        let CheckAccessResult { objects_state, .. } = req
+        let CheckAccessResult {
+            objects_state,
+            headers,
+            ..
+        } = req
             .extensions
             .get::<CheckAccessResult>()
             .cloned()
@@ -1562,6 +1579,19 @@ impl S3 for ArunaS3Service {
             ..Default::default()
         };
         debug!(?output);
-        Ok(S3Response::new(output))
+
+        let mut resp = S3Response::new(output);
+        if let Some(headers) = headers {
+            for (k, v) in headers {
+                resp.headers.insert(
+                    HeaderName::from_bytes(k.as_bytes())
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header name"))?,
+                    HeaderValue::from_str(&v)
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header value"))?,
+                );
+            }
+        }
+
+        Ok(resp)
     }
 }
