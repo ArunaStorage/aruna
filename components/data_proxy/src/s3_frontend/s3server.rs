@@ -5,10 +5,13 @@ use crate::data_backends::storage_backend::StorageBackend;
 use anyhow::Result;
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
+use http::HeaderValue;
 use http::Method;
 use http::StatusCode;
 use hyper::service::Service;
 use hyper::Server;
+use lazy_static::lazy_static;
+use regex::Regex;
 use s3s::s3_error;
 use s3s::service::S3Service;
 use s3s::service::S3ServiceBuilder;
@@ -24,6 +27,17 @@ use tracing::error;
 use tracing::info;
 use tracing::info_span;
 use tracing::Instrument;
+
+lazy_static! {
+    pub static ref CORS_EXCEPTION: Option<Regex> = {
+        dotenvy::from_filename(".env").ok();
+        if let Ok(regex) = dotenvy::var("CORS_EXCEPTION") {
+            Some(Regex::new(&regex).expect("CORS exception regex must be valid"))
+        } else {
+            None
+        }
+    };
+}
 
 pub struct S3Server {
     s3service: S3Service,
@@ -102,7 +116,7 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
 
     #[tracing::instrument(level = "trace", skip(self, req))]
     fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
-        // Catch OPTIONS requests
+        // Catch pre-flight OPTIONS requests
         if req.method() == Method::OPTIONS {
             let resp = Box::pin(async {
                 hyper::Response::builder()
@@ -116,12 +130,42 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
             return resp;
         }
 
+        // Check if response gets CORS header pass
+        let mut cors_exception = false;
+        if let Some(origin) = req.headers().get("Origin") {
+            if let Some(regex) = &*CORS_EXCEPTION {
+                cors_exception = regex.is_match(origin.to_str().unwrap())
+            }
+        };
+
         let mut service = self.0.clone();
         let resp = service.call(req);
-        let res = resp.map(|r| {
+        let res = resp.map(move |r| {
             r.map(|mut r| {
                 if r.headers().contains_key("Transfer-Encoding") {
                     r.headers_mut().remove("Content-Length");
+                }
+
+                // Expose 'ETag' header if present
+                if r.headers().contains_key("ETag") {
+                    r.headers_mut().append(
+                        "Access-Control-Expose-Headers",
+                        HeaderValue::from_static("ETag"),
+                    );
+                }
+
+                // Add CORS * if request origin matches exception regex
+                if cors_exception {
+                    r.headers_mut()
+                        .append("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
+                    r.headers_mut().append(
+                        "Access-Control-Allow-Methods",
+                        HeaderValue::from_static("*"),
+                    );
+                    r.headers_mut().append(
+                        "Access-Control-Allow-Headers",
+                        HeaderValue::from_static("*"),
+                    );
                 }
 
                 // Workaround to return 206 (Partial Content) for range responses
