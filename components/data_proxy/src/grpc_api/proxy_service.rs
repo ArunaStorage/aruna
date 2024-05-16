@@ -86,55 +86,37 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
     ) -> Result<tonic::Response<Self::PullReplicationStream>, tonic::Status> {
         trace!("Received request: {request:?}");
         let (metadata, _, mut request) = request.into_parts();
-        trace!("1");
         let token = get_token_from_md(&metadata).map_err(|_| {
             error!(error = "Token not found");
             tonic::Status::unauthenticated("Token not found")
         })?;
 
-        trace!("2");
         // Sends initial Vec<(object, location)> to sync/ack/stream handlers
         let (object_input_send, object_input_rcv) = async_channel::bounded(5);
 
-        trace!("3");
         // Sends ack messages to the ack handler
         let (object_ack_send, object_ack_rcv) = async_channel::bounded(100);
 
-        trace!("4");
         // Sends the finished ack hash map to the output handler to compare send/ack
         let (object_sync_send, object_sync_rcv) = async_channel::bounded(1);
 
-        trace!("5");
         // Handles output stream
         let (object_output_send, object_output_rcv) = tokio::sync::mpsc::channel(255);
 
-        trace!("6");
         // Error and retry handling for ArunaStreamReadWriter
         let (retry_send, retry_rcv) = async_channel::bounded(5);
 
-        trace!("7");
-
         let finished_state_handler = Arc::new(Mutex::new(false));
-
-        trace!("8");
         let finished_state_clone = finished_state_handler.clone();
 
-        trace!("9");
-
         let (id, pk) = self.get_endpoint_from_token(&token).await?;
-
-        trace!("10");
         let pk = crate::auth::crypto::ed25519_to_x25519_pubkey(&pk.key)
             .map_err(|_| tonic::Status::internal("Unable to convert pubkey"))?;
 
-        trace!("11");
         // Receiving loop
         let proxy_replication_service = self.clone();
-
-        trace!("12");
         let output_sender = object_output_send.clone();
 
-        trace!("13");
         tokio::spawn(async move {
             loop {
                 match request.message().await {

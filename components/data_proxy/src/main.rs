@@ -43,6 +43,7 @@ use crate::data_backends::filesystem_backend::FSBackend;
 use crate::grpc_api::ingestion_service::DataproxyIngestionServiceImpl;
 use crate::replication::replication_handler::ReplicationHandler;
 use std::backtrace::Backtrace;
+use std::time::Duration;
 
 lazy_static! {
     static ref CONFIG: Config = {
@@ -160,6 +161,7 @@ async fn main() -> Result<()> {
     let grpc_server_handle = tokio::spawn(
         async move {
             let mut builder = Server::builder()
+                .http2_keepalive_interval(Some(Duration::from_secs(15)))
                 .add_service(DataproxyReplicationServiceServer::new(
                     DataproxyReplicationServiceImpl::new(
                         cache_clone.clone(),
