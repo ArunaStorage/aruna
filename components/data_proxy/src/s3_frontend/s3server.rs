@@ -2,9 +2,11 @@ use super::auth::AuthProvider;
 use super::s3service::ArunaS3Service;
 use crate::caching::cache;
 use crate::data_backends::storage_backend::StorageBackend;
+use crate::CORS_REGEX;
 use anyhow::Result;
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
+use http::HeaderValue;
 use http::Method;
 use http::StatusCode;
 use hyper::service::Service;
@@ -102,7 +104,7 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
 
     #[tracing::instrument(level = "trace", skip(self, req))]
     fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
-        // Catch OPTIONS requests
+        // Catch pre-flight OPTIONS requests
         if req.method() == Method::OPTIONS {
             let resp = Box::pin(async {
                 hyper::Response::builder()
@@ -116,12 +118,43 @@ impl Service<hyper::Request<hyper::Body>> for WrappingService {
             return resp;
         }
 
+        // Check if response gets CORS header pass
+        let mut origin_exception = false;
+        if let Some(origin) = req.headers().get("Origin") {
+            if let Some(cors_regex) = &*CORS_REGEX {
+                origin_exception =
+                    cors_regex.is_match(origin.to_str().expect("Invalid Origin header"));
+            }
+        }
+
         let mut service = self.0.clone();
         let resp = service.call(req);
-        let res = resp.map(|r| {
+        let res = resp.map(move |r| {
             r.map(|mut r| {
                 if r.headers().contains_key("Transfer-Encoding") {
                     r.headers_mut().remove("Content-Length");
+                }
+
+                // Expose 'ETag' header if present
+                if r.headers().contains_key("ETag") {
+                    r.headers_mut().append(
+                        "Access-Control-Expose-Headers",
+                        HeaderValue::from_static("ETag"),
+                    );
+                }
+
+                // Add CORS * if request origin matches exception regex
+                if origin_exception {
+                    r.headers_mut()
+                        .append("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
+                    r.headers_mut().append(
+                        "Access-Control-Allow-Methods",
+                        HeaderValue::from_static("*"),
+                    );
+                    r.headers_mut().append(
+                        "Access-Control-Allow-Headers",
+                        HeaderValue::from_static("*"),
+                    );
                 }
 
                 // Workaround to return 206 (Partial Content) for range responses

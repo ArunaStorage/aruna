@@ -12,6 +12,7 @@ use grpc_api::{
     proxy_service::DataproxyReplicationServiceImpl, user_service::DataproxyUserServiceImpl,
 };
 use lazy_static::lazy_static;
+use regex::Regex;
 use std::panic;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::try_join;
@@ -51,6 +52,14 @@ lazy_static! {
             toml::from_str(std::fs::read_to_string(config_file).unwrap().as_str()).unwrap();
         config.validate().unwrap();
         config
+    };
+    static ref CORS_REGEX: Option<Regex> = {
+        if let Some(frontend) = &CONFIG.frontend {
+            if let Some(cors_regex) = &frontend.cors_exception {
+                return Some(Regex::new(cors_regex).expect("CORS exception regex invalid"));
+            }
+        }
+        None
     };
 }
 

@@ -335,7 +335,7 @@ async fn get_by() {
     Object::batch_create(&vec![create_project, create_collection], client)
         .await
         .unwrap();
-    InternalRelation::batch_create(&vec![relation_one], client)
+    InternalRelation::batch_create(&[relation_one], client)
         .await
         .unwrap();
 
