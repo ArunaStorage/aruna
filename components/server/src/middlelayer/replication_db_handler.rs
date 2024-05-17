@@ -177,9 +177,8 @@ impl DatabaseHandler {
                 transaction_client,
             )
             .await?;
-        } else {
-            return Err(anyhow!("No objects found for syncing"));
         }
+
         // Update non-objects only with EndpointInfo
         if !hierarchy_resources.is_empty() {
             Object::update_endpoints(
@@ -190,6 +189,7 @@ impl DatabaseHandler {
             )
             .await?;
         }
+
         // Update not-explicit synced with PartialSyncInfo
         if !partial_synced_hierarchy.is_empty() {
             let ep_status_hierarchy = match endpoint_status_hierarchy.replication {
