@@ -833,6 +833,13 @@ impl GrpcQueryHandler {
         let (request_stream_sender, request_stream_receiver) = tokio::sync::mpsc::channel(1000);
         let mut req = Request::new(ReceiverStream::new(request_stream_receiver));
         Self::add_token_to_md(req.metadata_mut(), &token)?;
+        request_stream_sender
+            .send(init_request)
+            .await
+            .map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                e
+            })?;
         let response_stream = dataproxy_service
             .clone()
             .pull_replication(req)
@@ -842,13 +849,6 @@ impl GrpcQueryHandler {
                 e
             })?
             .into_inner();
-        request_stream_sender
-            .send(init_request)
-            .await
-            .map_err(|e| {
-                error!(error = ?e, msg = e.to_string());
-                e
-            })?;
         Ok((request_stream_sender, response_stream))
     }
 
