@@ -369,7 +369,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                             trace!(?object, ?location);
                             // Need to keep track when to create an object, and when to only update the location
                             // Get chunk size from blocklist
-                            let max_blocks = location.count_blocks() + 1;
+                            let max_blocks = location.count_blocks();
                             trace!(max_blocks);
                             stored_objects.insert(object.id, max_blocks);
                             // Send ObjectInfo into stream
@@ -545,6 +545,7 @@ impl DataproxyReplicationServiceImpl {
         // Create channel for get_object
         let (object_sender, object_receiver) = async_channel::bounded(255);
 
+        trace!(location=?location, "send object location");
         let footer = if location.is_pithos() {
             Some(self.get_footer(location.clone()).await?)
         } else {
@@ -606,13 +607,14 @@ impl DataproxyReplicationServiceImpl {
                     asrw = asrw.add_transformer(ZstdDec::new());
                 }
 
+                asrw = asrw.add_transformer(DebugTransformer::new("Before FooterUpdater"));
                 if let Some(footer) = footer {
                     // Add footer transformer
                     asrw = asrw.add_transformer(FooterUpdater::new(vec![pubkey], footer));
                 } else {
                     asrw = asrw.add_transformer(FooterGenerator::new(None));
                 }
-
+                asrw = asrw.add_transformer(DebugTransformer::new("After FooterUpdater"));
                 // Add decryption transformer
                 asrw.process().await.map_err(|e| {
                     error!(error = ?e, msg = e.to_string());
@@ -633,9 +635,13 @@ impl DataproxyReplicationServiceImpl {
     }
 
     async fn get_footer(&self, location: ObjectLocation) -> Result<Footer, anyhow::Error> {
-        let (footer_sender, footer_receiver) = async_channel::bounded(1000);
+        let (footer_sender, footer_receiver) = async_channel::bounded(100);
         self.backend
-            .get_object(location.clone(), Some("-131072".to_string()), footer_sender)
+            .get_object(
+                location.clone(),
+                Some("bytes=-131072".to_string()),
+                footer_sender,
+            )
             .await
             .map_err(|e| {
                 error!(error = ?e, msg = e.to_string());

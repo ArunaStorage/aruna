@@ -238,29 +238,51 @@ impl ObjectLocation {
 
     pub fn count_blocks(&self) -> usize {
         match &self.file_format {
-            FileFormat::RawCompressed | FileFormat::Raw => {
-                (self.raw_content_len as usize / 65536) + 1
+            FileFormat::Raw => {
+                if self.raw_content_len as usize % 65536 == 0 {
+                    self.raw_content_len as usize / 65536
+                } else {
+                    (self.raw_content_len as usize / 65536) + 1
+                }
             }
-            FileFormat::RawEncrypted(_)
-            | FileFormat::RawEncryptedCompressed(_)
-            | FileFormat::Pithos(_) => ((self.raw_content_len as usize + 109) / (65536 + 28)) + 1, // 109 is the overhead for a new key in footer
+            FileFormat::RawCompressed => {
+                if self.disk_content_len as usize % 65536 == 0 {
+                    self.disk_content_len as usize / 65536
+                } else {
+                    (self.disk_content_len as usize / 65536) + 1
+                }
+            }
+            FileFormat::RawEncrypted(_) =>
+            // 109 is the overhead for a new key in footer
+            {
+                if (self.raw_content_len as usize + 109) % (65536 + 28) == 0 {
+                    (self.raw_content_len as usize + 109) / (65536 + 28)
+                } else {
+                    ((self.raw_content_len as usize + 109) / (65536 + 28)) + 1
+                }
+            }
+            FileFormat::RawEncryptedCompressed(_) | FileFormat::Pithos(_) => {
+                // 109 is the overhead for a new key in footer
+                if (self.disk_content_len as usize + 109) % (65536 + 28) == 0 {
+                    (self.disk_content_len as usize + 109) / (65536 + 28)
+                } else {
+                    ((self.disk_content_len as usize + 109) / (65536 + 28)) + 1
+                }
+            }
         }
     }
 
     pub fn is_pithos(&self) -> bool {
-        match self.file_format {
-            FileFormat::Pithos(_) => true,
-            _ => false,
-        }
+        matches!(self.file_format, FileFormat::Pithos(_))
     }
 
     pub fn is_compressed(&self) -> bool {
-        match self.file_format {
+        matches!(
+            self.file_format,
             FileFormat::RawCompressed
-            | FileFormat::RawEncryptedCompressed(_)
-            | FileFormat::Pithos(_) => true,
-            _ => false,
-        }
+                | FileFormat::RawEncryptedCompressed(_)
+                | FileFormat::Pithos(_)
+        )
     }
 }
 

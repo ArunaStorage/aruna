@@ -1,3 +1,4 @@
+use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use crate::structs::FileFormat;
 use crate::CONFIG;
 use crate::{
@@ -256,7 +257,7 @@ impl ReplicationHandler {
                 // This is the init message for object processing
                 let (start_sender, start_receiver) = async_channel::bounded(1);
                 // This channel is used to collect all processed objects and chunks
-                let (sync_sender, sync_receiver) = async_channel::bounded(1000);
+                let (sync_sender, sync_receiver) = async_channel::bounded(100);
                 // This channel is only used to transmit the sync result to compare
                 // received vs requested objects
                 let (finish_sender, finish_receiver) = async_channel::bounded(1);
@@ -276,7 +277,7 @@ impl ReplicationHandler {
                             tracing::error!(error = ?e, msg = e.to_string());
                             e
                         })?;
-                    let (object_sdx, object_rcv) = async_channel::bounded(1000);
+                    let (object_sdx, object_rcv) = async_channel::bounded(100);
                     object_handler_map.insert(
                         object.to_string(),
                         Arc::new(RwLock::new(ObjectState::new(
@@ -434,7 +435,8 @@ impl ReplicationHandler {
                             }
                         }
                     }
-                    Ok::<(), anyhow::Error>(())
+                    // Ok::<(), anyhow::Error>(())
+                    Err(anyhow!("Stream closed without FinishMessage"))
                 });
 
                 // Sync handler
@@ -856,6 +858,9 @@ impl ReplicationHandler {
         let (extractor, rx) = FooterExtractor::new(Some(CONFIG.proxy.get_private_key_x25519()?));
 
         awr = awr.add_transformer(extractor);
+
+        let debug_transformer = DebugTransformer::new("Receiving replication worker");
+        awr = awr.add_transformer(debug_transformer);
 
         awr.process().await.map_err(|e| {
             tracing::error!(error = ?e, msg = e.to_string());

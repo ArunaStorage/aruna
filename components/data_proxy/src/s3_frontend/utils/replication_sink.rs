@@ -14,7 +14,7 @@ use pithos_lib::helpers::notifications::Notifier;
 use pithos_lib::transformer::TransformerType;
 use pithos_lib::transformer::{Sink, Transformer};
 use tokio::sync::mpsc::Sender as TokioSender;
-use tracing::error;
+use tracing::{error, trace};
 
 pub struct ReplicationSink {
     object_id: String,
@@ -78,15 +78,17 @@ impl ReplicationSink {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    async fn create_and_send_message(&mut self) -> Result<bool> {
+    async fn create_and_send_message(&mut self, is_finished: bool) -> Result<bool> {
         if self.buffer.is_empty() {
             return Ok(false);
         }
 
-        let len = if self.chunk_counter < self.maximum_chunks {
+        let len = if self.chunk_counter < self.maximum_chunks - 1 {
             65536 + 28
-        } else {
+        } else if is_finished {
             self.buffer.len()
+        } else {
+            return Ok(false);
         };
 
         if self.buffer.len() < len {
@@ -103,6 +105,7 @@ impl ReplicationSink {
         // acquire hash digest in the form of GenericArray,
         // which in this case is equivalent to [u8; 16]
         let result = hasher.finalize();
+        trace!(chunk_len = data.len());
 
         let message = PullReplicationResponse {
             message: Some(Message::Chunk(Chunk {
@@ -159,14 +162,16 @@ impl Transformer for ReplicationSink {
 
     #[tracing::instrument(level = "trace", skip(self, buf))]
     async fn process_bytes(&mut self, buf: &mut BytesMut) -> Result<()> {
-        // blocksize: 65536
+        // block size: 65536
         self.bytes_counter += buf.len() as u64;
         self.buffer.put(buf.split());
 
         let finished = self.process_messages()?;
 
+        // trace!(first=finished, self_finished=self.is_finished, len=self.buffer.len(), self.chunk_counter, self.maximum_chunks);
+
         if finished && !self.buffer.is_empty() && !self.is_finished {
-            self.create_and_send_message().await.map_err(|e| {
+            self.create_and_send_message(finished).await.map_err(|e| {
                 error!(error = ?e, msg = e.to_string());
                 tonic::Status::unauthenticated(e.to_string())
             })?;
@@ -177,15 +182,19 @@ impl Transformer for ReplicationSink {
                     .send_read_writer(pithos_lib::helpers::notifications::Message::Completed)?;
             }
 
+            // trace!(second=finished, self.is_finished, len=self.buffer.len());
             return Ok(());
         }
 
         if !self.buffer.is_empty() {
-            while self.create_and_send_message().await.map_err(|e| {
+            while self.create_and_send_message(finished).await.map_err(|e| {
                 error!(error = ?e, msg = e.to_string());
                 tonic::Status::unauthenticated(e.to_string())
             })? {}
+
+            //trace!(third=finished, self.is_finished, len=self.buffer.len());
         }
+        //trace!(fourth=finished, self.is_finished, len=self.buffer.len());
 
         Ok(())
     }
