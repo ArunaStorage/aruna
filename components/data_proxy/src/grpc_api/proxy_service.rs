@@ -19,10 +19,9 @@ use pithos_lib::{
     },
 };
 
-use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use aruna_rust_api::api::dataproxy::services::v2::{
     dataproxy_replication_service_server::DataproxyReplicationService, error_message::Error,
-    ErrorMessage, RetryChunkMessage,
+    ErrorMessage, Handshake, RetryChunkMessage, Skip,
 };
 use aruna_rust_api::api::dataproxy::services::v2::{
     pull_replication_request::Message, pull_replication_response, ChunkAckMessage, InfoAckMessage,
@@ -115,13 +114,18 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
 
         // Receiving loop
         let proxy_replication_service = self.clone();
+        object_output_send
+            .send(Ok(PullReplicationResponse {
+                message: Some(pull_replication_response::Message::Handshake(Handshake {})),
+            }))
+            .await
+            .map_err(|_| tonic::Status::internal("Error sending handshake response"))?;
         let output_sender = object_output_send.clone();
 
         tokio::spawn(async move {
             loop {
                 match request.message().await {
                     Ok(message) => {
-                        trace!(?message);
                         match message {
                             Some(message) => {
                                 let PullReplicationRequest { message } = message;
@@ -138,6 +142,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                             })?;
                                         }
                                         Message::InfoAckMessage(InfoAckMessage { object_id }) => {
+                                            trace!(info_ack_for=?object_id);
                                             let object_id = DieselUlid::from_str(&object_id)?;
                                             // Send object init into acknowledgement sync handler
 
@@ -300,7 +305,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
         tokio::spawn(async move {
             let mut sync_map: HashSet<AckSync> = HashSet::new();
             while let Ok(ref ack_msg) = object_ack_rcv.recv().await {
-                trace!(?ack_msg);
+                //trace!(?ack_msg);
                 match ack_msg {
                     init @ AckSync::ObjectInit(_) => {
                         sync_map.insert(init.clone());
@@ -366,10 +371,27 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                 return Ok(());
                             }
 
+                            if location.is_temporary {
+                                object_output_send
+                                    .send(Ok(PullReplicationResponse {
+                                        message: Some(pull_replication_response::Message::Skip(
+                                            Skip {
+                                                object_id: object.id.to_string(),
+                                            },
+                                        )),
+                                    }))
+                                    .await
+                                    .map_err(|e| {
+                                        error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?;
+                                continue;
+                            }
+
                             trace!(?object, ?location);
                             // Need to keep track when to create an object, and when to only update the location
                             // Get chunk size from blocklist
-                            let max_blocks = location.count_blocks() + 1;
+                            let max_blocks = location.count_blocks();
                             trace!(max_blocks);
                             stored_objects.insert(object.id, max_blocks);
                             // Send ObjectInfo into stream
@@ -390,7 +412,6 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                     error!(error = ?e, msg = e.to_string());
                                     e
                                 })?;
-                            trace!("Send object info into stream");
 
                             // Send data into stream
                             proxy_replication_service
@@ -411,7 +432,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                         // Check if any message was unacknowledged
                         if let Ok(ack_msgs) = object_sync_rcv.recv().await {
                             for (id, max_blocks) in stored_objects.iter() {
-                                if ack_msgs.get(&AckSync::ObjectInit(*id)).is_none() {
+                                if !ack_msgs.contains(&AckSync::ObjectInit(*id)) {
                                     object_output_send
                                         .send(Err(tonic::Status::not_found(
                                             "Unacknowledged ObjectInit found",
@@ -424,7 +445,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                 }
                                 let max_blocks = *max_blocks as i64;
                                 for chunk in 0..max_blocks {
-                                    if ack_msgs.get(&AckSync::ObjectChunk(*id, chunk)).is_none() {
+                                    if !ack_msgs.contains(&AckSync::ObjectChunk(*id, chunk)) {
                                         object_output_send
                                             .send(Err(tonic::Status::not_found(
                                                 "Unacknowledged ObjectChunk found",
@@ -519,7 +540,6 @@ impl DataproxyReplicationServiceImpl {
                 object_endpoint_map.insert(object.id, object.endpoints.clone());
             }
         }
-        trace!("EndpointMap: {:?}", object_endpoint_map);
 
         if !object_endpoint_map.iter().all(|map| {
             let (_, eps) = map.pair();
@@ -541,21 +561,18 @@ impl DataproxyReplicationServiceImpl {
         sender: tokio::sync::mpsc::Sender<Result<PullReplicationResponse, tonic::Status>>,
         error_rcv: Receiver<Option<(i64, String)>>, // contains chunk_idx and object_id
     ) -> Result<()> {
-        dbg!("starting send object");
         // Create channel for get_object
         let (object_sender, object_receiver) = async_channel::bounded(255);
 
+        trace!(location=?location, "send object location");
         let footer = if location.is_pithos() {
             Some(self.get_footer(location.clone()).await?)
         } else {
             None
         };
 
-        dbg!("got footer");
-
         let location_clone = location.clone();
 
-        dbg!("cloned location");
         // Spawn get_object
         let backend = self.backend.clone();
         tokio::spawn(
@@ -570,7 +587,6 @@ impl DataproxyReplicationServiceImpl {
             }
             .instrument(info_span!("get_object")),
         );
-        dbg!("got object");
 
         // Spawn final part
         let _ = tokio::spawn(
@@ -587,7 +603,6 @@ impl DataproxyReplicationServiceImpl {
                         error_rcv,
                     ),
                 );
-                asrw = asrw.add_transformer(DebugTransformer::new("Debug replication"));
 
                 if let Some(key) = location.get_encryption_key() {
                     // Add decryption transformer
@@ -612,7 +627,6 @@ impl DataproxyReplicationServiceImpl {
                 } else {
                     asrw = asrw.add_transformer(FooterGenerator::new(None));
                 }
-
                 // Add decryption transformer
                 asrw.process().await.map_err(|e| {
                     error!(error = ?e, msg = e.to_string());
@@ -633,9 +647,13 @@ impl DataproxyReplicationServiceImpl {
     }
 
     async fn get_footer(&self, location: ObjectLocation) -> Result<Footer, anyhow::Error> {
-        let (footer_sender, footer_receiver) = async_channel::bounded(1000);
+        let (footer_sender, footer_receiver) = async_channel::bounded(100);
         self.backend
-            .get_object(location.clone(), Some("-131072".to_string()), footer_sender)
+            .get_object(
+                location.clone(),
+                Some("bytes=-131072".to_string()),
+                footer_sender,
+            )
             .await
             .map_err(|e| {
                 error!(error = ?e, msg = e.to_string());
