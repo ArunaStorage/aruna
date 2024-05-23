@@ -144,7 +144,7 @@ impl BufferedS3Sink {
 
     #[tracing::instrument(level = "trace", skip(self))]
     async fn upload_part(&mut self) -> Result<()> {
-        trace!("uploading part");
+        //trace!("uploading part");
         let backend_clone = self.backend.clone();
         let expected_len: i64 = self.buffer.len() as i64;
         let location_clone = self.target_location.clone();
@@ -183,13 +183,13 @@ impl BufferedS3Sink {
         }
         self.tags.push(tag);
         self.part_number = Some(pnumber + 1);
-        debug!(self.upload_id, pnumber, expected_len, "uploaded part");
+
         Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
     async fn finish_multipart(&mut self) -> Result<()> {
-        trace!("Finishing multipart");
+        //trace!("Finishing multipart");
         let up_id = self.upload_id.clone().ok_or_else(|| {
             error!(error = "Upload ID not found");
             anyhow!("Upload ID not found")
@@ -233,9 +233,9 @@ impl Transformer for BufferedS3Sink {
 
         self.buffer.put(buf.split());
 
-        if finished {
-            trace!(sum = self.sum, buf_len = ?self.buffer.len(), "finished")
-        }
+        //if finished {
+        //    trace!(sum = self.sum, buf_len = ?self.buffer.len(), "finished")
+        //}
 
         if self.single_part_upload {
             if finished && !self.buffer.is_empty() {
@@ -248,7 +248,7 @@ impl Transformer for BufferedS3Sink {
             Ok(())
         } else {
             if self.buffer.len() > 5242880 {
-                trace!("exceeds 5 Mib -> upload multi part");
+                //trace!("exceeds 5 Mib -> upload multi part");
                 // 5 Mib -> initialize multipart
                 if self.upload_id.is_none() {
                     self.initialize_multipart().await?;

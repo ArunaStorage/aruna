@@ -7,7 +7,7 @@ use crate::{
 };
 use ahash::{HashSet, RandomState};
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::dataproxy::services::v2::{Empty, ObjectInfo, ReplicationStatus};
+use aruna_rust_api::api::dataproxy::services::v2::{Empty, ObjectInfo, ReplicationStatus, Skip};
 use aruna_rust_api::api::{
     dataproxy::services::v2::{
         error_message, pull_replication_request::Message,
@@ -166,7 +166,7 @@ impl ReplicationHandler {
         let process: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
             loop {
                 // Process batches every 30 seconds
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await; // TODO: set to 30 secs
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await; //TODO: Set config value for timeout
                 let batch = queue.clone();
 
                 let result = match self.process(batch).await {
@@ -298,6 +298,21 @@ impl ReplicationHandler {
                     let mut counter = 0;
                     while let Some(response) = response_stream.message().await? {
                         match response.message {
+                            Some(ResponseMessage::Handshake(_)) => {
+                                continue;
+                            }
+                            Some(ResponseMessage::Skip(Skip { object_id })) => {
+                                // As long as servers are sending skip before any object info this should be safe
+                                data_map.remove(&object_id);
+                                if data_map.is_empty() {
+                                    // send finish, if no object was processed
+                                    sync_sender_clone.send(RcvSync::Finish).await.map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?;
+                                    break;
+                                }
+                            }
                             Some(ResponseMessage::ObjectInfo(ObjectInfo {
                                 object_id,
                                 chunks,
@@ -491,10 +506,8 @@ impl ReplicationHandler {
                                 let (object, location) =
                                     cache.get_resource_cloned(&object_id, false).await?;
                                 trace!(?object);
-                                // If no location is found, a new one is created
+
                                 let mut location = if location.is_some() {
-                                    // TODO:
-                                    // - Skip if object was already synced
                                     finished_clone.insert(Direction::Pull(object_id), true);
                                     object_handler_map.remove(id);
                                     continue;
@@ -725,7 +738,7 @@ impl ReplicationHandler {
                         expected,
                         max_chunks,
                     );
-                    trace!(trace_message);
+                    //trace!(trace_message);
                     let chunk = bytes::Bytes::from_iter(data.data.into_iter());
                     // Check if chunk is missing
                     let idx = data.chunk_idx;
@@ -838,7 +851,6 @@ impl ReplicationHandler {
             .instrument(info_span!("replication chunk receiver")),
         );
 
-        trace!("Starting ArunaStreamReadWriter task");
         let location_clone = location.clone();
         pin!(data_stream);
         let mut awr = GenericStreamReadWriter::new_with_sink(
@@ -858,9 +870,6 @@ impl ReplicationHandler {
         let (extractor, rx) = FooterExtractor::new(Some(CONFIG.proxy.get_private_key_x25519()?));
 
         awr = awr.add_transformer(extractor);
-
-        let debug_transformer = DebugTransformer::new("Receiving replication worker");
-        awr = awr.add_transformer(debug_transformer);
 
         awr.process().await.map_err(|e| {
             tracing::error!(error = ?e, msg = e.to_string());

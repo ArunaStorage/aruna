@@ -105,7 +105,7 @@ impl ReplicationSink {
         // acquire hash digest in the form of GenericArray,
         // which in this case is equivalent to [u8; 16]
         let result = hasher.finalize();
-        trace!(chunk_len = data.len());
+        //trace!(chunk_len = data.len());
 
         let message = PullReplicationResponse {
             message: Some(Message::Chunk(Chunk {
