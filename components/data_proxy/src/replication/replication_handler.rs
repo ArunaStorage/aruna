@@ -162,11 +162,14 @@ impl ReplicationHandler {
             }
         });
 
+        let batch_processing_interval =
+            std::time::Duration::from_secs(CONFIG.proxy.replication_interval.unwrap_or(30));
+        trace!(?batch_processing_interval);
         // Process DashMap entries in batches
         let process: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
             loop {
                 // Process batches every 30 seconds
-                tokio::time::sleep(std::time::Duration::from_secs(30)).await; //TODO: Set config value for timeout
+                tokio::time::sleep(batch_processing_interval).await;
                 let batch = queue.clone();
 
                 let result = match self.process(batch).await {

@@ -46,6 +46,7 @@ pub struct Proxy {
     pub admin_ids: Vec<DieselUlid>,
     pub aruna_url: Option<String>,
     pub grpc_server: String,
+    pub replication_interval: Option<u64>,
 }
 
 impl Proxy {
