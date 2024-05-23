@@ -1,4 +1,3 @@
-use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use crate::structs::FileFormat;
 use crate::CONFIG;
 use crate::{
@@ -733,7 +732,7 @@ impl ReplicationHandler {
         tokio::spawn(
             async move {
                 while let Ok(data) = data_receiver.recv().await {
-                    let trace_message = format!(
+                    let _trace_message = format!(
                         "Received chunk with idx {:?} for object with id {:?} and size {}, expected {}, max chunks {}",
                         data.chunk_idx,
                         data.object_id,

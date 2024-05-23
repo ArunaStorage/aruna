@@ -138,11 +138,11 @@ impl TryFrom<&ResourceVariant> for ObjectType {
     type Error = anyhow::Error;
     #[tracing::instrument(level = "trace", skip(value))]
     fn try_from(value: &ResourceVariant) -> Result<Self> {
-        match value {
-            &ResourceVariant::Project => Ok(ObjectType::Project),
-            &ResourceVariant::Collection => Ok(ObjectType::Collection),
-            &ResourceVariant::Dataset => Ok(ObjectType::Dataset),
-            &ResourceVariant::Object => Ok(ObjectType::Object),
+        match *value {
+            ResourceVariant::Project => Ok(ObjectType::Project),
+            ResourceVariant::Collection => Ok(ObjectType::Collection),
+            ResourceVariant::Dataset => Ok(ObjectType::Dataset),
+            ResourceVariant::Object => Ok(ObjectType::Object),
             _ => Err(anyhow!("Invalid resource variant")),
         }
     }
@@ -181,21 +181,21 @@ impl FileFormat {
     }
 
     pub fn is_encrypted(&self) -> bool {
-        match self {
+        matches!(
+            self,
             FileFormat::RawEncrypted(_)
-            | FileFormat::RawEncryptedCompressed(_)
-            | FileFormat::Pithos(_) => true,
-            _ => false,
-        }
+                | FileFormat::RawEncryptedCompressed(_)
+                | FileFormat::Pithos(_)
+        )
     }
 
     pub fn is_compressed(&self) -> bool {
-        match self {
+        matches!(
+            self,
             FileFormat::RawCompressed
-            | FileFormat::RawEncryptedCompressed(_)
-            | FileFormat::Pithos(_) => true,
-            _ => false,
-        }
+                | FileFormat::RawEncryptedCompressed(_)
+                | FileFormat::Pithos(_)
+        )
     }
 
     pub fn get_encryption_key(&self) -> Option<[u8; 32]> {
@@ -424,7 +424,7 @@ impl User {
         }
 
         for (k, _) in &other.tokens {
-            if self.tokens.get(k).is_none() {
+            if !self.tokens.contains_key(k) {
                 to_delete.push(k.to_string());
             }
         }
@@ -1173,10 +1173,7 @@ impl Object {
         self.endpoints
             .iter()
             .find(|ep| &ep.id == ep_id)
-            .map(|ep| match ep.variant {
-                SyncVariant::PartialSync(_) => true,
-                _ => false,
-            })
+            .map(|ep| matches!(ep.variant, SyncVariant::PartialSync(_)))
             .unwrap_or(false)
     }
 

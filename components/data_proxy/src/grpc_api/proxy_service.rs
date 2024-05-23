@@ -19,7 +19,6 @@ use pithos_lib::{
     },
 };
 
-use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use aruna_rust_api::api::dataproxy::services::v2::{
     dataproxy_replication_service_server::DataproxyReplicationService, error_message::Error,
     ErrorMessage, Handshake, RetryChunkMessage, Skip,
@@ -433,7 +432,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                         // Check if any message was unacknowledged
                         if let Ok(ack_msgs) = object_sync_rcv.recv().await {
                             for (id, max_blocks) in stored_objects.iter() {
-                                if ack_msgs.get(&AckSync::ObjectInit(*id)).is_none() {
+                                if !ack_msgs.contains(&AckSync::ObjectInit(*id)) {
                                     object_output_send
                                         .send(Err(tonic::Status::not_found(
                                             "Unacknowledged ObjectInit found",
@@ -446,7 +445,7 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                 }
                                 let max_blocks = *max_blocks as i64;
                                 for chunk in 0..max_blocks {
-                                    if ack_msgs.get(&AckSync::ObjectChunk(*id, chunk)).is_none() {
+                                    if !ack_msgs.contains(&AckSync::ObjectChunk(*id, chunk)) {
                                         object_output_send
                                             .send(Err(tonic::Status::not_found(
                                                 "Unacknowledged ObjectChunk found",

@@ -142,10 +142,7 @@ pub fn sign_download_url(
 }
 
 pub fn is_method_read(method: &Method) -> bool {
-    match method {
-        &Method::GET | &Method::HEAD | &Method::OPTIONS => true,
-        _ => false,
-    }
+    matches!(method, &Method::GET | &Method::HEAD | &Method::OPTIONS)
 }
 
 pub fn random_string(len: usize) -> String {
