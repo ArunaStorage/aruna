@@ -44,7 +44,7 @@ impl DatabaseHandler {
         &self,
         request: RegisterUser,
         external_id: OIDCMapping,
-    ) -> Result<DieselUlid> {
+    ) -> Result<User> {
         let client = self.database.get_client().await?;
         let user_id = DieselUlid::generate();
         let new_attributes = UserAttributes {
@@ -86,7 +86,7 @@ impl DatabaseHandler {
             return Err(anyhow::anyhow!("Notification emission failed"));
         }
 
-        Ok(user_id)
+        Ok(user)
     }
 
     pub async fn deactivate_user(&self, request: DeactivateUser) -> Result<User> {
