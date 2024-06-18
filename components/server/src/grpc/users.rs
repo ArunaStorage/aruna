@@ -69,15 +69,29 @@ impl UserService for UserServiceImpl {
             self.authorizer.check_unregistered_oidc(&token).await,
             "Unauthorized"
         );
-        let user_id = tonic_internal!(
+        let user = tonic_internal!(
             self.database_handler
                 .register_user(request, external_id)
                 .await,
             "Internal register user error"
         );
 
+        // Try to send mail to recently registered users email address
+        if let Some(mailclient) = self.mailclient.as_ref() {
+            let _ = mailclient.send_message(
+                &user.email,
+                format!("Dear {},
+We are excited to inform you that your registration with Aruna has been successfully completed.\n
+After your account has been activated by an administrator you can start exploring all the features we offer. Should you need any assistance or have any questions, you can create support tickets by reaching out to us at support@aruna-storage.org.\n
+Thank you for joining us, and we look forward to supporting you on your journey!\n
+With kind regards,
+the Aruna team", user.display_name),
+                "Welcome to Aruna - Registration Successful",
+            );
+        }
+
         return_with_log!(RegisterUserResponse {
-            user_id: user_id.to_string(),
+            user_id: user.id.to_string(),
         });
     }
 
@@ -123,10 +137,23 @@ impl UserService for UserServiceImpl {
             "Unauthorized"
         );
 
-        tonic_internal!(
+        let user = tonic_internal!(
             self.database_handler.activate_user(request).await,
             "Internal activate user error"
         );
+
+        // Try to send mail to recently activated users email address
+        if let Some(mailclient) = self.mailclient.as_ref() {
+            let _ = mailclient.send_message(
+                &user.email,
+                format!("Dear {},
+your Aruna user account has been activated.\n
+Again, if you have any questions or need assistance, feel free to contact us via our support address support@aruna-storage.org\n
+Kind regards,
+the Aruna team", user.display_name),
+                "[ARUNA] User activated",
+            );
+        }
 
         return_with_log!(ActivateUserResponse {});
     }
