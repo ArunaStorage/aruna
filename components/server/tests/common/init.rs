@@ -317,7 +317,7 @@ pub async fn init_user_service_manual(
     token_handler: Arc<TokenHandler>,
 ) -> UserServiceImpl {
     // Init authorization service
-    UserServiceImpl::new(db, auth, cache, token_handler).await
+    UserServiceImpl::new(db, auth, cache, token_handler, Arc::new(None)).await
 }
 
 #[allow(dead_code)]
