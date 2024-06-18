@@ -82,7 +82,7 @@ impl UserService for UserServiceImpl {
                 &user.email,
                 format!("Dear {},
 We are excited to inform you that your registration with Aruna has been successfully completed.\n
-After your account has been activated by an administrator you can start exploring all the features we offer. Should you need any assistance or have any questions, you can create support tickets by reaching out to us at support@aruna-storage.org.\n
+After your account has been activated by an administrator, you can start exploring all the features we offer. Should you need any assistance or have any questions, you can create support tickets by reaching out to us at support@aruna-storage.org.\n
 Thank you for joining us, and we look forward to supporting you on your journey!\n
 With kind regards,
 the Aruna team", user.display_name),
