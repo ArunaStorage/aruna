@@ -1185,7 +1185,7 @@ impl S3 for ArunaS3Service {
                     new_revision.synced = false;
                     new_revision.children = None;
                     new_revision.dynamic = false;
-                    (new_revision, false)
+                    (new_revision, true)
                 }
             }
             NewOrExistingObject::Missing(object) => (object, false),
