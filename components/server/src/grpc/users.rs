@@ -11,6 +11,7 @@ use crate::middlelayer::user_request_types::{
 };
 use crate::utils::conversions::users::{as_api_token, convert_token_to_proto};
 use crate::utils::grpc_utils::get_token_from_md;
+use crate::utils::mailclient::MailClient;
 use anyhow::anyhow;
 use aruna_rust_api::api::storage::models::v2::context::Context as ProtoContext;
 use aruna_rust_api::api::storage::services::v2::user_service_server::UserService;
@@ -39,7 +40,7 @@ use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
-crate::impl_grpc_server!(UserServiceImpl, token_handler: Arc<TokenHandler>);
+crate::impl_grpc_server!(UserServiceImpl, token_handler: Arc<TokenHandler>, mailclient: Arc<Option<MailClient>>);
 
 #[tonic::async_trait]
 impl UserService for UserServiceImpl {
