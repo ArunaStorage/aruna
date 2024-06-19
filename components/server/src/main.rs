@@ -183,10 +183,10 @@ pub async fn main() -> Result<()> {
     .await;
 
     // init MailClient
-    let _: Option<MailClient> = if !dotenvy::var("ARUNA_DEV_ENV")?.parse::<bool>()? {
-        Some(MailClient::new()?)
+    let mailclient: Arc<Option<MailClient>> = if !dotenvy::var("ARUNA_DEV_ENV")?.parse::<bool>()? {
+        Arc::new(Some(MailClient::new()?))
     } else {
-        None
+        Arc::new(None)
     };
 
     let default_endpoint = dotenvy::var("DEFAULT_DATAPROXY_ULID")?;
@@ -228,6 +228,7 @@ pub async fn main() -> Result<()> {
                     auth_arc.clone(),
                     cache_arc.clone(),
                     token_handler_arc.clone(),
+                    mailclient.clone(),
                 )
                 .await,
             ))
