@@ -1,5 +1,5 @@
 # Build Stage
-FROM rust:1-alpine AS builder
+FROM rust:1-alpine3.20 AS builder
 WORKDIR /build
 RUN apk update
 RUN apk upgrade
@@ -9,7 +9,7 @@ RUN apk add llvm cmake gcc ca-certificates libc-dev pkgconfig openssl-dev protoc
 COPY . .
 RUN cargo build --release -p data_proxy
 
-FROM alpine:3.18
+FROM alpine:3.20
 WORKDIR /run
 RUN apk update
 RUN apk upgrade
