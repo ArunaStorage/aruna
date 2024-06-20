@@ -299,6 +299,17 @@ CREATE TABLE IF NOT EXISTS rule_bindings (
     PRIMARY KEY(rule_id, origin_id, object_id)
 );
 
+/* ----- Announcements ------------------------------------- */
+CREATE TABLE IF NOT EXISTS announcements (
+    id UUID PRIMARY KEY NOT NULL,
+    announcement_type VARCHAR(128) NOT NULL,
+    content text NOT NULL,
+    created_by UUID REFERENCES users(id) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    last_modified_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_announcement_type CHECK (announcement_type IN ('RELEASE', 'MAINTENANCE', 'UPDATE', 'MISC'))
+);
+
 -- Insert predefined relation types
 INSERT INTO relation_types (relation_name) VALUES ('BELONGS_TO'), ('VERSION'), ('METADATA'), ('ORIGIN'), ('POLICY'), ('DELETED') ON CONFLICT (relation_name) DO NOTHING;
 -- Create partial unique index for BELONGS_TO relations only
