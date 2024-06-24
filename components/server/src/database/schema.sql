@@ -306,6 +306,7 @@ CREATE TABLE IF NOT EXISTS announcements (
     content text NOT NULL,
     created_by UUID REFERENCES users(id) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    last_modified_by UUID REFERENCES users(id) NOT NULL,
     last_modified_at TIMESTAMP NOT NULL DEFAULT NOW(),
     CONSTRAINT chk_announcement_type CHECK (announcement_type IN ('RELEASE', 'MAINTENANCE', 'UPDATE', 'MISC'))
 );
