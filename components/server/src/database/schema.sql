@@ -303,12 +303,13 @@ CREATE TABLE IF NOT EXISTS rule_bindings (
 CREATE TABLE IF NOT EXISTS announcements (
     id UUID PRIMARY KEY NOT NULL,
     announcement_type VARCHAR(128) NOT NULL,
+    title text NOT NULL,
     content text NOT NULL,
     created_by UUID REFERENCES users(id) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     last_modified_by UUID REFERENCES users(id) NOT NULL,
     last_modified_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    CONSTRAINT chk_announcement_type CHECK (announcement_type IN ('RELEASE', 'MAINTENANCE', 'UPDATE', 'MISC'))
+    CONSTRAINT chk_announcement_type CHECK (announcement_type IN ('MISC', 'RELEASE', 'UPDATE', 'MAINTENANCE'))
 );
 
 -- Insert predefined relation types
