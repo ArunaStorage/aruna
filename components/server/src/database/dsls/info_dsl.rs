@@ -12,16 +12,16 @@ pub struct Announcement {
     pub announcement_type: String,
     pub title: String,
     pub content: String,
-    pub created_by: DieselUlid,
+    pub created_by: String,
     pub created_at: NaiveDateTime,
-    pub last_modified_by: DieselUlid,
-    pub last_modified_at: NaiveDateTime,
+    pub modified_by: String,
+    pub modified_at: NaiveDateTime,
 }
 
 #[async_trait::async_trait]
 impl CrudDb for Announcement {
     async fn create(&mut self, client: &Client) -> anyhow::Result<()> {
-        let query = "INSERT INTO announcements (id, announcement_type, title, content, created_by, created_at, last_modified_by, last_modified_at)
+        let query = "INSERT INTO announcements (id, announcement_type, title, content, created_by, created_at, modified_by, modified_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING *;";
 
@@ -37,8 +37,8 @@ impl CrudDb for Announcement {
                     &self.content,
                     &self.created_by,
                     &self.created_at,
-                    &self.last_modified_by,
-                    &self.last_modified_at,
+                    &self.modified_by,
+                    &self.modified_at,
                 ],
             )
             .await?;
@@ -74,15 +74,15 @@ impl CrudDb for Announcement {
 
 impl Announcement {
     pub async fn upsert(&self, client: &Client) -> anyhow::Result<Announcement> {
-        let query = "INSERT INTO announcements (id, announcement_type, title, content, created_by, created_at, last_modified_by, last_modified_at)
+        let query = "INSERT INTO announcements (id, announcement_type, title, content, created_by, created_at, modified_by, modified_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT(id) 
             DO UPDATE SET
               announcement_type = EXCLUDED.announcement_type,
               title = EXCLUDED.title,
               content = EXCLUDED.content,
-              last_modified_by = $7,
-              last_modified_at = $6
+              modified_by = $7,
+              modified_at = $6
             RETURNING *;";
 
         let prepared = client.prepare(&query).await?;
@@ -97,8 +97,8 @@ impl Announcement {
                     &self.content,
                     &self.created_by,
                     &self.created_at,
-                    &self.last_modified_by,
-                    &self.last_modified_at,
+                    &self.modified_by,
+                    &self.modified_at,
                 ],
             )
             .await?;

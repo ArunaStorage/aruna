@@ -32,10 +32,10 @@ impl From<DbAnnouncement> for Announcement {
             announcement_type: string_to_announcement_type(value.announcement_type) as i32,
             title: value.title,
             content: value.content,
-            created_by: value.created_by.to_string(),
+            created_by: value.created_by,
             created_at: Some(value.created_at.into()),
-            modified_by: value.last_modified_by.to_string(),
-            modified_at: Some(value.last_modified_at.into()),
+            modified_by: value.modified_by,
+            modified_at: Some(value.modified_at.into()),
         }
     }
 }
@@ -49,7 +49,7 @@ impl TryFrom<Announcement> for DbAnnouncement {
             announcement_type: announcement_type_to_string(value.announcement_type())?,
             title: value.title,
             content: value.content,
-            created_by: Default::default(), // Has to be replaced afterward
+            created_by: value.created_by, // Will be replaced afterward if empty
             created_at: if let Some(timestamp) = value.created_at {
                 DateTime::from_timestamp(timestamp.seconds, timestamp.nanos.try_into()?)
                     .map(|e| e.naive_utc())
@@ -57,8 +57,8 @@ impl TryFrom<Announcement> for DbAnnouncement {
             } else {
                 Utc::now().naive_utc()
             },
-            last_modified_by: Default::default(), // Has to be replaced afterward
-            last_modified_at: if let Some(timestamp) = value.modified_at {
+            modified_by: value.modified_by, // Will be replaced afterward if empty
+            modified_at: if let Some(timestamp) = value.modified_at {
                 DateTime::from_timestamp(timestamp.seconds, timestamp.nanos.try_into()?)
                     .map(|e| e.naive_utc())
                     .unwrap_or_default()

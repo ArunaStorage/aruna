@@ -305,10 +305,10 @@ CREATE TABLE IF NOT EXISTS announcements (
     announcement_type VARCHAR(128) NOT NULL,
     title text NOT NULL,
     content text NOT NULL,
-    created_by UUID REFERENCES users(id) NOT NULL,
+    created_by VARCHAR(128) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    last_modified_by UUID REFERENCES users(id) NOT NULL,
-    last_modified_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    modified_by VARCHAR(128) NOT NULL,
+    modified_at TIMESTAMP NOT NULL DEFAULT NOW(),
     CONSTRAINT chk_announcement_type CHECK (announcement_type IN ('MISC', 'RELEASE', 'UPDATE', 'MAINTENANCE'))
 );
 
