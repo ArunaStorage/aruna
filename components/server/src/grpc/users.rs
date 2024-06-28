@@ -37,6 +37,7 @@ use aruna_rust_api::api::storage::services::v2::{
     UpdateUserDisplayNameResponse, UpdateUserEmailRequest, UpdateUserEmailResponse,
 };
 use diesel_ulid::DieselUlid;
+use log::error;
 use std::str::FromStr;
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
@@ -78,7 +79,7 @@ impl UserService for UserServiceImpl {
 
         // Try to send mail to recently registered users email address
         if let Some(mailclient) = self.mailclient.as_ref() {
-            let _ = mailclient.send_message(
+            if let Err(err) = mailclient.send_message(
                 &user.email,
                 format!("Dear {},
 We are excited to inform you that your registration with Aruna has been successfully completed.\n
@@ -87,7 +88,9 @@ Thank you for joining us, and we look forward to supporting you on your journey!
 With kind regards,
 the Aruna team", user.display_name),
                 "Welcome to Aruna - Registration Successful",
-            );
+            ) {
+                error!("{:#?}", err);
+            }
         }
 
         return_with_log!(RegisterUserResponse {
@@ -144,7 +147,7 @@ the Aruna team", user.display_name),
 
         // Try to send mail to recently activated users email address
         if let Some(mailclient) = self.mailclient.as_ref() {
-            let _ = mailclient.send_message(
+            if let Err(err) = mailclient.send_message(
                 &user.email,
                 format!("Dear {},
 your Aruna user account has been activated.\n
@@ -152,7 +155,9 @@ Again, if you have any questions or need assistance, feel free to contact us via
 Kind regards,
 the Aruna team", user.display_name),
                 "[ARUNA] User activated",
-            );
+            ) {
+                error!("{:#?}", err); 
+            }
         }
 
         return_with_log!(ActivateUserResponse {});

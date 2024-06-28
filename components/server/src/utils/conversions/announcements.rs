@@ -11,7 +11,7 @@ fn string_to_announcement_type(input: String) -> AnnouncementType {
         "RELEASE" => return AnnouncementType::Release,
         "UPDATE" => return AnnouncementType::Update,
         "MAINTENANCE" => return AnnouncementType::Maintenance,
-        _ => return AnnouncementType::Unspecified
+        _ => return AnnouncementType::Unspecified,
     }
 }
 
