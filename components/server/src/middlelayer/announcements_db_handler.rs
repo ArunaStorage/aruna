@@ -11,11 +11,11 @@ use std::str::FromStr;
 impl DatabaseHandler {
     pub async fn get_announcements(&self) -> Result<Vec<Announcement>> {
         let client = self.database.get_client().await?;
-        return Ok(DbAnnouncement::all(&client)
+        Ok(DbAnnouncement::all(&client)
             .await?
             .into_iter()
             .map(|a| a.into())
-            .collect_vec());
+            .collect_vec())
     }
 
     pub async fn get_announcement(&self, id: DieselUlid) -> Result<Announcement> {
@@ -25,7 +25,7 @@ impl DatabaseHandler {
             .await?
             .ok_or_else(|| anyhow!("Announcement not found"))?;
 
-        return Ok(announcement.try_into()?);
+        Ok(announcement.try_into()?)
     }
 
     pub async fn set_announcements(
@@ -63,7 +63,7 @@ impl DatabaseHandler {
                 };
             }
 
-            upserted.push(db_announcement.upsert(&transaction_client).await?);
+            upserted.push(db_announcement.upsert(transaction_client).await?);
         }
 
         // Deletions
@@ -73,11 +73,11 @@ impl DatabaseHandler {
                 .into_iter()
                 .map(|id| DieselUlid::from_str(&id))
                 .collect();
-            DbAnnouncement::batch_delete(&transaction_client, &deletions?).await?;
+            DbAnnouncement::batch_delete(transaction_client, &deletions?).await?;
         }
 
         transaction.commit().await?;
 
-        return Ok(upserted.into_iter().map(|u| u.into()).collect_vec());
+        Ok(upserted.into_iter().map(|u| u.into()).collect_vec())
     }
 }

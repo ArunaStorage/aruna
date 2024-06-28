@@ -7,11 +7,11 @@ use std::str::FromStr;
 
 fn string_to_announcement_type(input: String) -> AnnouncementType {
     match input.as_str() {
-        "MISC" => return AnnouncementType::Misc,
-        "RELEASE" => return AnnouncementType::Release,
-        "UPDATE" => return AnnouncementType::Update,
-        "MAINTENANCE" => return AnnouncementType::Maintenance,
-        _ => return AnnouncementType::Unspecified,
+        "MISC" => AnnouncementType::Misc,
+        "RELEASE" => AnnouncementType::Release,
+        "UPDATE" => AnnouncementType::Update,
+        "MAINTENANCE" => AnnouncementType::Maintenance,
+        _ => AnnouncementType::Unspecified,
     }
 }
 

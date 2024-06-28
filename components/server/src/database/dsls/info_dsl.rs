@@ -85,7 +85,7 @@ impl Announcement {
               modified_at = $6
             RETURNING *;";
 
-        let prepared = client.prepare(&query).await?;
+        let prepared = client.prepare(query).await?;
 
         let row = client
             .query_one(
