@@ -1,12 +1,17 @@
 use crate::auth::permission_handler::PermissionHandler;
+use crate::auth::structs::Context;
 use crate::caching::cache::Cache;
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::utils::grpc_utils::get_token_from_md;
 use aruna_rust_api::api::storage::services::v2::storage_status_service_server::StorageStatusService;
 use aruna_rust_api::api::storage::services::v2::{
-    GetAnnouncementsRequest, GetAnnouncementsResponse, GetPubkeysRequest, GetPubkeysResponse,
-    GetStorageStatusRequest, GetStorageStatusResponse, GetStorageVersionRequest,
-    GetStorageVersionResponse, SetAnnouncementsRequest, SetAnnouncementsResponse,
+    GetAnnouncementRequest, GetAnnouncementResponse, GetAnnouncementsRequest,
+    GetAnnouncementsResponse, GetPubkeysRequest, GetPubkeysResponse, GetStorageStatusRequest,
+    GetStorageStatusResponse, GetStorageVersionRequest, GetStorageVersionResponse,
+    SetAnnouncementsRequest, SetAnnouncementsResponse,
 };
+use diesel_ulid::DieselUlid;
+use std::str::FromStr;
 use std::sync::Arc;
 use tonic::Response;
 
@@ -51,19 +56,76 @@ impl StorageStatusService for StorageStatusServiceImpl {
 
     async fn get_announcements(
         &self,
-        _request: tonic::Request<GetAnnouncementsRequest>,
+        request: tonic::Request<GetAnnouncementsRequest>,
     ) -> tonic::Result<Response<GetAnnouncementsResponse>> {
-        return Err(tonic::Status::unimplemented(
-            "GetAnouncements currently not implemented",
-        ));
+        log_received!(&request);
+
+        // Just fetch the announcements from the database
+        let announcements = tonic_internal!(
+            self.database_handler.get_announcements().await,
+            "Get announcements failed"
+        );
+
+        // Return all announcements
+        let response = GetAnnouncementsResponse { announcements };
+        return_with_log!(response);
+    }
+
+    async fn get_announcement(
+        &self,
+        request: tonic::Request<GetAnnouncementRequest>,
+    ) -> tonic::Result<Response<GetAnnouncementResponse>> {
+        log_received!(&request);
+
+        // Check if provided id is valid
+        let announcement_id = tonic_invalid!(
+            DieselUlid::from_str(&request.into_inner().id),
+            "Invalid announcement id format"
+        );
+
+        // Just fetch the announcement from the database
+        let announcement = tonic_internal!(
+            self.database_handler
+                .get_announcement(announcement_id)
+                .await,
+            "Get announcement failed"
+        );
+
+        // Return all announcements
+        let response = GetAnnouncementResponse {
+            announcement: Some(announcement),
+        };
+        return_with_log!(response);
     }
 
     async fn set_announcements(
         &self,
-        _request: tonic::Request<SetAnnouncementsRequest>,
+        request: tonic::Request<SetAnnouncementsRequest>,
     ) -> tonic::Result<Response<SetAnnouncementsResponse>> {
-        return Err(tonic::Status::unimplemented(
-            "SetAnouncements currently not implemented",
-        ));
+        log_received!(&request);
+
+        // Check if user is global admin
+        let token = tonic_auth!(
+            get_token_from_md(request.metadata()),
+            "Token authentication error"
+        );
+        let user_id = tonic_auth!(
+            self.authorizer
+                .check_permissions(&token, vec![Context::admin()])
+                .await,
+            "Unauthorized"
+        );
+
+        // Upsert/Delete provided announcements
+        let announcements = tonic_internal!(
+            self.database_handler
+                .set_announcements(user_id, request.into_inner())
+                .await,
+            "Set announcements failed"
+        );
+
+        // Return announcements
+        let response = SetAnnouncementsResponse { announcements };
+        return_with_log!(response);
     }
 }
