@@ -45,7 +45,11 @@ impl TryFrom<Announcement> for DbAnnouncement {
 
     fn try_from(value: Announcement) -> Result<Self, Self::Error> {
         Ok(DbAnnouncement {
-            id: DieselUlid::from_str(&value.id)?,
+            id: if value.id.is_empty() {
+                DieselUlid::generate()
+            } else {
+                DieselUlid::from_str(&value.id)?
+            },
             announcement_type: announcement_type_to_string(value.announcement_type())?,
             title: value.title,
             content: value.content,
