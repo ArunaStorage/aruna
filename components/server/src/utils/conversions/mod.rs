@@ -1,4 +1,4 @@
-mod announcements;
+pub mod announcements;
 pub mod endpoints;
 pub mod enums;
 pub mod hooks;
