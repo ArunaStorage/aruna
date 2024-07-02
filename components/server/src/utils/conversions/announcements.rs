@@ -1,36 +1,40 @@
 use crate::database::dsls::info_dsl::Announcement as DbAnnouncement;
 use anyhow::{bail, Result};
-use aruna_rust_api::api::storage::services::v2::{Announcement, AnnouncementType};
+use aruna_rust_api::api::storage::{models::v2::AnnouncementType, services::v2::Announcement};
 use chrono::{DateTime, Utc};
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 
-fn string_to_announcement_type(input: String) -> AnnouncementType {
+pub fn string_to_announcement_type(input: String) -> AnnouncementType {
     match input.as_str() {
-        "MISC" => AnnouncementType::Misc,
+        "ORGA" => AnnouncementType::Orga,
         "RELEASE" => AnnouncementType::Release,
         "UPDATE" => AnnouncementType::Update,
         "MAINTENANCE" => AnnouncementType::Maintenance,
+        "BLOG" => AnnouncementType::Blog,
         _ => AnnouncementType::Unspecified,
     }
 }
 
-fn announcement_type_to_string(input: AnnouncementType) -> Result<String> {
+pub fn announcement_type_to_string(input: AnnouncementType) -> Result<String> {
     Ok(match input {
         AnnouncementType::Unspecified => bail!("Unspecified Announcement Type"),
-        AnnouncementType::Misc => "MISC".to_string(),
+        AnnouncementType::Orga => "ORGA".to_string(),
         AnnouncementType::Release => "RELEASE".to_string(),
         AnnouncementType::Update => "UPDATE".to_string(),
         AnnouncementType::Maintenance => "MAINTENANCE".to_string(),
+        AnnouncementType::Blog => "BLOG".to_string(),
     })
 }
 
 impl From<DbAnnouncement> for Announcement {
     fn from(value: DbAnnouncement) -> Self {
         Announcement {
-            id: value.id.to_string(),
+            announcement_id: value.id.to_string(),
             announcement_type: string_to_announcement_type(value.announcement_type) as i32,
             title: value.title,
+            teaser: value.teaser,
+            image_url: value.image_url,
             content: value.content,
             created_by: value.created_by,
             created_at: Some(value.created_at.into()),
@@ -44,14 +48,17 @@ impl TryFrom<Announcement> for DbAnnouncement {
     type Error = anyhow::Error;
 
     fn try_from(value: Announcement) -> Result<Self, Self::Error> {
+        let current_timestamp = Utc::now().naive_utc();
         Ok(DbAnnouncement {
-            id: if value.id.is_empty() {
+            id: if value.announcement_id.is_empty() {
                 DieselUlid::generate()
             } else {
-                DieselUlid::from_str(&value.id)?
+                DieselUlid::from_str(&value.announcement_id)?
             },
             announcement_type: announcement_type_to_string(value.announcement_type())?,
             title: value.title,
+            teaser: value.teaser,
+            image_url: value.image_url,
             content: value.content,
             created_by: value.created_by, // Will be replaced afterward if empty
             created_at: if let Some(timestamp) = value.created_at {
@@ -59,7 +66,7 @@ impl TryFrom<Announcement> for DbAnnouncement {
                     .map(|e| e.naive_utc())
                     .unwrap_or_default()
             } else {
-                Utc::now().naive_utc()
+                current_timestamp
             },
             modified_by: value.modified_by, // Will be replaced afterward if empty
             modified_at: if let Some(timestamp) = value.modified_at {
@@ -67,7 +74,7 @@ impl TryFrom<Announcement> for DbAnnouncement {
                     .map(|e| e.naive_utc())
                     .unwrap_or_default()
             } else {
-                Utc::now().naive_utc()
+                current_timestamp
             },
         })
     }
