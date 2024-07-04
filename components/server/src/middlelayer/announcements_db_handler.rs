@@ -1,26 +1,70 @@
 use crate::database::crud::CrudDb;
 use crate::database::dsls::info_dsl::Announcement as DbAnnouncement;
 use crate::middlelayer::db_handler::DatabaseHandler;
+use crate::utils::conversions::announcements::announcement_type_to_string;
 use anyhow::anyhow;
 use anyhow::Result;
+use aruna_rust_api::api::storage::services::v2::GetAnnouncementsByTypeRequest;
+use aruna_rust_api::api::storage::services::v2::GetAnnouncementsRequest;
 use aruna_rust_api::api::storage::services::v2::{Announcement, SetAnnouncementsRequest};
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 use std::str::FromStr;
 
 impl DatabaseHandler {
-    pub async fn get_announcements(&self) -> Result<Vec<Announcement>> {
+    pub async fn get_announcements(
+        &self,
+        request: GetAnnouncementsRequest,
+    ) -> Result<Vec<Announcement>> {
+        // Create database client
         let client = self.database.get_client().await?;
-        Ok(DbAnnouncement::all(&client)
+
+        Ok(if request.announcement_ids.len() > 0 {
+            // Parse the ids
+            let mapped_ids: Result<Vec<_>, _> = request
+                .announcement_ids
+                .iter()
+                .map(|id| DieselUlid::from_str(id))
+                .collect();
+
+            DbAnnouncement::get_by_ids(
+                &client,
+                &tonic_invalid!(mapped_ids, "Invalid announcement id format"),
+                request.page,
+            )
             .await?
-            .into_iter()
-            .map(|a| a.into())
-            .collect_vec())
+        } else {
+            DbAnnouncement::all_paginated(&client, request.page).await?
+        }
+        .into_iter()
+        .map(|a| a.into())
+        .collect_vec())
+    }
+
+    pub async fn get_announcements_by_type(
+        &self,
+        request: GetAnnouncementsByTypeRequest,
+    ) -> Result<Vec<Announcement>> {
+        // Parse the provided type
+        let announcement_type = tonic_invalid!(
+            announcement_type_to_string(request.announcement_type()),
+            "Invalid announcement type"
+        );
+
+        // Create database client and query announcements
+        let client = self.database.get_client().await?;
+        Ok(
+            DbAnnouncement::get_by_type(&client, announcement_type, request.page)
+                .await?
+                .into_iter()
+                .map(|a| a.into())
+                .collect_vec(),
+        )
     }
 
     pub async fn get_announcement(&self, id: DieselUlid) -> Result<Announcement> {
+        // Create database client and query announcements
         let client = self.database.get_client().await?;
-
         let announcement = DbAnnouncement::get(id, &client)
             .await?
             .ok_or_else(|| anyhow!("Announcement not found"))?;

@@ -1,5 +1,4 @@
 pub mod announcements_db_handler;
-
 pub mod clone_db_handler;
 pub mod clone_request_types;
 pub mod create_db_handler;
