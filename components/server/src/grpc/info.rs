@@ -5,10 +5,11 @@ use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::utils::grpc_utils::get_token_from_md;
 use aruna_rust_api::api::storage::services::v2::storage_status_service_server::StorageStatusService;
 use aruna_rust_api::api::storage::services::v2::{
-    GetAnnouncementRequest, GetAnnouncementResponse, GetAnnouncementsRequest,
-    GetAnnouncementsResponse, GetPubkeysRequest, GetPubkeysResponse, GetStorageStatusRequest,
-    GetStorageStatusResponse, GetStorageVersionRequest, GetStorageVersionResponse,
-    SetAnnouncementsRequest, SetAnnouncementsResponse,
+    GetAnnouncementRequest, GetAnnouncementResponse, GetAnnouncementsByTypeRequest,
+    GetAnnouncementsByTypeResponse, GetAnnouncementsRequest, GetAnnouncementsResponse,
+    GetPubkeysRequest, GetPubkeysResponse, GetStorageStatusRequest, GetStorageStatusResponse,
+    GetStorageVersionRequest, GetStorageVersionResponse, SetAnnouncementsRequest,
+    SetAnnouncementsResponse,
 };
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
@@ -62,12 +63,33 @@ impl StorageStatusService for StorageStatusServiceImpl {
 
         // Just fetch the announcements from the database
         let announcements = tonic_internal!(
-            self.database_handler.get_announcements().await,
+            self.database_handler
+                .get_announcements(request.into_inner())
+                .await,
             "Get announcements failed"
         );
 
         // Return all announcements
         let response = GetAnnouncementsResponse { announcements };
+        return_with_log!(response);
+    }
+
+    async fn get_announcements_by_type(
+        &self,
+        request: tonic::Request<GetAnnouncementsByTypeRequest>,
+    ) -> tonic::Result<Response<GetAnnouncementsByTypeResponse>> {
+        log_received!(&request);
+
+        // Fetch the announcements with the provided type
+        let announcements = tonic_internal!(
+            self.database_handler
+                .get_announcements_by_type(request.into_inner())
+                .await,
+            "Get announcements by type failed"
+        );
+
+        // Return all announcements
+        let response = GetAnnouncementsByTypeResponse { announcements };
         return_with_log!(response);
     }
 
@@ -79,7 +101,7 @@ impl StorageStatusService for StorageStatusServiceImpl {
 
         // Check if provided id is valid
         let announcement_id = tonic_invalid!(
-            DieselUlid::from_str(&request.into_inner().id),
+            DieselUlid::from_str(&request.into_inner().announcement_id),
             "Invalid announcement id format"
         );
 
