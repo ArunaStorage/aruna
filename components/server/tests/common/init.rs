@@ -6,6 +6,7 @@ use aruna_server::grpc::authorization::AuthorizationServiceImpl;
 use aruna_server::grpc::collections::CollectionServiceImpl;
 use aruna_server::grpc::datasets::DatasetServiceImpl;
 use aruna_server::grpc::endpoints::EndpointServiceImpl;
+use aruna_server::grpc::info::StorageStatusServiceImpl;
 use aruna_server::grpc::licenses::LicensesServiceImpl;
 use aruna_server::grpc::object::ObjectServiceImpl;
 use aruna_server::grpc::projects::ProjectServiceImpl;
@@ -177,6 +178,52 @@ pub async fn init_permission_handler(
 ) -> Arc<PermissionHandler> {
     // Init PermissionHandler
     Arc::new(PermissionHandler::new(cache, token_handler))
+}
+
+#[allow(dead_code)]
+pub async fn init_storage_status_service() -> StorageStatusServiceImpl {
+    // Load env
+    dotenvy::from_filename(".env").unwrap();
+    // Init database connection
+    let db_conn = init_database().await;
+    // Init Cache
+    let cache = init_cache(db_conn.clone(), true).await;
+    // Init TokenHandler
+    let token_handler = Arc::new(
+        TokenHandler::new(
+            cache.clone(),
+            db_conn.clone(),
+            dotenvy::var("ENCODING_KEY").unwrap(),
+            dotenvy::var("DECODING_KEY").unwrap(),
+        )
+        .await
+        .unwrap(),
+    );
+    // Init PermissionHandler
+    let perm_handler = Arc::new(PermissionHandler::new(cache.clone(), token_handler.clone()));
+    // Init NatsIoHandler
+    let nats_client = init_nats_client().await;
+    // Init DatabaseHandler
+    let (hook_sender, hook_reciever) = async_channel::unbounded();
+    let database_handler = init_database_handler(
+        db_conn.clone(),
+        nats_client.clone(),
+        cache.clone(),
+        hook_sender,
+    )
+    .await;
+    // Init HookExecutor
+    let auth_clone = perm_handler.clone();
+    let db_clone = database_handler.clone();
+    tokio::spawn(async move {
+        let hook_executor =
+            hooks::hook_handler::HookHandler::new(hook_reciever, auth_clone, db_clone).await;
+        if let Err(err) = hook_executor.run().await {
+            log::warn!("Hook execution error: {}", err)
+        }
+    });
+    // Init project service
+    StorageStatusServiceImpl::new(database_handler, perm_handler, cache).await
 }
 
 #[allow(dead_code)]
