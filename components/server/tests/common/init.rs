@@ -23,6 +23,7 @@ use std::sync::Arc;
 
 use super::test_utils::DEFAULT_ENDPOINT_ULID;
 
+#[allow(dead_code)]
 pub struct ServiceBlock {
     // Internal components
     pub db_conn: Arc<Database>,
