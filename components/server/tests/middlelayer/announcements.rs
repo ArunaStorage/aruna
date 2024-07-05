@@ -7,11 +7,14 @@ use aruna_rust_api::api::storage::{
         SetAnnouncementsRequest,
     },
 };
-use aruna_server::database::dsls::info_dsl::Announcement;
+use aruna_server::database::{crud::CrudDb, dsls::info_dsl::Announcement};
 use diesel_ulid::DieselUlid;
-use itertools::Itertools;
+use itertools::{enumerate, Itertools};
 
-use crate::common::{init::init_database_handler_middlelayer, test_utils};
+use crate::common::{
+    init::init_database_handler_middlelayer,
+    test_utils::{self, choose_and_remove},
+};
 
 #[tokio::test]
 async fn get_announcement() {
@@ -203,6 +206,129 @@ async fn get_announcements_by_type() {
 async fn set_announcements() {
     // Init
     let db_handler = init_database_handler_middlelayer().await;
+    let client = db_handler.database.get_client().await.unwrap();
 
-    todo!()
+    let admin_ulid = DieselUlid::from_str(test_utils::ADMIN_USER_ULID).unwrap();
+    let announcements = vec![
+        ProtoAnnouncement {
+            announcement_id: "".to_string(),
+            announcement_type: AnnouncementType::Release as i32,
+            title: "DbHandler set_announcements dummy 1".to_string(),
+            teaser: "Some teaser".to_string(),
+            image_url: "".to_string(),
+            content: "Some content".to_string(),
+            created_by: "The Aruna Team".to_string(),
+            created_at: None,
+            modified_by: "The Aruna Team".to_string(),
+            modified_at: None,
+        },
+        ProtoAnnouncement {
+            announcement_id: "".to_string(),
+            announcement_type: AnnouncementType::Blog as i32,
+            title: "DbHandler set_announcements dummy 2".to_string(),
+            teaser: "Some teaser".to_string(),
+            image_url: "".to_string(),
+            content: "Some content".to_string(),
+            created_by: "The Aruna Team".to_string(),
+            created_at: None,
+            modified_by: "The Aruna Team".to_string(),
+            modified_at: None,
+        },
+        ProtoAnnouncement {
+            announcement_id: "".to_string(),
+            announcement_type: AnnouncementType::Maintenance as i32,
+            title: "DbHandler set_announcements dummy 3".to_string(),
+            teaser: "Some teaser".to_string(),
+            image_url: "".to_string(),
+            content: "Some content".to_string(),
+            created_by: "The Aruna Team".to_string(),
+            created_at: None,
+            modified_by: "The Aruna Team".to_string(),
+            modified_at: None,
+        },
+    ];
+
+    let mut request = SetAnnouncementsRequest {
+        announcements_upsert: announcements.clone(),
+        announcements_delete: vec![],
+    };
+
+    // Insert the announcements
+    let inserted = db_handler
+        .set_announcements(admin_ulid, request.clone())
+        .await
+        .unwrap();
+
+    for (idx, a) in enumerate(&announcements) {
+        let insert = inserted.get(idx).unwrap();
+        assert!(!insert.announcement_id.is_empty());
+        assert_eq!(a.announcement_type, insert.announcement_type);
+        assert_eq!(a.title, insert.title);
+        assert_eq!(a.teaser, insert.teaser);
+        assert_eq!(a.image_url, insert.image_url);
+        assert_eq!(a.content, insert.content);
+        assert_eq!(a.created_by, insert.created_by);
+        assert_eq!(a.modified_by, insert.modified_by);
+        assert_ne!(a.created_at, insert.created_at);
+        assert_ne!(a.modified_at, insert.modified_at);
+    }
+
+    // Update one of the announcements
+    let mut to_update = inserted.first().unwrap().clone();
+    to_update.image_url = "http://example.org/franz_forster.webp".to_string();
+    request.announcements_upsert = vec![to_update];
+
+    let updated = db_handler
+        .set_announcements(admin_ulid, request.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        updated.first().unwrap().image_url,
+        "http://example.org/franz_forster.webp"
+    );
+    assert_eq!(
+        inserted.first().unwrap().announcement_id,
+        updated.first().unwrap().announcement_id
+    );
+    assert_ne!(
+        inserted.first().unwrap().modified_at,
+        updated.first().unwrap().modified_at
+    );
+
+    // Delete the announcements in random order
+    request.announcements_upsert = vec![];
+    let mut ids = inserted
+        .iter()
+        .map(|a| a.announcement_id.clone())
+        .collect_vec();
+    let mut deleted_ids = vec![];
+
+    while let Some(id) = choose_and_remove(&mut ids) {
+        request.announcements_delete = vec![id.clone()];
+        db_handler
+            .set_announcements(admin_ulid, request.clone())
+            .await
+            .unwrap();
+        deleted_ids.push(id);
+
+        // Check undeleted
+        for id in &ids {
+            assert!(
+                Announcement::get(DieselUlid::from_str(&id).unwrap(), &client)
+                    .await
+                    .unwrap()
+                    .is_some()
+            )
+        }
+
+        // Check deleted
+        for id in &deleted_ids {
+            assert!(
+                Announcement::get(DieselUlid::from_str(&id).unwrap(), &client)
+                    .await
+                    .unwrap()
+                    .is_none()
+            )
+        }
+    }
 }
