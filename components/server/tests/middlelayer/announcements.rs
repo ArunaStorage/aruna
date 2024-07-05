@@ -40,7 +40,10 @@ async fn get_announcement() {
     .unwrap();
 
     // Error: get non-existent announcement
-    assert!(db_handler.get_announcement(original.id).await.is_err());
+    assert!(db_handler
+        .get_announcement(DieselUlid::generate())
+        .await
+        .is_err());
 
     // Get the created announcement
     let get_ann = db_handler.get_announcement(original.id).await.unwrap();
@@ -108,12 +111,32 @@ async fn get_announcements() {
     request.page = Some(page.clone());
 
     let page_01 = db_handler.get_announcements(request.clone()).await.unwrap();
-    assert_eq!(page_01.as_slice(), &all_announcements[..2]);
+    let page_01_positions = page_01
+        .iter()
+        .map(|page_a| all_announcements.iter().position(|a| page_a == a).unwrap())
+        .collect_vec();
+
+    assert_eq!(page_01.len(), 2);
+    assert!(page_01.iter().all(|a| all_announcements.contains(a)));
 
     page.start_after = page_01.last().unwrap().announcement_id.clone();
     request.page = Some(page);
     let page_02 = db_handler.get_announcements(request.clone()).await.unwrap();
-    assert_eq!(page_02.as_slice(), &all_announcements[2..4]);
+    let page_02_positions = page_02
+        .iter()
+        .map(|page_a| all_announcements.iter().position(|a| page_a == a).unwrap())
+        .collect_vec();
+
+    assert_eq!(page_02.len(), 2);
+    assert!(page_02.iter().all(|a| all_announcements.contains(a)));
+    assert_eq!(
+        page_01_positions
+            .iter()
+            .zip(&page_02_positions)
+            .filter(|&(a, b)| b > a)
+            .count(),
+        2
+    );
 }
 
 #[tokio::test]

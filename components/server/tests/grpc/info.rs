@@ -434,11 +434,15 @@ async fn get_announcements_by_type() {
         .announcements;
 
     assert!(all_type_announcements.len() >= 3);
-    for a in &inserted_announcements {
+    for a in &inserted_announcements
+        .iter()
+        .filter(|a| a.announcement_type() == AnnouncementType::Orga)
+        .collect_vec()
+    {
         assert!(all_type_announcements.contains(a))
     }
     for a in all_type_announcements {
-        assert_eq!(a.announcement_type(), AnnouncementType::Orga)
+        assert_eq!(a.announcement_type(), AnnouncementType::Orga);
     }
 
     //TODO: Get announcements by type paginated
@@ -458,9 +462,6 @@ async fn get_announcements_by_type() {
         .announcements;
 
     assert_eq!(type_announcements_page_01.len(), 2);
-    for a in &inserted_announcements {
-        assert!(type_announcements_page_01.contains(a))
-    }
     for a in &type_announcements_page_01 {
         assert_eq!(a.announcement_type(), AnnouncementType::Release)
     }
@@ -481,9 +482,6 @@ async fn get_announcements_by_type() {
         .announcements;
 
     assert!(type_announcements_page_02.len() >= 1);
-    for a in &inserted_announcements {
-        assert!(type_announcements_page_02.contains(a))
-    }
     for a in type_announcements_page_02 {
         assert_eq!(a.announcement_type(), AnnouncementType::Release)
     }

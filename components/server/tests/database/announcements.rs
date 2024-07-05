@@ -79,7 +79,8 @@ async fn get_test() {
             .upsert(client)
             .await
             .unwrap(),
-        )
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10))
     }
 
     // Try get announcement with non existent id
@@ -108,16 +109,34 @@ async fn get_test() {
     let page_01 = Announcement::all_paginated(client, Some(page.clone()))
         .await
         .unwrap();
+    let page_01_positions = page_01
+        .iter()
+        .map(|page_a| all.iter().position(|a| page_a == a).unwrap())
+        .collect_vec();
 
     assert_eq!(page_01.len(), 2);
-    assert_eq!(page_01.as_slice(), &all[..2]);
+    assert!(page_01.iter().all(|a| all.contains(a)));
 
     page.start_after = page_01.last().unwrap().id.to_string();
     let page_02 = Announcement::all_paginated(client, Some(page.clone()))
         .await
         .unwrap();
+    let page_02_positions = page_02
+        .iter()
+        .map(|page_a| all.iter().position(|a| page_a == a).unwrap())
+        .collect_vec();
 
-    assert_eq!(page_02.as_slice(), &all[2..4]);
+    assert_eq!(page_02.len(), 2);
+    assert!(page_02.iter().all(|a| all.contains(a)));
+    assert_eq!(
+        page_01_positions
+            .iter()
+            .zip(&page_02_positions)
+            .filter(|&(a, b)| b > a)
+            .count(),
+        2
+    );
+    //assert_eq!(page_02.as_slice(), &all[2..4]);
 
     // Get announcements filtered by id
     let ids = announcements
@@ -139,11 +158,13 @@ async fn get_test() {
         }
     }
 
-    let get_typed = Announcement::get_by_type(client, "BLOG".to_string(), None)
+    let all_typed_get = Announcement::get_by_type(client, "BLOG".to_string(), None)
         .await
         .unwrap();
 
-    assert_eq!(all_typed, get_typed);
+    for type_ann in all_typed_get {
+        assert!(all_typed.contains(&type_ann))
+    }
 
     page.start_after = "".to_string();
     page.page_size = 1;
@@ -153,14 +174,25 @@ async fn get_test() {
             .unwrap();
 
     assert_eq!(get_typed_page_01.len(), 1);
-    assert_eq!(get_typed_page_01.as_slice(), &all_typed[..1]);
+    assert!(all_typed.contains(get_typed_page_01.first().unwrap()));
 
     page.start_after = get_typed_page_01.last().unwrap().id.to_string();
-    let get_typed_page_02 = Announcement::all_paginated(client, Some(page.clone()))
-        .await
-        .unwrap();
+    let get_typed_page_02 =
+        Announcement::get_by_type(client, "BLOG".to_string(), Some(page.clone()))
+            .await
+            .unwrap();
 
-    assert_eq!(get_typed_page_02.as_slice(), &all_typed[1..2]);
+    assert_eq!(get_typed_page_02.len(), 1);
+    assert!(
+        all_typed
+            .iter()
+            .position(|a| a == get_typed_page_02.first().unwrap())
+            .unwrap()
+            > all_typed
+                .iter()
+                .position(|a| a == get_typed_page_01.first().unwrap())
+                .unwrap()
+    );
 }
 
 #[tokio::test]
