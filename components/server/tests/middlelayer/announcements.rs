@@ -28,7 +28,7 @@ async fn get_announcement() {
         announcement_type: "RELEASE".to_string(),
         title: "Announcement Title".to_string(),
         teaser: "Announcement Teaser".to_string(),
-        image_url: format!("https://announcement_image_url/dummy.webp"),
+        image_url: "https://announcement_image_url/dummy.webp".to_string(),
         content: "Announcement Content".to_string(),
         created_by: "The Aruna Team".to_string(),
         created_at: chrono::Utc::now().naive_local(),
@@ -48,7 +48,7 @@ async fn get_announcement() {
     // Get the created announcement
     let get_ann = db_handler.get_announcement(original.id).await.unwrap();
 
-    assert_eq!(ProtoAnnouncement::try_from(original).unwrap(), get_ann)
+    assert_eq!(ProtoAnnouncement::from(original), get_ann)
 }
 
 #[tokio::test]
@@ -59,7 +59,6 @@ async fn get_announcements() {
 
     // Create some announcements
     let ann_futures = (0..5)
-        .into_iter()
         .map(|_| async {
             Announcement {
                 id: DieselUlid::generate(),
@@ -90,7 +89,7 @@ async fn get_announcements() {
     assert!(all_announcements.len() >= announcements.len());
 
     for a in &announcements {
-        assert!(all_announcements.contains(&ProtoAnnouncement::try_from(a.clone()).unwrap()))
+        assert!(all_announcements.contains(&ProtoAnnouncement::from(a.clone())))
     }
 
     // Get first, third and last of the created announcements by id
@@ -337,7 +336,7 @@ async fn set_announcements() {
         // Check undeleted
         for id in &ids {
             assert!(
-                Announcement::get(DieselUlid::from_str(&id).unwrap(), &client)
+                Announcement::get(DieselUlid::from_str(id).unwrap(), &client)
                     .await
                     .unwrap()
                     .is_some()
@@ -347,7 +346,7 @@ async fn set_announcements() {
         // Check deleted
         for id in &deleted_ids {
             assert!(
-                Announcement::get(DieselUlid::from_str(&id).unwrap(), &client)
+                Announcement::get(DieselUlid::from_str(id).unwrap(), &client)
                     .await
                     .unwrap()
                     .is_none()

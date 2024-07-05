@@ -320,8 +320,8 @@ async fn get_announcements() {
 
     assert_eq!(id_announcements.len(), 2);
     assert_eq!(
-        inserted_announcements.get(0).unwrap(),
-        id_announcements.get(0).unwrap()
+        inserted_announcements.first().unwrap(),
+        id_announcements.first().unwrap()
     );
     assert_eq!(
         inserted_announcements.get(1).unwrap(),
@@ -481,7 +481,7 @@ async fn get_announcements_by_type() {
         .into_inner()
         .announcements;
 
-    assert!(type_announcements_page_02.len() >= 1);
+    assert!(!type_announcements_page_02.is_empty());
     for a in type_announcements_page_02 {
         assert_eq!(a.announcement_type(), AnnouncementType::Release)
     }

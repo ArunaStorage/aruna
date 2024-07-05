@@ -19,7 +19,7 @@ async fn create_test() {
         announcement_type: "INVALID".to_string(),
         title: "Announcement Title".to_string(),
         teaser: "Announcement Teaser".to_string(),
-        image_url: format!("https://announcement_image_url/dummy.webp"),
+        image_url: "https://announcement_image_url/dummy.webp".to_string(),
         content: "Announcement Content".to_string(),
         created_by: "The Aruna Team".to_string(),
         created_at: chrono::Utc::now().naive_local(),
@@ -90,11 +90,11 @@ async fn get_test() {
         .is_none());
 
     // Get any from the created announcements
-    let get_announcement = Announcement::get(announcements.get(0).unwrap().id, client)
+    let get_announcement = Announcement::get(announcements.first().unwrap().id, client)
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(get_announcement, *announcements.get(0).unwrap());
+    assert_eq!(get_announcement, *announcements.first().unwrap());
 
     // Get all announcements (paginated)
     let all = Announcement::all(client).await.unwrap();
@@ -207,7 +207,7 @@ async fn upsert_test() {
         announcement_type: "ORGA".to_string(),
         title: "Original Announcement Title".to_string(),
         teaser: "Original Announcement Teaser".to_string(),
-        image_url: format!("https://announcement_image_url/example.webp"),
+        image_url: "https://announcement_image_url/example.webp".to_string(),
         content: "Original Announcement Content".to_string(),
         created_by: "The Aruna Team".to_string(),
         created_at: chrono::Utc::now().naive_local(),
@@ -258,7 +258,6 @@ async fn delete_test() {
 
     // Create some dummy announcements
     let ann_futures = (0..5)
-        .into_iter()
         .map(|_| async {
             Announcement {
                 id: DieselUlid::generate(),

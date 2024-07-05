@@ -19,7 +19,7 @@ impl DatabaseHandler {
         // Create database client
         let client = self.database.get_client().await?;
 
-        Ok(if request.announcement_ids.len() > 0 {
+        Ok(if !request.announcement_ids.is_empty() {
             // Parse the ids
             let mapped_ids: Result<Vec<_>, _> = request
                 .announcement_ids
