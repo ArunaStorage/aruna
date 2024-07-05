@@ -63,7 +63,7 @@ async fn get_test() {
         announcements.push(
             Announcement {
                 id: DieselUlid::generate(),
-                announcement_type: a_type.to_string(), //types.choose(&mut rand::thread_rng()).unwrap().to_string(),
+                announcement_type: a_type.to_string(),
                 title: format!("Announcement Title {}", announcements.len() + 1),
                 teaser: format!("Announcement Teaser {}", announcements.len() + 1),
                 image_url: format!(
@@ -216,4 +216,49 @@ async fn upsert_test() {
         &teaser_content_updated.content,
         "Updated Announcement Content"
     );
+}
+
+#[tokio::test]
+async fn delete_test() {
+    let db = init::init_database().await;
+    let client = db.get_client().await.unwrap();
+    let client = client.client();
+
+    // Create some dummy announcements
+    let ann_futures = (0..5)
+        .into_iter()
+        .map(|_| async {
+            Announcement {
+                id: DieselUlid::generate(),
+                announcement_type: "ORGA".to_string(),
+                title: "Announcement Title".to_string(),
+                teaser: "Announcement Teaser".to_string(),
+                image_url: "https://announcement_image_url/{}.webp".to_string(),
+                content: "Announcement Content {}".to_string(),
+                created_by: "The Aruna Team".to_string(),
+                created_at: chrono::Utc::now().naive_local(),
+                modified_by: "The Aruna Team".to_string(),
+                modified_at: chrono::Utc::now().naive_local(),
+            }
+            .upsert(client)
+            .await
+            .unwrap()
+        })
+        .collect_vec();
+    let announcements = futures::future::join_all(ann_futures).await;
+
+    // Delete the first three of the announcements
+    Announcement::batch_delete(
+        client,
+        &announcements[..3].iter().map(|a| a.id).collect_vec(),
+    )
+    .await
+    .unwrap();
+
+    for a in &announcements[..3] {
+        assert!(Announcement::get(a.id, client).await.unwrap().is_none())
+    }
+    for a in &announcements[3..] {
+        assert!(Announcement::get(a.id, client).await.unwrap().is_some())
+    }
 }
