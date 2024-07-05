@@ -32,11 +32,17 @@ use aruna_server::{
 use dashmap::DashMap;
 use diesel_ulid::DieselUlid;
 use postgres_types::Json;
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use rand::{distributions::Alphanumeric, seq::IteratorRandom, thread_rng, Rng};
 use tonic::{
     metadata::{AsciiMetadataKey, AsciiMetadataValue},
     Request,
 };
+
+#[allow(dead_code)]
+pub fn choose_and_remove(raw: &mut Vec<String>) -> Option<String> {
+    let i = (0..raw.len()).choose(&mut thread_rng())?;
+    Some(raw.swap_remove(i))
+}
 
 /* ----- Begin Testing Constants ---------- */
 #[allow(dead_code)]

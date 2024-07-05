@@ -1,9 +1,11 @@
+use aruna_rust_api::api::storage::models::v2::PageRequest;
 use aruna_server::database::{crud::CrudDb, dsls::info_dsl::Announcement};
 use diesel_ulid::DieselUlid;
+use itertools::Itertools;
 use rand::seq::SliceRandom;
 use tokio_postgres::GenericClient;
 
-use crate::common::init;
+use crate::common::{init, test_utils};
 
 #[tokio::test]
 async fn create_test() {
@@ -38,6 +40,152 @@ async fn create_test() {
 }
 
 #[tokio::test]
+async fn get_test() {
+    let db = init::init_database().await;
+    let client = db.get_client().await.unwrap();
+    let client = client.client();
+
+    let mut types = vec![
+        "ORGA".to_string(),
+        "ORGA".to_string(),
+        "RELEASE".to_string(),
+        "RELEASE".to_string(),
+        "MAINTENANCE".to_string(),
+        "MAINTENANCE".to_string(),
+        "UPDATE".to_string(),
+        "UPDATE".to_string(),
+        "BLOG".to_string(),
+        "BLOG".to_string(),
+    ];
+
+    let mut announcements = vec![];
+    while let Some(a_type) = test_utils::choose_and_remove(&mut types) {
+        announcements.push(
+            Announcement {
+                id: DieselUlid::generate(),
+                announcement_type: a_type.to_string(), //types.choose(&mut rand::thread_rng()).unwrap().to_string(),
+                title: format!("Announcement Title {}", announcements.len() + 1),
+                teaser: format!("Announcement Teaser {}", announcements.len() + 1),
+                image_url: format!(
+                    "https://announcement_image_url/{}.webp",
+                    announcements.len() + 1
+                ),
+                content: format!("Announcement Content {}", announcements.len() + 1),
+                created_by: "The Aruna Team".to_string(),
+                created_at: chrono::Utc::now().naive_local(),
+                modified_by: "The Aruna Team".to_string(),
+                modified_at: chrono::Utc::now().naive_local(),
+            }
+            .upsert(client)
+            .await
+            .unwrap(),
+        )
+    }
+
+    /*
+    for idx in 1..10 {
+        announcements.push(
+            Announcement {
+                id: DieselUlid::generate(),
+                announcement_type: test_utils::choose(&mut types).unwrap().to_string(), //types.choose(&mut rand::thread_rng()).unwrap().to_string(),
+                title: format!("Announcement Title {idx}"),
+                teaser: format!("Announcement Teaser {idx}"),
+                image_url: format!("https://announcement_image_url/{idx}.webp"),
+                content: format!("Announcement Content {idx}"),
+                created_by: "The Aruna Team".to_string(),
+                created_at: chrono::Utc::now().naive_local(),
+                modified_by: "The Aruna Team".to_string(),
+                modified_at: chrono::Utc::now().naive_local(),
+            }
+            .upsert(client)
+            .await
+            .unwrap(),
+        )
+    }
+    */
+
+    // Try get announcement with non existent id
+    assert!(Announcement::get(DieselUlid::generate(), client)
+        .await
+        .unwrap()
+        .is_none());
+
+    // Get any from the created announcements
+    let get_announcement = Announcement::get(announcements.get(0).unwrap().id, client)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(get_announcement, *announcements.get(0).unwrap());
+
+    // Get all announcements (paginated)
+    let all = Announcement::all(client).await.unwrap();
+    for a in &announcements {
+        assert!(all.contains(a))
+    }
+
+    let mut page = PageRequest {
+        start_after: "".to_string(),
+        page_size: 2,
+    };
+    let page_01 = Announcement::all_paginated(client, Some(page.clone()))
+        .await
+        .unwrap();
+
+    assert_eq!(page_01.len(), 2);
+    assert_eq!(page_01.as_slice(), &all[..2]);
+
+    page.start_after = page_01.last().unwrap().id.to_string();
+    let page_02 = Announcement::all_paginated(client, Some(page.clone()))
+        .await
+        .unwrap();
+
+    assert_eq!(page_02.as_slice(), &all[2..4]);
+
+    // Get announcements filtered by id
+    let ids = announcements
+        .choose_multiple(&mut rand::thread_rng(), 2)
+        .map(|a| a.id)
+        .collect_vec();
+    let filtered_anns = Announcement::get_by_ids(client, &ids, None).await.unwrap();
+
+    assert_eq!(filtered_anns.len(), 2);
+    for a in &filtered_anns {
+        assert!(announcements.contains(a))
+    }
+
+    // Get announcements by type (paginated)
+    let mut all_typed = vec![];
+    for ann in all {
+        if &ann.announcement_type == "BLOG" {
+            all_typed.push(ann)
+        }
+    }
+
+    let get_typed = Announcement::get_by_type(client, "BLOG".to_string(), None)
+        .await
+        .unwrap();
+
+    assert_eq!(all_typed, get_typed);
+
+    page.start_after = "".to_string();
+    page.page_size = 1;
+    let get_typed_page_01 =
+        Announcement::get_by_type(client, "BLOG".to_string(), Some(page.clone()))
+            .await
+            .unwrap();
+
+    assert_eq!(get_typed_page_01.len(), 1);
+    assert_eq!(get_typed_page_01.as_slice(), &all_typed[..1]);
+
+    page.start_after = get_typed_page_01.last().unwrap().id.to_string();
+    let get_typed_page_02 = Announcement::all_paginated(client, Some(page.clone()))
+        .await
+        .unwrap();
+
+    assert_eq!(get_typed_page_02.as_slice(), &all_typed[1..2]);
+}
+
+#[tokio::test]
 async fn upsert_test() {
     let db = init::init_database().await;
     let client = db.get_client().await.unwrap();
@@ -58,7 +206,7 @@ async fn upsert_test() {
     };
     ann.create(client).await.unwrap();
 
-    // Try to set invalid and valid announcement type 
+    // Try to set invalid and valid announcement type
     ann.announcement_type = "INVALID".to_string();
     assert!(ann.create(client).await.is_err());
     ann.announcement_type = "BLOG".to_string();
@@ -82,6 +230,12 @@ async fn upsert_test() {
     let teaser_content_updated = ann.upsert(client).await.unwrap();
 
     assert_eq!(ann.id, teaser_content_updated.id);
-    assert_eq!(&teaser_content_updated.teaser, "Updated Announcement Teaser");
-    assert_eq!(&teaser_content_updated.content, "Updated Announcement Content");
+    assert_eq!(
+        &teaser_content_updated.teaser,
+        "Updated Announcement Teaser"
+    );
+    assert_eq!(
+        &teaser_content_updated.content,
+        "Updated Announcement Content"
+    );
 }
