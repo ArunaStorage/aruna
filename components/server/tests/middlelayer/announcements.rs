@@ -1,12 +1,17 @@
+use std::str::FromStr;
+
 use aruna_rust_api::api::storage::{
-    models::v2::PageRequest,
-    services::v2::{Announcement as ProtoAnnouncement, GetAnnouncementsRequest},
+    models::v2::{AnnouncementType, PageRequest},
+    services::v2::{
+        Announcement as ProtoAnnouncement, GetAnnouncementsByTypeRequest, GetAnnouncementsRequest,
+        SetAnnouncementsRequest,
+    },
 };
 use aruna_server::database::dsls::info_dsl::Announcement;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
 
-use crate::common::init::init_database_handler_middlelayer;
+use crate::common::{init::init_database_handler_middlelayer, test_utils};
 
 #[tokio::test]
 async fn get_announcement() {
@@ -112,8 +117,86 @@ async fn get_announcements() {
 async fn get_announcements_by_type() {
     // Init
     let db_handler = init_database_handler_middlelayer().await;
+    let client = db_handler.database.get_client().await.unwrap();
 
-    todo!()
+    let mut types = vec![
+        "ORGA".to_string(),
+        "ORGA".to_string(),
+        "RELEASE".to_string(),
+        "RELEASE".to_string(),
+    ];
+
+    let mut announcements = vec![];
+    while let Some(a_type) = test_utils::choose_and_remove(&mut types) {
+        announcements.push(
+            Announcement {
+                id: DieselUlid::generate(),
+                announcement_type: a_type.to_string(),
+                title: format!("Announcement Title {}", announcements.len() + 1),
+                teaser: format!("Announcement Teaser {}", announcements.len() + 1),
+                image_url: format!(
+                    "https://announcement_image_url/{}.webp",
+                    announcements.len() + 1
+                ),
+                content: format!("Announcement Content {}", announcements.len() + 1),
+                created_by: "The Aruna Team".to_string(),
+                created_at: chrono::Utc::now().naive_local(),
+                modified_by: "The Aruna Team".to_string(),
+                modified_at: chrono::Utc::now().naive_local(),
+            }
+            .upsert(&client)
+            .await
+            .unwrap(),
+        )
+    }
+
+    // Get announcements by type
+    let mut request = GetAnnouncementsByTypeRequest {
+        announcement_type: AnnouncementType::Orga as i32,
+        page: None,
+    };
+    let typed_anns = db_handler
+        .get_announcements_by_type(request.clone())
+        .await
+        .unwrap();
+
+    assert!(typed_anns.len() >= 2);
+    for ta in &typed_anns {
+        assert_eq!(ta.announcement_type(), AnnouncementType::Orga)
+    }
+
+    // Get announcements by type paginated
+    let mut page = PageRequest {
+        start_after: "".to_string(),
+        page_size: 1,
+    };
+    request.page = Some(page.clone());
+
+    let page_01 = db_handler
+        .get_announcements_by_type(request.clone())
+        .await
+        .unwrap();
+    assert_eq!(page_01.len(), 1);
+    assert_eq!(
+        page_01.first().unwrap().announcement_type,
+        AnnouncementType::Orga as i32
+    );
+
+    page.start_after = page_01.first().unwrap().announcement_id.clone();
+    request.page = Some(page);
+    let page_02 = db_handler
+        .get_announcements_by_type(request.clone())
+        .await
+        .unwrap();
+    assert_eq!(page_02.len(), 1);
+    assert_eq!(
+        page_02.first().unwrap().announcement_type,
+        AnnouncementType::Orga as i32
+    );
+    assert_ne!(
+        page_01.first().unwrap().announcement_id,
+        page_02.first().unwrap().announcement_id
+    );
 }
 
 #[tokio::test]
