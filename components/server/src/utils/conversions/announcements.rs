@@ -69,13 +69,16 @@ impl TryFrom<Announcement> for DbAnnouncement {
                 current_timestamp
             },
             modified_by: value.modified_by, // Will be replaced afterward if empty
-            modified_at: if let Some(timestamp) = value.modified_at {
+            modified_at: current_timestamp,
+            /*
+            if let Some(timestamp) = value.modified_at {
                 DateTime::from_timestamp(timestamp.seconds, timestamp.nanos.try_into()?)
                     .map(|e| e.naive_utc())
                     .unwrap_or_default()
             } else {
                 current_timestamp
             },
+            */
         })
     }
 }

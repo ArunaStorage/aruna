@@ -82,28 +82,6 @@ async fn get_test() {
         )
     }
 
-    /*
-    for idx in 1..10 {
-        announcements.push(
-            Announcement {
-                id: DieselUlid::generate(),
-                announcement_type: test_utils::choose(&mut types).unwrap().to_string(), //types.choose(&mut rand::thread_rng()).unwrap().to_string(),
-                title: format!("Announcement Title {idx}"),
-                teaser: format!("Announcement Teaser {idx}"),
-                image_url: format!("https://announcement_image_url/{idx}.webp"),
-                content: format!("Announcement Content {idx}"),
-                created_by: "The Aruna Team".to_string(),
-                created_at: chrono::Utc::now().naive_local(),
-                modified_by: "The Aruna Team".to_string(),
-                modified_at: chrono::Utc::now().naive_local(),
-            }
-            .upsert(client)
-            .await
-            .unwrap(),
-        )
-    }
-    */
-
     // Try get announcement with non existent id
     assert!(Announcement::get(DieselUlid::generate(), client)
         .await
