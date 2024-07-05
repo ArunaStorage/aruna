@@ -1,5 +1,6 @@
+use aruna_rust_api::api::storage::models::v2::PageRequest;
 use aruna_rust_api::api::storage::services::v2::storage_status_service_server::StorageStatusService;
-use aruna_rust_api::api::storage::services::v2::GetAnnouncementRequest;
+use aruna_rust_api::api::storage::services::v2::{GetAnnouncementRequest, GetAnnouncementsRequest};
 use aruna_rust_api::api::storage::{
     models::v2::AnnouncementType,
     services::v2::{Announcement as ProtoAnnouncement, SetAnnouncementsRequest},
@@ -194,19 +195,180 @@ async fn get_announcement() {
 #[tokio::test]
 async fn get_announcements() {
     // Init StorageStatusService
-    let service = init_storage_status_service().await;
+    let info_service = init_storage_status_service().await;
 
-    //TODO: Insert announcements
+    // Insert announcements
+    let set_request = SetAnnouncementsRequest {
+        announcements_upsert: vec![
+            ProtoAnnouncement {
+                announcement_id: "".to_string(),
+                announcement_type: AnnouncementType::Release as i32,
+                title: "gRPC get_announcements(1)".to_string(),
+                teaser: "Some teaser".to_string(),
+                image_url: "".to_string(),
+                content: "".to_string(),
+                created_by: "The Aruna Team".to_string(),
+                created_at: None,
+                modified_by: "The Aruna Team".to_string(),
+                modified_at: None,
+            },
+            ProtoAnnouncement {
+                announcement_id: "".to_string(),
+                announcement_type: AnnouncementType::Blog as i32,
+                title: "gRPC get_announcements(2)".to_string(),
+                teaser: "Some teaser".to_string(),
+                image_url: "".to_string(),
+                content: "".to_string(),
+                created_by: "The Aruna Team".to_string(),
+                created_at: None,
+                modified_by: "The Aruna Team".to_string(),
+                modified_at: None,
+            },
+            ProtoAnnouncement {
+                announcement_id: "".to_string(),
+                announcement_type: AnnouncementType::Blog as i32,
+                title: "gRPC get_announcements(3)".to_string(),
+                teaser: "Some teaser".to_string(),
+                image_url: "".to_string(),
+                content: "".to_string(),
+                created_by: "The Aruna Team".to_string(),
+                created_at: None,
+                modified_by: "The Aruna Team".to_string(),
+                modified_at: None,
+            },
+        ],
+        announcements_delete: vec![],
+    };
+    let grpc_request = add_token(Request::new(set_request), test_utils::ADMIN_OIDC_TOKEN);
+    let inserted_announcements = info_service
+        .set_announcements(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .announcements;
 
-    //TODO: Get all announcements
+    // Get all announcements
+    let mut get_request = GetAnnouncementsRequest {
+        announcement_ids: vec![],
+        page: None,
+    };
+    let grpc_request = Request::new(get_request.clone());
+    let all_announcements = info_service
+        .get_announcements(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .announcements;
 
-    //TODO: Get all announcements paginated
+    for a in &inserted_announcements {
+        assert!(all_announcements.contains(a))
+    }
 
-    //TODO: Get announcements by id
+    // Get all announcements paginated
+    let mut page = PageRequest {
+        start_after: "".to_string(),
+        page_size: 1,
+    };
+    get_request.page = Some(page.clone());
+
+    let grpc_request = Request::new(get_request.clone());
+    let all_page_01 = info_service
+        .get_announcements(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .announcements;
+
+    assert_eq!(all_page_01.len(), 1);
+    assert_eq!(
+        all_announcements.first().unwrap(),
+        all_page_01.first().unwrap()
+    );
+
+    page.start_after = all_page_01.first().unwrap().announcement_id.clone();
+    get_request.page = Some(page.clone());
+
+    let grpc_request = Request::new(get_request.clone());
+    let all_page_02 = info_service
+        .get_announcements(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .announcements;
+
+    assert_eq!(all_page_02.len(), 1);
+    assert_eq!(
+        all_announcements.get(1).unwrap(),
+        all_page_02.first().unwrap()
+    );
+
+    // Get announcements by id
+    get_request.announcement_ids = inserted_announcements[..2]
+        .iter()
+        .map(|a| a.announcement_id.clone())
+        .collect_vec();
+    get_request.page = None;
+    let grpc_request = Request::new(get_request.clone());
+    let id_announcements = info_service
+        .get_announcements(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .announcements;
+
+    assert_eq!(id_announcements.len(), 2);
+    assert_eq!(
+        inserted_announcements.get(0).unwrap(),
+        id_announcements.get(0).unwrap()
+    );
+    assert_eq!(
+        inserted_announcements.get(1).unwrap(),
+        id_announcements.get(1).unwrap()
+    );
 
     //TODO: Get announcements by id paginated
+    get_request.announcement_ids = inserted_announcements[1..3]
+        .iter()
+        .map(|a| a.announcement_id.clone())
+        .collect_vec();
+    get_request.page = None;
+    page.start_after = "".to_string();
+    page.page_size = 1;
+    get_request.page = Some(page.clone());
+    let grpc_request = Request::new(get_request.clone());
+    let id_announcements_page_01 = info_service
+        .get_announcements(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .announcements;
 
-    todo!();
+    assert_eq!(id_announcements_page_01.len(), 1);
+    assert_eq!(
+        inserted_announcements.get(1).unwrap(),
+        id_announcements_page_01.first().unwrap()
+    );
+
+    page.start_after = id_announcements_page_01
+        .last()
+        .unwrap()
+        .announcement_id
+        .to_string();
+
+    get_request.page = Some(page.clone());
+    let grpc_request = Request::new(get_request.clone());
+    let id_announcements_page_02 = info_service
+        .get_announcements(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .announcements;
+
+    assert_eq!(id_announcements_page_02.len(), 1);
+    assert_eq!(
+        inserted_announcements.get(2).unwrap(),
+        id_announcements_page_02.first().unwrap()
+    );
 }
 
 #[tokio::test]
