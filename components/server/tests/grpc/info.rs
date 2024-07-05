@@ -1,6 +1,8 @@
 use aruna_rust_api::api::storage::models::v2::PageRequest;
 use aruna_rust_api::api::storage::services::v2::storage_status_service_server::StorageStatusService;
-use aruna_rust_api::api::storage::services::v2::{GetAnnouncementRequest, GetAnnouncementsRequest};
+use aruna_rust_api::api::storage::services::v2::{
+    GetAnnouncementRequest, GetAnnouncementsByTypeRequest, GetAnnouncementsRequest,
+};
 use aruna_rust_api::api::storage::{
     models::v2::AnnouncementType,
     services::v2::{Announcement as ProtoAnnouncement, SetAnnouncementsRequest},
@@ -374,13 +376,115 @@ async fn get_announcements() {
 #[tokio::test]
 async fn get_announcements_by_type() {
     // Init StorageStatusService
-    let service = init_storage_status_service().await;
+    let info_service = init_storage_status_service().await;
 
-    //TODO: Insert announcements
+    // Insert announcements
+    let mut types = vec![
+        "ANNOUNCEMENT_TYPE_ORGA".to_string(),
+        "ANNOUNCEMENT_TYPE_ORGA".to_string(),
+        "ANNOUNCEMENT_TYPE_ORGA".to_string(),
+        "ANNOUNCEMENT_TYPE_RELEASE".to_string(),
+        "ANNOUNCEMENT_TYPE_RELEASE".to_string(),
+        "ANNOUNCEMENT_TYPE_RELEASE".to_string(),
+    ];
 
-    //TODO: Get announcements by type
+    let mut announcements = vec![];
+    while let Some(a_type) = test_utils::choose_and_remove(&mut types) {
+        announcements.push(ProtoAnnouncement {
+            announcement_id: "".to_string(),
+            announcement_type: AnnouncementType::from_str_name(&a_type).unwrap() as i32,
+            title: format!(
+                "gRPC get_announcements_by_type({})",
+                announcements.len() + 1
+            ),
+            teaser: "Some teaser".to_string(),
+            image_url: "".to_string(),
+            content: "".to_string(),
+            created_by: "The Aruna Team".to_string(),
+            created_at: None,
+            modified_by: "The Aruna Team".to_string(),
+            modified_at: None,
+        })
+    }
+    let grpc_request = add_token(
+        Request::new(SetAnnouncementsRequest {
+            announcements_upsert: announcements,
+            announcements_delete: vec![],
+        }),
+        test_utils::ADMIN_OIDC_TOKEN,
+    );
+    let inserted_announcements = info_service
+        .set_announcements(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .announcements;
+
+    // Get announcements by type
+    let mut type_request = GetAnnouncementsByTypeRequest {
+        announcement_type: AnnouncementType::Orga as i32,
+        page: None,
+    };
+    let grpc_request = Request::new(type_request.clone());
+    let all_type_announcements = info_service
+        .get_announcements_by_type(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .announcements;
+
+    assert!(all_type_announcements.len() >= 3);
+    for a in &inserted_announcements {
+        assert!(all_type_announcements.contains(a))
+    }
+    for a in all_type_announcements {
+        assert_eq!(a.announcement_type(), AnnouncementType::Orga)
+    }
 
     //TODO: Get announcements by type paginated
+    let mut page = PageRequest {
+        start_after: "".to_string(),
+        page_size: 2,
+    };
+    type_request.announcement_type = AnnouncementType::Release as i32;
+    type_request.page = Some(page.clone());
 
-    todo!();
+    let grpc_request = Request::new(type_request.clone());
+    let type_announcements_page_01 = info_service
+        .get_announcements_by_type(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .announcements;
+
+    assert_eq!(type_announcements_page_01.len(), 2);
+    for a in &inserted_announcements {
+        assert!(type_announcements_page_01.contains(a))
+    }
+    for a in &type_announcements_page_01 {
+        assert_eq!(a.announcement_type(), AnnouncementType::Release)
+    }
+
+    page.start_after = type_announcements_page_01
+        .last()
+        .unwrap()
+        .announcement_id
+        .clone();
+    type_request.page = Some(page.clone());
+
+    let grpc_request = Request::new(type_request.clone());
+    let type_announcements_page_02 = info_service
+        .get_announcements_by_type(grpc_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .announcements;
+
+    assert!(type_announcements_page_02.len() >= 1);
+    for a in &inserted_announcements {
+        assert!(type_announcements_page_02.contains(a))
+    }
+    for a in type_announcements_page_02 {
+        assert_eq!(a.announcement_type(), AnnouncementType::Release)
+    }
 }
