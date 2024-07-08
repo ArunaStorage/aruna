@@ -2,6 +2,7 @@ mod authorization;
 mod collection;
 mod dataset;
 mod endpoint;
+mod info;
 mod licenses;
 mod project;
 mod search;

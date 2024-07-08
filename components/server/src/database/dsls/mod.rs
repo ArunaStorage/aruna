@@ -2,6 +2,7 @@ pub mod endpoint_dsl;
 pub mod external_user_id_dsl;
 pub mod hook_dsl;
 pub mod identity_provider_dsl;
+pub mod info_dsl;
 pub mod internal_relation_dsl;
 pub mod license_dsl;
 pub mod notification_dsl;
