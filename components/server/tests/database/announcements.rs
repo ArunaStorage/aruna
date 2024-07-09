@@ -132,11 +132,10 @@ async fn get_test() {
         page_01_positions
             .iter()
             .zip(&page_02_positions)
-            .filter(|&(a, b)| b > a)
+            .filter(|&(a, b)| a < b)
             .count(),
         2
     );
-    //assert_eq!(page_02.as_slice(), &all[2..4]);
 
     // Get announcements filtered by id
     let ids = announcements
@@ -186,11 +185,11 @@ async fn get_test() {
     assert!(
         all_typed
             .iter()
-            .position(|a| a == get_typed_page_02.first().unwrap())
+            .position(|a| a == get_typed_page_01.first().unwrap())
             .unwrap()
-            > all_typed
+            < all_typed
                 .iter()
-                .position(|a| a == get_typed_page_01.first().unwrap())
+                .position(|a| a == get_typed_page_02.first().unwrap())
                 .unwrap()
     );
 }
