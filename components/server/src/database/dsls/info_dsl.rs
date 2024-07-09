@@ -91,7 +91,7 @@ impl Announcement {
               image_url = EXCLUDED.image_url,
               content = EXCLUDED.content,
               modified_by = $9,
-              modified_at = $10
+              modified_at = (NOW() at time zone 'utc')
             RETURNING *;";
 
         let prepared = client.prepare(query).await?;
