@@ -25,7 +25,7 @@ cel-parser = "0.6.0"
 chrono = "0.4.34"
 dashmap = {version = "5.5.3", features = ["serde"]}
 deadpool-postgres = "0.13.0"
-diesel-ulid = "0.3.1"
+diesel-ulid = "0.3.2"
 dotenvy = "0.15.7"
 futures = "0.3.30"
 hex = "0.4.3"
