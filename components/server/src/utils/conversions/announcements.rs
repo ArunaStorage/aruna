@@ -1,7 +1,9 @@
-use crate::database::dsls::info_dsl::Announcement as DbAnnouncement;
-use anyhow::{bail, Result};
+use crate::{
+    database::dsls::info_dsl::Announcement as DbAnnouncement, utils::grpc_utils::from_prost_time,
+};
+use anyhow::{anyhow, bail, Result};
 use aruna_rust_api::api::storage::{models::v2::AnnouncementType, services::v2::Announcement};
-use chrono::{DateTime, Utc};
+use chrono::DateTime;
 use diesel_ulid::DieselUlid;
 use std::str::FromStr;
 
@@ -48,37 +50,35 @@ impl TryFrom<Announcement> for DbAnnouncement {
     type Error = anyhow::Error;
 
     fn try_from(value: Announcement) -> Result<Self, Self::Error> {
-        let current_timestamp = Utc::now().naive_utc();
-        Ok(DbAnnouncement {
-            id: if value.announcement_id.is_empty() {
-                DieselUlid::generate()
+        // Evaluate timestamps dependending on presence of an id or created_at timestamp
+        // Pagination would break at specific cases if the id and creation timestamp are decoupled
+        let id = if value.announcement_id.is_empty() {
+            if let Some(created_at) = from_prost_time(value.created_at.clone()) {
+                DieselUlid::from_timestamp_millis(
+                    created_at.and_utc().timestamp_millis().try_into()?,
+                )
+                .map_err(|_| anyhow!("Invalid ULID timestamp provided"))?
             } else {
-                DieselUlid::from_str(&value.announcement_id)?
-            },
+                DieselUlid::generate()
+            }
+        } else {
+            DieselUlid::from_str(&value.announcement_id)?
+        };
+        let current_timestamp = DateTime::from_timestamp_millis(id.timestamp() as i64)
+            .map(|e| e.naive_utc())
+            .unwrap_or_default();
+
+        Ok(DbAnnouncement {
+            id,
             announcement_type: announcement_type_to_string(value.announcement_type())?,
             title: value.title,
             teaser: value.teaser,
             image_url: value.image_url,
             content: value.content,
             created_by: value.created_by, // Will be replaced afterward if empty
-            created_at: if let Some(timestamp) = value.created_at {
-                DateTime::from_timestamp(timestamp.seconds, timestamp.nanos.try_into()?)
-                    .map(|e| e.naive_utc())
-                    .unwrap_or_default()
-            } else {
-                current_timestamp
-            },
+            created_at: current_timestamp,
             modified_by: value.modified_by, // Will be replaced afterward if empty
             modified_at: current_timestamp,
-            /*
-            if let Some(timestamp) = value.modified_at {
-                DateTime::from_timestamp(timestamp.seconds, timestamp.nanos.try_into()?)
-                    .map(|e| e.naive_utc())
-                    .unwrap_or_default()
-            } else {
-                current_timestamp
-            },
-            */
         })
     }
 }
