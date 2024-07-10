@@ -26,7 +26,7 @@ async fn get_announcement() {
     let original = Announcement {
         id: DieselUlid::generate(),
         announcement_type: "RELEASE".to_string(),
-        title: "Announcement Title".to_string(),
+        title: "middlelayer get_announcement()".to_string(),
         teaser: "Announcement Teaser".to_string(),
         image_url: "https://announcement_image_url/dummy.webp".to_string(),
         content: "Announcement Content".to_string(),
@@ -58,14 +58,15 @@ async fn get_announcements() {
     let client = db_handler.database.get_client().await.unwrap();
 
     // Create some announcements
-    let ann_futures = (0..5)
-        .map(|_| async {
+    let mut announcements = vec![];
+    for idx in 0..5 {
+        announcements.push(
             Announcement {
                 id: DieselUlid::generate(),
                 announcement_type: "ORGA".to_string(),
-                title: "Announcement Title".to_string(),
+                title: format!("middlelayer get_announcements({})", idx),
                 teaser: "Announcement Teaser".to_string(),
-                image_url: "https://announcement_image_url/{}.webp".to_string(),
+                image_url: "https://announcement_image_url/some_dummy.webp".to_string(),
                 content: "Announcement Content {}".to_string(),
                 created_by: "The Aruna Team".to_string(),
                 created_at: chrono::Utc::now().naive_local(),
@@ -74,10 +75,10 @@ async fn get_announcements() {
             }
             .upsert(&client)
             .await
-            .unwrap()
-        })
-        .collect_vec();
-    let announcements = futures::future::join_all(ann_futures).await;
+            .unwrap(),
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10))
+    }
 
     let mut request = GetAnnouncementsRequest {
         announcement_ids: vec![],
@@ -132,7 +133,7 @@ async fn get_announcements() {
         page_01_positions
             .iter()
             .zip(&page_02_positions)
-            .filter(|&(a, b)| b > a)
+            .filter(|&(a, b)| a < b)
             .count(),
         2
     );
@@ -157,7 +158,10 @@ async fn get_announcements_by_type() {
             Announcement {
                 id: DieselUlid::generate(),
                 announcement_type: a_type.to_string(),
-                title: format!("Announcement Title {}", announcements.len() + 1),
+                title: format!(
+                    "middlelayer get_announcements_by_type({})",
+                    announcements.len() + 1
+                ),
                 teaser: format!("Announcement Teaser {}", announcements.len() + 1),
                 image_url: format!(
                     "https://announcement_image_url/{}.webp",
@@ -235,7 +239,7 @@ async fn set_announcements() {
         ProtoAnnouncement {
             announcement_id: "".to_string(),
             announcement_type: AnnouncementType::Release as i32,
-            title: "DbHandler set_announcements dummy 1".to_string(),
+            title: "middlelayer set_announcements(1)".to_string(),
             teaser: "Some teaser".to_string(),
             image_url: "".to_string(),
             content: "Some content".to_string(),
@@ -247,7 +251,7 @@ async fn set_announcements() {
         ProtoAnnouncement {
             announcement_id: "".to_string(),
             announcement_type: AnnouncementType::Blog as i32,
-            title: "DbHandler set_announcements dummy 2".to_string(),
+            title: "middlelayer set_announcements(2)".to_string(),
             teaser: "Some teaser".to_string(),
             image_url: "".to_string(),
             content: "Some content".to_string(),
@@ -259,7 +263,7 @@ async fn set_announcements() {
         ProtoAnnouncement {
             announcement_id: "".to_string(),
             announcement_type: AnnouncementType::Maintenance as i32,
-            title: "DbHandler set_announcements dummy 3".to_string(),
+            title: "middlelayer set_announcements(3)".to_string(),
             teaser: "Some teaser".to_string(),
             image_url: "".to_string(),
             content: "Some content".to_string(),

@@ -64,7 +64,7 @@ impl CrudDb for Announcement {
     }
 
     async fn all(client: &Client) -> anyhow::Result<Vec<Self>> {
-        let query = "SELECT * FROM announcements ORDER BY created_at;";
+        let query = "SELECT * FROM announcements ORDER BY created_at DESC;";
         let prepared = client.prepare(query).await?;
         let rows = client.query(&prepared, &[]).await?;
         Ok(rows.iter().map(Announcement::from_row).collect::<Vec<_>>())
@@ -91,7 +91,7 @@ impl Announcement {
               image_url = EXCLUDED.image_url,
               content = EXCLUDED.content,
               modified_by = $9,
-              modified_at = $10
+              modified_at = (NOW() at time zone 'utc')
             RETURNING *;";
 
         let prepared = client.prepare(query).await?;
@@ -128,13 +128,16 @@ impl Announcement {
         let rows = if let Some(page) = page {
             if let Ok(start_after) = DieselUlid::from_str(&page.start_after) {
                 inserts.push(&start_after);
-                query.push_str(&format!("WHERE id > ${} ", inserts.len()));
+                query.push_str(&format!("WHERE id < ${} ", inserts.len()));
 
                 if page.page_size > 0 {
                     inserts.push(&page.page_size);
-                    query.push_str(&format!(" ORDER BY created_at LIMIT ${};", inserts.len()));
+                    query.push_str(&format!(
+                        " ORDER BY created_at DESC LIMIT ${};",
+                        inserts.len()
+                    ));
                 } else {
-                    query.push_str(" ORDER BY created_at;");
+                    query.push_str(" ORDER BY created_at DESC;");
                 }
 
                 let prepared = client.prepare(&query).await?;
@@ -142,16 +145,19 @@ impl Announcement {
             } else {
                 if page.page_size > 0 {
                     inserts.push(&page.page_size);
-                    query.push_str(&format!(" ORDER BY created_at LIMIT ${};", inserts.len()));
+                    query.push_str(&format!(
+                        " ORDER BY created_at DESC LIMIT ${};",
+                        inserts.len()
+                    ));
                 } else {
-                    query.push_str(" ORDER BY created_at;");
+                    query.push_str(" ORDER BY created_at DESC;");
                 }
 
                 let prepared = client.prepare(&query).await?;
                 client.query(&prepared, &inserts).await?
             }
         } else {
-            query.push_str(" ORDER BY created_at;");
+            query.push_str(" ORDER BY created_at DESC;");
             let prepared = client.prepare(&query).await?;
             client.query(&prepared, &inserts).await?
         };
@@ -181,13 +187,16 @@ impl Announcement {
         let rows = if let Some(page) = page {
             if let Ok(start_after) = DieselUlid::from_str(&page.start_after) {
                 inserts.push(&start_after);
-                query.push_str(&format!(" AND id > ${}", inserts.len()));
+                query.push_str(&format!(" AND id < ${}", inserts.len()));
 
                 if page.page_size > 0 {
                     inserts.push(&page.page_size);
-                    query.push_str(&format!(" ORDER BY created_at LIMIT ${};", inserts.len()));
+                    query.push_str(&format!(
+                        " ORDER BY created_at DESC LIMIT ${};",
+                        inserts.len()
+                    ));
                 } else {
-                    query.push_str(" ORDER BY created_at;");
+                    query.push_str(" ORDER BY created_at DESC;");
                 }
 
                 let prepared = client.prepare(&query).await?;
@@ -195,16 +204,19 @@ impl Announcement {
             } else {
                 if page.page_size > 0 {
                     inserts.push(&page.page_size);
-                    query.push_str(&format!(" ORDER BY created_at LIMIT ${};", inserts.len()));
+                    query.push_str(&format!(
+                        " ORDER BY created_at DESC LIMIT ${};",
+                        inserts.len()
+                    ));
                 } else {
-                    query.push_str(" ORDER BY created_at;");
+                    query.push_str(" ORDER BY created_at DESC;");
                 }
 
                 let prepared = client.prepare(&query).await?;
                 client.query(&prepared, &inserts).await?
             }
         } else {
-            query.push_str(" ORDER BY created_at;");
+            query.push_str(" ORDER BY created_at DESC;");
             let prepared = client.prepare(&query).await?;
             client.query(&prepared, &inserts).await?
         };
@@ -241,13 +253,16 @@ impl Announcement {
         let rows = if let Some(page) = page {
             if let Ok(start_after) = DieselUlid::from_str(&page.start_after) {
                 params.push(&start_after);
-                query.push_str(&format!(" AND id > ${}", params.len()));
+                query.push_str(&format!(" AND id < ${}", params.len()));
 
                 if page.page_size > 0 {
                     params.push(&page.page_size);
-                    query.push_str(&format!(" ORDER BY created_at LIMIT ${};", params.len()));
+                    query.push_str(&format!(
+                        " ORDER BY created_at DESC LIMIT ${};",
+                        params.len()
+                    ));
                 } else {
-                    query.push_str(" ORDER BY created_at;");
+                    query.push_str(" ORDER BY created_at DESC;");
                 }
 
                 let prepared = client.prepare(&query).await?;
@@ -255,16 +270,19 @@ impl Announcement {
             } else {
                 if page.page_size > 0 {
                     params.push(&page.page_size);
-                    query.push_str(&format!(" ORDER BY created_at LIMIT ${};", params.len()));
+                    query.push_str(&format!(
+                        " ORDER BY created_at DESC LIMIT ${};",
+                        params.len()
+                    ));
                 } else {
-                    query.push_str(" ORDER BY created_at;");
+                    query.push_str(" ORDER BY created_at DESC;");
                 }
 
                 let prepared = client.prepare(&query).await?;
                 client.query(&prepared, &params).await?
             }
         } else {
-            query.push_str(" ORDER BY created_at;");
+            query.push_str(" ORDER BY created_at DESC;");
             let prepared = client.prepare(&query).await?;
             client.query(&prepared, &params).await?
         };

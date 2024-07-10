@@ -7,9 +7,12 @@ use aruna_rust_api::api::storage::{
     models::v2::AnnouncementType,
     services::v2::{Announcement as ProtoAnnouncement, SetAnnouncementsRequest},
 };
+use chrono::{DateTime, Utc};
 use diesel_ulid::DieselUlid;
-use itertools::Itertools;
+use itertools::{enumerate, Itertools};
 use tonic::Request;
+
+use prost_wkt_types::Timestamp;
 
 use crate::common::test_utils::ADMIN_OIDC_TOKEN;
 use crate::common::{
@@ -200,54 +203,40 @@ async fn get_announcements() {
     let info_service = init_storage_status_service().await;
 
     // Insert announcements
+    let announcement_types = vec![
+        "ANNOUNCEMENT_TYPE_RELEASE",
+        "ANNOUNCEMENT_TYPE_BLOG",
+        "ANNOUNCEMENT_TYPE_UPDATE",
+        "ANNOUNCEMENT_TYPE_BLOG",
+    ];
     let set_request = SetAnnouncementsRequest {
-        announcements_upsert: vec![
-            ProtoAnnouncement {
+        announcements_upsert: enumerate(announcement_types)
+            .map(|(idx, a_type)| ProtoAnnouncement {
                 announcement_id: "".to_string(),
-                announcement_type: AnnouncementType::Release as i32,
-                title: "gRPC get_announcements(1)".to_string(),
+                announcement_type: AnnouncementType::from_str_name(a_type).unwrap() as i32,
+                title: format!("gRPC get_announcements({idx})"),
                 teaser: "Some teaser".to_string(),
                 image_url: "".to_string(),
                 content: "".to_string(),
                 created_by: "The Aruna Team".to_string(),
-                created_at: None,
+                created_at: Some(Timestamp::from(
+                    DateTime::from_timestamp_millis(Utc::now().timestamp_millis() + idx as i64)
+                        .unwrap(),
+                )),
                 modified_by: "The Aruna Team".to_string(),
                 modified_at: None,
-            },
-            ProtoAnnouncement {
-                announcement_id: "".to_string(),
-                announcement_type: AnnouncementType::Blog as i32,
-                title: "gRPC get_announcements(2)".to_string(),
-                teaser: "Some teaser".to_string(),
-                image_url: "".to_string(),
-                content: "".to_string(),
-                created_by: "The Aruna Team".to_string(),
-                created_at: None,
-                modified_by: "The Aruna Team".to_string(),
-                modified_at: None,
-            },
-            ProtoAnnouncement {
-                announcement_id: "".to_string(),
-                announcement_type: AnnouncementType::Blog as i32,
-                title: "gRPC get_announcements(3)".to_string(),
-                teaser: "Some teaser".to_string(),
-                image_url: "".to_string(),
-                content: "".to_string(),
-                created_by: "The Aruna Team".to_string(),
-                created_at: None,
-                modified_by: "The Aruna Team".to_string(),
-                modified_at: None,
-            },
-        ],
+            })
+            .collect_vec(),
         announcements_delete: vec![],
     };
     let grpc_request = add_token(Request::new(set_request), test_utils::ADMIN_OIDC_TOKEN);
-    let inserted_announcements = info_service
+    let mut inserted_announcements = info_service
         .set_announcements(grpc_request)
         .await
         .unwrap()
         .into_inner()
         .announcements;
+    inserted_announcements.reverse(); // Reverse to sort descending for created_at
 
     // Get all announcements
     let mut get_request = GetAnnouncementsRequest {
@@ -269,7 +258,7 @@ async fn get_announcements() {
     // Get all announcements paginated
     let mut page = PageRequest {
         start_after: "".to_string(),
-        page_size: 1,
+        page_size: 2,
     };
     get_request.page = Some(page.clone());
 
@@ -280,12 +269,13 @@ async fn get_announcements() {
         .unwrap()
         .into_inner()
         .announcements;
+    let all_page_01_positions = all_page_01
+        .iter()
+        .map(|page_a| all_announcements.iter().position(|a| page_a == a).unwrap())
+        .collect_vec();
 
-    assert_eq!(all_page_01.len(), 1);
-    assert_eq!(
-        all_announcements.first().unwrap(),
-        all_page_01.first().unwrap()
-    );
+    assert_eq!(all_page_01.len(), 2);
+    assert!(all_page_01.iter().all(|a| all_announcements.contains(a)));
 
     page.start_after = all_page_01.first().unwrap().announcement_id.clone();
     get_request.page = Some(page.clone());
@@ -297,11 +287,20 @@ async fn get_announcements() {
         .unwrap()
         .into_inner()
         .announcements;
+    let all_page_02_positions = all_page_02
+        .iter()
+        .map(|page_a| all_announcements.iter().position(|a| page_a == a).unwrap())
+        .collect_vec();
 
-    assert_eq!(all_page_02.len(), 1);
+    assert_eq!(all_page_02.len(), 2);
+    assert!(all_page_02.iter().all(|a| all_announcements.contains(a)));
     assert_eq!(
-        all_announcements.get(1).unwrap(),
-        all_page_02.first().unwrap()
+        all_page_01_positions
+            .iter()
+            .zip(&all_page_02_positions)
+            .filter(|&(a, b)| a < b)
+            .count(),
+        2
     );
 
     // Get announcements by id
@@ -319,23 +318,14 @@ async fn get_announcements() {
         .announcements;
 
     assert_eq!(id_announcements.len(), 2);
-    assert_eq!(
-        inserted_announcements.first().unwrap(),
-        id_announcements.first().unwrap()
-    );
-    assert_eq!(
-        inserted_announcements.get(1).unwrap(),
-        id_announcements.get(1).unwrap()
-    );
+    assert_eq!(id_announcements.as_slice(), &inserted_announcements[..2]);
 
-    //TODO: Get announcements by id paginated
-    get_request.announcement_ids = inserted_announcements[1..3]
+    // Get announcements by id paginated
+    get_request.announcement_ids = inserted_announcements
         .iter()
         .map(|a| a.announcement_id.clone())
         .collect_vec();
-    get_request.page = None;
     page.start_after = "".to_string();
-    page.page_size = 1;
     get_request.page = Some(page.clone());
     let grpc_request = Request::new(get_request.clone());
     let id_announcements_page_01 = info_service
@@ -344,19 +334,21 @@ async fn get_announcements() {
         .unwrap()
         .into_inner()
         .announcements;
+    let id_page_01_positions = id_announcements_page_01
+        .iter()
+        .map(|page_a| all_announcements.iter().position(|a| page_a == a).unwrap())
+        .collect_vec();
 
-    assert_eq!(id_announcements_page_01.len(), 1);
-    assert_eq!(
-        inserted_announcements.get(1).unwrap(),
-        id_announcements_page_01.first().unwrap()
-    );
+    assert_eq!(id_announcements_page_01.len(), 2);
+    assert!(id_announcements_page_01
+        .iter()
+        .all(|a| inserted_announcements.contains(a)));
 
     page.start_after = id_announcements_page_01
         .last()
         .unwrap()
         .announcement_id
         .to_string();
-
     get_request.page = Some(page.clone());
     let grpc_request = Request::new(get_request.clone());
     let id_announcements_page_02 = info_service
@@ -365,11 +357,22 @@ async fn get_announcements() {
         .unwrap()
         .into_inner()
         .announcements;
+    let id_page_02_positions = id_announcements_page_02
+        .iter()
+        .map(|page_a| all_announcements.iter().position(|a| page_a == a).unwrap())
+        .collect_vec();
 
-    assert_eq!(id_announcements_page_02.len(), 1);
+    assert_eq!(id_announcements_page_02.len(), 2);
+    assert!(id_announcements_page_02
+        .iter()
+        .all(|a| inserted_announcements.contains(a)));
     assert_eq!(
-        inserted_announcements.get(2).unwrap(),
-        id_announcements_page_02.first().unwrap()
+        id_page_01_positions
+            .iter()
+            .zip(&id_page_02_positions)
+            .filter(|&(a, b)| a < b)
+            .count(),
+        2
     );
 }
 
