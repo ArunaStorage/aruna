@@ -1039,9 +1039,10 @@ impl GrpcQueryHandler {
                                         error!(error = ?e, msg = e.to_string());
                                     })?,
                                 );
-                                let endpoint_id = DieselUlid::from_str(ep_id).inspect_err(|&e| {
-                                    error!(error = ?e, msg = e.to_string());
-                                })?;
+                                let endpoint_id =
+                                    DieselUlid::from_str(ep_id).inspect_err(|&e| {
+                                        error!(error = ?e, msg = e.to_string());
+                                    })?;
 
                                 self.cache
                                     .sender
@@ -1090,9 +1091,10 @@ impl GrpcQueryHandler {
                                         error!(error = ?e, msg = e.to_string());
                                     })?,
                                 );
-                                let endpoint_id = DieselUlid::from_str(ep_id).inspect_err(|&e| {
-                                    error!(error = ?e, msg = e.to_string());
-                                })?;
+                                let endpoint_id =
+                                    DieselUlid::from_str(ep_id).inspect_err(|&e| {
+                                        error!(error = ?e, msg = e.to_string());
+                                    })?;
                                 self.cache
                                     .sender
                                     .send(ReplicationMessage {

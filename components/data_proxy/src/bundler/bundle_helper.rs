@@ -71,7 +71,8 @@ pub async fn get_bundle(
                             compression: location.file_format.is_compressed(),
                             encryption_key: location
                                 .file_format
-                                .get_encryption_key_as_enc_key().first()
+                                .get_encryption_key_as_enc_key()
+                                .first()
                                 .ok_or_else(|| {
                                     error!("No encryption key found");
                                     anyhow::anyhow!("No encryption key found")
