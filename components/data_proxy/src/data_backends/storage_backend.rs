@@ -85,6 +85,7 @@ pub trait StorageBackend: Debug + Send + Sync {
     /// # Arguments
     ///
     /// * `bucket` - Name of the bucket to create
+    #[allow(dead_code)]
     async fn create_bucket(&self, bucket: String) -> Result<()>;
 
     /// Delete a object from the storage system

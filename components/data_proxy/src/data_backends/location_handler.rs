@@ -87,6 +87,7 @@ pub enum SchemaVariant {
 pub struct CompiledVariant {
     pub bucket_arguments: Vec<Arguments>,
     pub key_arguments: Vec<Arguments>,
+    #[allow(dead_code)]
     pub schema: SchemaVariant,
 }
 

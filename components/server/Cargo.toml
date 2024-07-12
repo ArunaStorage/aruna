@@ -33,15 +33,15 @@ evmap-derive = "0.2.0"
 futures = {workspace = true}
 hex = {workspace = true}
 hmac = {workspace = true}
-itertools = "0.12.1"
+itertools = "0.13.0"
 jsonwebtoken = {workspace = true}
 lazy_static = {workspace = true}
 lettre = "0.11.7"
 log = "0.4.21"
-meilisearch-sdk = "0.26.0"
+meilisearch-sdk = "0.27.0"
 postgres-from-row = {workspace = true}
 postgres-types = {workspace = true}
-prost = "0.12.4"
+prost = "0.13.1"
 prost-wkt-types = {workspace = true}
 rand = {workspace = true}
 rand_core = "0.6.4"

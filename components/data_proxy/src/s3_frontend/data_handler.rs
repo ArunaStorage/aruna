@@ -185,25 +185,20 @@ impl DataHandler {
                 })?;
 
                 Ok::<(u64, u64, String, String, String), anyhow::Error>((
-                    disk_size_stream.try_recv().map_err(|e| {
+                    disk_size_stream.try_recv().inspect_err(|&e| {
                         error!(error = ?e, msg = e.to_string());
-                        e
                     })?,
-                    uncompressed_stream.try_recv().map_err(|e| {
+                    uncompressed_stream.try_recv().inspect_err(|&e| {
                         error!(error = ?e, msg = e.to_string());
-                        e
                     })?,
-                    sha_recv.try_recv().map_err(|e| {
+                    sha_recv.try_recv().inspect_err(|&e| {
                         error!(error = ?e, msg = e.to_string());
-                        e
                     })?,
-                    md5_recv.try_recv().map_err(|e| {
+                    md5_recv.try_recv().inspect_err(|&e| {
                         error!(error = ?e, msg = e.to_string());
-                        e
                     })?,
-                    final_sha_recv.try_recv().map_err(|e| {
+                    final_sha_recv.try_recv().inspect_err(|&e| {
                         error!(error = ?e, msg = e.to_string());
-                        e
                     })?,
                 ))
             }

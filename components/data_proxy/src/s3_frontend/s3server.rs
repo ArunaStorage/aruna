@@ -132,7 +132,7 @@ impl Service<hyper::Request<hyper::body::Incoming>> for WrappingService {
             }
         }
 
-        let mut service = self.0.clone();
+        let service = self.0.clone();
         let resp = service.call(req);
         let res = resp.map(move |r| {
             r.map(|mut r| {

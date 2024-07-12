@@ -26,9 +26,8 @@ impl GetId for ResourceId {
             ResourceId::ProjectId(a)
             | ResourceId::CollectionId(a)
             | ResourceId::DatasetId(a)
-            | ResourceId::ObjectId(a) => Ok(DieselUlid::from_str(a).map_err(|e| {
+            | ResourceId::ObjectId(a) => Ok(DieselUlid::from_str(a).inspect_err(|&e| {
                 error!(error = ?e, msg = e.to_string());
-                e
             })?),
         }
     }

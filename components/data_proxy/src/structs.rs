@@ -211,7 +211,7 @@ impl FileFormat {
                 let keys = packet
                     .clone()
                     .decrypt(&CONFIG.proxy.get_private_key_x25519().ok()?);
-                keys.map(|e| e.keys.get(0).map(|e| e.0)).flatten()
+                keys.and_then(|e| e.keys.first().map(|e| e.0))
             }
             _ => None,
         }
@@ -791,9 +791,8 @@ impl TryFrom<Project> for Object {
         let versions = version.into_option();
 
         Ok(Object {
-            id: DieselUlid::from_str(&value.id).map_err(|e| {
+            id: DieselUlid::from_str(&value.id).inspect_err(|&e| {
                 error!(error = ?e, msg = e.to_string());
-                e
             })?,
             name: value.name.to_string(),
             title: value.title.to_string(),
@@ -1667,6 +1666,7 @@ impl ResourceStates {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum ObjectsState {
     Regular {
         states: ResourceStates,

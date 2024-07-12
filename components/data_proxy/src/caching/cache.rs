@@ -634,9 +634,8 @@ impl Cache {
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn upsert_user(self: Arc<Cache>, user: GrpcUser) -> Result<()> {
-        let user_id = DieselUlid::from_str(&user.id).map_err(|e| {
+        let user_id = DieselUlid::from_str(&user.id).inspect_err(|&e| {
             error!(error = ?e, msg = e.to_string());
-            e
         })?;
         let proxy_user = User::try_from(user)?;
         let (to_update, to_delete) = if let Some(user) = self.users.get(&user_id) {

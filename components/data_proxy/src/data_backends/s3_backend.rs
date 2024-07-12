@@ -110,7 +110,7 @@ impl StorageBackend for S3Backend {
         self.check_and_create_bucket(location.bucket.clone())
             .await?;
 
-        let mapped = recv.map_ok(|element| Frame::data(element));
+        let mapped = recv.map_ok(Frame::data);
 
         let hyper_body = StreamBody::new(mapped);
         let bytestream = ByteStream::from(SdkBody::from_body_1_x(hyper_body));
@@ -222,7 +222,7 @@ impl StorageBackend for S3Backend {
         content_len: i64,
         part_number: i32,
     ) -> Result<PartETag> {
-        let mapped = recv.map_ok(|element| Frame::data(element));
+        let mapped = recv.map_ok(Frame::data);
         let hyper_body = StreamBody::new(mapped);
         let bytestream = ByteStream::from(SdkBody::from_body_1_x(hyper_body));
 

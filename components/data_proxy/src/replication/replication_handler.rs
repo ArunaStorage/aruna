@@ -324,9 +324,8 @@ impl ReplicationHandler {
                                 counter += 1;
                                 trace!(object_id, chunks, raw_size);
                                 // If ObjectInfo is sent, an init msg is collected in sync ...
-                                let id = DieselUlid::from_str(&object_id).map_err(|e| {
+                                let id = DieselUlid::from_str(&object_id).inspect_err(|&e| {
                                     tracing::error!(error = ?e, msg = e.to_string());
-                                    e
                                 })?;
                                 if let Some(entry) = data_map.get(&object_id) {
                                     let mut guard = entry.write().await;
@@ -373,9 +372,8 @@ impl ReplicationHandler {
                                     })?;
                                 // This is needed to keep backend task in sync
                                 if counter == 1 {
-                                    start_sender.send(true).await.map_err(|e| {
+                                    start_sender.send(true).await.inspect_err(|&e| {
                                         tracing::error!(error = ?e, msg = e.to_string());
-                                        e
                                     })?;
                                 }
                             }
@@ -833,9 +831,8 @@ impl ReplicationHandler {
                     // Message is send to sync
                     sync_sender
                         .send(RcvSync::Chunk(
-                            DieselUlid::from_str(&data.object_id).map_err(|e| {
+                            DieselUlid::from_str(&data.object_id).inspect_err(|&e| {
                                 tracing::error!(error = ?e, msg = e.to_string());
-                                e
                             })?,
                             data.chunk_idx,
                         ))
@@ -878,9 +875,8 @@ impl ReplicationHandler {
             e
         })?;
 
-        let footer = rx.try_recv().map_err(|e| {
+        let footer = rx.try_recv().inspect_err(|&e| {
             tracing::error!(error = ?e, msg = e.to_string());
-            e
         })?;
         if let Some(keys) = footer.encryption_keys {
             location.file_format = FileFormat::Pithos((

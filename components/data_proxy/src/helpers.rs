@@ -77,18 +77,16 @@ pub fn sign_url(
             "{}{}.{}/{}?partNumber={}&uploadId={}",
             protocol, bucket, endpoint_sanitized, key, part_number, upload_id
         ))
-        .map_err(|e| {
+        .inspect_err(|&e| {
             tracing::error!(error = ?e, msg = e.to_string());
-            e
         })?
     } else {
         Url::parse(&format!(
             "{}{}.{}/{}",
             protocol, bucket, endpoint_sanitized, key
         ))
-        .map_err(|e| {
+        .inspect_err(|&e| {
             tracing::error!(error = ?e, msg = e.to_string());
-            e
         })?
     };
 

@@ -7,7 +7,6 @@ use crate::database::dsls::rule_dsl::Rule;
 use crate::database::dsls::rule_dsl::RuleBinding;
 use crate::database::dsls::user_dsl::User;
 use crate::database::enums::ObjectStatus;
-use ahash::RandomState;
 use anyhow::Result;
 use aruna_rust_api::api::storage::models::v2::generic_resource;
 use aruna_rust_api::api::storage::models::v2::GenericResource;
@@ -136,16 +135,10 @@ impl ObjectWithRelations {
 }
 
 pub struct ProxyCacheIterator<'a> {
-    resource_iter: Box<
-        dyn Iterator<Item = RefMulti<'a, DieselUlid, ObjectWithRelations, RandomState>>
-            + 'a
-            + Send
-            + Sync,
-    >,
-    user_iter:
-        Box<(dyn Iterator<Item = RefMulti<'a, DieselUlid, User, RandomState>> + 'a + Send + Sync)>,
-    pub_key_iter:
-        Box<(dyn Iterator<Item = RefMulti<'a, i16, PubKeyEnum, RandomState>> + 'a + Send + Sync)>,
+    resource_iter:
+        Box<dyn Iterator<Item = RefMulti<'a, DieselUlid, ObjectWithRelations>> + 'a + Send + Sync>,
+    user_iter: Box<(dyn Iterator<Item = RefMulti<'a, DieselUlid, User>> + 'a + Send + Sync)>,
+    pub_key_iter: Box<(dyn Iterator<Item = RefMulti<'a, i16, PubKeyEnum>> + 'a + Send + Sync)>,
     endpoint_id: DieselUlid,
     cache: Arc<Cache>,
 }
@@ -153,17 +146,10 @@ pub struct ProxyCacheIterator<'a> {
 impl<'a> ProxyCacheIterator<'a> {
     pub fn new(
         resource_iter: Box<
-            (dyn Iterator<Item = RefMulti<'a, DieselUlid, ObjectWithRelations, RandomState>>
-                 + 'a
-                 + Send
-                 + Sync),
+            (dyn Iterator<Item = RefMulti<'a, DieselUlid, ObjectWithRelations>> + 'a + Send + Sync),
         >,
-        user_iter: Box<
-            (dyn Iterator<Item = RefMulti<'a, DieselUlid, User, RandomState>> + 'a + Send + Sync),
-        >,
-        pub_key_iter: Box<
-            (dyn Iterator<Item = RefMulti<'a, i16, PubKeyEnum, RandomState>> + 'a + Send + Sync),
-        >,
+        user_iter: Box<(dyn Iterator<Item = RefMulti<'a, DieselUlid, User>> + 'a + Send + Sync)>,
+        pub_key_iter: Box<(dyn Iterator<Item = RefMulti<'a, i16, PubKeyEnum>> + 'a + Send + Sync)>,
         endpoint_id: DieselUlid,
         cache: Arc<Cache>,
     ) -> ProxyCacheIterator<'a> {
