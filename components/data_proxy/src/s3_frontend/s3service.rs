@@ -84,6 +84,7 @@ impl ArunaS3Service {
 #[async_trait::async_trait]
 impl S3 for ArunaS3Service {
     #[tracing::instrument(err)]
+    #[allow(clippy::blocks_in_conditions)]
     async fn complete_multipart_upload(
         &self,
         req: S3Request<CompleteMultipartUploadInput>,
@@ -219,6 +220,7 @@ impl S3 for ArunaS3Service {
     }
 
     #[tracing::instrument(err)]
+    #[allow(clippy::blocks_in_conditions)]
     async fn create_bucket(
         &self,
         req: S3Request<CreateBucketInput>,
@@ -265,6 +267,7 @@ impl S3 for ArunaS3Service {
     }
 
     #[tracing::instrument(err)]
+    #[allow(clippy::blocks_in_conditions)]
     async fn create_multipart_upload(
         &self,
         req: S3Request<CreateMultipartUploadInput>,
@@ -439,6 +442,7 @@ impl S3 for ArunaS3Service {
     }
 
     #[tracing::instrument(err)]
+    #[allow(clippy::blocks_in_conditions)]
     async fn get_object(
         &self,
         req: S3Request<GetObjectInput>,
@@ -698,6 +702,7 @@ impl S3 for ArunaS3Service {
     }
 
     #[tracing::instrument(err)]
+    #[allow(clippy::blocks_in_conditions)]
     async fn head_object(
         &self,
         req: S3Request<HeadObjectInput>,
@@ -778,6 +783,7 @@ impl S3 for ArunaS3Service {
     }
 
     #[tracing::instrument(err)]
+    #[allow(clippy::blocks_in_conditions)]
     async fn list_objects_v2(
         &self,
         req: S3Request<ListObjectsV2Input>,
@@ -919,6 +925,7 @@ impl S3 for ArunaS3Service {
     }
 
     #[tracing::instrument(err)]
+    #[allow(clippy::blocks_in_conditions)]
     async fn put_bucket_cors(
         &self,
         req: S3Request<PutBucketCorsInput>,
@@ -976,6 +983,7 @@ impl S3 for ArunaS3Service {
     }
 
     #[tracing::instrument(err)]
+    #[allow(clippy::blocks_in_conditions)]
     async fn delete_bucket_cors(
         &self,
         req: S3Request<DeleteBucketCorsInput>,
@@ -1014,6 +1022,7 @@ impl S3 for ArunaS3Service {
     }
 
     #[tracing::instrument(err)]
+    #[allow(clippy::blocks_in_conditions)]
     async fn get_bucket_location(
         &self,
         _req: S3Request<GetBucketLocationInput>,
@@ -1025,6 +1034,7 @@ impl S3 for ArunaS3Service {
     }
 
     #[tracing::instrument(err)]
+    #[allow(clippy::blocks_in_conditions)]
     async fn get_bucket_cors(
         &self,
         req: S3Request<GetBucketCorsInput>,
@@ -1058,6 +1068,7 @@ impl S3 for ArunaS3Service {
     }
 
     #[tracing::instrument(err)]
+    #[allow(clippy::blocks_in_conditions)]
     async fn list_buckets(
         &self,
         req: S3Request<ListBucketsInput>,
@@ -1109,6 +1120,7 @@ impl S3 for ArunaS3Service {
     }
 
     #[tracing::instrument(err, skip(self, req))]
+    #[allow(clippy::blocks_in_conditions)]
     async fn put_object(
         &self,
         req: S3Request<PutObjectInput>,
@@ -1127,7 +1139,7 @@ impl S3 for ArunaS3Service {
         let CheckAccessResult {
             objects_state,
             user_state,
-            ..
+            headers,
         } = req
             .extensions
             .get::<CheckAccessResult>()
@@ -1173,7 +1185,7 @@ impl S3 for ArunaS3Service {
                     new_revision.synced = false;
                     new_revision.children = None;
                     new_revision.dynamic = false;
-                    (new_revision, false)
+                    (new_revision, true)
                 }
             }
             NewOrExistingObject::Missing(object) => (object, false),
@@ -1433,10 +1445,24 @@ impl S3 for ArunaS3Service {
             ..Default::default()
         };
         debug!(?output);
-        Ok(S3Response::new(output))
+
+        let mut resp = S3Response::new(output);
+        if let Some(headers) = headers {
+            for (k, v) in headers {
+                resp.headers.insert(
+                    HeaderName::from_bytes(k.as_bytes())
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header name"))?,
+                    HeaderValue::from_str(&v)
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header value"))?,
+                );
+            }
+        }
+
+        Ok(resp)
     }
 
     #[tracing::instrument(err)]
+    #[allow(clippy::blocks_in_conditions)]
     async fn upload_part(
         &self,
         req: S3Request<UploadPartInput>,
@@ -1457,7 +1483,11 @@ impl S3 for ArunaS3Service {
             }
         };
 
-        let CheckAccessResult { objects_state, .. } = req
+        let CheckAccessResult {
+            objects_state,
+            headers,
+            ..
+        } = req
             .extensions
             .get::<CheckAccessResult>()
             .cloned()
@@ -1562,6 +1592,19 @@ impl S3 for ArunaS3Service {
             ..Default::default()
         };
         debug!(?output);
-        Ok(S3Response::new(output))
+
+        let mut resp = S3Response::new(output);
+        if let Some(headers) = headers {
+            for (k, v) in headers {
+                resp.headers.insert(
+                    HeaderName::from_bytes(k.as_bytes())
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header name"))?,
+                    HeaderValue::from_str(&v)
+                        .map_err(|_| s3_error!(InternalError, "Unable to parse header value"))?,
+                );
+            }
+        }
+
+        Ok(resp)
     }
 }

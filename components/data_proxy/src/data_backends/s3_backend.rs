@@ -48,6 +48,7 @@ impl S3Backend {
             encryption,
             compression,
             dropbox_bucket,
+            force_path_style,
             ..
         } = &CONFIG.backend
         else {
@@ -65,10 +66,17 @@ impl S3Backend {
 
         #[allow(deprecated)]
         let config = aws_config::load_from_env().await;
-        let s3_config = aws_sdk_s3::config::Builder::from(&config)
-            .region(Region::new("RegionOne"))
-            .endpoint_url(&s3_endpoint)
-            .build();
+        let s3_config = match force_path_style {
+            Some(force_path_style) => aws_sdk_s3::config::Builder::from(&config)
+                .region(Region::new("RegionOne"))
+                .force_path_style(*force_path_style)
+                .endpoint_url(&s3_endpoint)
+                .build(),
+            _ => aws_sdk_s3::config::Builder::from(&config)
+                .region(Region::new("RegionOne"))
+                .endpoint_url(&s3_endpoint)
+                .build(),
+        };
 
         let s3_client = Client::from_conf(s3_config);
 

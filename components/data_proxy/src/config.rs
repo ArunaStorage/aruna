@@ -46,6 +46,7 @@ pub struct Proxy {
     pub admin_ids: Vec<DieselUlid>,
     pub aruna_url: Option<String>,
     pub grpc_server: String,
+    pub replication_interval: Option<u64>,
 }
 
 impl Proxy {
@@ -167,6 +168,7 @@ impl Persistence {
 pub struct Frontend {
     pub server: String,
     pub hostname: String,
+    pub cors_exception: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -179,6 +181,7 @@ pub enum Backend {
         encryption: bool,
         compression: bool,
         deduplication: bool,
+        force_path_style: Option<bool>,
         dropbox_bucket: Option<String>,
         backend_scheme: String,
         tmp: Option<String>,

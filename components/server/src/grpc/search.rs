@@ -201,8 +201,8 @@ impl SearchService for SearchServiceImpl {
                 .0
                  .0
                 .into_iter()
-                .filter(|kv| kv.key.contains("app.aruna-storage"))
-                .filter(|kv| kv.key.contains("private"))
+                .filter(|kv| !kv.key.contains("app.aruna-storage"))
+                .filter(|kv| !kv.key.contains("private"))
                 .collect::<Vec<_>>();
 
             object_plus.object.key_values = Json(KeyValues(stripped_labels));
@@ -349,8 +349,8 @@ impl SearchService for SearchServiceImpl {
                     .0
                      .0
                     .into_iter()
-                    .filter(|kv| kv.key.contains("app.aruna-storage"))
-                    .filter(|kv| kv.key.contains("private"))
+                    .filter(|kv| !kv.key.contains("app.aruna-storage"))
+                    .filter(|kv| !kv.key.contains("private"))
                     .collect::<Vec<_>>();
 
                 object_plus.object.key_values = Json(KeyValues(stripped_labels));

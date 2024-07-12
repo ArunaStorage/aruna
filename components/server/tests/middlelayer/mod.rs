@@ -1,3 +1,4 @@
+mod announcements;
 mod create;
 mod delete;
 mod endpoints;

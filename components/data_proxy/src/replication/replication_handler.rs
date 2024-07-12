@@ -6,7 +6,7 @@ use crate::{
 };
 use ahash::{HashSet, RandomState};
 use anyhow::{anyhow, Result};
-use aruna_rust_api::api::dataproxy::services::v2::{Empty, ObjectInfo, ReplicationStatus};
+use aruna_rust_api::api::dataproxy::services::v2::{Empty, ObjectInfo, ReplicationStatus, Skip};
 use aruna_rust_api::api::{
     dataproxy::services::v2::{
         error_message, pull_replication_request::Message,
@@ -161,17 +161,23 @@ impl ReplicationHandler {
             }
         });
 
+        let batch_processing_interval =
+            std::time::Duration::from_secs(CONFIG.proxy.replication_interval.unwrap_or(30));
+        trace!(?batch_processing_interval);
         // Process DashMap entries in batches
         let process: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
             loop {
                 // Process batches every 30 seconds
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await; // TODO: set to 30 secs
+                tokio::time::sleep(batch_processing_interval).await;
                 let batch = queue.clone();
 
-                let result = self.process(batch).await.map_err(|e| {
-                    tracing::error!(error = ?e, msg = e.to_string());
-                    e
-                })?;
+                let result = match self.process(batch).await {
+                    Ok(res) => res,
+                    Err(err) => {
+                        tracing::error!(error = ?err, msg = err.to_string());
+                        continue;
+                    }
+                };
                 // Remove processed entries from shared map
                 for (id, objects) in result {
                     queue.alter(&id, |_, directions| {
@@ -253,7 +259,7 @@ impl ReplicationHandler {
                 // This is the init message for object processing
                 let (start_sender, start_receiver) = async_channel::bounded(1);
                 // This channel is used to collect all processed objects and chunks
-                let (sync_sender, sync_receiver) = async_channel::bounded(1000);
+                let (sync_sender, sync_receiver) = async_channel::bounded(100);
                 // This channel is only used to transmit the sync result to compare
                 // received vs requested objects
                 let (finish_sender, finish_receiver) = async_channel::bounded(1);
@@ -273,7 +279,7 @@ impl ReplicationHandler {
                             tracing::error!(error = ?e, msg = e.to_string());
                             e
                         })?;
-                    let (object_sdx, object_rcv) = async_channel::bounded(1000);
+                    let (object_sdx, object_rcv) = async_channel::bounded(100);
                     object_handler_map.insert(
                         object.to_string(),
                         Arc::new(RwLock::new(ObjectState::new(
@@ -294,6 +300,21 @@ impl ReplicationHandler {
                     let mut counter = 0;
                     while let Some(response) = response_stream.message().await? {
                         match response.message {
+                            Some(ResponseMessage::Handshake(_)) => {
+                                continue;
+                            }
+                            Some(ResponseMessage::Skip(Skip { object_id })) => {
+                                // As long as servers are sending skip before any object info this should be safe
+                                data_map.remove(&object_id);
+                                if data_map.is_empty() {
+                                    // send finish, if no object was processed
+                                    sync_sender_clone.send(RcvSync::Finish).await.map_err(|e| {
+                                        tracing::error!(error = ?e, msg = e.to_string());
+                                        e
+                                    })?;
+                                    break;
+                                }
+                            }
                             Some(ResponseMessage::ObjectInfo(ObjectInfo {
                                 object_id,
                                 chunks,
@@ -431,7 +452,8 @@ impl ReplicationHandler {
                             }
                         }
                     }
-                    Ok::<(), anyhow::Error>(())
+                    // Ok::<(), anyhow::Error>(())
+                    Err(anyhow!("Stream closed without FinishMessage"))
                 });
 
                 // Sync handler
@@ -486,10 +508,8 @@ impl ReplicationHandler {
                                 let (object, location) =
                                     cache.get_resource_cloned(&object_id, false).await?;
                                 trace!(?object);
-                                // If no location is found, a new one is created
+
                                 let mut location = if location.is_some() {
-                                    // TODO:
-                                    // - Skip if object was already synced
                                     finished_clone.insert(Direction::Pull(object_id), true);
                                     object_handler_map.remove(id);
                                     continue;
@@ -712,7 +732,7 @@ impl ReplicationHandler {
         tokio::spawn(
             async move {
                 while let Ok(data) = data_receiver.recv().await {
-                    let trace_message = format!(
+                    let _trace_message = format!(
                         "Received chunk with idx {:?} for object with id {:?} and size {}, expected {}, max chunks {}",
                         data.chunk_idx,
                         data.object_id,
@@ -720,7 +740,7 @@ impl ReplicationHandler {
                         expected,
                         max_chunks,
                     );
-                    trace!(trace_message);
+                    //trace!(trace_message);
                     let chunk = bytes::Bytes::from_iter(data.data.into_iter());
                     // Check if chunk is missing
                     let idx = data.chunk_idx;
@@ -833,7 +853,6 @@ impl ReplicationHandler {
             .instrument(info_span!("replication chunk receiver")),
         );
 
-        trace!("Starting ArunaStreamReadWriter task");
         let location_clone = location.clone();
         pin!(data_stream);
         let mut awr = GenericStreamReadWriter::new_with_sink(

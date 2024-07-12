@@ -12,6 +12,7 @@ use grpc_api::{
     proxy_service::DataproxyReplicationServiceImpl, user_service::DataproxyUserServiceImpl,
 };
 use lazy_static::lazy_static;
+use regex::Regex;
 use std::panic;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::try_join;
@@ -42,6 +43,7 @@ use crate::data_backends::filesystem_backend::FSBackend;
 use crate::grpc_api::ingestion_service::DataproxyIngestionServiceImpl;
 use crate::replication::replication_handler::ReplicationHandler;
 use std::backtrace::Backtrace;
+use std::time::Duration;
 
 lazy_static! {
     static ref CONFIG: Config = {
@@ -51,6 +53,14 @@ lazy_static! {
             toml::from_str(std::fs::read_to_string(config_file).unwrap().as_str()).unwrap();
         config.validate().unwrap();
         config
+    };
+    static ref CORS_REGEX: Option<Regex> = {
+        if let Some(frontend) = &CONFIG.frontend {
+            if let Some(cors_regex) = &frontend.cors_exception {
+                return Some(Regex::new(cors_regex).expect("CORS exception regex invalid"));
+            }
+        }
+        None
     };
 }
 
@@ -151,6 +161,7 @@ async fn main() -> Result<()> {
     let grpc_server_handle = tokio::spawn(
         async move {
             let mut builder = Server::builder()
+                .http2_keepalive_interval(Some(Duration::from_secs(15)))
                 .add_service(DataproxyReplicationServiceServer::new(
                     DataproxyReplicationServiceImpl::new(
                         cache_clone.clone(),

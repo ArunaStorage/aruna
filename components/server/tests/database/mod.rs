@@ -1,3 +1,4 @@
+pub mod announcements;
 pub mod endpoints;
 pub mod hooks;
 pub mod licenses;

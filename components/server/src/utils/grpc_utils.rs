@@ -11,6 +11,7 @@ use aruna_rust_api::api::storage::models::v2::{
     ReplicationStatus, User,
 };
 use base64::{engine::general_purpose, Engine};
+use chrono::{DateTime, NaiveDateTime};
 use diesel_ulid::DieselUlid;
 use rusty_ulid::DecodingError;
 use std::str::FromStr;
@@ -20,6 +21,11 @@ use tonic::{Result, Status};
 use xxhash_rust::xxh3::xxh3_128;
 
 use super::conversions::relations::from_db_internal_relation;
+
+pub fn from_prost_time(prost_stamp: Option<prost_wkt_types::Timestamp>) -> Option<NaiveDateTime> {
+    DateTime::from_timestamp(prost_stamp.as_ref()?.seconds, prost_stamp?.nanos as u32)
+        .map(|e| e.naive_utc())
+}
 
 pub fn type_name_of<T>(_: T) -> &'static str {
     std::any::type_name::<T>()

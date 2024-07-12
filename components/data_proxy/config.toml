@@ -12,6 +12,7 @@ enable_ingest=true # Set to true to enable the ingest service
 admin_ids=["01H819G3ZMK5DC9Q5PD18N9SXB"] # Admins can access the ingest service
 grpc_server="0.0.0.0:50052"
 remote_synced=true
+replication_interval=30 # Interval between replication batches in seconds
 
 [persistence.postgres]
 host = "localhost"
@@ -25,6 +26,7 @@ schema = './src/database/schema.sql'
 [frontend]
 server="0.0.0.0:1337"
 hostname="localhost:1337"
+cors_exception="http://localhost:3000"
 
 [backend.s3]
 # s3 host
@@ -37,6 +39,7 @@ encryption=true
 compression=true
 deduplication=true # COMING SOON If deduplication is enabled, the backend will check if an object with the same hash already exists and return the existing object if it does
 tmp="tmp12345" # Will generate a random temp bucket_name if not set
+force_path_style=false # Set, if s3 backend is not supporting subdomains
 # dropbox_bucket="" # Set value to set a dropbox bucket
 # A scheme for the backend to use when deciding where to store objects
 # The following variables are available:
