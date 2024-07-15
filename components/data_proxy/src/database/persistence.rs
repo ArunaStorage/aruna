@@ -138,6 +138,7 @@ pub trait WithGenericBytes<
         }
     }
 
+    #[allow(dead_code)]
     async fn get_opt(id: &X, client: &Client) -> Result<Option<Self>>
     where
         Self: WithGenericBytes<X, T>,

@@ -21,7 +21,7 @@ impl CrudDb for RelationType {
         let query = "SELECT * FROM relation_types WHERE relation_name = $1";
         let prepared = client.prepare(query).await?;
         Ok(client
-            .query_opt(&prepared, &[&id])
+            .query_opt(&prepared, &[&&id])
             .await?
             .map(|e| RelationType::from_row(&e)))
     }

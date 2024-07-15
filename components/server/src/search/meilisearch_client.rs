@@ -11,7 +11,7 @@ use aruna_rust_api::api::storage::models::v2::{
 use diesel_ulid::DieselUlid;
 use log::debug;
 use meilisearch_sdk::{
-    indexes::Index, settings::PaginationSetting, task_info::TaskInfo, Client, Task,
+    client::Client, indexes::Index, settings::PaginationSetting, task_info::TaskInfo, tasks::Task,
 };
 use prost_wkt_types::Timestamp;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -451,7 +451,7 @@ impl MeilisearchClient {
         meilisearch_instance_api_key: Option<&str>,
     ) -> anyhow::Result<Self> {
         let meilisearch_client =
-            Client::new(meilisearch_instance_url, meilisearch_instance_api_key);
+            Client::new(meilisearch_instance_url, meilisearch_instance_api_key)?;
 
         Ok(MeilisearchClient {
             _server_url: meilisearch_instance_url.to_string(),
@@ -571,7 +571,7 @@ impl MeilisearchClient {
     }
 
     ///ToDo: Rust Doc
-    pub async fn list_index<T: 'static + DeserializeOwned>(
+    pub async fn list_index<T: 'static + DeserializeOwned + Send + Sync>(
         &self,
         index_name: &str,
     ) -> anyhow::Result<Vec<T>> {
@@ -592,7 +592,7 @@ impl MeilisearchClient {
     }
 
     ///ToDo: Rust Doc
-    pub async fn add_or_update_stuff<S: Serialize>(
+    pub async fn add_or_update_stuff<S: Serialize + Send + Sync>(
         &self,
         stuff: &[S], // Slice of ... whatever is in the index
         stuff_type: MeilisearchIndexes,
@@ -609,7 +609,7 @@ impl MeilisearchClient {
     }
 
     ///ToDo: Rust Doc
-    pub async fn delete_stuff<S: Serialize + Display + std::fmt::Debug>(
+    pub async fn delete_stuff<S: Serialize + Display + std::fmt::Debug + Send + Sync>(
         &self,
         stuff: &[S], // Slice of ... whatever is in the index
         stuff_type: MeilisearchIndexes,
@@ -626,7 +626,7 @@ impl MeilisearchClient {
     }
 
     ///ToDo: Rust Doc
-    pub async fn query_generic_stuff<T: 'static + DeserializeOwned>(
+    pub async fn query_generic_stuff<T: 'static + DeserializeOwned + Send + Sync>(
         &self,
         index_name: &str,
         query_phrase: &str,

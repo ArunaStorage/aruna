@@ -19,6 +19,9 @@ use aws_sdk_s3::{
     Client,
 };
 use diesel_ulid::DieselUlid;
+use futures::TryStreamExt;
+use http_body_util::StreamBody;
+use hyper::body::Frame;
 use rand::random;
 use tracing::error;
 
@@ -107,8 +110,10 @@ impl StorageBackend for S3Backend {
         self.check_and_create_bucket(location.bucket.clone())
             .await?;
 
-        let hyper_body = hyper::Body::wrap_stream(recv);
-        let bytestream = ByteStream::from(SdkBody::from_body_0_4(hyper_body));
+        let mapped = recv.map_ok(Frame::data);
+
+        let hyper_body = StreamBody::new(mapped);
+        let bytestream = ByteStream::from(SdkBody::from_body_1_x(hyper_body));
 
         match self
             .s3_client
@@ -217,8 +222,9 @@ impl StorageBackend for S3Backend {
         content_len: i64,
         part_number: i32,
     ) -> Result<PartETag> {
-        let hyper_body = hyper::Body::wrap_stream(recv);
-        let bytestream = ByteStream::from(SdkBody::from_body_0_4(hyper_body));
+        let mapped = recv.map_ok(Frame::data);
+        let hyper_body = StreamBody::new(mapped);
+        let bytestream = ByteStream::from(SdkBody::from_body_1_x(hyper_body));
 
         let upload = self
             .s3_client
@@ -321,7 +327,7 @@ impl StorageBackend for S3Backend {
     ) -> Result<ObjectLocation> {
         if temp {
             // No pithos for temp
-            let file_format = FileFormat::from_bools(false, self.encryption, false);
+            let file_format = FileFormat::from_bools(false, self.encryption, false)?;
             return Ok(ObjectLocation {
                 id: DieselUlid::generate(),
                 bucket: self.temp.clone(),
@@ -340,7 +346,7 @@ impl StorageBackend for S3Backend {
         let (bucket, key) = self.schema.to_names(names);
 
         let file_format =
-            FileFormat::from_bools(self.use_pithos, self.encryption, self.compression);
+            FileFormat::from_bools(self.use_pithos, self.encryption, self.compression)?;
 
         Ok(ObjectLocation {
             id: DieselUlid::generate(),

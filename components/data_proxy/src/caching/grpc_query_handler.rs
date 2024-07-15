@@ -833,13 +833,6 @@ impl GrpcQueryHandler {
         let (request_stream_sender, request_stream_receiver) = tokio::sync::mpsc::channel(1000);
         let mut req = Request::new(ReceiverStream::new(request_stream_receiver));
         Self::add_token_to_md(req.metadata_mut(), &token)?;
-        request_stream_sender
-            .send(init_request)
-            .await
-            .map_err(|e| {
-                error!(error = ?e, msg = e.to_string());
-                e
-            })?;
         let response_stream = dataproxy_service
             .clone()
             .pull_replication(req)
@@ -849,6 +842,13 @@ impl GrpcQueryHandler {
                 e
             })?
             .into_inner();
+        request_stream_sender
+            .send(init_request)
+            .await
+            .map_err(|e| {
+                error!(error = ?e, msg = e.to_string());
+                e
+            })?;
         Ok((request_stream_sender, response_stream))
     }
 
@@ -948,9 +948,8 @@ impl GrpcQueryHandler {
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Project => {
                             let object = self
                                 .get_project(
-                                    &DieselUlid::from_str(&r.resource_id).map_err(|e| {
+                                    &DieselUlid::from_str(&r.resource_id).inspect_err(|&e| {
                                         error!(error = ?e, msg = e.to_string());
-                                        e
                                     })?,
                                     r.checksum,
                                 )
@@ -961,9 +960,8 @@ impl GrpcQueryHandler {
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Collection => {
                             let object = self
                                 .get_collection(
-                                    &DieselUlid::from_str(&r.resource_id).map_err(|e| {
+                                    &DieselUlid::from_str(&r.resource_id).inspect_err(|&e| {
                                         error!(error = ?e, msg = e.to_string());
-                                        e
                                     })?,
                                     r.checksum,
                                 )
@@ -973,9 +971,8 @@ impl GrpcQueryHandler {
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Dataset => {
                             let object = self
                                 .get_dataset(
-                                    &DieselUlid::from_str(&r.resource_id).map_err(|e| {
+                                    &DieselUlid::from_str(&r.resource_id).inspect_err(|&e| {
                                         error!(error = ?e, msg = e.to_string());
-                                        e
                                     })?,
                                     r.checksum,
                                 )
@@ -985,9 +982,8 @@ impl GrpcQueryHandler {
                         aruna_rust_api::api::storage::models::v2::ResourceVariant::Object => {
                             let object = self
                                 .get_object(
-                                    &DieselUlid::from_str(&r.resource_id).map_err(|e| {
+                                    &DieselUlid::from_str(&r.resource_id).inspect_err(|&e| {
                                         error!(error = ?e, msg = e.to_string());
-                                        e
                                     })?,
                                     r.checksum,
                                 )
@@ -1039,15 +1035,14 @@ impl GrpcQueryHandler {
                         match full_sync_proxy {
                             Some(ep_id) => {
                                 let direction = Direction::Pull(
-                                    DieselUlid::from_str(&object.id).map_err(|e| {
+                                    DieselUlid::from_str(&object.id).inspect_err(|&e| {
                                         error!(error = ?e, msg = e.to_string());
-                                        e
                                     })?,
                                 );
-                                let endpoint_id = DieselUlid::from_str(ep_id).map_err(|e| {
-                                    error!(error = ?e, msg = e.to_string());
-                                    e
-                                })?;
+                                let endpoint_id =
+                                    DieselUlid::from_str(ep_id).inspect_err(|&e| {
+                                        error!(error = ?e, msg = e.to_string());
+                                    })?;
 
                                 self.cache
                                     .sender
@@ -1092,15 +1087,14 @@ impl GrpcQueryHandler {
                         match full_sync_proxy {
                             Some(ep_id) => {
                                 let direction = Direction::Pull(
-                                    DieselUlid::from_str(&object.id).map_err(|e| {
+                                    DieselUlid::from_str(&object.id).inspect_err(|&e| {
                                         error!(error = ?e, msg = e.to_string());
-                                        e
                                     })?,
                                 );
-                                let endpoint_id = DieselUlid::from_str(ep_id).map_err(|e| {
-                                    error!(error = ?e, msg = e.to_string());
-                                    e
-                                })?;
+                                let endpoint_id =
+                                    DieselUlid::from_str(ep_id).inspect_err(|&e| {
+                                        error!(error = ?e, msg = e.to_string());
+                                    })?;
                                 self.cache
                                     .sender
                                     .send(ReplicationMessage {

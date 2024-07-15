@@ -336,7 +336,7 @@ impl StorageBackend for FSBackend {
     ) -> Result<ObjectLocation> {
         if temp {
             // No pithos for temp
-            let file_format = FileFormat::from_bools(false, self.encryption, false);
+            let file_format = FileFormat::from_bools(false, self.encryption, false)?;
             return Ok(ObjectLocation {
                 id: DieselUlid::generate(),
                 bucket: self.temp.clone(),
@@ -355,7 +355,7 @@ impl StorageBackend for FSBackend {
         let (bucket, key) = self.schema.to_names(names);
 
         let file_format =
-            FileFormat::from_bools(self.use_pithos, self.encryption, self.compression);
+            FileFormat::from_bools(self.use_pithos, self.encryption, self.compression)?;
 
         Ok(ObjectLocation {
             id: DieselUlid::generate(),

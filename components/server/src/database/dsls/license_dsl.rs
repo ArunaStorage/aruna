@@ -35,7 +35,7 @@ impl CrudDb for License {
         let query = "SELECT * FROM licenses WHERE tag = $1";
         let prepared = client.prepare(query).await?;
         Ok(client
-            .query_opt(&prepared, &[&tag])
+            .query_opt(&prepared, &[&&tag])
             .await?
             .map(|e| License::from_row(&e)))
     }

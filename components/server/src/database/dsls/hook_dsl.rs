@@ -156,7 +156,7 @@ impl CrudDb for Hook {
         let query = "SELECT * FROM hooks WHERE id = $1";
         let prepared = client.prepare(query).await?;
         Ok(client
-            .query_opt(&prepared, &[&id])
+            .query_opt(&prepared, &[&&id])
             .await?
             .map(|e| Hook::from_row(&e)))
     }

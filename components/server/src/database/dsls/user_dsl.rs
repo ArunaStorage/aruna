@@ -103,7 +103,7 @@ impl CrudDb for User {
         let prepared = client.prepare(query).await?;
 
         Ok(client
-            .query_opt(&prepared, &[&id])
+            .query_opt(&prepared, &[&&id])
             .await?
             .map(|e| User::from_row(&e)))
     }

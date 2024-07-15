@@ -204,9 +204,8 @@ impl AuthHandler {
         } else {
             // No intent, no Dataproxy/Action check
             Ok((
-                DieselUlid::from_str(&claims.sub).map_err(|e| {
+                DieselUlid::from_str(&claims.sub).inspect_err(|&e| {
                     error!(error = ?e, msg = e.to_string());
-                    e
                 })?,
                 claims.tid,
                 pk,

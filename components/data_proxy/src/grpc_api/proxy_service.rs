@@ -191,9 +191,8 @@ impl DataproxyReplicationService for DataproxyReplicationServiceImpl {
                                                     }
                                                     Error::RetryObjectId(object_id) => {
                                                         let ulid =
-                                                    DieselUlid::from_str(&object_id).map_err(|e| {
+                                                    DieselUlid::from_str(&object_id).inspect_err(|&e| {
                                                         tracing::error!(error = ?e, msg = e.to_string());
-                                                        e
                                                     })?;
                                                         let (object, location) =
                                                             proxy_replication_service

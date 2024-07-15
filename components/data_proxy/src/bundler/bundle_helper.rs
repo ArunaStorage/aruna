@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
+use crate::s3_frontend::utils::debug_transformer::DebugTransformer;
 use crate::{data_backends::storage_backend::StorageBackend, structs::ObjectLocation};
+use ahash::HashSet;
 use futures_util::TryStreamExt;
 use pithos_lib::helpers::notifications::Message;
 use pithos_lib::{
@@ -14,24 +16,48 @@ use pithos_lib::{
 };
 use s3s::{dto::StreamingBlob, s3_error};
 use tokio::pin;
-use tracing::{debug, info_span, trace, Instrument};
+use tracing::{debug, error, info_span, trace, Instrument};
 
 #[tracing::instrument(level = "trace", skip(path_level_vec, backend))]
 pub async fn get_bundle(
-    path_level_vec: Vec<(String, Option<ObjectLocation>)>,
+    mut path_level_vec: Vec<(String, Option<ObjectLocation>)>,
     backend: Arc<Box<dyn StorageBackend>>,
 ) -> Option<StreamingBlob> {
+    let mut uniques = HashSet::default();
+
+    let mut final_levels = Vec::new();
+
+    for (name, loc) in path_level_vec.drain(..) {
+        if uniques.contains(&name) {
+            continue;
+        }
+        uniques.insert(name.clone());
+        let name = name.strip_prefix("/").unwrap_or(&name).to_string();
+        if loc.is_some() {
+            final_levels.push((name, loc.clone()));
+            continue;
+        }
+
+        if !name.ends_with("/") {
+            final_levels.push((format!("{}/", name.clone()), loc.clone()));
+            continue;
+        }
+    }
+
+    trace!(?final_levels);
     let (file_info_sender, file_info_receiver) = async_channel::bounded(10);
     let (data_tx, data_sx) = async_channel::bounded(10);
     let (final_sender, final_receiver) = async_channel::bounded(10);
     let final_sender_clone = final_sender.clone();
     let final_receiver_clone = final_receiver.clone();
 
+    trace!(?final_levels, "Starting bundle creation");
+
     tokio::spawn(
         async move {
-            let mut counter = 1; // Start with 1 for comparison with len()
-            let len = path_level_vec.len();
-            for (name, loc) in path_level_vec {
+            let mut counter = 0; // Start with 1 for comparison with len()
+            let len = final_levels.len();
+            for (name, loc) in final_levels {
                 trace!(object = name, ?loc);
                 let data_tx_clone = data_tx.clone();
                 let file_info_sender_clone = file_info_sender.clone();
@@ -43,7 +69,15 @@ pub async fn get_bundle(
                             compressed_size: location.disk_content_len as u64,
                             decompressed_size: location.raw_content_len as u64,
                             compression: location.file_format.is_compressed(),
-                            encryption_key: location.file_format.get_encryption_key_as_enc_key(),
+                            encryption_key: location
+                                .file_format
+                                .get_encryption_key_as_enc_key()
+                                .first()
+                                .ok_or_else(|| {
+                                    error!("No encryption key found");
+                                    anyhow::anyhow!("No encryption key found")
+                                })?
+                                .clone(),
                             ..Default::default()
                         }))
                         .await
@@ -93,6 +127,7 @@ pub async fn get_bundle(
                 data_clone,
                 AsyncSenderSink::new(final_sender_clone.clone()),
             )
+            .add_transformer(DebugTransformer::new("init"))
             .add_transformer(ChaCha20Dec::new().map_err(|e| {
                 tracing::error!(error = ?e, msg = e.to_string());
                 e
