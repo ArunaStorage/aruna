@@ -28,10 +28,16 @@ services:
              wget -O /gateway_config/config.yaml https://raw.githubusercontent.com/ArunaStorage/grpc-gateway/main/config/config-local.yaml &&
              wget -O /proxy_config_02/config.toml https://raw.githubusercontent.com/ArunaStorage/aruna/main/components/data_proxy/config.toml &&
              sed -i -e 's#./src/database/schema.sql#/run/schema.sql#g' /proxy_config_01/config.toml &&
+             sed -i -e '23s#proxy#proxy_01#' /proxy_config_01/config.toml &&
              sed -i -e 's#./src/database/schema.sql#/run/schema.sql#g' /proxy_config_02/config.toml &&
              sed -i -e 's#01H81W0ZMB54YEP5711Q2BK46V#01HG8P9FFW12TZ1YWX32A1KT28#g' /proxy_config_02/config.toml &&
              sed -i -e 's#1337#1338#g' /proxy_config_02/config.toml &&
-             sed -i -e 's#0.0.0.0:50052#0.0.0.0:50055#g' /proxy_config_02/config.toml"
+             sed -i -e 's#0.0.0.0:50052#0.0.0.0:50055#g' /proxy_config_02/config.toml
+             sed -i -e '23s#proxy#proxy_02#' /proxy_config_02/config.toml &&
+             sed -i -e 's#MC4CAQAwBQYDK2VwBCIEIM/FI+bYw+auSKGyGqeISRIEjofvZV/lbK7QL1wkuCey#MC4CAQAwBQYDK2VwBCIEIBWCkwQIGKaEgpLVIcT9V1za1bqZBwcrcUad8ex9iVxV#g' /proxy_config_02/config.toml && 
+             sed -i -e 's#MCowBQYDK2VwAyEAnouQBh4GHPCD/k85VIzPyCdOijVg2qlzt2TELwTMy4c=#MCowBQYDK2VwAyEAN77yqfv4hAdHTxrG576xqOgpqS8LuZUSjYXyJiUwfws=#g' /proxy_config_02/config.toml && 
+             cat /proxy_config_02/config.toml"
+
   nats:
     image: nats:latest
     ports:
