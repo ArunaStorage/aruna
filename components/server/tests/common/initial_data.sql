@@ -54,7 +54,7 @@ INSERT INTO endpoints(id, name, host_config, endpoint_variant, is_public, status
 );
 
 INSERT INTO pub_keys(id, proxy, pubkey) VALUES (1337, '018a03c0-7e8b-293c-eb14-e10dc4b990db', 'MCowBQYDK2VwAyEAnouQBh4GHPCD/k85VIzPyCdOijVg2qlzt2TELwTMy4c=');
-INSERT INTO pub_keys(id, proxy, pubkey) VALUES (1338, '018C1164-BDFC-08B5-F0FB-9D189419E848', 'MCowBQYDK2VwAyEA3Ek+VTx/L5nA8lNM4fOUYgZzot3RT8YdtYcwb3j5TDg=');
+INSERT INTO pub_keys(id, proxy, pubkey) VALUES (1338, '018C1164-BDFC-08B5-F0FB-9D189419E848', 'MCowBQYDK2VwAyEAnouQBh4GHPCD/k85VIzPyCdOijVg2qlzt2TELwTMy4c=');
 
 INSERT INTO licenses(tag, name, text, url) VALUES ('AllRightsReserved', 'All rights reserved', 'All rights reserved', 'license.test.org');
 
