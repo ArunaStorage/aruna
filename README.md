@@ -78,6 +78,12 @@ A detailed user guide is found in the [Documentation](https://arunastorage.githu
 - **Rust**: [Crates.io](https://crates.io/crates/aruna-rust-api)
 - **Go**: [Go package](https://github.com/ArunaStorage/go-api/releases/)
 
+
 ## License
 
-The API is licensed under the [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) license. See the [License](LICENSE.md) file for more information
+The API is licensed under either of
+
+ * Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+ * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option. Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion for Aruna by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions. 
