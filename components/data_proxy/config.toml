@@ -55,7 +55,7 @@ force_path_style = false # Set, if s3 backend is not supporting subdomains
 # - {{OBJECT_ID}} - The object ULID
 # - {{RANDOM:x}} - A random string of (x == integer) lower_case ascii characters
 # - {{PROXY_ID}} - The proxy ULID (lowercase)
-backend_scheme = "s3://{{PROXY_ID}}-{{PROJECT_ID}}-{{PROJECT_NAME}}/{{COLLECTION_NAME}}/{{DATASET_NAME}}/{{RANDOM:10}}/{{OBJECT_NAME}}"
+backend_scheme = "s3://{{PROXY_ID}}-{{PROJECT_ID}}/{{PROJECT_NAME}}/{{COLLECTION_NAME}}/{{DATASET_NAME}}/{{RANDOM:10}}/{{OBJECT_NAME}}"
 
 #[[rules]]
 #target="OBJECT" # ROOT, OBJECT, OBJECTPACKAGE, BUNDLE, REPLICATIONIN, REPLICATIONOUT,
