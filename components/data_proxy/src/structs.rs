@@ -21,9 +21,7 @@ use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use diesel_ulid::DieselUlid;
 use http::{HeaderValue, Method};
-use pithos_lib::helpers::notifications::DirOrFileIdx;
 use pithos_lib::helpers::structs::{EncryptionKey, FileContext};
-use pithos_lib::pithos::structs::{DecryptedKeys, EncryptionPacket, EndOfFileMetadata};
 use rand::RngCore;
 use s3s::dto::CreateBucketInput;
 use s3s::dto::{CORSRule as S3SCORSRule, GetBucketCorsOutput};
@@ -160,7 +158,7 @@ pub enum FileFormat {
     RawEncrypted([u8; 32]),
     RawCompressed,
     RawEncryptedCompressed([u8; 32]),
-    Pithos((EncryptionPacket, Option<EndOfFileMetadata>)),
+    Pithos([u8; 32]),
 }
 
 impl FileFormat {
@@ -172,13 +170,8 @@ impl FileFormat {
         let mut enc_key = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut enc_key);
 
-        let keys = DecryptedKeys {
-            keys: vec![(enc_key, DirOrFileIdx::File(0))],
-        };
-        let encrypted = keys.encrypt(CONFIG.proxy.get_public_key_x25519()?, None)?;
-
         Ok(match (allow_pithos, allow_encryption, allow_compression) {
-            (true, _, _) => FileFormat::Pithos((encrypted, None)),
+            (true, _, _) => FileFormat::Pithos(enc_key),
             (false, true, false) => FileFormat::RawEncrypted(enc_key),
             (false, false, true) => FileFormat::RawCompressed,
             (false, true, true) => FileFormat::RawEncryptedCompressed(enc_key),
@@ -206,13 +199,9 @@ impl FileFormat {
 
     pub fn get_encryption_key(&self) -> Option<[u8; 32]> {
         match self {
-            FileFormat::RawEncrypted(key) | FileFormat::RawEncryptedCompressed(key) => Some(*key),
-            FileFormat::Pithos((packet, _)) => {
-                let keys = packet
-                    .clone()
-                    .decrypt(&CONFIG.proxy.get_private_key_x25519().ok()?);
-                keys.and_then(|e| e.keys.first().map(|e| e.0))
-            }
+            FileFormat::RawEncrypted(key)
+            | FileFormat::RawEncryptedCompressed(key)
+            | FileFormat::Pithos(key) => Some(*key),
             _ => None,
         }
     }

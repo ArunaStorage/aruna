@@ -99,7 +99,9 @@ impl DataHandler {
         let parts = cache.get_parts(&upload_id);
         for part in parts {
             let full_chunks = (part.size / (65536 + 28)) * (65536 + 28);
-            part_lens.push(full_chunks);
+            if full_chunks != 0 {
+                part_lens.push(full_chunks);
+            }
             if part.size % (65536 + 28) != 0 {
                 part_lens.push(part.size - full_chunks);
             }
@@ -125,6 +127,8 @@ impl DataHandler {
                 let mut asr = GenericStreamReadWriter::new_with_sink(tx_receive, sink);
 
                 asr.add_message_receiver(rx).await?;
+
+                tracing::debug!(part_lens = ?part_lens, "Part lengths");
 
                 if let Some(key) = clone_key {
                     asr = asr.add_transformer(ChaCha20DecParts::new_with_lengths(key, part_lens));
