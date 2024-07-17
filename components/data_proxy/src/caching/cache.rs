@@ -30,7 +30,7 @@ use std::time::Duration;
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::RwLock;
 use tokio_postgres::GenericClient;
-use tracing::{debug, error, info_span, trace, Instrument};
+use tracing::{debug, error, info_span, trace, warn, Instrument};
 
 pub struct Cache {
     // Map DieselUlid as key and (User, Vec<String>) as value -> Vec<String> is a list of registered access keys -> access_keys
@@ -812,11 +812,13 @@ impl Cache {
                 }
             }
         }
+        
         // Remove object and location from cache
-        let old = self
-            .resources
-            .remove(&id)
-            .ok_or_else(|| anyhow!("Resource not found"))?;
+        let Some(old) = self.resources.remove(&id) else {
+            warn!(?id, "Resource not found");
+            return Ok(());
+        };
+
         let object = old.1 .0.read().await;
         for p in self
             .get_name_trees(&TypedId::from(object.deref()), object.name.clone(), None)
