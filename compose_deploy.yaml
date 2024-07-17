@@ -108,7 +108,7 @@ services:
              psql 'postgres://yugabyte@localhost:5433/test' < /data/init/initial_data.sql"
   server:
     network_mode: "host"
-    image: harbor.computational.bio.uni-giessen.de/aruna/aruna-server:latest
+    image: harbor.computational.bio.uni-giessen.de/aruna/aruna-server:2.0.0
     depends_on:
       load_database:
         condition: service_completed_successfully
@@ -118,7 +118,7 @@ services:
       DATABASE_SCHEMA: /run/schema.sql
   proxy_01:
     network_mode: "host"
-    image: harbor.computational.bio.uni-giessen.de/aruna/arunadataproxy:203
+    image: harbor.computational.bio.uni-giessen.de/aruna/arunadataproxy:2.0.0
     depends_on:
       load_database:
         condition: service_completed_successfully
@@ -133,7 +133,7 @@ services:
       - proxy_config_01:/run/config/
   proxy_02:
     network_mode: "host"
-    image: harbor.computational.bio.uni-giessen.de/aruna/arunadataproxy:203
+    image: harbor.computational.bio.uni-giessen.de/aruna/arunadataproxy:2.0.0
     depends_on:
       load_database:
         condition: service_completed_successfully
@@ -159,7 +159,7 @@ services:
     ports:
       - 3000:3000
   gateway:
-    image: harbor.computational.bio.uni-giessen.de/aruna/aruna-rest-gateway:latest
+    image: harbor.computational.bio.uni-giessen.de/aruna/aruna-rest-gateway:2.0.0
     network_mode: "host"
     depends_on:
       server:
