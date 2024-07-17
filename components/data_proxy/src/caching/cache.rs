@@ -812,7 +812,7 @@ impl Cache {
                 }
             }
         }
-        
+
         // Remove object and location from cache
         let Some(old) = self.resources.remove(&id) else {
             warn!(?id, "Resource not found");
