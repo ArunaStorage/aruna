@@ -1,3 +1,4 @@
+name: aruna
 volumes:
   keycloak:
     driver: local
@@ -9,7 +10,6 @@ volumes:
     driver: local
   gateway_config:
     driver: local
-
 services:
   init:
     image: busybox:stable-musl
@@ -22,10 +22,14 @@ services:
     command: >
       sh -c "wget -O /keycloak/realm.json https://raw.githubusercontent.com/ArunaStorage/aruna/main/components/server/tests/common/keycloak/realm.json &&
              wget -O /database/initial_data.sql https://raw.githubusercontent.com/ArunaStorage/aruna/main/components/server/tests/common/initial_data.sql &&
+             sed -i -e 's#http://localhost:50052#http://proxy_01:50052#g' /database/initial_data.sql &&
+             sed -i -e 's#http://localhost:50055#http://proxy_02:50055#g' /database/initial_data.sql &&
+             sed -i -e 's#http://localhost:1998/realms/test/protocol/openid-connect/certs#http://keycloak:8080/realms/test/protocol/openid-connect/certs#g' /database/initial_data.sql &&
              wget -O /database/server_schema.sql https://raw.githubusercontent.com/ArunaStorage/aruna/main/components/server/src/database/schema.sql &&
              wget -O /database/proxy_schema.sql https://raw.githubusercontent.com/ArunaStorage/aruna/main/components/data_proxy/src/database/schema.sql && 
              wget -O /proxy_config_01/config.toml https://raw.githubusercontent.com/ArunaStorage/aruna/main/components/data_proxy/config.toml &&
              wget -O /gateway_config/config.yaml https://raw.githubusercontent.com/ArunaStorage/grpc-gateway/main/config/config-local.yaml &&
+             sed -i -e 's#127.0.0.1#server#g' /gateway_config/config.yaml &&
              wget -O /proxy_config_02/config.toml https://raw.githubusercontent.com/ArunaStorage/aruna/main/components/data_proxy/config.toml &&
              sed -i -e 's#./src/database/schema.sql#/run/schema.sql#g' /proxy_config_01/config.toml &&
              sed -i -e '23s#proxy#proxy_01#' /proxy_config_01/config.toml &&
@@ -36,6 +40,14 @@ services:
              sed -i -e '23s#proxy#proxy_02#' /proxy_config_02/config.toml &&
              sed -i -e 's#MC4CAQAwBQYDK2VwBCIEIM/FI+bYw+auSKGyGqeISRIEjofvZV/lbK7QL1wkuCey#MC4CAQAwBQYDK2VwBCIEIBWCkwQIGKaEgpLVIcT9V1za1bqZBwcrcUad8ex9iVxV#g' /proxy_config_02/config.toml && 
              sed -i -e 's#MCowBQYDK2VwAyEAnouQBh4GHPCD/k85VIzPyCdOijVg2qlzt2TELwTMy4c=#MCowBQYDK2VwAyEAN77yqfv4hAdHTxrG576xqOgpqS8LuZUSjYXyJiUwfws=#g' /proxy_config_02/config.toml && 
+             sed -i -e 's#http://localhost:50051#http://server:50051#g' /proxy_config_01/config.toml &&
+             sed -i -e 's#http://localhost:50051#http://server:50051#g' /proxy_config_02/config.toml &&
+             sed -i -e '20s#localhost#yugabyte#' /proxy_config_01/config.toml &&
+             sed -i -e '20s#localhost#yugabyte#' /proxy_config_02/config.toml &&
+             sed -i -e 's#force_path_style = false#force_path_style = true#g' /proxy_config_01/config.toml &&
+             sed -i -e 's#force_path_style = false#force_path_style = true#g' /proxy_config_02/config.toml &&
+             sed -i -e 's#http://localhost:9000#http://minio:9000#g' /proxy_config_01/config.toml &&
+             sed -i -e 's#http://localhost:9000#http://minio:9000#g' /proxy_config_02/config.toml &&
              cat /proxy_config_02/config.toml"
 
   nats:
@@ -82,10 +94,9 @@ services:
       - 9000:9000
       - 9001:9001
     environment:
-      MINIO_DOMAIN: localhost:9000
+      MINIO_DOMAIN: minio:9000
     command: "server /data --console-address ':9001'"
   load_database:
-    network_mode: "host"
     depends_on:
       yugabyte:
         condition: service_healthy
@@ -96,18 +107,17 @@ services:
     volumes:
       - database:/data/init/
     command: >
-      sh -c "psql 'postgres://yugabyte@localhost:5433' -c 'DROP DATABASE IF EXISTS test' &&
-             psql 'postgres://yugabyte@localhost:5433' -c 'DROP DATABASE IF EXISTS proxy_01' &&
-             psql 'postgres://yugabyte@localhost:5433' -c 'DROP DATABASE IF EXISTS proxy_02' &&
-             psql 'postgres://yugabyte@localhost:5433' -c 'CREATE DATABASE test' &&
-             psql 'postgres://yugabyte@localhost:5433' -c 'CREATE DATABASE proxy_01' &&
-             psql 'postgres://yugabyte@localhost:5433' -c 'CREATE DATABASE proxy_02' &&
-             psql 'postgres://yugabyte@localhost:5433/test' < /data/init/server_schema.sql &&
-             psql 'postgres://yugabyte@localhost:5433/proxy_01' < /data/init/proxy_schema.sql &&
-             psql 'postgres://yugabyte@localhost:5433/proxy_02' < /data/init/proxy_schema.sql &&
-             psql 'postgres://yugabyte@localhost:5433/test' < /data/init/initial_data.sql"
+      sh -c "psql 'postgres://yugabyte@yugabyte:5433' -c 'DROP DATABASE IF EXISTS test' &&
+             psql 'postgres://yugabyte@yugabyte:5433' -c 'DROP DATABASE IF EXISTS proxy_01' &&
+             psql 'postgres://yugabyte@yugabyte:5433' -c 'DROP DATABASE IF EXISTS proxy_02' &&
+             psql 'postgres://yugabyte@yugabyte:5433' -c 'CREATE DATABASE test' &&
+             psql 'postgres://yugabyte@yugabyte:5433' -c 'CREATE DATABASE proxy_01' &&
+             psql 'postgres://yugabyte@yugabyte:5433' -c 'CREATE DATABASE proxy_02' &&
+             psql 'postgres://yugabyte@yugabyte:5433/test' < /data/init/server_schema.sql &&
+             psql 'postgres://yugabyte@yugabyte:5433/proxy_01' < /data/init/proxy_schema.sql &&
+             psql 'postgres://yugabyte@yugabyte:5433/proxy_02' < /data/init/proxy_schema.sql &&
+             psql 'postgres://yugabyte@yugabyte:5433/test' < /data/init/initial_data.sql"
   server:
-    network_mode: "host"
     image: harbor.computational.bio.uni-giessen.de/aruna/aruna-server:2.0.0
     depends_on:
       load_database:
@@ -116,8 +126,10 @@ services:
       - 50051:50051
     environment:
       DATABASE_SCHEMA: /run/schema.sql
+      DATABASE_HOST: yugabyte
+      MEILISEARCH_HOST: http://meili:7700
+      NATS_HOST: nats:4222
   proxy_01:
-    network_mode: "host"
     image: harbor.computational.bio.uni-giessen.de/aruna/arunadataproxy:2.0.0
     depends_on:
       load_database:
@@ -132,7 +144,6 @@ services:
     volumes:
       - proxy_config_01:/run/config/
   proxy_02:
-    network_mode: "host"
     image: harbor.computational.bio.uni-giessen.de/aruna/arunadataproxy:2.0.0
     depends_on:
       load_database:
@@ -147,8 +158,8 @@ services:
     volumes:
       - proxy_config_02:/run/config/
   web:
+    network_mode: host
     image: harbor.computational.bio.uni-giessen.de/aruna/arunaweb:latest
-    network_mode: "host"
     depends_on:
       server:
         condition: service_started
@@ -160,7 +171,6 @@ services:
       - 3000:3000
   gateway:
     image: harbor.computational.bio.uni-giessen.de/aruna/aruna-rest-gateway:2.0.0
-    network_mode: "host"
     depends_on:
       server:
         condition: service_started
@@ -168,7 +178,3 @@ services:
       - 8080:8080
     volumes:
       - gateway_config:/config/
-    
-
-
-
