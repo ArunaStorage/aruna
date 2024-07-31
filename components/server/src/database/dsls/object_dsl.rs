@@ -501,10 +501,11 @@ impl Object {
         let query = "/*+ indexscan(ir) set(yb_bnl_batch_size 1024) */ 
         WITH RECURSIVE paths AS (
             SELECT ir.*
-              FROM internal_relations ir WHERE ir.target_pid = $1 
+              FROM internal_relations ir WHERE ir.target_pid = $1 AND ir.relation_name = 'BELONGS_TO'
             UNION 
             SELECT ir2.*
-              FROM paths, internal_relations ir2 WHERE ir2.target_pid = paths.origin_pid 
+              FROM paths, internal_relations ir2 
+                WHERE ir2.target_pid = paths.origin_pid AND ir2.relation_name = 'BELONGS_TO'
         ) SELECT * FROM paths;";
 
         // Execute query and convert rows to InternalRelations
@@ -529,10 +530,10 @@ impl Object {
         let query = "/*+ indexscan(ir) set(yb_bnl_batch_size 1024) */ 
         WITH RECURSIVE paths AS (
             SELECT ir.*
-              FROM internal_relations ir WHERE ir.target_pid = $1 
+              FROM internal_relations ir WHERE ir.target_pid = $1 AND ir.relation_name = 'BELONGS_TO'
             UNION 
             SELECT ir2.*
-              FROM paths, internal_relations ir2 WHERE ir2.target_pid = paths.origin_pid 
+              FROM paths, internal_relations ir2 WHERE ir2.target_pid = paths.origin_pid AND ir2.relation_name = 'BELONGS_TO'
         ) SELECT * FROM paths;";
 
         // Execute query and convert rows to InternalRelations
@@ -1286,6 +1287,7 @@ pub fn extract_paths_from_graph(edge_list: Vec<InternalRelation>) -> Result<Vec<
             projects.insert(edge.origin_pid);
         }
     }
+    dbg!(&children_map);
 
     let mut queue: VecDeque<(Hierarchy, DieselUlid)> = VecDeque::new();
     let mut results: Vec<Hierarchy> = vec![];
