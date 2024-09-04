@@ -48,3 +48,4 @@ tokio-stream = { version = "0.1.15", features = ["net"] }
 tonic = { version = "0.11.0", features = ["tls", "tls-roots"] }
 tower = { version = "0.4.13", features = ["retry"] }
 url = "2.5.2"
+petgraph = "0.6.5"
