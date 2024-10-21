@@ -1,0 +1,175 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: synevi0
+spec:
+  selector:
+    app: synevi0
+  ports:
+    - protocol: TCP
+      name: http
+      port: 8080
+    - protocol: TCP
+      name: grpc
+      port: 50051
+    - protocol: TCP
+      name: grpc-consensus
+      port: 50052
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: synevi0
+  labels:
+    app: synevi0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: synevi0
+  template:
+    metadata:
+      labels:
+        app: synevi0
+    spec:
+      containers:
+      - name: synevi0
+        env:
+        - name: NODE_ID
+          value: 01J5DP2CZHMTE3GZ7D2C3EA35N
+        - name: NODE_SERIAL
+          value: "0"
+        - name: GRPC_PORT
+          value: "50051"
+        - name: GRPC_PORT_CONSENSUS
+          value: "50052"
+        - name: REST_PORT
+          value: "8080"
+        - name: MEMBERS
+          value: "01J5DPBB2ZJH3QPG2VBZ2DCM9K,1,http://synevi1:50052;01J5DP6DB0MWY39XN9FFZB0XPA,2,http://synevi2:50052"
+        image: stanni/synevi_test:0.1.0
+        ports:
+        - containerPort: 50051
+        - containerPort: 50052
+        - containerPort: 8080
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: synevi1
+spec:
+  selector:
+    app: synevi1
+  ports:
+    - protocol: TCP
+      name: http
+      port: 8080
+    - protocol: TCP
+      name: grpc
+      port: 50051
+    - protocol: TCP
+      name: grpc-consensus
+      port: 50052
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: synevi1
+  labels:
+    app: synevi1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: synevi1
+  template:
+    metadata:
+      labels:
+        app: synevi1
+    spec:
+      containers:
+      - name: synevi1
+        env:
+        - name: NODE_ID
+          value: 01J5DPBB2ZJH3QPG2VBZ2DCM9K
+        - name: NODE_SERIAL
+          value: "1"
+        - name: GRPC_PORT
+          value: "50051"
+        - name: GRPC_PORT_CONSENSUS
+          value: "50052"
+        - name: REST_PORT
+          value: "8080"
+        - name: MEMBERS
+          value: "01J5DP2CZHMTE3GZ7D2C3EA35N,0,http://synevi0:50052;01J5DP6DB0MWY39XN9FFZB0XPA,2,http://synevi2:50052"
+        image: stanni/synevi_test:0.1.0
+        ports:
+        - containerPort: 50051
+        - containerPort: 50052
+        - containerPort: 8080
+
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: synevi2
+spec:
+  selector:
+    app: synevi2
+  ports:
+    - protocol: TCP
+      name: http
+      port: 8080
+    - protocol: TCP
+      name: grpc
+      port: 50051
+    - protocol: TCP
+      name: grpc-consensus
+      port: 50052
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: synevi2
+  labels:
+    app: synevi2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: synevi2
+  template:
+    metadata:
+      labels:
+        app: synevi2
+    spec:
+      containers:
+      - name: synevi2
+        env:
+        - name: NODE_ID
+          value: 01J5DP6DB0MWY39XN9FFZB0XPA
+        - name: NODE_SERIAL
+          value: "2"
+        - name: GRPC_PORT
+          value: "50051"
+        - name: GRPC_PORT_CONSENSUS
+          value: "50052"
+        - name: REST_PORT
+          value: "8080"
+        - name: MEMBERS
+          value: "01J5DP2CZHMTE3GZ7D2C3EA35N,0,http://synevi0:50052;01J5DPBB2ZJH3QPG2VBZ2DCM9K,1,http://synevi2:50052"
+        image: stanni/synevi_test:0.1.0
+        ports:
+        - containerPort: 50051
+        - containerPort: 50052
+        - containerPort: 8080
