@@ -10,27 +10,43 @@ use heed::{
     Database, Env, EnvOpenOptions, PutFlags,
 };
 use jsonwebtoken::DecodingKey;
+use milli::Index;
 use std::{collections::HashMap, fs};
 use ulid::Ulid;
 
 // LMBD database names
 const RELATION_INFO_DB_NAME: &str = "relation_infos";
-type RelationInfoDb = Database<U32<BigEndian>, SerdeBincode<RelationInfo>>;
 pub const NODE_DB_NAME: &str = "nodes";
 pub type NodeDb = Database<SerdeBincode<Ulid>, SerdeBincode<NodeVariantValue>>;
 pub const RELATION_DB_NAME: &str = "relations"; // -> HashSet with Source/Type/Target
-pub type RelationDb = Database<SerdeBincode<RawRelation>, Unit>;
 const OIDC_MAPPING_DB_NAME: &str = "oidc_mappings";
 const PUBKEY_DB_NAME: &str = "pubkeys";
 const ISSUER_DB_NAME: &str = "issuers";
-type IssuerDb = Database<Str, SerdeBincode<Issuer>>;
 const SERVER_INFO_DB_NAME: &str = "server_infos";
 
 type DecodingKeyIdentifier = (String, String); // (IssuerName, KeyID)
 
 pub struct ViewStore {
-    database_env: Env,
-    _bloom_filter: HashMap<Ulid, growable_bloom_filter::GrowableBloom, RandomState>,
+    env: heed::Env,
+    // Milli index to store objects and allow for search
+    milli_index: Index,
+
+    // Database for bloom filters with name as key
+    // This is not needed anymore since we can use milli to find all objects that match the name
+    // and then query their parents
+    // name_bloom_filter: Database<Ulid, growable_bloom_filter::GrowableBloom>,
+
+    // Database for issuers with name as key
+    issuers: Database<Str, SerdeBincode<Issuer>>,
+    // Do we need a database for this ?
+    // Store it in an increasing list of relations
+    relations: Database<U32<BigEndian>, SerdeBincode<RawRelation>>,
+    // Relations info
+    relation_infos: Database<U32<BigEndian>, SerdeBincode<RelationInfo>>,
+
+    // Volatile data
+    // -------------------
+    // Component status
     status: HashMap<Ulid, ServerState, RandomState>,
     issuer_decoding_keys: HashMap<DecodingKeyIdentifier, DecodingKey, RandomState>,
 }

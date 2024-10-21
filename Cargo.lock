@@ -924,9 +924,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "bytes"
-version = "1.7.2"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "428d9aa8fbc0670b7b8d6030a7fadd0f86151cae55e4dbbece15f3780a3dfaf3"
+checksum = "9ac0150caa2ae65ca5bd83f25c7de183dea78d4d366469f148435e2acfbad0da"
 
 [[package]]
 name = "bytes-utils"
@@ -1477,7 +1477,7 @@ dependencies = [
 
 [[package]]
 name = "data_proxy"
-version = "2.0.1"
+version = "2.1.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2021,7 +2021,7 @@ dependencies = [
 [[package]]
 name = "filter-parser"
 version = "1.11.0"
-source = "git+https://github.com/ArunaStorage/meilisearch.git#30f3c303897e478352e69bc1f647dda383081160"
+source = "git+https://github.com/ArunaStorage/meilisearch.git#bd1975b6997097780656af9a9cb11cd0ac5ea36f"
 dependencies = [
  "nom",
  "nom_locate",
@@ -2047,7 +2047,7 @@ dependencies = [
 [[package]]
 name = "flatten-serde-json"
 version = "1.11.0"
-source = "git+https://github.com/ArunaStorage/meilisearch.git#30f3c303897e478352e69bc1f647dda383081160"
+source = "git+https://github.com/ArunaStorage/meilisearch.git#bd1975b6997097780656af9a9cb11cd0ac5ea36f"
 dependencies = [
  "serde_json",
 ]
@@ -2981,7 +2981,7 @@ dependencies = [
 [[package]]
 name = "json-depth-checker"
 version = "1.11.0"
-source = "git+https://github.com/ArunaStorage/meilisearch.git#30f3c303897e478352e69bc1f647dda383081160"
+source = "git+https://github.com/ArunaStorage/meilisearch.git#bd1975b6997097780656af9a9cb11cd0ac5ea36f"
 dependencies = [
  "serde_json",
 ]
@@ -3257,7 +3257,7 @@ dependencies = [
 [[package]]
 name = "milli"
 version = "1.11.0"
-source = "git+https://github.com/ArunaStorage/meilisearch.git#30f3c303897e478352e69bc1f647dda383081160"
+source = "git+https://github.com/ArunaStorage/meilisearch.git#bd1975b6997097780656af9a9cb11cd0ac5ea36f"
 dependencies = [
  "arroy",
  "bimap",
@@ -6385,9 +6385,9 @@ dependencies = [
 
 [[package]]
 name = "utoipa-swagger-ui"
-version = "8.0.1"
+version = "8.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85a551be0331bd01a1d39f2654409ca61cb955f02dfef0fc0f7aced8b2abbc88"
+checksum = "1054c946332dfc6e4bc31f704aa714fcbed73e9f412dd939f9ed86869e6304c3"
 dependencies = [
  "axum",
  "mime_guess",

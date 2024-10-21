@@ -67,7 +67,7 @@ impl NodeVariantId {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub enum NodeVariantId {
     Resource(Ulid),
     User(Ulid),
