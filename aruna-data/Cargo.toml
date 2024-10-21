@@ -17,12 +17,12 @@ bytes = "1.6.0"
 crossbeam-skiplist = "0.1.3"
 curve25519-dalek = "4.1.3"
 digest = "0.10.7"
-ed25519-dalek = { version = "2.1.1", features = ["pem"]}
+ed25519-dalek = { version = "2.1.1", features = ["pem"] }
 futures-channel = "0.3.30"
 futures-core = "0.3.30"
 futures-util = "0.3.30"
 http = "1.1.0"
-hyper = {version = "1.4.1", features = ["full"]}
+hyper = { version = "1.4.1", features = ["full"] }
 md-5 = "0.10.6"
 mime_guess = "2.0.5"
 nom = "7.1.3"
@@ -32,9 +32,9 @@ regex = "1.10.5"
 reqsign = "0.16.0"
 s3s = "0.10.0"
 toml = "0.8.14"
-tower-http = { version = "0.5.2", features = ["cors"] }
+tower-http = { version = "0.6.1", features = ["cors"] }
 tracing = "0.1.40"
-tracing-subscriber = {version = "0.3.18", features = ["env-filter", "time"]}
+tracing-subscriber = { version = "0.3.18", features = ["env-filter", "time"] }
 zstd = "0.13.2"
 hyper-util = { version = "0.1.6", features = [
     "server",
@@ -42,7 +42,7 @@ hyper-util = { version = "0.1.6", features = [
     "http2",
     "tokio",
     "service",
-]}
+] }
 http-body-util = "0.1.2"
 ahash = "0.8.11"
 anyhow = "1.0.86"
@@ -55,7 +55,7 @@ base64 = "0.22.1"
 cel-interpreter = "0.8.1"
 cel-parser = "0.7.1"
 chrono = "0.4.38"
-dashmap = {version = "6.0.1", features = ["serde"]}
+dashmap = { version = "6.0.1", features = ["serde"] }
 deadpool-postgres = "0.14.0"
 diesel-ulid = "0.3.2"
 dotenvy = "0.15.7"
@@ -71,12 +71,16 @@ rand = "0.8.5"
 reqwest = { version = "0.12.5", features = ["stream", "json"] }
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = { version = "1.0.120", features = ["raw_value"] }
-sha2 = {version = "0.10.8", features = ["std", "asm", "sha2-asm"]}
+sha2 = { version = "0.10.8", features = ["std", "asm", "sha2-asm"] }
 time = "0.3.36"
 tokio = { version = "1.38.0", features = ["full"] }
-tokio-postgres = { version = "0.7.11", features = ["with-uuid-1", "with-serde_json-1", "with-chrono-0_4"] }
+tokio-postgres = { version = "0.7.11", features = [
+    "with-uuid-1",
+    "with-serde_json-1",
+    "with-chrono-0_4",
+] }
 tokio-stream = { version = "0.1.15", features = ["net"] }
-tonic = { version = "0.12.2", features = ["tls", "tls-roots"] }
-tower = { version = "0.4.13", features = ["retry"] }
+tonic = { version = "0.12.3", features = ["tls", "tls-roots"] }
+tower = { version = "0.5.1", features = ["retry"] }
 url = "2.5.2"
 petgraph = "0.6.5"

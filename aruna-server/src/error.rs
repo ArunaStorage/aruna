@@ -27,7 +27,6 @@ pub enum ArunaError {
     #[response(status = 409)]
     #[error("Conflict parameter {name}: {error}")]
     ConflictParameter { name: String, error: String },
-
     // 403 Forbidden
     #[response(status = 403)]
     #[error("Not allowed: {0}")]
@@ -40,26 +39,29 @@ pub enum ArunaError {
     #[response(status = 404)]
     #[error("Not found: {0}")]
     NotFound(String),
-
     // 500 Internal Server Error
     #[response(status = 500)]
     #[error("Deserialize error {0}")]
-    DeserializeError(#[from] bincode::Error),
+    //DeserializeError(#[from] bincode::Error),
+    DeserializeError(String),
     #[response(status = 500)]
     #[error("Database: {0} does not exist")]
     DatabaseDoesNotExist(&'static str),
     #[response(status = 500)]
     #[error("I/O error: {0}")]
-    IoError(#[from] std::io::Error),
+    //IoError(#[from] std::io::Error),
+    IoError(String),
     #[response(status = 500)]
     #[error("Database error: {0}")]
-    DatabaseError(#[from] heed::Error),
+    //DatabaseError(#[from] heed::Error),
+    DatabaseError(String),
     #[response(status = 500)]
     #[error("Poisend lock error")]
     PoisonedLockError,
     #[response(status = 500)]
     #[error("Consensus error: {0}")]
-    ConsensusError(#[from] synevi::SyneviError),
+    //ConsensusError(#[from] synevi::SyneviError),
+    ConsensusError(String),
     #[response(status = 500)]
     #[error("Conversion failed from: {from} to {to}")]
     ConversionError { from: String, to: String },
@@ -108,5 +110,29 @@ impl ArunaError {
             // ArunaError::ServerError(_) => todo!(),
             // ArunaError::ConfigError(_) => todo!(),
         }
+    }
+}
+
+impl From<bincode::Error> for ArunaError {
+    fn from(e: bincode::Error) -> Self {
+        ArunaError::DeserializeError(e.to_string())
+    }
+}
+
+impl From<std::io::Error> for ArunaError {
+    fn from(e: std::io::Error) -> Self {
+        ArunaError::IoError(e.to_string())
+    }
+}
+
+impl From<heed::Error> for ArunaError {
+    fn from(e: heed::Error) -> Self {
+        ArunaError::DatabaseError(e.to_string())
+    }
+}
+
+impl From<synevi::SyneviError> for ArunaError {
+    fn from(e: synevi::SyneviError) -> Self {
+        ArunaError::ConsensusError(e.to_string())
     }
 }

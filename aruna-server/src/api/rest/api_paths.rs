@@ -49,7 +49,7 @@ pub async fn create_resource(
     path = "/api/v3/resource/project",
     request_body = CreateProjectRequest,
     responses(
-        (status = 200, body = models::CreateProjectResponse),
+        (status = 200, body = CreateProjectResponse),
         ArunaError,
     ),
     security(
@@ -72,7 +72,7 @@ pub async fn create_project(
         GetResourceRequest,
     ),
     responses(
-        (status = 200, body = models::GetResourceResponse),
+        (status = 200, body = GetResourceResponse),
         ArunaError,
     ),
     security(
