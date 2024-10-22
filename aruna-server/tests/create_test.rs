@@ -4,7 +4,9 @@ pub mod common;
 mod create_tests {
 
     use crate::common::init_test;
-    use aruna_rust_api::v3::aruna::api::v3::{CreateGroupRequest, CreateProjectRequest, CreateRealmRequest, CreateResourceRequest, Realm};
+    use aruna_rust_api::v3::aruna::api::v3::{
+        CreateGroupRequest, CreateProjectRequest, CreateRealmRequest, CreateResourceRequest, Realm,
+    };
     pub const OFFSET: u16 = 0;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -70,21 +72,23 @@ mod create_tests {
             .unwrap()
             .into_inner();
         let Realm { id: realm_id, .. } = response.realm.unwrap();
-        
+
         // Create project
         let request = CreateProjectRequest {
             name: "TestProject".to_string(),
             group_id: response.admin_group_id,
             realm_id,
             visibility: 1,
-            .. Default::default()
+            ..Default::default()
         };
         let response = clients
             .resource_client
             .create_project(request.clone())
             .await
             .unwrap()
-            .into_inner().resource.unwrap();
+            .into_inner()
+            .resource
+            .unwrap();
 
         assert_eq!(response.name, request.name);
     }
@@ -106,37 +110,42 @@ mod create_tests {
             .unwrap()
             .into_inner();
         let Realm { id: realm_id, .. } = response.realm.unwrap();
-        
+
         // Create project
         let request = CreateProjectRequest {
             name: "TestProject".to_string(),
             group_id: response.admin_group_id,
             realm_id,
             visibility: 1,
-            .. Default::default()
+            ..Default::default()
         };
         let parent_id = clients
             .resource_client
             .create_project(request.clone())
             .await
             .unwrap()
-            .into_inner().resource.unwrap().id;
+            .into_inner()
+            .resource
+            .unwrap()
+            .id;
 
         // Create resource
         let request = CreateResourceRequest {
             name: "TestResource".to_string(),
             parent_id,
             visibility: 1,
-            variant: 2, 
-            .. Default::default()
+            variant: 2,
+            ..Default::default()
         };
         let resource = clients
             .resource_client
             .create_resource(request.clone())
             .await
-            .unwrap().into_inner().resource.unwrap();
+            .unwrap()
+            .into_inner()
+            .resource
+            .unwrap();
 
         assert_eq!(request.name, resource.name);
-         
     }
 }

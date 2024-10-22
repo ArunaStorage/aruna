@@ -129,7 +129,6 @@ pub trait WriteRealmExecuteHandler: Get + Auth {
         metadata: Metadata,
         fields: Option<Vec<Fields>>,
     ) -> Result<TransactionOk, ArunaError>;
-
 }
 
 impl WriteRealmExecuteHandler for Controller {
@@ -216,8 +215,6 @@ impl WriteRealmExecuteHandler for Controller {
             )
             .await?;
 
-        Ok(TransactionOk::AddGroupResponse(
-            models::AddGroupResponse {},
-        ))
+        Ok(TransactionOk::AddGroupResponse(models::AddGroupResponse {}))
     }
 }

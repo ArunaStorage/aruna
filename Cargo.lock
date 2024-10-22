@@ -2021,7 +2021,7 @@ dependencies = [
 [[package]]
 name = "filter-parser"
 version = "1.11.0"
-source = "git+https://github.com/ArunaStorage/meilisearch.git#bd1975b6997097780656af9a9cb11cd0ac5ea36f"
+source = "git+https://github.com/ArunaStorage/meilisearch.git#89e116194ecc6544d2fc05a9d3451da35c6f890b"
 dependencies = [
  "nom",
  "nom_locate",
@@ -2047,7 +2047,7 @@ dependencies = [
 [[package]]
 name = "flatten-serde-json"
 version = "1.11.0"
-source = "git+https://github.com/ArunaStorage/meilisearch.git#bd1975b6997097780656af9a9cb11cd0ac5ea36f"
+source = "git+https://github.com/ArunaStorage/meilisearch.git#89e116194ecc6544d2fc05a9d3451da35c6f890b"
 dependencies = [
  "serde_json",
 ]
@@ -2981,7 +2981,7 @@ dependencies = [
 [[package]]
 name = "json-depth-checker"
 version = "1.11.0"
-source = "git+https://github.com/ArunaStorage/meilisearch.git#bd1975b6997097780656af9a9cb11cd0ac5ea36f"
+source = "git+https://github.com/ArunaStorage/meilisearch.git#89e116194ecc6544d2fc05a9d3451da35c6f890b"
 dependencies = [
  "serde_json",
 ]
@@ -3257,7 +3257,7 @@ dependencies = [
 [[package]]
 name = "milli"
 version = "1.11.0"
-source = "git+https://github.com/ArunaStorage/meilisearch.git#bd1975b6997097780656af9a9cb11cd0ac5ea36f"
+source = "git+https://github.com/ArunaStorage/meilisearch.git#89e116194ecc6544d2fc05a9d3451da35c6f890b"
 dependencies = [
  "arroy",
  "bimap",
@@ -5054,9 +5054,9 @@ checksum = "a3f0bf26fd526d2a95683cd0f87bf103b8539e2ca1ef48ce002d67aad59aa0b4"
 
 [[package]]
 name = "serde"
-version = "1.0.210"
+version = "1.0.211"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8e3592472072e6e22e0a54d5904d9febf8508f65fb8552499a1abc7d1078c3a"
+checksum = "1ac55e59090389fb9f0dd9e0f3c09615afed1d19094284d0b200441f13550793"
 dependencies = [
  "serde_derive",
 ]
@@ -5081,9 +5081,9 @@ dependencies = [
 
 [[package]]
 name = "serde_derive"
-version = "1.0.210"
+version = "1.0.211"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "243902eda00fad750862fc144cea25caca5e20d615af0a81bee94ca738f1df1f"
+checksum = "54be4f245ce16bc58d57ef2716271d0d4519e0f6defa147f6e081005bcb278ff"
 dependencies = [
  "proc-macro2",
  "quote",

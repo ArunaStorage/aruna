@@ -1,8 +1,11 @@
-use crate::requests::{controller::Controller, resource::{ReadResourceHandler, WriteResourceRequestHandler}};
 use super::grpc_helpers::get_token;
+use crate::requests::{
+    controller::Controller,
+    resource::{ReadResourceHandler, WriteResourceRequestHandler},
+};
 use aruna_rust_api::v3::aruna::api::v3::{
-        resource_service_server::ResourceService, CreateProjectRequest, CreateProjectResponse,
-        CreateResourceRequest, CreateResourceResponse, GetResourceRequest, GetResourceResponse,
+    resource_service_server::ResourceService, CreateProjectRequest, CreateProjectResponse,
+    CreateResourceRequest, CreateResourceResponse, GetResourceRequest, GetResourceResponse,
 };
 use std::{result::Result, sync::Arc};
 use tonic::{Request, Response, Status};

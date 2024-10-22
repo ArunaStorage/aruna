@@ -10,8 +10,8 @@ use crate::{
     error::ArunaError,
     logerr,
     models::{
-        EdgeType, NodeVariantId, NodeVariantValue, Permission, RawRelation, HAS_PART,
-        OWNED_BY_USER, OWNS_PROJECT, PERMISSION_ADMIN, PERMISSION_NONE, SHARES_PERMISSION,
+        EdgeType, Permission, RawRelation, 
+        relation_types::{HAS_PART, OWNED_BY_USER, OWNS_PROJECT, PERMISSION_ADMIN, PERMISSION_NONE, SHARES_PERMISSION}
     },
     requests::transaction::Requester,
     storage::viewstore::{NodeDb, RelationDb, NODE_DB_NAME, RELATION_DB_NAME},
@@ -19,7 +19,8 @@ use crate::{
 use ahash::RandomState;
 use heed::Env;
 use petgraph::{
-    data::Build, graph::NodeIndex, visit::EdgeRef, Direction::{self, Incoming, Outgoing}
+    graph::NodeIndex,
+    Direction::{self, Incoming, Outgoing},
 };
 use ulid::Ulid;
 

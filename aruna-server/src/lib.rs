@@ -2,14 +2,15 @@ use std::{net::SocketAddr, sync::Arc};
 
 use api::{
     grpc::{
-        group_service::GroupServiceImpl,
-        realm_service::RealmServiceImpl,
-        resource_service::ResourceServiceImpl,
-        user_service::UserServiceImpl,
+        group_service::GroupServiceImpl, realm_service::RealmServiceImpl,
+        resource_service::ResourceServiceImpl, user_service::UserServiceImpl,
     },
     rest::server::RestServer,
 };
-use aruna_rust_api::v3::aruna::api::v3::{group_service_server::GroupServiceServer, realm_service_server::RealmServiceServer, resource_service_server::ResourceServiceServer, user_service_server::UserServiceServer};
+use aruna_rust_api::v3::aruna::api::v3::{
+    group_service_server::GroupServiceServer, realm_service_server::RealmServiceServer,
+    resource_service_server::ResourceServiceServer, user_service_server::UserServiceServer,
+};
 use error::ArunaError;
 use requests::controller::Controller;
 use tokio::{sync::Notify, task::JoinSet};
@@ -20,7 +21,6 @@ use ulid::Ulid;
 pub mod api;
 pub mod context;
 pub mod error;
-pub mod graph;
 pub mod macros;
 pub mod models;
 pub mod requests;
@@ -99,7 +99,8 @@ pub async fn start_server(
         key_config,
         grpc_port,
         rest_port,
-    }: Config, notify: Option<Arc<Notify>>
+    }: Config,
+    notify: Option<Arc<Notify>>,
 ) -> Result<(), ArunaError> {
     let controller = Controller::new(
         database_path,
@@ -148,8 +149,6 @@ pub async fn start_server(
     }
 
     join_set.join_next().await;
-
-    
 
     Ok(())
 }

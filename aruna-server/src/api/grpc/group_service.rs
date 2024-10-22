@@ -1,7 +1,7 @@
-use aruna_rust_api::v3::aruna::api::v3 as grpc;
-use aruna_rust_api::v3::aruna::api::v3::group_service_server::GroupService;
 use crate::requests::controller::Controller;
 use crate::requests::group::{ReadGroupHandler, WriteGroupRequestHandler};
+use aruna_rust_api::v3::aruna::api::v3 as grpc;
+use aruna_rust_api::v3::aruna::api::v3::group_service_server::GroupService;
 use std::sync::Arc;
 
 use super::grpc_helpers::get_token;

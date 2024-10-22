@@ -3,9 +3,7 @@ use crate::{
     error::ArunaError,
     graph::ArunaGraph,
     logerr,
-    models::{
-        EdgeType, Issuer, NodeVariantId, NodeVariantValue, RawRelation,  User,
-    },
+    models::{EdgeType, Issuer, NodeVariantId, NodeVariantValue, RawRelation, User},
     storage::viewstore::ViewStore,
 };
 use jsonwebtoken::{DecodingKey, EncodingKey};
@@ -52,10 +50,7 @@ impl Controller {
         let graph = ArunaGraph::from_env(env)?;
 
         let controller = Arc::new(Controller {
-            store: RwLock::new(GraphStore {
-                view_store,
-                graph,
-            }),
+            store: RwLock::new(GraphStore { view_store, graph }),
             node: RwLock::new(None),
             signing_info: Arc::new(RwLock::new(key_config)),
         });

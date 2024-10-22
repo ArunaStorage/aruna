@@ -1,6 +1,6 @@
+use crate::requests::controller::Controller;
 use aruna_rust_api::v3::aruna::api::v3 as grpc;
 use aruna_rust_api::v3::aruna::api::v3::user_service_server::UserService;
-use crate::requests::controller::Controller;
 use std::sync::Arc;
 
 pub struct UserServiceImpl {

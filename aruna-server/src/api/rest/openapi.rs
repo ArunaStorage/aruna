@@ -54,7 +54,11 @@ impl Modify for SecurityAddon {
         if let Some(components) = openapi.components.as_mut() {
             components.add_security_scheme(
                 "auth",
-                SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::with_description("Authorization", "Prefixed with Bearer"))),)
+                SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::with_description(
+                    "Authorization",
+                    "Prefixed with Bearer",
+                ))),
+            )
         }
     }
 }

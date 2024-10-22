@@ -26,16 +26,16 @@ mod read_tests {
 
         let id = response.realm.unwrap().id;
 
-        let request = GetRealmRequest {
-            id,
-        };
+        let request = GetRealmRequest { id };
 
         let realm = clients
             .realm_client
             .get_realm(request)
             .await
             .unwrap()
-            .into_inner().realm.unwrap();
+            .into_inner()
+            .realm
+            .unwrap();
 
         assert_eq!(&realm.name, &create_request.name);
         assert_eq!(&realm.tag, &create_request.tag);

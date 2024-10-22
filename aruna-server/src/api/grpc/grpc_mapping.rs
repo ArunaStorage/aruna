@@ -4,8 +4,8 @@ use thiserror::Error;
 use tonic::Status;
 use ulid::Ulid;
 
-use aruna_rust_api::v3::aruna::api::v3 as grpc;
 use crate::{error::ArunaError, models};
+use aruna_rust_api::v3::aruna::api::v3 as grpc;
 
 #[derive(Debug, Error)]
 pub struct InvalidFieldError(&'static str);

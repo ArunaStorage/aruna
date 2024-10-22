@@ -11,18 +11,20 @@ use crate::error::ArunaError;
 pub type EdgeType = u32;
 
 // Constants for the models
-pub const HAS_PART: u32 = 0u32;
-pub const OWNS_PROJECT: u32 = 1u32;
-pub const PERMISSION_NONE: u32 = 2u32;
-pub const PERMISSION_READ: u32 = 3u32;
-pub const PERMISSION_APPEND: u32 = 4u32;
-pub const PERMISSION_WRITE: u32 = 5u32;
-pub const PERMISSION_ADMIN: u32 = 6u32;
-pub const SHARES_PERMISSION: u32 = 7u32;
-pub const OWNED_BY_USER: u32 = 8u32;
-pub const GROUP_PART_OF_REALM: u32 = 9u32;
-pub const GROUP_ADMINISTRATES_REALM: u32 = 10u32;
-pub const REALM_USES_ENDPOINT: u32 = 11u32;
+pub mod relation_types {
+    pub const HAS_PART: u32 = 0u32;
+    pub const OWNS_PROJECT: u32 = 1u32;
+    pub const PERMISSION_NONE: u32 = 2u32;
+    pub const PERMISSION_READ: u32 = 3u32;
+    pub const PERMISSION_APPEND: u32 = 4u32;
+    pub const PERMISSION_WRITE: u32 = 5u32;
+    pub const PERMISSION_ADMIN: u32 = 6u32;
+    pub const SHARES_PERMISSION: u32 = 7u32;
+    pub const OWNED_BY_USER: u32 = 8u32;
+    pub const GROUP_PART_OF_REALM: u32 = 9u32;
+    pub const GROUP_ADMINISTRATES_REALM: u32 = 10u32;
+    pub const REALM_USES_ENDPOINT: u32 = 11u32;
+}
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub enum ResourceVariant {
@@ -31,44 +33,20 @@ pub enum ResourceVariant {
     Object,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
-pub enum NodeVariantValue {
-    Resource(Resource),
-    User(User),
-    Token(Token),
-    ServiceAccount(ServiceAccount),
-    Group(Group),
-    Realm(Realm),
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+pub enum NodeVariant {
+    ResourceProject,
+    ResourceFolder,
+    ResourceObject,
+    User,
+    Token,
+    ServiceAccount,
+    Group,
+    Realm,
 }
 
-impl NodeVariantValue {
-    pub fn get_id(&self) -> &Ulid {
-        match self {
-            NodeVariantValue::Resource(res) => &res.id,
-            NodeVariantValue::Token(token) => &token.id,
-            NodeVariantValue::User(user) => &user.id,
-            NodeVariantValue::ServiceAccount(service_account) => &service_account.id,
-            NodeVariantValue::Group(group) => &group.id,
-            NodeVariantValue::Realm(realm) => &realm.id,
-        }
-    }
-}
-
-impl NodeVariantId {
-    pub fn get_ref(&self) -> &Ulid {
-        match self {
-            NodeVariantId::Resource(id) => id,
-            NodeVariantId::User(id) => id,
-            NodeVariantId::Token(id) => id,
-            NodeVariantId::Group(id) => id,
-            NodeVariantId::Realm(id) => id,
-            NodeVariantId::ServiceAccount(id) => id,
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
-pub enum NodeVariantId {
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+pub enum NodeVariantIdx {
     Resource(Ulid),
     User(Ulid),
     ServiceAccount(Ulid),
@@ -191,11 +169,11 @@ pub struct Resource {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
-pub struct RelationInfo {
+pub struct RelationInfo<'a> {
     pub idx: EdgeType,
-    pub forward_type: String,  // A --- HasPart---> B
-    pub backward_type: String, // A <---PartOf--- B
-    pub internal: bool,        // only for internal use
+    pub forward_type: &'a str,  // A --- HasPart---> B
+    pub backward_type: &'a str, // A <---PartOf--- B
+    pub internal: bool,         // only for internal use
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
@@ -205,10 +183,13 @@ pub struct Relation {
     pub relation_type: String,
 }
 
+pub type Source = u32;
+pub type Target = u32;
+
 #[derive(Deserialize, Serialize)]
 pub struct RawRelation {
-    pub source: NodeVariantId,
-    pub target: NodeVariantId,
+    pub source: Source,
+    pub target: Target,
     pub edge_type: EdgeType,
 }
 

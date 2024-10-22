@@ -1,8 +1,8 @@
-use aruna_rust_api::v3::aruna::api::v3 as grpc;
-use aruna_rust_api::v3::aruna::api::v3::realm_service_server::RealmService;
 use crate::api::grpc::grpc_helpers::get_token;
 use crate::requests::controller::Controller;
 use crate::requests::realm::{ReadRealmHandler, WriteRealmRequestHandler};
+use aruna_rust_api::v3::aruna::api::v3 as grpc;
+use aruna_rust_api::v3::aruna::api::v3::realm_service_server::RealmService;
 use std::sync::Arc;
 
 pub struct RealmServiceImpl {
