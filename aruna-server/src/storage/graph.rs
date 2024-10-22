@@ -3,30 +3,36 @@ use std::{
     collections::{HashMap, VecDeque},
 };
 
-use heed::PutFlags;
+use heed::{types::SerdeBincode, Database, PutFlags, RoTxn, RwTxn};
+use milli::{ObkvCodec, BEU32};
 use tracing::error;
 
 use crate::{
     error::ArunaError,
     logerr,
     models::{
-        EdgeType, Permission, RawRelation, 
-        relation_types::{HAS_PART, OWNED_BY_USER, OWNS_PROJECT, PERMISSION_ADMIN, PERMISSION_NONE, SHARES_PERMISSION}
+        relation_types::{
+            HAS_PART, OWNED_BY_USER, OWNS_PROJECT, PERMISSION_ADMIN, PERMISSION_NONE,
+            SHARES_PERMISSION,
+        },
+        EdgeType, NodeVariant, Permission, RawRelation,
     },
     requests::transaction::Requester,
-    storage::viewstore::{NodeDb, RelationDb, NODE_DB_NAME, RELATION_DB_NAME},
 };
 use ahash::RandomState;
-use heed::Env;
 use petgraph::{
     graph::NodeIndex,
     Direction::{self, Incoming, Outgoing},
 };
 use ulid::Ulid;
 
-pub struct ArunaGraph {
-    graph: petgraph::graph::Graph<NodeVariantId, EdgeType>,
-    node_idx: HashMap<Ulid, NodeIndex, RandomState>,
+pub fn load_graph(
+    rtxn: &RoTxn<'_>,
+    relations: &Database<BEU32, SerdeBincode<RawRelation>>,
+    documents: &Database<BEU32, ObkvCodec>,
+) -> petgraph::graph::Graph<NodeVariant, EdgeType> {
+    todo!();
+    petgraph::graph::Graph::new()
 }
 
 impl ArunaGraph {

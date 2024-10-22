@@ -2,6 +2,7 @@ use crate::{
     error::ArunaError,
     logerr,
     models::{EdgeType, Issuer, NodeVariant, RawRelation, RelationInfo, ServerState},
+    storage::graph::load_graph,
 };
 use ahash::RandomState;
 use heed::{
@@ -10,7 +11,7 @@ use heed::{
     Database, EnvOpenOptions, PutFlags,
 };
 use jsonwebtoken::DecodingKey;
-use milli::Index;
+use milli::{Index, BEU32};
 use std::{collections::HashMap, fs};
 use ulid::Ulid;
 
@@ -27,7 +28,6 @@ pub mod db_names {
 }
 
 type DecodingKeyIdentifier = (String, String); // (IssuerName, KeyID)
-type BEU32 = U32<BigEndian>;
 
 pub struct Store<'a> {
     // Milli index to store objects and allow for search
@@ -83,6 +83,12 @@ impl Store<'_> {
         let issuer_decoding_keys = init_issuer(&mut write_txn, &issuers, key_serial, decoding_key)?;
         write_txn.commit().inspect_err(logerr!())?;
 
+        let graph = load_graph(
+            &milli_index.read_txn().inspect_err(logerr!())?,
+            &relations,
+            &milli_index.documents,
+        );
+
         Ok(Self {
             milli_index,
             relations,
@@ -91,7 +97,7 @@ impl Store<'_> {
             issuers,
             status: HashMap::default(),
             issuer_decoding_keys,
-            graph: petgraph::graph::Graph::new(),
+            graph,
         })
     }
 
@@ -158,6 +164,11 @@ fn init_issuer(
             },
         )
         .inspect_err(logerr!())?;
+
+    // TODO: Read existing issuers
+    // Query the endpoint for the decoding key -> Add to hashmap
+    todo!();
+
     let mut iss: HashMap<DecodingKeyIdentifier, DecodingKey, RandomState> = HashMap::default();
     iss.insert(
         ("aruna".to_string(), key_id.to_string()),

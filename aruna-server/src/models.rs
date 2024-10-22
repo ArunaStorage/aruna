@@ -1,8 +1,11 @@
 use std::fmt::Display;
 
 use chrono::{DateTime, NaiveDateTime, Utc};
+use heed::types::SerdeJson;
 use jsonwebtoken::DecodingKey;
+use milli::ObkvCodec;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
@@ -43,6 +46,38 @@ pub enum NodeVariant {
     ServiceAccount,
     Group,
     Realm,
+}
+
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+pub enum Node {
+    Resource(Resource),
+    User(User),
+    Token(Token),
+    ServiceAccount(ServiceAccount),
+    Group(Group),
+    Realm(Realm),
+}
+
+pub struct JsonInput(serde_json::Map<String, Value>);
+
+impl From<Node> for serde_json::Map<String, Value> {
+    fn from(node: Node) -> Self {
+        match node {
+            Node::Resource(r) => serde_json::to_value(r).unwrap().as_object().unwrap().clone(),
+            Node::User(u) => serde_json::to_value(u).unwrap().as_object().unwrap().clone(),
+            Node::Token(t) => serde_json::to_value(t).unwrap().as_object().unwrap().clone(),
+            Node::ServiceAccount(sa) => serde_json::to_value(sa).unwrap().as_object().unwrap().clone(),
+            Node::Group(g) => serde_json::to_value(g).unwrap().as_object().unwrap().clone(),
+            Node::Realm(r) => serde_json::to_value(r).unwrap().as_object().unwrap().clone(),
+        }
+    }
+}
+
+impl From<ObkvCodec> for Node {
+    fn from(value: ObkvCodec) -> Self {
+        todo!()
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
