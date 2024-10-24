@@ -1,17 +1,17 @@
 use crate::{
+    constants::const_relations,
     error::ArunaError,
     logerr,
     models::{EdgeType, Issuer, NodeVariant, RawRelation, RelationInfo, ServerState},
-    storage::graph::load_graph,
+    storage::{graph::load_graph, milli_helpers::prepopulate_fields},
 };
 use ahash::RandomState;
 use heed::{
-    byteorder::BigEndian,
-    types::{SerdeBincode, Str, U32},
-    Database, EnvOpenOptions, PutFlags,
+    types::{SerdeBincode, Str},
+    Database, EnvOpenOptions,
 };
 use jsonwebtoken::DecodingKey;
-use milli::{Index, BEU32};
+use milli::{CboRoaringBitmapCodec, Index, BEU32};
 use std::{collections::HashMap, fs};
 use ulid::Ulid;
 
@@ -25,19 +25,29 @@ pub mod db_names {
     pub const ISSUER_DB_NAME: &str = "issuers";
     pub const SERVER_INFO_DB_NAME: &str = "server_infos";
     pub const EVENT_DB_NAME: &str = "events";
+    pub const TOKENS: &str = "tokens";
+    pub const USER: &str = "users";
+    pub const READ_GROUP_PERMS: &str = "read_group_perms";
 }
 
 type DecodingKeyIdentifier = (String, String); // (IssuerName, KeyID)
 
-pub struct Store<'a> {
+pub struct Store {
     // Milli index to store objects and allow for search
     milli_index: Index,
     // Store it in an increasing list of relations
     relations: Database<BEU32, SerdeBincode<RawRelation>>,
     // Relations info
-    relation_infos: Database<BEU32, SerdeBincode<RelationInfo<'a>>>,
+    relation_infos: Database<BEU32, SerdeBincode<RelationInfo>>,
     // events db
     events: Database<BEU32, Vec<u128>>,
+    // TODO:
+    // Database for event_subscriber / status
+    // Roaring bitmap for subscriber resources + last acknowledged event
+
+    // Database for read permissions of groups
+    read_permissions: Database<BEU32, CboRoaringBitmapCodec>,
+
     // Database for issuers with name as key
     issuers: Database<Str, SerdeBincode<Issuer>>,
     // -------------------
@@ -48,7 +58,7 @@ pub struct Store<'a> {
     graph: petgraph::graph::Graph<NodeVariant, EdgeType>,
 }
 
-impl Store<'_> {
+impl Store {
     #[tracing::instrument(level = "trace", skip(key_serial, decoding_key))]
     pub fn new(
         path: String,
@@ -63,6 +73,9 @@ impl Store<'_> {
         let milli_index = Index::new(EnvOpenOptions::new(), path).inspect_err(logerr!())?;
 
         let mut write_txn = milli_index.write_txn().inspect_err(logerr!())?;
+
+        prepopulate_fields(&milli_index, &mut write_txn).inspect_err(logerr!())?;
+
         let env = &milli_index.env;
         let relations = env
             .create_database(&mut write_txn, Some(RELATION_DB_NAME))
@@ -76,6 +89,9 @@ impl Store<'_> {
         let issuers = env
             .create_database(&mut write_txn, Some(ISSUER_DB_NAME))
             .inspect_err(logerr!())?;
+        let read_permissions = env
+            .create_database(&mut write_txn, Some(READ_GROUP_PERMS))
+            .inspect_err(logerr!())?;
 
         // INIT relations
         init_relations(&mut write_txn, &relation_infos)?;
@@ -87,7 +103,7 @@ impl Store<'_> {
             &milli_index.read_txn().inspect_err(logerr!())?,
             &relations,
             &milli_index.documents,
-        );
+        ).inspect_err(logerr!())?;
 
         Ok(Self {
             milli_index,
@@ -95,54 +111,55 @@ impl Store<'_> {
             relation_infos,
             events,
             issuers,
+            read_permissions,
             status: HashMap::default(),
             issuer_decoding_keys,
             graph,
         })
     }
 
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_value(&self, id: &Ulid) -> Result<Option<NodeVariantValue>, ArunaError> {
-        let read_txn = self.database_env.read_txn()?;
-        let db: NodeDb = self
-            .database_env
-            .open_database(&read_txn, Some(NODE_DB_NAME))?
-            .ok_or_else(|| ArunaError::DatabaseDoesNotExist(NODE_DB_NAME))
-            .inspect_err(logerr!())?;
+    // #[tracing::instrument(level = "trace", skip(self))]
+    // pub fn get_value(&self, id: &Ulid) -> Result<Option<NodeVariantValue>, ArunaError> {
+    //     let read_txn = self.database_env.read_txn()?;
+    //     let db: NodeDb = self
+    //         .database_env
+    //         .open_database(&read_txn, Some(NODE_DB_NAME))?
+    //         .ok_or_else(|| ArunaError::DatabaseDoesNotExist(NODE_DB_NAME))
+    //         .inspect_err(logerr!())?;
 
-        Ok(db.get(&read_txn, id).inspect_err(logerr!())?)
-    }
+    //     Ok(db.get(&read_txn, id).inspect_err(logerr!())?)
+    // }
 
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_issuer(&self, issuer: String) -> Result<Option<Issuer>, ArunaError> {
-        let read_txn = self.database_env.read_txn().inspect_err(logerr!())?;
-        let db: IssuerDb = self
-            .database_env
-            .open_database(&read_txn, Some(ISSUER_DB_NAME))
-            .inspect_err(logerr!())?
-            .ok_or_else(|| ArunaError::DatabaseDoesNotExist(ISSUER_DB_NAME))
-            .inspect_err(logerr!())?;
+    // #[tracing::instrument(level = "trace", skip(self))]
+    // pub fn get_issuer(&self, issuer: String) -> Result<Option<Issuer>, ArunaError> {
+    //     let read_txn = self.database_env.read_txn().inspect_err(logerr!())?;
+    //     let db: IssuerDb = self
+    //         .database_env
+    //         .open_database(&read_txn, Some(ISSUER_DB_NAME))
+    //         .inspect_err(logerr!())?
+    //         .ok_or_else(|| ArunaError::DatabaseDoesNotExist(ISSUER_DB_NAME))
+    //         .inspect_err(logerr!())?;
 
-        Ok(db.get(&read_txn, &issuer).inspect_err(logerr!())?)
-    }
+    //     Ok(db.get(&read_txn, &issuer).inspect_err(logerr!())?)
+    // }
 
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_issuer_key(&self, issuer_name: String, key_id: String) -> Option<&DecodingKey> {
-        self.issuer_decoding_keys.get(&(issuer_name, key_id))
-    }
+    // #[tracing::instrument(level = "trace", skip(self))]
+    // pub fn get_issuer_key(&self, issuer_name: String, key_id: String) -> Option<&DecodingKey> {
+    //     self.issuer_decoding_keys.get(&(issuer_name, key_id))
+    // }
 
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub fn add_node(&self, node: NodeVariantValue) -> Result<(), ArunaError> {
-        let mut write_txn = self.database_env.write_txn().inspect_err(logerr!())?;
-        let db: NodeDb = self
-            .database_env
-            .create_database(&mut write_txn, Some(NODE_DB_NAME))
-            .inspect_err(logerr!())?;
-        db.put_with_flags(&mut write_txn, PutFlags::NO_OVERWRITE, node.get_id(), &node)
-            .inspect_err(logerr!())?;
-        write_txn.commit().inspect_err(logerr!())?;
-        Ok(())
-    }
+    // #[tracing::instrument(level = "trace", skip(self))]
+    // pub fn add_node(&self, node: NodeVariantValue) -> Result<(), ArunaError> {
+    //     let mut write_txn = self.database_env.write_txn().inspect_err(logerr!())?;
+    //     let db: NodeDb = self
+    //         .database_env
+    //         .create_database(&mut write_txn, Some(NODE_DB_NAME))
+    //         .inspect_err(logerr!())?;
+    //     db.put_with_flags(&mut write_txn, PutFlags::NO_OVERWRITE, node.get_id(), &node)
+    //         .inspect_err(logerr!())?;
+    //     write_txn.commit().inspect_err(logerr!())?;
+    //     Ok(())
+    // }
 }
 
 #[tracing::instrument(level = "trace", skip(key_id, decoding_key, write_txn))]
@@ -167,7 +184,7 @@ fn init_issuer(
 
     // TODO: Read existing issuers
     // Query the endpoint for the decoding key -> Add to hashmap
-    todo!();
+    //todo!();
 
     let mut iss: HashMap<DecodingKeyIdentifier, DecodingKey, RandomState> = HashMap::default();
     iss.insert(
@@ -178,100 +195,15 @@ fn init_issuer(
     Ok(iss)
 }
 
+#[tracing::instrument(level = "trace", skip(write_txn))]
 fn init_relations(
     mut write_txn: &mut heed::RwTxn,
-    relation_infos: &Database<BEU32, SerdeBincode<RelationInfo<'_>>>,
+    relation_infos: &Database<BEU32, SerdeBincode<RelationInfo>>,
 ) -> Result<(), ArunaError> {
-    RELATION_INFOS.iter().try_for_each(|info| {
+    const_relations().iter().try_for_each(|info| {
         relation_infos
             .put(&mut write_txn, &info.idx, info)
             .inspect_err(logerr!())
     })?;
     Ok(())
 }
-
-const RELATION_INFOS: [RelationInfo; 12] = [
-    // Resource only
-    // Target can only have one origin
-    RelationInfo {
-        idx: 0,
-        forward_type: "HasPart",
-        backward_type: "PartOf",
-        internal: false,
-    },
-    // Group -> Project only
-    RelationInfo {
-        idx: 1,
-        forward_type: "OwnsProject",
-        backward_type: "ProjectOwnedBy",
-        internal: false,
-    },
-    //  User / Group / Token / ServiceAccount -> Resource only
-    RelationInfo {
-        idx: 2,
-        forward_type: "PermissionNone",
-        backward_type: "PermissionNone",
-        internal: true, // -> Displayed by resource request
-    },
-    RelationInfo {
-        idx: 3,
-        forward_type: "PermissionRead",
-        backward_type: "PermissionRead",
-        internal: true,
-    },
-    RelationInfo {
-        idx: 4,
-        forward_type: "PermissionAppend",
-        backward_type: "PermissionAppend",
-        internal: true,
-    },
-    RelationInfo {
-        idx: 5,
-        forward_type: "PermissionWrite",
-        backward_type: "PermissionWrite",
-        internal: true,
-    },
-    RelationInfo {
-        idx: 6,
-        forward_type: "PermissionAdmin",
-        backward_type: "PermissionAdmin",
-        internal: true,
-    },
-    // Group -> Group only
-    RelationInfo {
-        idx: 7,
-        forward_type: "SharesPermissionTo",
-        backward_type: "PermissionSharedFrom",
-        internal: true,
-    },
-    // Token -> User only
-    RelationInfo {
-        idx: 8,
-        forward_type: "OwnedByUser",
-        backward_type: "UserOwnsToken",
-        internal: true,
-    },
-    // Group -> Realm
-    RelationInfo {
-        idx: 9,
-        forward_type: "GroupPartOfRealm",
-        backward_type: "RealmHasGroup",
-        internal: true,
-    },
-    // Mutually exclusive with GroupPartOfRealm
-    // Can only have a connection to one realm
-    // Group -> Realm
-    RelationInfo {
-        idx: 10,
-        forward_type: "GroupAdministratesRealm",
-        backward_type: "RealmAdministratedBy",
-        internal: true,
-    },
-    // Realm -> Endpoint
-    RelationInfo {
-        idx: 11,
-        forward_type: "RealmUsesEndpoint",
-        backward_type: "EndpointUsedByRealm",
-        internal: true,
-    },
-];

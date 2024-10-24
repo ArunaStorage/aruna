@@ -1,33 +1,17 @@
-use std::fmt::Display;
-
 use chrono::{DateTime, NaiveDateTime, Utc};
-use heed::types::SerdeJson;
 use jsonwebtoken::DecodingKey;
 use milli::ObkvCodec;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fmt::Display;
 use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
-use crate::error::ArunaError;
+use crate::{constants::relation_types::*, error::ArunaError};
 
 pub type EdgeType = u32;
 
 // Constants for the models
-pub mod relation_types {
-    pub const HAS_PART: u32 = 0u32;
-    pub const OWNS_PROJECT: u32 = 1u32;
-    pub const PERMISSION_NONE: u32 = 2u32;
-    pub const PERMISSION_READ: u32 = 3u32;
-    pub const PERMISSION_APPEND: u32 = 4u32;
-    pub const PERMISSION_WRITE: u32 = 5u32;
-    pub const PERMISSION_ADMIN: u32 = 6u32;
-    pub const SHARES_PERMISSION: u32 = 7u32;
-    pub const OWNED_BY_USER: u32 = 8u32;
-    pub const GROUP_PART_OF_REALM: u32 = 9u32;
-    pub const GROUP_ADMINISTRATES_REALM: u32 = 10u32;
-    pub const REALM_USES_ENDPOINT: u32 = 11u32;
-}
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub enum ResourceVariant {
@@ -37,17 +21,50 @@ pub enum ResourceVariant {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+#[repr(u8)]
 pub enum NodeVariant {
-    ResourceProject,
-    ResourceFolder,
-    ResourceObject,
-    User,
-    Token,
-    ServiceAccount,
-    Group,
-    Realm,
+    ResourceProject = 0,
+    ResourceFolder = 1,
+    ResourceObject = 2,
+    User = 3,
+    Token = 4,
+    ServiceAccount = 5,
+    Group = 6,
+    Realm = 7,
 }
 
+impl TryFrom<serde_json::Number> for NodeVariant {
+    type Error = ArunaError;
+
+    fn try_from(value: serde_json::Number) -> Result<Self, Self::Error> {
+        value.as_u64().map_or_else(
+            || {
+                Err(ArunaError::ConversionError {
+                    from: "serde_json::Number".to_string(),
+                    to: "models::NodeVariant".to_string(),
+                })
+            },
+            |v| {
+                Ok(match v {
+                    0 => NodeVariant::ResourceProject,
+                    1 => NodeVariant::ResourceFolder,
+                    2 => NodeVariant::ResourceObject,
+                    3 => NodeVariant::User,
+                    4 => NodeVariant::Token,
+                    5 => NodeVariant::ServiceAccount,
+                    6 => NodeVariant::Group,
+                    7 => NodeVariant::Realm,
+                    _ => {
+                        return Err(ArunaError::ConversionError {
+                            from: format!("{}u64", v),
+                            to: "models::NodeVariant".to_string(),
+                        })
+                    }
+                })
+            },
+        )
+    }
+}
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub enum Node {
@@ -64,12 +81,36 @@ pub struct JsonInput(serde_json::Map<String, Value>);
 impl From<Node> for serde_json::Map<String, Value> {
     fn from(node: Node) -> Self {
         match node {
-            Node::Resource(r) => serde_json::to_value(r).unwrap().as_object().unwrap().clone(),
-            Node::User(u) => serde_json::to_value(u).unwrap().as_object().unwrap().clone(),
-            Node::Token(t) => serde_json::to_value(t).unwrap().as_object().unwrap().clone(),
-            Node::ServiceAccount(sa) => serde_json::to_value(sa).unwrap().as_object().unwrap().clone(),
-            Node::Group(g) => serde_json::to_value(g).unwrap().as_object().unwrap().clone(),
-            Node::Realm(r) => serde_json::to_value(r).unwrap().as_object().unwrap().clone(),
+            Node::Resource(r) => serde_json::to_value(r)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .clone(),
+            Node::User(u) => serde_json::to_value(u)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .clone(),
+            Node::Token(t) => serde_json::to_value(t)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .clone(),
+            Node::ServiceAccount(sa) => serde_json::to_value(sa)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .clone(),
+            Node::Group(g) => serde_json::to_value(g)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .clone(),
+            Node::Realm(r) => serde_json::to_value(r)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .clone(),
         }
     }
 }
@@ -95,6 +136,24 @@ pub struct KeyValue {
     pub key: String,
     pub value: String,
     pub locked: bool,
+}
+
+// TODO: Decide how hooks are going to be implemented
+pub enum HookExecutionState {
+    Pending,
+    Running,
+    Finished,
+    Error,
+}
+
+// TODO: Decide how hooks are going to be implemented
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct HookRunStatus {
+    hook_id: Ulid,
+    run_id: Ulid,
+    revision: u64,
+    status: String,
+    last_updated: DateTime<Utc>,
 }
 
 #[derive(
@@ -139,6 +198,7 @@ pub struct Token {
     pub name: String,
     pub expires_at: DateTime<Utc>,
 }
+
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct TokenWithPermission {
     pub id: Ulid,
@@ -168,26 +228,16 @@ pub struct ServiceAccount {
     // TODO: More fields?
 }
 
-pub struct InternalResource {
-    resource: Resource,
-    events: Events,
-}
-
-pub enum Events {
-    ProjectEvents(Vec<u128>),
-    ResourceEvents(Vec<u32>),
-}
-
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct Resource {
     pub id: Ulid,
     pub name: String,
     pub title: String,
     pub description: String,
-    pub revision: u64,
+    pub revision: u64, // This should not be part of the index
     pub variant: ResourceVariant,
     pub labels: Vec<KeyValue>,
-    pub hook_status: Vec<KeyValue>,
+    //pub hook_status: Vec<KeyValue>, // TODO: Hooks ? Not part of the index
     pub identifiers: Vec<String>,
     pub content_len: u64,
     pub count: u64,
@@ -195,19 +245,18 @@ pub struct Resource {
     pub created_at: DateTime<Utc>,
     pub last_modified: DateTime<Utc>,
     pub authors: Vec<Author>,
-    pub status: ResourceStatus,
-    pub locked: bool,
     pub license_tag: String,
+    pub locked: bool,
     // TODO:
-    pub endpoint_status: Vec<EndpointStatus>,
+    pub location: Vec<DataLocation>, // Part of index ?
     pub hashes: Vec<Hash>,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
-pub struct RelationInfo<'a> {
+pub struct RelationInfo {
     pub idx: EdgeType,
-    pub forward_type: &'a str,  // A --- HasPart---> B
-    pub backward_type: &'a str, // A <---PartOf--- B
+    pub forward_type: String,  // A --- HasPart---> B
+    pub backward_type: String, // A <---PartOf--- B
     pub internal: bool,         // only for internal use
 }
 
@@ -263,20 +312,28 @@ pub struct Endpoint {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
-pub struct EndpointStatus {
+pub enum SyncingStatus {
+    Pending,
+    Running,
+    Finished,
+    Error,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct DataLocation {
     pub endpoint_id: String,
-    pub status: i32,
-    pub variant: i32,
+    pub status: SyncingStatus,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub enum ResourceStatus {
-    StatusInitializing,
-    StatusValidating,
-    StatusAvailable,
-    StatusUnavailable,
-    StatusError,
-    StatusDeleted,
+    Initializing, // Resource initialized but no data provided
+    Validating,   // Validating the resource
+    Available,
+    Frozen,
+    Unavailable,
+    Error,
+    Deleted,
 }
 
 pub enum ResourceEndpointStatus {

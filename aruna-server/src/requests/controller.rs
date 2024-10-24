@@ -1,10 +1,9 @@
 use super::transaction::{ArunaTransaction, Requester, TransactionOk};
 use crate::{
     error::ArunaError,
-    graph::ArunaGraph,
     logerr,
-    models::{EdgeType, Issuer, NodeVariantId, NodeVariantValue, RawRelation, User},
-    storage::viewstore::ViewStore,
+    models::{EdgeType, Issuer, RawRelation, User},
+    storage::store::Store,
 };
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
@@ -20,15 +19,10 @@ type Node = RwLock<Option<Arc<SyneviNode<GrpcNetwork, Arc<Controller>>>>>;
 pub struct Controller {
     // view_store: RwLock<ViewStore>,
     // graph: RwLock<ArunaGraph>,
-    pub(super) store: RwLock<GraphStore>,
+    pub(super) store: RwLock<Store>,
     node: Node,
     // Auth signing info
     pub(super) signing_info: Arc<RwLock<(u32, EncodingKey, DecodingKey)>>, //<PublicKey Serial; PrivateKey; PublicKey>
-}
-
-pub(super) struct GraphStore {
-    pub(super) view_store: ViewStore,
-    pub(super) graph: ArunaGraph,
 }
 
 pub type KeyConfig = (u32, String, String);

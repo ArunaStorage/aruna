@@ -50,7 +50,7 @@ impl GetContext for GetResourceRequest {
             .ok_or_else(|| ArunaError::NotFound(self.id.to_string()))
             .inspect_err(logerr!())?;
         match res {
-            crate::models::NodeVariantValue::Resource(res) => match res.visibility {
+            crate::models::Node::Resource(res) => match res.visibility {
                 crate::models::VisibilityClass::Public => return Ok(Context::Public),
                 _ => Ok(Context::Permission {
                     min_permission: Permission::Read,
