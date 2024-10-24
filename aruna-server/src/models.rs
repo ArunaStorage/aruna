@@ -123,12 +123,12 @@ impl From<ObkvCodec> for Node {
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub enum NodeVariantIdx {
-    Resource(Ulid),
-    User(Ulid),
-    ServiceAccount(Ulid),
-    Token(Ulid),
-    Group(Ulid),
-    Realm(Ulid),
+    Resource(u32),
+    User(u32),
+    ServiceAccount(u32),
+    Token(u32),
+    Group(u32),
+    Realm(u32),
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
@@ -257,7 +257,7 @@ pub struct RelationInfo {
     pub idx: EdgeType,
     pub forward_type: String,  // A --- HasPart---> B
     pub backward_type: String, // A <---PartOf--- B
-    pub internal: bool,         // only for internal use
+    pub internal: bool,        // only for internal use
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]

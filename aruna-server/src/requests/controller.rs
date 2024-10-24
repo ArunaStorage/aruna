@@ -2,7 +2,7 @@ use super::transaction::{ArunaTransaction, Requester, TransactionOk};
 use crate::{
     error::ArunaError,
     logerr,
-    models::{EdgeType, Issuer, RawRelation, User},
+    models::{EdgeType, Issuer, Node, RawRelation, User},
     storage::store::Store,
 };
 use jsonwebtoken::{DecodingKey, EncodingKey};
@@ -10,17 +10,17 @@ use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 use synevi::network::GrpcNetwork;
 use synevi::Node as SyneviNode;
 use synevi::SyneviResult;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::trace;
 use ulid::Ulid;
 
-type Node = RwLock<Option<Arc<SyneviNode<GrpcNetwork, Arc<Controller>>>>>;
+type ConsensusNode = RwLock<Option<Arc<SyneviNode<GrpcNetwork, Arc<Controller>>>>>;
 
 pub struct Controller {
     // view_store: RwLock<ViewStore>,
     // graph: RwLock<ArunaGraph>,
     pub(super) store: RwLock<Store>,
-    node: Node,
+    node: ConsensusNode,
     // Auth signing info
     pub(super) signing_info: Arc<RwLock<(u32, EncodingKey, DecodingKey)>>, //<PublicKey Serial; PrivateKey; PublicKey>
 }
@@ -38,13 +38,10 @@ impl Controller {
         key_config: KeyConfig,
     ) -> Result<Arc<Self>, ArunaError> {
         let key_config = Self::config_into_keys(key_config)?;
-        let view_store = ViewStore::new(path, &key_config.0, &key_config.2)?;
-        let env = view_store.get_env();
-
-        let graph = ArunaGraph::from_env(env)?;
+        let store = Store::new(path, &key_config.0, &key_config.2)?;
 
         let controller = Arc::new(Controller {
-            store: RwLock::new(GraphStore { view_store, graph }),
+            store: RwLock::new(store),
             node: RwLock::new(None),
             signing_info: Arc::new(RwLock::new(key_config)),
         });
@@ -74,6 +71,14 @@ impl Controller {
         *controller.node.write().await = Some(node);
 
         Ok(controller)
+    }
+
+    pub async fn read_store(&self) -> RwLockReadGuard<'_, Store> {
+        self.store.read().await
+    }
+
+    pub async fn write_store(&self) -> RwLockWriteGuard<'_, Store> {
+        self.store.write().await
     }
 
     // pub async fn init_testing(&self) {
@@ -141,10 +146,8 @@ impl Controller {
     }
 
     pub async fn get_issuer_key(&self, issuer_name: String, kid: String) -> Option<DecodingKey> {
-        self.store
-            .read()
+        self.read_store()
             .await
-            .view_store
             .get_issuer_key(issuer_name, kid)
             .cloned()
     }
@@ -154,15 +157,10 @@ impl Controller {
         todo!()
     }
     pub async fn get_issuer(&self, issuer: String) -> Result<Issuer, ArunaError> {
-        self.store
-            .read()
-            .await
-            .view_store
-            .get_issuer(issuer)?
-            .ok_or_else(|| {
-                tracing::error!("Issuer not found");
-                ArunaError::ServerError("Issuer not found".to_string())
-            })
+        self.read_store().await.get_issuer(issuer)?.ok_or_else(|| {
+            tracing::error!("Issuer not found");
+            ArunaError::ServerError("Issuer not found".to_string())
+        })
     }
 
     pub async fn get_requester_from_aruna_token(
@@ -189,18 +187,15 @@ impl synevi::Executor for Controller {
 }
 
 pub trait Get {
-    fn get(
-        &self,
-        id: Ulid,
-    ) -> impl Future<Output = Result<Option<NodeVariantValue>, ArunaError>> + Send;
+    fn get(&self, id: Ulid) -> impl Future<Output = Result<Option<Node>, ArunaError>> + Send;
     fn get_incoming_relations(
         &self,
-        id: NodeVariantId,
+        id: Ulid,
         filter: Vec<EdgeType>,
     ) -> impl Future<Output = Vec<RawRelation>> + Send;
     fn get_outgoing_relations(
         &self,
-        id: NodeVariantId,
+        id: Ulid,
         filter: Vec<EdgeType>,
     ) -> impl Future<Output = Vec<RawRelation>> + Send;
 }
@@ -217,11 +212,7 @@ impl Get for Controller {
     async fn get(&self, id: Ulid) -> Result<Option<NodeVariantValue>, ArunaError> {
         self.store.read().await.view_store.get_value(&id)
     }
-    async fn get_incoming_relations(
-        &self,
-        id: NodeVariantId,
-        filter: Vec<EdgeType>,
-    ) -> Vec<RawRelation> {
+    async fn get_incoming_relations(&self, id: Ulid, filter: Vec<EdgeType>) -> Vec<RawRelation> {
         self.store
             .read()
             .await
