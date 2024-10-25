@@ -1,12 +1,12 @@
-use super::transaction::{ArunaTransaction, Requester, TransactionOk};
+use super::{
+    request::{Request, SerializedResponse},
+    transaction::ArunaTransaction,
+};
 use crate::{
-    error::ArunaError,
-    logerr,
-    models::{EdgeType, Issuer, Node, RawRelation, User},
-    storage::store::Store,
+    error::ArunaError, logerr, requests::{auth::Auth, request::Requester}, storage::store::Store
 };
 use jsonwebtoken::{DecodingKey, EncodingKey};
-use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 use synevi::network::GrpcNetwork;
 use synevi::Node as SyneviNode;
 use synevi::SyneviResult;
@@ -81,6 +81,29 @@ impl Controller {
         self.store.write().await
     }
 
+    pub async fn transaction(
+        &self,
+        transaction_id: u128,
+        transaction: ArunaTransaction,
+    ) -> Result<SerializedResponse, ArunaError> {
+        self.node
+            .read()
+            .await
+            .as_ref()
+            .ok_or_else(|| {
+                tracing::error!("Node not set");
+                ArunaError::ServerError("Node not set".to_string())
+            })?
+            .clone()
+            .transaction(transaction_id, transaction)
+            .await?
+    }
+
+    pub async fn request<R: Request>(&self, request: R, token: Option<String>  ) -> Result<R::Response, ArunaError> {
+        let requester: Option<Requester> = self.authorize_token(token, &request).await?;
+        request.run_request(requester, self).await
+    }
+
     // pub async fn init_testing(&self) {
     //     let mut lock = self.store.write().await;
 
@@ -145,36 +168,36 @@ impl Controller {
         ))
     }
 
-    pub async fn get_issuer_key(&self, issuer_name: String, kid: String) -> Option<DecodingKey> {
-        self.read_store()
-            .await
-            .get_issuer_key(issuer_name, kid)
-            .cloned()
-    }
+    // pub async fn get_issuer_key(&self, issuer_name: String, kid: String) -> Option<DecodingKey> {
+    //     self.read_store()
+    //         .await
+    //         .get_issuer_key(issuer_name, kid)
+    //         .cloned()
+    // }
 
-    // TODO
-    pub async fn get_user_by_token(&self, _token_id: Ulid) -> Option<User> {
-        todo!()
-    }
-    pub async fn get_issuer(&self, issuer: String) -> Result<Issuer, ArunaError> {
-        self.read_store().await.get_issuer(issuer)?.ok_or_else(|| {
-            tracing::error!("Issuer not found");
-            ArunaError::ServerError("Issuer not found".to_string())
-        })
-    }
+    // // TODO
+    // pub async fn get_user_by_token(&self, _token_id: Ulid) -> Option<User> {
+    //     todo!()
+    // }
+    // pub async fn get_issuer(&self, issuer: String) -> Result<Issuer, ArunaError> {
+    //     self.read_store().await.get_issuer(issuer)?.ok_or_else(|| {
+    //         tracing::error!("Issuer not found");
+    //         ArunaError::ServerError("Issuer not found".to_string())
+    //     })
+    // }
 
-    pub async fn get_requester_from_aruna_token(
-        &self,
-        token_id: Ulid,
-    ) -> Result<Requester, ArunaError> {
-        let lock = self.store.read().await;
-        lock.graph
-            .get_requester_from_aruna_token(token_id)
-            .ok_or_else(|| {
-                tracing::error!("Requester not found");
-                ArunaError::Unauthorized
-            })
-    }
+    // pub async fn get_requester_from_aruna_token(
+    //     &self,
+    //     token_id: Ulid,
+    // ) -> Result<Requester, ArunaError> {
+    //     let lock = self.store.read().await;
+    //     lock.graph
+    //         .get_requester_from_aruna_token(token_id)
+    //         .ok_or_else(|| {
+    //             tracing::error!("Requester not found");
+    //             ArunaError::Unauthorized
+    //         })
+    // }
 }
 
 #[async_trait::async_trait]
@@ -186,68 +209,68 @@ impl synevi::Executor for Controller {
     }
 }
 
-pub trait Get {
-    fn get(&self, id: Ulid) -> impl Future<Output = Result<Option<Node>, ArunaError>> + Send;
-    fn get_incoming_relations(
-        &self,
-        id: Ulid,
-        filter: Vec<EdgeType>,
-    ) -> impl Future<Output = Vec<RawRelation>> + Send;
-    fn get_outgoing_relations(
-        &self,
-        id: Ulid,
-        filter: Vec<EdgeType>,
-    ) -> impl Future<Output = Vec<RawRelation>> + Send;
-}
+// pub trait Get {
+//     fn get(&self, id: Ulid) -> impl Future<Output = Result<Option<Node>, ArunaError>> + Send;
+//     fn get_incoming_relations(
+//         &self,
+//         id: Ulid,
+//         filter: Vec<EdgeType>,
+//     ) -> impl Future<Output = Vec<RawRelation>> + Send;
+//     fn get_outgoing_relations(
+//         &self,
+//         id: Ulid,
+//         filter: Vec<EdgeType>,
+//     ) -> impl Future<Output = Vec<RawRelation>> + Send;
+// }
 
-pub trait Transaction {
-    fn transaction(
-        &self,
-        transaction_id: u128,
-        transaction: ArunaTransaction,
-    ) -> impl Future<Output = Result<TransactionOk, ArunaError>> + Send;
-}
+// pub trait Transaction {
+//     fn transaction(
+//         &self,
+//         transaction_id: u128,
+//         transaction: ArunaTransaction,
+//     ) -> impl Future<Output = Result<TransactionOk, ArunaError>> + Send;
+// }
 
-impl Get for Controller {
-    async fn get(&self, id: Ulid) -> Result<Option<NodeVariantValue>, ArunaError> {
-        self.store.read().await.view_store.get_value(&id)
-    }
-    async fn get_incoming_relations(&self, id: Ulid, filter: Vec<EdgeType>) -> Vec<RawRelation> {
-        self.store
-            .read()
-            .await
-            .graph
-            .get_relations(id, filter, petgraph::Direction::Incoming)
-    }
-    async fn get_outgoing_relations(
-        &self,
-        id: NodeVariantId,
-        filter: Vec<EdgeType>,
-    ) -> Vec<RawRelation> {
-        self.store
-            .read()
-            .await
-            .graph
-            .get_relations(id, filter, petgraph::Direction::Outgoing)
-    }
-}
+// impl Get for Controller {
+//     async fn get(&self, id: Ulid) -> Result<Option<NodeVariantValue>, ArunaError> {
+//         self.store.read().await.view_store.get_value(&id)
+//     }
+//     async fn get_incoming_relations(&self, id: Ulid, filter: Vec<EdgeType>) -> Vec<RawRelation> {
+//         self.store
+//             .read()
+//             .await
+//             .graph
+//             .get_relations(id, filter, petgraph::Direction::Incoming)
+//     }
+//     async fn get_outgoing_relations(
+//         &self,
+//         id: NodeVariantId,
+//         filter: Vec<EdgeType>,
+//     ) -> Vec<RawRelation> {
+//         self.store
+//             .read()
+//             .await
+//             .graph
+//             .get_relations(id, filter, petgraph::Direction::Outgoing)
+//     }
+// }
 
-impl Transaction for Controller {
-    async fn transaction(
-        &self,
-        transaction_id: u128,
-        transaction: ArunaTransaction,
-    ) -> Result<TransactionOk, ArunaError> {
-        self.node
-            .read()
-            .await
-            .as_ref()
-            .ok_or_else(|| {
-                tracing::error!("Node not set");
-                ArunaError::ServerError("Node not set".to_string())
-            })?
-            .clone()
-            .transaction(transaction_id, transaction)
-            .await?
-    }
-}
+// impl Transaction for Controller {
+//     async fn transaction(
+//         &self,
+//         transaction_id: u128,
+//         transaction: ArunaTransaction,
+//     ) -> Result<TransactionOk, ArunaError> {
+//         self.node
+//             .read()
+//             .await
+//             .as_ref()
+//             .ok_or_else(|| {
+//                 tracing::error!("Node not set");
+//                 ArunaError::ServerError("Node not set".to_string())
+//             })?
+//             .clone()
+//             .transaction(transaction_id, transaction)
+//             .await?
+//     }
+// }

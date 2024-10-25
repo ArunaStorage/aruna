@@ -103,7 +103,8 @@ impl Store {
             &milli_index.read_txn().inspect_err(logerr!())?,
             &relations,
             &milli_index.documents,
-        ).inspect_err(logerr!())?;
+        )
+        .inspect_err(logerr!())?;
 
         Ok(Self {
             milli_index,

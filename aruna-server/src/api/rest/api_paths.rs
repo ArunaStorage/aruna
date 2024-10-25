@@ -139,7 +139,7 @@ pub async fn get_realm(
 #[utoipa::path(
     post,
     path = "/api/v3/realm/group",
-    request_body = AddGroupRequest, 
+    request_body = AddGroupRequest,
     responses(
         (status = 200, body = GetRealmResponse),
         ArunaError,
@@ -153,7 +153,7 @@ pub async fn add_group(
     header: HeaderMap,
     Json(request): Json<AddGroupRequest>,
 ) -> impl IntoResponse {
-    into_axum_response(state.add_group(extract_token(&header), request).await)
+    into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
 /// Create a new  

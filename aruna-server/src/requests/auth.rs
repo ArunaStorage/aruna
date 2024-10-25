@@ -1,9 +1,10 @@
 use super::{
     controller::{Controller, Get},
+    request::Request,
     transaction::Requester,
 };
 use crate::{
-    context::{Context, GetContext},
+    context::Context,
     error::ArunaError,
     models::{ArunaTokenClaims, Audience, IssuerType},
 };
@@ -14,26 +15,26 @@ use ulid::Ulid;
 
 #[async_trait::async_trait]
 pub trait Auth: Send + Sync {
-    async fn authorize_token<'a, C: GetContext>(
+    async fn authorize_token<'a, R: Request>(
         &self,
         token: Option<String>,
-        request: &'a C,
+        request: &'a R,
     ) -> Result<Option<Requester>, ArunaError>;
-    async fn authorize<'a, C: GetContext>(
+    async fn authorize<'a, R: Request>(
         &self,
         user: &Requester,
-        request: &'a C,
+        request: &'a R,
     ) -> Result<(), ArunaError>;
 }
 
 #[async_trait::async_trait]
 impl Auth for Controller {
-    async fn authorize_token<'a, C: GetContext>(
+    async fn authorize_token<'a, R: Request>(
         &self,
         token: Option<String>,
-        request: &'a C,
+        request: &'a R,
     ) -> Result<Option<Requester>, ArunaError> {
-        let ctx = request.get_context(self).await?;
+        let ctx = request.get_context();
 
         let Some(token) = token else {
             if matches!(ctx, Context::Public) {
@@ -52,12 +53,12 @@ impl Auth for Controller {
         Ok(Some(requester))
     }
 
-    async fn authorize<'a, C: GetContext>(
+    async fn authorize<'a, R: Request>(
         &self,
         user: &Requester,
-        request: &'a C,
+        request: &'a R,
     ) -> Result<(), ArunaError> {
-        let ctx = request.get_context(self).await?;
+        let ctx = request.get_context();
 
         match ctx {
             Context::Public => Ok(()),

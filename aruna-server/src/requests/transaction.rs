@@ -1,143 +1,83 @@
+use super::{controller::Controller, request::SerializedResponse};
+use crate::{
+    error::ArunaError,
+    requests::{realm::CreateRealmRequestTx, request::WriteRequest},
+};
 use serde::{Deserialize, Serialize};
 use synevi::{SyneviError, Transaction};
 use tracing::debug;
 use ulid::Ulid;
 
-use crate::{
-    error::ArunaError,
-    models::{
-        AddGroupRequest, AddGroupResponse, CreateGroupRequest, CreateGroupResponse,
-        CreateProjectRequest, CreateProjectResponse, CreateRealmRequest, CreateRealmResponse,
-        CreateResourceRequest, CreateResourceResponse,
-    },
-};
+#[derive(Debug, Clone)]
+pub struct ArunaTransaction(pub Vec<u8>);
 
-use super::{
-    controller::Controller, group::WriteGroupExecuteHandler, realm::WriteRealmExecuteHandler,
-    resource::WriteResourceExecuteHandler,
-};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Requests {
-    CreateRealmRequest(CreateRealmRequest),
-    CreateGroupRequest(CreateGroupRequest),
-    CreateProjectRequest(CreateProjectRequest),
-    CreateResourceRequest(CreateResourceRequest),
-    AddGroupRequest(AddGroupRequest),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Requester {
-    User {
-        user_id: Ulid,
-        auth_method: AuthMethod,
-    },
-    ServiceAccount {
-        service_account_id: Ulid,
-        token_id: Ulid,
-        group_id: Ulid,
-    },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum AuthMethod {
-    Oidc {
-        oidc_realm: String,
-        oidc_subject: String,
-    },
-    Aruna(Ulid),
-}
-
-impl Requester {
-    pub fn get_id(&self) -> Ulid {
-        match self {
-            Self::User {
-                auth_method,
-                user_id,
-            } => match auth_method {
-                AuthMethod::Oidc { .. } => *user_id,
-                AuthMethod::Aruna(token_id) => *token_id,
-            },
-            Self::ServiceAccount { token_id, .. } => *token_id,
-        }
+impl ArunaTransaction {
+    pub fn get_index(&self) -> Result<u16, ArunaError> {
+        Ok(u16::from_be_bytes(self.0[0..2].try_into().map_err(
+            |_| ArunaError::DeserializeError("Transaction index does not match".to_string()),
+        )?))
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Metadata {
-    pub requester: Requester,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Fields {
-    GroupId(Ulid),
-    UserId(Ulid),
-    ParentId(Ulid),
-    ResourceId(Ulid),
-    RealmId(Ulid),
-    CreatedAt(i64),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ArunaTransaction {
-    pub request: Requests,
-    pub metadata: Metadata,
-    pub generated_fields: Option<Vec<Fields>>,
 }
 
 impl Transaction for ArunaTransaction {
     type TxErr = ArunaError;
-    type TxOk = TransactionOk;
+    type TxOk = SerializedResponse;
 
     fn as_bytes(&self) -> Vec<u8> {
-        bincode::serialize(&self).unwrap_or_default()
+        self.0.clone()
     }
 
     fn from_bytes(bytes: Vec<u8>) -> Result<Self, SyneviError>
     where
         Self: Sized,
     {
-        bincode::deserialize(&bytes)
-            .map_err(|e| SyneviError::InvalidConversionFromBytes(e.to_string()))
+        Ok(Self(bytes))
     }
 }
 
-pub enum TransactionOk {
-    CreateRealmResponse(CreateRealmResponse),
-    CreateResourceResponse(CreateResourceResponse),
-    CreateProjectResponse(CreateProjectResponse),
-    CreateGroupResponse(CreateGroupResponse),
-    AddGroupResponse(AddGroupResponse),
-}
+pub const CREATE_REALM: u16 = 0;
+
+
+impl_write_request!(
+    CreateRealmRequestTx, 
+    
+
+
+)
 
 impl Controller {
     pub async fn process_transaction(
         &self,
         transaction: ArunaTransaction,
-    ) -> Result<TransactionOk, ArunaError> {
+    ) -> Result<SerializedResponse, ArunaError> {
         debug!("Started transaction");
-        let res = match transaction.request {
-            Requests::CreateRealmRequest(request) => {
-                self.create_realm(request, transaction.metadata, transaction.generated_fields)
-                    .await
-            }
-            Requests::CreateGroupRequest(request) => {
-                self.create_group(request, transaction.metadata, transaction.generated_fields)
-                    .await
-            }
-            Requests::CreateProjectRequest(request) => {
-                self.create_project(request, transaction.metadata, transaction.generated_fields)
-                    .await
-            }
-            Requests::CreateResourceRequest(request) => {
-                self.create_resource(request, transaction.metadata, transaction.generated_fields)
-                    .await
-            }
 
-            Requests::AddGroupRequest(_) => todo!(),
-        };
+        let index = transaction.get_index()?;
 
-        debug!("Finished transaction");
-        res
+        match index {
+            CREATE_REALM => {
+                CreateRealmRequestTx::from_bytes(transaction.0)?
+                    .execute(self)
+                    .await
+            }
+            _ => unimplemented!(),
+        }
     }
+}
+
+
+#[macro_export]
+macro_rules! impl_write_request {
+    ( $( $request:ident ),* ) => {
+        $(
+            impl IntoResponse<$request> for TransactionOk {
+                fn into_response(self) -> Result<Response<$request>, tonic::Status> {
+                    match self {
+                        TransactionOk::$request(resp) => Ok(Response::new(resp)),
+                        _ => Err(tonic::Status::internal("Invalid response type")),
+                    }
+                }
+            }
+        )*
+    };
 }

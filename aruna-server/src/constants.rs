@@ -114,88 +114,88 @@ pub mod relation_types {
 
 pub fn const_relations() -> [RelationInfo; 12] {
     [
-    // Resource only
-    // Target can only have one origin
-    RelationInfo {
-        idx: relation_types::HAS_PART,
-        forward_type: "HasPart".to_string(),
-        backward_type: "PartOf".to_string(),
-        internal: false,
-    },
-    // Group -> Project only
-    RelationInfo {
-        idx: relation_types::OWNS_PROJECT,
-        forward_type: "OwnsProject".to_string(),
-        backward_type: "ProjectOwnedBy".to_string(),
-        internal: false,
-    },
-    //  User / Group / Token / ServiceAccount -> Resource only
-    RelationInfo {
-        idx: relation_types::PERMISSION_NONE,
-        forward_type: "PermissionNone".to_string(),
-        backward_type: "PermissionNone".to_string(),
-        internal: true, // -> Displayed by resource request
-    },
-    RelationInfo {
-        idx: 3,
-        forward_type: "PermissionRead".to_string(),
-        backward_type: "PermissionRead".to_string(),
-        internal: true,
-    },
-    RelationInfo {
-        idx: 4,
-        forward_type: "PermissionAppend".to_string(),
-        backward_type: "PermissionAppend".to_string(),
-        internal: true,
-    },
-    RelationInfo {
-        idx: 5,
-        forward_type: "PermissionWrite".to_string(),
-        backward_type: "PermissionWrite".to_string(),
-        internal: true,
-    },
-    RelationInfo {
-        idx: 6,
-        forward_type: "PermissionAdmin".to_string(),
-        backward_type: "PermissionAdmin".to_string(),
-        internal: true,
-    },
-    // Group -> Group only
-    RelationInfo {
-        idx: 7,
-        forward_type: "SharesPermissionTo".to_string(),
-        backward_type: "PermissionSharedFrom".to_string(),
-        internal: true,
-    },
-    // Token -> User only
-    RelationInfo {
-        idx: 8,
-        forward_type: "OwnedByUser".to_string(),
-        backward_type: "UserOwnsToken".to_string(),
-        internal: true,
-    },
-    // Group -> Realm
-    RelationInfo {
-        idx: 9,
-        forward_type: "GroupPartOfRealm".to_string(),
-        backward_type: "RealmHasGroup".to_string(),
-        internal: true,
-    },
-    // Mutually exclusive with GroupPartOfRealm
-    // Can only have a connection to one realm
-    // Group -> Realm
-    RelationInfo {
-        idx: 10,
-        forward_type: "GroupAdministratesRealm".to_string(),
-        backward_type: "RealmAdministratedBy".to_string(),
-        internal: true,
-    },
-    // Realm -> Endpoint
-    RelationInfo {
-        idx: 11,
-        forward_type: "RealmUsesEndpoint".to_string(),
-        backward_type: "EndpointUsedByRealm".to_string(),
-        internal: true,
-    },
-]
+        // Resource only
+        // Target can only have one origin
+        RelationInfo {
+            idx: relation_types::HAS_PART,
+            forward_type: "HasPart".to_string(),
+            backward_type: "PartOf".to_string(),
+            internal: false,
+        },
+        // Group -> Project only
+        RelationInfo {
+            idx: relation_types::OWNS_PROJECT,
+            forward_type: "OwnsProject".to_string(),
+            backward_type: "ProjectOwnedBy".to_string(),
+            internal: false,
+        },
+        //  User / Group / Token / ServiceAccount -> Resource only
+        RelationInfo {
+            idx: relation_types::PERMISSION_NONE,
+            forward_type: "PermissionNone".to_string(),
+            backward_type: "PermissionNone".to_string(),
+            internal: true, // -> Displayed by resource request
+        },
+        RelationInfo {
+            idx: 3,
+            forward_type: "PermissionRead".to_string(),
+            backward_type: "PermissionRead".to_string(),
+            internal: true,
+        },
+        RelationInfo {
+            idx: 4,
+            forward_type: "PermissionAppend".to_string(),
+            backward_type: "PermissionAppend".to_string(),
+            internal: true,
+        },
+        RelationInfo {
+            idx: 5,
+            forward_type: "PermissionWrite".to_string(),
+            backward_type: "PermissionWrite".to_string(),
+            internal: true,
+        },
+        RelationInfo {
+            idx: 6,
+            forward_type: "PermissionAdmin".to_string(),
+            backward_type: "PermissionAdmin".to_string(),
+            internal: true,
+        },
+        // Group -> Group only
+        RelationInfo {
+            idx: 7,
+            forward_type: "SharesPermissionTo".to_string(),
+            backward_type: "PermissionSharedFrom".to_string(),
+            internal: true,
+        },
+        // Token -> User only
+        RelationInfo {
+            idx: 8,
+            forward_type: "OwnedByUser".to_string(),
+            backward_type: "UserOwnsToken".to_string(),
+            internal: true,
+        },
+        // Group -> Realm
+        RelationInfo {
+            idx: 9,
+            forward_type: "GroupPartOfRealm".to_string(),
+            backward_type: "RealmHasGroup".to_string(),
+            internal: true,
+        },
+        // Mutually exclusive with GroupPartOfRealm
+        // Can only have a connection to one realm
+        // Group -> Realm
+        RelationInfo {
+            idx: 10,
+            forward_type: "GroupAdministratesRealm".to_string(),
+            backward_type: "RealmAdministratedBy".to_string(),
+            internal: true,
+        },
+        // Realm -> Endpoint
+        RelationInfo {
+            idx: 11,
+            forward_type: "RealmUsesEndpoint".to_string(),
+            backward_type: "EndpointUsedByRealm".to_string(),
+            internal: true,
+        },
+    ]
 }

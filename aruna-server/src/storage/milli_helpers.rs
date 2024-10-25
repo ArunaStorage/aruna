@@ -19,17 +19,16 @@ pub(crate) fn prepopulate_fields(
     }
 
     // Ensure that the existing map has the expected field u32 mappings
-    let existing_map = index
-        .fields_ids_map(&wtxn)?;
+    let existing_map = index.fields_ids_map(&wtxn)?;
 
     if !existing_map.is_empty() {
-        existing_map.iter()
-        .zip(field_ids_map.iter())
-        .for_each(|((got_id, got_name), (id, name))| {
-            assert_eq!(got_id, id);
-            assert_eq!(got_name, name);
-        });
-    }else{
+        existing_map.iter().zip(field_ids_map.iter()).for_each(
+            |((got_id, got_name), (id, name))| {
+                assert_eq!(got_id, id);
+                assert_eq!(got_name, name);
+            },
+        );
+    } else {
         index.put_fields_ids_map(&mut wtxn, &field_ids_map);
     }
     Ok(())
