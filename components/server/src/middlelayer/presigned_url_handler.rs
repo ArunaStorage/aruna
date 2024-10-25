@@ -461,7 +461,7 @@ impl PresignedUpload {
         let multipart = self.get_multipart();
         let part_number = self.0.part_number;
         let parts = match (part_number, multipart) {
-            (n, true) if n < 1 || n > 10000 => {
+            (n, true) if !(1..=10000).contains(&n) => {
                 return Err(anyhow!("Invalid part number provided for multipart upload",))
             }
             (n, true) => n,
