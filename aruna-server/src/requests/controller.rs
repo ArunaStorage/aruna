@@ -3,26 +3,28 @@ use super::{
     transaction::ArunaTransaction,
 };
 use crate::{
-    error::ArunaError, logerr, requests::{auth::Auth, request::Requester}, storage::store::Store
+    error::ArunaError,
+    logerr,
+    requests::{auth::Auth, request::Requester},
+    storage::store::Store,
 };
 use jsonwebtoken::{DecodingKey, EncodingKey};
+use std::sync::{RwLock as StdRwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use synevi::network::GrpcNetwork;
 use synevi::Node as SyneviNode;
 use synevi::SyneviResult;
-use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use tokio::sync::RwLock;
 use tracing::trace;
 use ulid::Ulid;
 
 type ConsensusNode = RwLock<Option<Arc<SyneviNode<GrpcNetwork, Arc<Controller>>>>>;
 
 pub struct Controller {
-    // view_store: RwLock<ViewStore>,
-    // graph: RwLock<ArunaGraph>,
-    pub(super) store: RwLock<Store>,
+    pub(super) store: Arc<StdRwLock<Store>>,
     node: ConsensusNode,
     // Auth signing info
-    pub(super) signing_info: Arc<RwLock<(u32, EncodingKey, DecodingKey)>>, //<PublicKey Serial; PrivateKey; PublicKey>
+    pub(super) signing_info: Arc<StdRwLock<(u32, EncodingKey, DecodingKey)>>, //<PublicKey Serial; PrivateKey; PublicKey>
 }
 
 pub type KeyConfig = (u32, String, String);
@@ -41,9 +43,9 @@ impl Controller {
         let store = Store::new(path, &key_config.0, &key_config.2)?;
 
         let controller = Arc::new(Controller {
-            store: RwLock::new(store),
+            store: Arc::new(StdRwLock::new(store)),
             node: RwLock::new(None),
-            signing_info: Arc::new(RwLock::new(key_config)),
+            signing_info: Arc::new(StdRwLock::new(key_config)),
         });
         let node = SyneviNode::new_with_network_and_executor(
             node_id,
@@ -73,12 +75,12 @@ impl Controller {
         Ok(controller)
     }
 
-    pub async fn read_store(&self) -> RwLockReadGuard<'_, Store> {
-        self.store.read().await
+    pub fn read_store(&self) -> RwLockReadGuard<'_, Store> {
+        self.store.read().unwrap()
     }
 
-    pub async fn write_store(&self) -> RwLockWriteGuard<'_, Store> {
-        self.store.write().await
+    pub fn write_store(&self) -> RwLockWriteGuard<'_, Store> {
+        self.store.write().unwrap()
     }
 
     pub async fn transaction(
@@ -99,7 +101,11 @@ impl Controller {
             .await?
     }
 
-    pub async fn request<R: Request>(&self, request: R, token: Option<String>  ) -> Result<R::Response, ArunaError> {
+    pub async fn request<R: Request>(
+        &self,
+        request: R,
+        token: Option<String>,
+    ) -> Result<R::Response, ArunaError> {
         let requester: Option<Requester> = self.authorize_token(token, &request).await?;
         request.run_request(requester, self).await
     }

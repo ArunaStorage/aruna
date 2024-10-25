@@ -1,13 +1,5 @@
 use crate::models::*;
-use crate::{
-    error::ArunaError,
-    requests::{
-        controller::Controller,
-        group::{ReadGroupHandler, WriteGroupRequestHandler},
-        realm::{ReadRealmHandler, WriteRealmRequestHandler},
-        resource::{ReadResourceHandler, WriteResourceRequestHandler},
-    },
-};
+use crate::{error::ArunaError, requests::controller::Controller};
 use axum::{
     extract::{Query, State},
     http::HeaderMap,

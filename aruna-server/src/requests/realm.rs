@@ -11,12 +11,20 @@
 // };
 // use ulid::Ulid;
 
+use std::sync::Arc;
+
+use super::{
+    controller::Controller,
+    request::{Request, Requester, WriteRequest},
+};
+use crate::{
+    context::Context,
+    error::ArunaError,
+    models::{CreateRealmRequest, CreateRealmResponse},
+    requests::transaction::ArunaTransaction,
+};
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
-use crate::{
-    context::Context, models::{CreateRealmRequest, CreateRealmResponse}, requests::transaction::ArunaTransaction,
-};
-use super::{controller::Controller, request::{Request, Requester, WriteRequest}};
 
 impl Request for CreateRealmRequest {
     type Response = CreateRealmResponse;
@@ -28,20 +36,19 @@ impl Request for CreateRealmRequest {
         self,
         requester: Option<Requester>,
         controller: &Controller,
-    ) -> Result<Self::Response, crate::error::ArunaError> {
+    ) -> Result<Self::Response, ArunaError> {
         let request_tx = CreateRealmRequestTx {
             id: Ulid::new(),
             req: self,
-            requester: requester.unwrap(),
+            requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
         };
 
-        let response  = controller
+        let response = controller
             .transaction(
                 Ulid::new().0,
-                ArunaTransaction(request_tx.into_bytes().unwrap()),
+                ArunaTransaction(bincode::serialize(&request_tx)?),
             )
-            .await
-            .unwrap();
+            .await?;
 
         Ok(bincode::deserialize(&response)?)
     }
@@ -54,11 +61,14 @@ pub struct CreateRealmRequestTx {
     requester: Requester,
 }
 
+#[typetag::serde]
+#[async_trait::async_trait]
 impl WriteRequest for CreateRealmRequestTx {
     async fn execute(
         &self,
-        controller: &super::controller::Controller,
+        controller: &Controller,
     ) -> Result<super::request::SerializedResponse, crate::error::ArunaError> {
+        tokio::task::spawn_blocking(move || {});
         unimplemented!()
     }
 }

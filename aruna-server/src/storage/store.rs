@@ -1,9 +1,12 @@
 use crate::{
-    constants::const_relations,
     error::ArunaError,
     logerr,
     models::{EdgeType, Issuer, NodeVariant, RawRelation, RelationInfo, ServerState},
-    storage::{graph::load_graph, milli_helpers::prepopulate_fields},
+    storage::{
+        graph::load_graph,
+        init::{self, init_issuer},
+        milli_helpers::prepopulate_fields,
+    },
 };
 use ahash::RandomState;
 use heed::{
@@ -30,7 +33,7 @@ pub mod db_names {
     pub const READ_GROUP_PERMS: &str = "read_group_perms";
 }
 
-type DecodingKeyIdentifier = (String, String); // (IssuerName, KeyID)
+pub(super) type DecodingKeyIdentifier = (String, String); // (IssuerName, KeyID)
 
 pub struct Store {
     // Milli index to store objects and allow for search
@@ -94,7 +97,7 @@ impl Store {
             .inspect_err(logerr!())?;
 
         // INIT relations
-        init_relations(&mut write_txn, &relation_infos)?;
+        init::init_relations(&mut write_txn, &relation_infos)?;
         // INIT issuer
         let issuer_decoding_keys = init_issuer(&mut write_txn, &issuers, key_serial, decoding_key)?;
         write_txn.commit().inspect_err(logerr!())?;
@@ -117,6 +120,18 @@ impl Store {
             issuer_decoding_keys,
             graph,
         })
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn get_idx_from_ulid(&self, id: &Ulid) -> Option<u32> {
+        // TODO: Decide if the transaction should be handled here or by the caller
+        let txn = self.milli_index.read_txn().inspect_err(logerr!()).ok()?;
+        self.milli_index
+            .external_documents_ids
+            .get(&txn, &id.to_string())
+            .inspect_err(logerr!())
+            .ok()
+            .flatten()
     }
 
     // #[tracing::instrument(level = "trace", skip(self))]
@@ -161,50 +176,4 @@ impl Store {
     //     write_txn.commit().inspect_err(logerr!())?;
     //     Ok(())
     // }
-}
-
-#[tracing::instrument(level = "trace", skip(key_id, decoding_key, write_txn))]
-fn init_issuer(
-    mut write_txn: &mut heed::RwTxn,
-    issuers: &Database<Str, SerdeBincode<Issuer>>,
-    key_id: &u32,
-    decoding_key: &DecodingKey,
-) -> Result<HashMap<DecodingKeyIdentifier, DecodingKey, RandomState>, ArunaError> {
-    issuers
-        .put(
-            &mut write_txn,
-            "aruna",
-            &Issuer {
-                issuer_name: "aruna".to_string(),
-                pubkey_endpoint: None,
-                audiences: Some(vec!["aruna".to_string()]),
-                issuer_type: crate::models::IssuerType::ARUNA,
-            },
-        )
-        .inspect_err(logerr!())?;
-
-    // TODO: Read existing issuers
-    // Query the endpoint for the decoding key -> Add to hashmap
-    //todo!();
-
-    let mut iss: HashMap<DecodingKeyIdentifier, DecodingKey, RandomState> = HashMap::default();
-    iss.insert(
-        ("aruna".to_string(), key_id.to_string()),
-        decoding_key.clone(),
-    );
-
-    Ok(iss)
-}
-
-#[tracing::instrument(level = "trace", skip(write_txn))]
-fn init_relations(
-    mut write_txn: &mut heed::RwTxn,
-    relation_infos: &Database<BEU32, SerdeBincode<RelationInfo>>,
-) -> Result<(), ArunaError> {
-    const_relations().iter().try_for_each(|info| {
-        relation_infos
-            .put(&mut write_txn, &info.idx, info)
-            .inspect_err(logerr!())
-    })?;
-    Ok(())
 }

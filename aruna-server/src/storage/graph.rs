@@ -14,6 +14,16 @@ use petgraph::{
 };
 use tracing::error;
 
+pub trait IndexHelper {
+    fn as_u32(&self) -> u32;
+}
+
+impl IndexHelper for petgraph::graph::NodeIndex {
+    fn as_u32(&self) -> u32 {
+        self.index() as u32
+    }
+}
+
 #[tracing::instrument(level = "trace", skip(rtxn, relations, documents))]
 pub fn load_graph(
     rtxn: &RoTxn<'_>,
@@ -29,7 +39,7 @@ pub fn load_graph(
             ArunaError::ServerError("Node type not found in document".to_string())
         })?;
 
-        let value = serde_json::from_slice::<serde_json::Number>(node_type).map_err(|e| {
+        let value = serde_json::from_slice::<serde_json::Number>(node_type).map_err(|_| {
             ArunaError::ConversionError {
                 from: "&[u8]".to_string(),
                 to: "serde_json::Number".to_string(),
@@ -56,23 +66,24 @@ pub fn load_graph(
 
 pub fn get_relations(
     graph: &Graph<NodeVariant, EdgeType>,
-    idx: &u32,
+    idx: u32,
     filter: &[EdgeType],
-    direction: &Direction,
+    direction: Direction,
 ) -> Vec<RawRelation> {
+    let idx = idx.into();
     graph
         .edges_directed(idx, direction)
         .filter_map(|e| {
             if filter.contains(e.weight()) {
                 match direction {
                     Direction::Outgoing => Some(RawRelation {
-                        target: e.target(),
-                        source: idx,
+                        target: e.target().as_u32(),
+                        source: idx.as_u32(),
                         edge_type: *e.weight(),
                     }),
                     Direction::Incoming => Some(RawRelation {
-                        source: e.target(),
-                        target: idx,
+                        source: e.target().as_u32(),
+                        target: idx.as_u32(),
                         edge_type: *e.weight(),
                     }),
                 }
@@ -85,9 +96,10 @@ pub fn get_relations(
 
 pub fn get_relatives(
     graph: &Graph<NodeVariant, EdgeType>,
-    idx: &u32,
-    direction: &Direction,
+    idx: u32,
+    direction: Direction,
 ) -> Vec<u32> {
+    let idx = idx.into();
     graph
         .edges_directed(idx, direction)
         .filter_map(|e| {
@@ -97,7 +109,7 @@ pub fn get_relatives(
                     Some(variant) => match variant {
                         NodeVariant::ResourceProject
                         | NodeVariant::ResourceFolder
-                        | NodeVariant::ResourceObject => Some(idx),
+                        | NodeVariant::ResourceObject => Some(idx.as_u32()),
                         _ => None,
                     },
                 }
@@ -108,12 +120,12 @@ pub fn get_relatives(
         .collect()
 }
 
-pub fn get_parents(graph: &Graph<NodeVariant, EdgeType>, idx: &u32) -> Vec<u32> {
-    get_relatives(graph, idx, &Incoming)
+pub fn get_parents(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Vec<u32> {
+    get_relatives(graph, idx, Incoming)
 }
 
-pub fn get_children(graph: &Graph<NodeVariant, EdgeType>, idx: &u32) -> Vec<u32> {
-    get_relatives(graph, idx, &Outgoing)
+pub fn get_children(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Vec<u32> {
+    get_relatives(graph, idx, Outgoing)
 }
 
 /// Perform a breadth-first search for incoming edges to find the highest permission
@@ -125,15 +137,15 @@ pub fn get_children(graph: &Graph<NodeVariant, EdgeType>, idx: &u32) -> Vec<u32>
 #[tracing::instrument(level = "trace", skip(graph))]
 pub fn get_permissions(
     graph: &Graph<NodeVariant, EdgeType>,
-    resource_id: &u32,
-    identity: &u32,
+    resource_id: u32,
+    identity: u32,
 ) -> Result<Permission, ArunaError> {
     use crate::constants::relation_types::*;
     // Resource could be: Group, User, Projects, Folder, Object || TODO: Realm, ServiceAccount, Hooks, etc.
 
     let mut highest_perm: Option<u32> = None;
     let mut queue = VecDeque::new();
-    queue.push_back((*resource_id, u32::MAX));
+    queue.push_back((resource_id.into(), u32::MAX));
     while let Some((idx, current_perm)) = queue.pop_front() {
         // Iterate over all incoming edges
         for edge in graph.edges_directed(idx, Incoming) {
@@ -141,7 +153,7 @@ pub fn get_permissions(
                 // If the edge is a "permission related" edge
                 &HAS_PART | &OWNS_PROJECT | &SHARES_PERMISSION => {
                     queue.push_back((edge.source(), current_perm));
-                    if &edge.source() == identity {
+                    if edge.source().as_u32() == identity {
                         if let Some(perm) = highest_perm.as_mut() {
                             if current_perm > *perm {
                                 *perm = current_perm;
@@ -157,7 +169,7 @@ pub fn get_permissions(
 
                     queue.push_back((edge.source(), perm_possible));
 
-                    if &edge.source() == identity {
+                    if edge.source().as_u32() == identity {
                         if let Some(perm) = highest_perm.as_mut() {
                             if perm_possible > *perm {
                                 *perm = perm_possible;

@@ -12,7 +12,7 @@ macro_rules! logerr {
     };
 }
 
-#[derive(Debug, Error, IntoResponses)]
+#[derive(Debug, Error, IntoResponses, Clone)]
 #[allow(dead_code)]
 pub enum ArunaError {
     // 400 Bad Request

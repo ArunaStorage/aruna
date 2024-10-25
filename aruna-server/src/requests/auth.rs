@@ -1,7 +1,6 @@
 use super::{
-    controller::{Controller, Get},
-    request::Request,
-    transaction::Requester,
+    controller::Controller,
+    request::{Request, Requester},
 };
 use crate::{
     context::Context,
@@ -13,7 +12,6 @@ use chrono::Utc;
 use jsonwebtoken::{decode_header, encode, Algorithm, DecodingKey, Header};
 use ulid::Ulid;
 
-#[async_trait::async_trait]
 pub trait Auth: Send + Sync {
     async fn authorize_token<'a, R: Request>(
         &self,
@@ -27,7 +25,6 @@ pub trait Auth: Send + Sync {
     ) -> Result<(), ArunaError>;
 }
 
-#[async_trait::async_trait]
 impl Auth for Controller {
     async fn authorize_token<'a, R: Request>(
         &self,
@@ -45,8 +42,12 @@ impl Auth for Controller {
             }
         };
 
-        let token_id = self.process_token(&token).await?;
-        let requester = self.get_requester_from_aruna_token(token_id).await?;
+        let requester = tokio::task::spawn_blocking(move || {
+            let token_id = self.process_token(&token)?;
+            let requester = self.get_requester_from_token_id(token_id)?;
+            Ok(requester)
+        })
+        .await??;
 
         self.authorize(&requester, request).await?;
 
@@ -130,7 +131,7 @@ impl Controller {
     }
 
     ///ToDo: Rust Doc
-    pub async fn sign_user_token(
+    pub fn sign_user_token(
         &self,
         token_id: &Ulid,
         expires_at: Option<u64>,
@@ -163,7 +164,7 @@ impl Controller {
         })
     }
 
-    async fn process_token(&self, token: &str) -> Result<Ulid, ArunaError> {
+    fn process_token(&self, token: &str) -> Result<Ulid, ArunaError> {
         let split = token.split('.').nth(1).ok_or_else(|| {
             tracing::error!("Invalid token");
             ArunaError::Unauthorized
@@ -184,17 +185,15 @@ impl Controller {
             .await
             .map_err(|_| ArunaError::Unauthorized)?;
 
-        let claims = self
-            .get_claims(token, issuer.issuer_name, issuer.audiences)
-            .await?;
+        let claims = self.get_claims(token, issuer.issuer_name, issuer.audiences)?;
 
         match issuer.issuer_type {
-            IssuerType::OIDC => self.validate_oidc_token(&claims).await,
-            IssuerType::ARUNA => self.token_exists(&claims.sub).await,
+            IssuerType::OIDC => self.validate_oidc_token(&claims),
+            IssuerType::ARUNA => self.token_exists(&claims.sub),
         }
     }
 
-    async fn get_claims(
+    fn get_claims(
         &self,
         token: &str,
         issuer_name: String,
@@ -245,7 +244,7 @@ impl Controller {
     }
 
     ///ToDo: Rust Doc
-    async fn token_exists(&self, subject: &str) -> Result<Ulid, ArunaError> {
+    fn token_exists(&self, subject: &str) -> Result<Ulid, ArunaError> {
         // Fetch user from cache
         let token_id = Ulid::from_string(subject).map_err(|_| {
             tracing::error!("Invalid token id provided");
@@ -261,7 +260,7 @@ impl Controller {
     }
 
     ///ToDo: Rust Doc
-    async fn validate_oidc_token(&self, claims: &ArunaTokenClaims) -> Result<Ulid, ArunaError> {
+    fn validate_oidc_token(&self, claims: &ArunaTokenClaims) -> Result<Ulid, ArunaError> {
         let _oidc_mapping = (claims.iss.clone(), claims.sub.clone());
         // Fetch user from oidc provider
         //self.controller.get_user_by_oidc(oidc_mapping)

@@ -26,7 +26,7 @@ impl GroupService for GroupServiceImpl {
 
         Ok(tonic::Response::new(
             controller
-                .create_group(token, request.into_inner().into())
+                .request(request.into_inner().into(), token)
                 .await?
                 .into(),
         ))

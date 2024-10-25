@@ -1,23 +1,12 @@
+use std::sync::Arc;
+
 use super::{controller::Controller, request::SerializedResponse};
-use crate::{
-    error::ArunaError,
-    requests::{realm::CreateRealmRequestTx, request::WriteRequest},
-};
-use serde::{Deserialize, Serialize};
+use crate::{error::ArunaError, requests::request::WriteRequest};
 use synevi::{SyneviError, Transaction};
 use tracing::debug;
-use ulid::Ulid;
 
 #[derive(Debug, Clone)]
 pub struct ArunaTransaction(pub Vec<u8>);
-
-impl ArunaTransaction {
-    pub fn get_index(&self) -> Result<u16, ArunaError> {
-        Ok(u16::from_be_bytes(self.0[0..2].try_into().map_err(
-            |_| ArunaError::DeserializeError("Transaction index does not match".to_string()),
-        )?))
-    }
-}
 
 impl Transaction for ArunaTransaction {
     type TxErr = ArunaError;
@@ -35,49 +24,13 @@ impl Transaction for ArunaTransaction {
     }
 }
 
-pub const CREATE_REALM: u16 = 0;
-
-
-impl_write_request!(
-    CreateRealmRequestTx, 
-    
-
-
-)
-
 impl Controller {
     pub async fn process_transaction(
         &self,
         transaction: ArunaTransaction,
     ) -> Result<SerializedResponse, ArunaError> {
         debug!("Started transaction");
-
-        let index = transaction.get_index()?;
-
-        match index {
-            CREATE_REALM => {
-                CreateRealmRequestTx::from_bytes(transaction.0)?
-                    .execute(self)
-                    .await
-            }
-            _ => unimplemented!(),
-        }
+        let tx: Box<dyn WriteRequest> = bincode::deserialize(&transaction.0)?;
+        tx.execute(self).await
     }
-}
-
-
-#[macro_export]
-macro_rules! impl_write_request {
-    ( $( $request:ident ),* ) => {
-        $(
-            impl IntoResponse<$request> for TransactionOk {
-                fn into_response(self) -> Result<Response<$request>, tonic::Status> {
-                    match self {
-                        TransactionOk::$request(resp) => Ok(Response::new(resp)),
-                        _ => Err(tonic::Status::internal("Invalid response type")),
-                    }
-                }
-            }
-        )*
-    };
 }

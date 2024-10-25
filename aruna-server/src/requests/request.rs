@@ -1,35 +1,28 @@
 use std::sync::Arc;
 
-use crate::{context::Context, error::ArunaError};
-use heed::byteorder::{BigEndian, ByteOrder, WriteBytesExt};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use ulid::Ulid;
 use super::controller::Controller;
+use crate::{context::Context, error::ArunaError};
+use serde::{Deserialize, Serialize};
+use ulid::Ulid;
 
 pub type SerializedResponse = Vec<u8>;
 pub type SerializedRequest = Vec<u8>;
 
-pub trait Request {
-    type Response;
+pub trait Request: Send {
+    type Response: Send;
     fn get_context(&self) -> &Context;
-    async fn run_request(self, requester: Option<Requester>, controller: &Controller) -> Result<Self::Response, ArunaError>;
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError>;
 }
 
-pub trait WriteRequest: Serialize + DeserializeOwned + Sized {
+#[typetag::serde(tag = "type")]
+#[async_trait::async_trait]
+pub trait WriteRequest: Send {
     async fn execute(&self, controller: &Controller) -> Result<SerializedResponse, ArunaError>;
-
-    fn into_bytes(self, expected_u16: u16) -> Result<SerializedRequest, ArunaError> {
-        let mut bytes = Vec::new();
-        bytes.write_u16::<BigEndian>(expected_u16)?;
-        bincode::serialize_into(&mut bytes, &self)?;
-        Ok(bytes)
-    }
-    fn from_bytes(bytes: SerializedRequest) -> Result<Self, ArunaError> {
-        let self_deser: Self = bincode::deserialize(&bytes[2..])?;
-        Ok(self_deser)
-    }
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Requester {
