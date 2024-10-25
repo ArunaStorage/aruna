@@ -461,10 +461,11 @@ impl PresignedUpload {
         let multipart = self.get_multipart();
         let part_number = self.0.part_number;
         let parts = match (part_number, multipart) {
-            (0, true) => return Err(anyhow!("No part number provided for multipart upload",)),
-            (n, true) if n < 1 => n,
+            (n, true) if n < 1 || n > 10000 => {
+                return Err(anyhow!("Invalid part number provided for multipart upload",))
+            }
+            (n, true) => n,
             (_, false) => 1,
-            _ => return Err(anyhow!("Invalid part number")),
         };
         Ok(parts)
     }
