@@ -1,4 +1,5 @@
 use super::{
+    auth::TokenHandler,
     request::{Request, SerializedResponse},
     transaction::ArunaTransaction,
 };
@@ -8,7 +9,6 @@ use crate::{
     requests::{auth::Auth, request::Requester},
     storage::store::Store,
 };
-use jsonwebtoken::{DecodingKey, EncodingKey};
 use std::sync::{RwLock as StdRwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use synevi::network::GrpcNetwork;
@@ -23,8 +23,6 @@ type ConsensusNode = RwLock<Option<Arc<SyneviNode<GrpcNetwork, Arc<Controller>>>
 pub struct Controller {
     pub(super) store: Arc<StdRwLock<Store>>,
     node: ConsensusNode,
-    // Auth signing info
-    pub(super) signing_info: Arc<StdRwLock<(u32, EncodingKey, DecodingKey)>>, //<PublicKey Serial; PrivateKey; PublicKey>
 }
 
 pub type KeyConfig = (u32, String, String);
@@ -39,13 +37,11 @@ impl Controller {
         members: Vec<(Ulid, u16, String)>,
         key_config: KeyConfig,
     ) -> Result<Arc<Self>, ArunaError> {
-        let key_config = Self::config_into_keys(key_config)?;
-        let store = Store::new(path, &key_config.0, &key_config.2)?;
+        let store = Store::new(path, key_config)?;
 
         let controller = Arc::new(Controller {
             store: Arc::new(StdRwLock::new(store)),
             node: RwLock::new(None),
-            signing_info: Arc::new(StdRwLock::new(key_config)),
         });
         let node = SyneviNode::new_with_network_and_executor(
             node_id,
@@ -110,6 +106,10 @@ impl Controller {
         request.run_request(requester, self).await
     }
 
+    pub fn get_token_handler(&self) -> TokenHandler {
+        TokenHandler::new(self.store.clone())
+    }
+
     // pub async fn init_testing(&self) {
     //     let mut lock = self.store.write().await;
 
@@ -148,31 +148,6 @@ impl Controller {
     //         .await
     //         .unwrap();
     // }
-
-    fn config_into_keys(
-        (serial, encode_secret, decode_secret): KeyConfig,
-    ) -> Result<(u32, EncodingKey, DecodingKey), ArunaError> {
-        let private_pem = format!(
-            "-----BEGIN PRIVATE KEY-----{}-----END PRIVATE KEY-----",
-            encode_secret
-        );
-        let public_pem = format!(
-            "-----BEGIN PUBLIC KEY-----{}-----END PUBLIC KEY-----",
-            decode_secret
-        );
-
-        Ok((
-            serial,
-            EncodingKey::from_ed_pem(private_pem.as_bytes()).map_err(|_| {
-                tracing::error!("Error creating encoding key");
-                ArunaError::ConfigError("Error creating encoding key".to_string())
-            })?,
-            DecodingKey::from_ed_pem(public_pem.as_bytes()).map_err(|_| {
-                tracing::error!("Error creating decoding key");
-                ArunaError::ConfigError("Error creating decoding key".to_string())
-            })?,
-        ))
-    }
 
     // pub async fn get_issuer_key(&self, issuer_name: String, kid: String) -> Option<DecodingKey> {
     //     self.read_store()

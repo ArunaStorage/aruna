@@ -12,10 +12,10 @@ use crate::{
     constants::const_relations,
     error::ArunaError,
     logerr,
-    models::{Issuer, RelationInfo},
+    models::{Issuer, IssuerType, RelationInfo},
 };
 
-use super::store::DecodingKeyIdentifier;
+use super::store::{DecodingKeyIdentifier, IssuerInfo};
 
 #[tracing::instrument(level = "trace", skip(key_id, decoding_key, write_txn))]
 pub(super) fn init_issuer(
@@ -23,7 +23,7 @@ pub(super) fn init_issuer(
     issuers: &Database<Str, SerdeBincode<Issuer>>,
     key_id: &u32,
     decoding_key: &DecodingKey,
-) -> Result<HashMap<DecodingKeyIdentifier, DecodingKey, RandomState>, ArunaError> {
+) -> Result<HashMap<DecodingKeyIdentifier, IssuerInfo, RandomState>, ArunaError> {
     issuers
         .put(
             &mut write_txn,
@@ -31,7 +31,7 @@ pub(super) fn init_issuer(
             &Issuer {
                 issuer_name: "aruna".to_string(),
                 pubkey_endpoint: None,
-                audiences: Some(vec!["aruna".to_string()]),
+                audiences: vec!["aruna".to_string()],
                 issuer_type: crate::models::IssuerType::ARUNA,
             },
         )
@@ -41,10 +41,14 @@ pub(super) fn init_issuer(
     // Query the endpoint for the decoding key -> Add to hashmap
     //todo!();
 
-    let mut iss: HashMap<DecodingKeyIdentifier, DecodingKey, RandomState> = HashMap::default();
+    let mut iss: HashMap<DecodingKeyIdentifier, IssuerInfo, RandomState> = HashMap::default();
     iss.insert(
         ("aruna".to_string(), key_id.to_string()),
-        decoding_key.clone(),
+        (
+            IssuerType::ARUNA,
+            decoding_key.clone(),
+            vec!["aruna".to_string()],
+        ),
     );
 
     Ok(iss)

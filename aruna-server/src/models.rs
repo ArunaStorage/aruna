@@ -541,7 +541,7 @@ pub enum IssuerType {
 pub struct Issuer {
     pub issuer_name: String,
     pub pubkey_endpoint: Option<String>,
-    pub audiences: Option<Vec<String>>,
+    pub audiences: Vec<String>,
     pub issuer_type: IssuerType,
 }
 
@@ -549,7 +549,7 @@ impl Issuer {
     pub async fn new_with_endpoint(
         issuer_name: String,
         pubkey_endpoint: String,
-        audiences: Option<Vec<String>>,
+        audiences: Vec<String>,
     ) -> Self {
         Self {
             issuer_name,
@@ -561,7 +561,7 @@ impl Issuer {
 
     pub async fn new_with_keys(
         issuer_name: String,
-        audiences: Option<Vec<String>>,
+        audiences: Vec<String>,
         issuer_type: IssuerType,
     ) -> Self {
         Self {

@@ -1,11 +1,15 @@
 use crate::{
     error::ArunaError,
     logerr,
-    models::{EdgeType, Issuer, NodeVariant, RawRelation, RelationInfo, ServerState},
+    models::{
+        Audience, EdgeType, Issuer, IssuerType, NodeVariant, RawRelation, RelationInfo, ServerState,
+    },
+    requests::controller::KeyConfig,
     storage::{
         graph::load_graph,
         init::{self, init_issuer},
         milli_helpers::prepopulate_fields,
+        utils::config_into_keys,
     },
 };
 use ahash::RandomState;
@@ -13,7 +17,7 @@ use heed::{
     types::{SerdeBincode, Str},
     Database, EnvOpenOptions,
 };
-use jsonwebtoken::DecodingKey;
+use jsonwebtoken::{DecodingKey, EncodingKey};
 use milli::{CboRoaringBitmapCodec, Index, BEU32};
 use std::{collections::HashMap, fs};
 use ulid::Ulid;
@@ -34,6 +38,7 @@ pub mod db_names {
 }
 
 pub(super) type DecodingKeyIdentifier = (String, String); // (IssuerName, KeyID)
+pub type IssuerInfo = (IssuerType, DecodingKey, Vec<String>); // (IssuerType, DecodingKey, Audiences)
 
 pub struct Store {
     // Milli index to store objects and allow for search
@@ -57,17 +62,14 @@ pub struct Store {
     // Volatile data
     // Component status
     status: HashMap<Ulid, ServerState, RandomState>,
-    issuer_decoding_keys: HashMap<DecodingKeyIdentifier, DecodingKey, RandomState>,
+    issuer_decoding_keys: HashMap<DecodingKeyIdentifier, IssuerInfo, RandomState>,
+    signing_info: (u32, EncodingKey, DecodingKey),
     graph: petgraph::graph::Graph<NodeVariant, EdgeType>,
 }
 
 impl Store {
-    #[tracing::instrument(level = "trace", skip(key_serial, decoding_key))]
-    pub fn new(
-        path: String,
-        key_serial: &u32,
-        decoding_key: &DecodingKey,
-    ) -> Result<Self, ArunaError> {
+    #[tracing::instrument(level = "trace", skip(key_config))]
+    pub fn new(path: String, key_config: KeyConfig) -> Result<Self, ArunaError> {
         use db_names::*;
         fs::create_dir_all(&path).inspect_err(logerr!())?;
         // SAFETY: This opens a memory mapped file that may introduce UB
@@ -99,7 +101,10 @@ impl Store {
         // INIT relations
         init::init_relations(&mut write_txn, &relation_infos)?;
         // INIT issuer
-        let issuer_decoding_keys = init_issuer(&mut write_txn, &issuers, key_serial, decoding_key)?;
+        let key_config = config_into_keys(key_config).inspect_err(logerr!())?;
+
+        let issuer_decoding_keys =
+            init_issuer(&mut write_txn, &issuers, &key_config.0, &key_config.2)?;
         write_txn.commit().inspect_err(logerr!())?;
 
         let graph = load_graph(
@@ -118,20 +123,46 @@ impl Store {
             read_permissions,
             status: HashMap::default(),
             issuer_decoding_keys,
+            signing_info: key_config,
             graph,
         })
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
+    pub fn read_txn(&self) -> Result<heed::RoTxn, ArunaError> {
+        Ok(self.milli_index.read_txn().inspect_err(logerr!())?)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn write_txn(&self) -> Result<heed::RwTxn, ArunaError> {
+        Ok(self.milli_index.write_txn().inspect_err(logerr!())?)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_idx_from_ulid(&self, id: &Ulid) -> Option<u32> {
         // TODO: Decide if the transaction should be handled here or by the caller
-        let txn = self.milli_index.read_txn().inspect_err(logerr!()).ok()?;
+        let txn = self.read_txn().ok()?;
         self.milli_index
             .external_documents_ids
             .get(&txn, &id.to_string())
             .inspect_err(logerr!())
             .ok()
             .flatten()
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn get_encoding_key(&self) -> (&u32, &EncodingKey) {
+        (&self.signing_info.0, &self.signing_info.1)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn get_issuer_info(
+        &self,
+        issuer_name: String,
+        key_id: String,
+    ) -> Option<(&IssuerType, &DecodingKey, &[String])> {
+        let result = self.issuer_decoding_keys.get(&(issuer_name, key_id))?;
+        Some((&result.0, &result.1, result.2.as_slice()))
     }
 
     // #[tracing::instrument(level = "trace", skip(self))]
@@ -146,18 +177,15 @@ impl Store {
     //     Ok(db.get(&read_txn, id).inspect_err(logerr!())?)
     // }
 
-    // #[tracing::instrument(level = "trace", skip(self))]
-    // pub fn get_issuer(&self, issuer: String) -> Result<Option<Issuer>, ArunaError> {
-    //     let read_txn = self.database_env.read_txn().inspect_err(logerr!())?;
-    //     let db: IssuerDb = self
-    //         .database_env
-    //         .open_database(&read_txn, Some(ISSUER_DB_NAME))
-    //         .inspect_err(logerr!())?
-    //         .ok_or_else(|| ArunaError::DatabaseDoesNotExist(ISSUER_DB_NAME))
-    //         .inspect_err(logerr!())?;
-
-    //     Ok(db.get(&read_txn, &issuer).inspect_err(logerr!())?)
-    // }
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn get_issuer(&self, issuer: String) -> Result<Option<Issuer>, ArunaError> {
+        let read_txn = self.read_txn()?;
+        let issuer = self
+            .issuers
+            .get(&read_txn, &issuer)
+            .inspect_err(logerr!())?;
+        Ok(issuer)
+    }
 
     // #[tracing::instrument(level = "trace", skip(self))]
     // pub fn get_issuer_key(&self, issuer_name: String, key_id: String) -> Option<&DecodingKey> {

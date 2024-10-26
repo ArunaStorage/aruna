@@ -1,3 +1,5 @@
+use std::sync::{Arc, RwLock};
+
 use super::{
     controller::Controller,
     request::{Request, Requester},
@@ -6,10 +8,12 @@ use crate::{
     context::Context,
     error::ArunaError,
     models::{ArunaTokenClaims, Audience, IssuerType},
+    storage::store::Store,
 };
 use base64::{engine::general_purpose, Engine};
 use chrono::Utc;
-use jsonwebtoken::{decode_header, encode, Algorithm, DecodingKey, Header};
+use jsonwebtoken::{encode, Algorithm, DecodingKey, Header};
+use serde::de::DeserializeOwned;
 use ulid::Ulid;
 
 pub trait Auth: Send + Sync {
@@ -42,9 +46,10 @@ impl Auth for Controller {
             }
         };
 
+        let token_handler = self.get_token_handler();
         let requester = tokio::task::spawn_blocking(move || {
-            let token_id = self.process_token(&token)?;
-            let requester = self.get_requester_from_token_id(token_id)?;
+            let token_id = token_handler.process_token(&token)?;
+            let requester = token_handler.get_requester_from_token_id(token_id)?;
             Ok(requester)
         })
         .await??;
@@ -121,15 +126,18 @@ impl Auth for Controller {
     }
 }
 
-impl Controller {
-    ///ToDo: Rust Doc
-    async fn _get_current_pubkey_serial(&self) -> u32 {
-        // Gets the signing key info -> if this returns a poison error this should also panic
-        // We dont want to allow poisoned / malformed encoding keys and must crash at this point
-        let signing_key = self.signing_info.read().await;
-        signing_key.0
+pub struct TokenHandler {
+    store: Arc<RwLock<Store>>,
+}
+
+impl TokenHandler {
+    pub fn new(store: Arc<RwLock<Store>>) -> Self {
+        Self { store }
     }
 
+    pub fn read(&self) -> std::sync::RwLockReadGuard<Store> {
+        self.store.read().unwrap()
+    }
     ///ToDo: Rust Doc
     pub fn sign_user_token(
         &self,
@@ -138,7 +146,8 @@ impl Controller {
     ) -> Result<String, ArunaError> {
         // Gets the signing key -> if this returns a poison error this should also panic
         // We dont want to allow poisoned / malformed encoding keys and must crash at this point
-        let signing_key = self.signing_info.read().await;
+        let store = self.read();
+        let (kid, encoding_key) = store.get_encoding_key();
 
         let claims = ArunaTokenClaims {
             iss: "aruna".to_string(),
@@ -153,88 +162,56 @@ impl Controller {
         };
 
         let header = Header {
-            kid: Some(format!("{}", signing_key.0)),
+            kid: Some(format!("{}", kid)),
             alg: Algorithm::EdDSA,
             ..Default::default()
         };
 
-        encode(&header, &claims, &signing_key.1).map_err(|e| {
+        encode(&header, &claims, encoding_key).map_err(|e| {
             tracing::error!("User token signing failed: {:?}", e);
             ArunaError::ServerError("Error creating token".to_string())
         })
     }
 
     fn process_token(&self, token: &str) -> Result<Ulid, ArunaError> {
-        let split = token.split('.').nth(1).ok_or_else(|| {
-            tracing::error!("Invalid token");
-            ArunaError::Unauthorized
-        })?;
-        let decoded = general_purpose::STANDARD_NO_PAD
-            .decode(split)
-            .map_err(|e| {
-                tracing::error!("Error b64 decoding token: {:?}", e);
+        // Split the token into header and payload
+        let mut split = token.split('.').map(b64_decode);
+
+        // Decode and deserialize a potential header to get the key id
+        let header = deserialize_field::<Header>(&mut split)?;
+        // Decode and deserialize a potential payload to get the claims and issuer
+        let unvalidated_claims = deserialize_field::<ArunaTokenClaims>(&mut split)?;
+
+        let store = self.read();
+        let (issuer_type, decoding_key, audiences) = store
+            .get_issuer_info(
+                unvalidated_claims.iss.to_string(),
+                header.kid.ok_or_else(|| {
+                    tracing::error!("No kid specified in token");
+                    ArunaError::Unauthorized
+                })?,
+            )
+            .ok_or_else(|| {
+                tracing::error!("No issuer found");
                 ArunaError::Unauthorized
             })?;
-        let claims: ArunaTokenClaims = serde_json::from_slice(&decoded).map_err(|e| {
-            tracing::error!("Error deserializing token: {:?}", e);
-            ArunaError::Unauthorized
-        })?;
 
-        let issuer = self
-            .get_issuer(claims.iss.to_string())
-            .await
-            .map_err(|_| ArunaError::Unauthorized)?;
+        let claims = Self::get_validate_claims(token, header.alg, decoding_key, &audiences)?;
 
-        let claims = self.get_claims(token, issuer.issuer_name, issuer.audiences)?;
-
-        match issuer.issuer_type {
+        match issuer_type {
             IssuerType::OIDC => self.validate_oidc_token(&claims),
             IssuerType::ARUNA => self.token_exists(&claims.sub),
         }
     }
 
-    fn get_claims(
-        &self,
-        token: &str,
-        issuer_name: String,
-        issuer_audiences: Option<Vec<String>>,
-    ) -> Result<ArunaTokenClaims, ArunaError> {
-        let kid = decode_header(token)
-            .map_err(|e| {
-                tracing::error!(?e, "Error decoding token header");
-                ArunaError::Unauthorized
-            })?
-            .kid
-            .ok_or_else(|| {
-                tracing::error!("No kid specified in token");
-                ArunaError::Unauthorized
-            })?;
-
-        match self.get_issuer_key(issuer_name, kid).await {
-            Some(decoding_key) => {
-                Self::get_validate_claims(token, &decoding_key, &issuer_audiences)
-            }
-            None => {
-                tracing::error!("No matching key found");
-                Err(ArunaError::Unauthorized)
-            }
-        }
-    }
-
     fn get_validate_claims(
         token: &str,
+        alg: Algorithm,
         decoding_key: &DecodingKey,
-        audiences: &Option<Vec<String>>,
+        aud: &[String],
     ) -> Result<ArunaTokenClaims, ArunaError> {
-        let header = decode_header(token).map_err(|e| {
-            tracing::error!(?e, "Error decoding token header");
-            ArunaError::Unauthorized
-        })?;
-        let alg = header.alg;
         let mut validation = jsonwebtoken::Validation::new(alg);
-        if let Some(aud) = audiences {
-            validation.set_audience(aud)
-        };
+        validation.set_audience(aud);
         let tokendata = jsonwebtoken::decode::<ArunaTokenClaims>(token, decoding_key, &validation)
             .map_err(|e| {
                 tracing::error!(?e, "Error decoding token header");
@@ -266,4 +243,26 @@ impl Controller {
         //self.controller.get_user_by_oidc(oidc_mapping)
         todo!()
     }
+}
+
+/// Convert a base64 encoded field into a deserialized struct
+/// SAFETY: These fields are untrusted and should be handled with care
+pub(crate) fn deserialize_field<T: DeserializeOwned>(
+    iterator: &mut impl Iterator<Item = Result<Vec<u8>, ArunaError>>,
+) -> Result<T, ArunaError> {
+    serde_json::from_slice::<T>(&iterator.next().ok_or_else(|| {
+        tracing::error!("No header found in token");
+        ArunaError::Unauthorized
+    })??)
+    .map_err(|e| {
+        tracing::error!(?e, "Error deserializing token header");
+        ArunaError::Unauthorized
+    })
+}
+
+pub(crate) fn b64_decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, ArunaError> {
+    general_purpose::URL_SAFE_NO_PAD.decode(input).map_err(|e| {
+        tracing::error!(?e, "Error decoding base64");
+        ArunaError::Unauthorized
+    })
 }

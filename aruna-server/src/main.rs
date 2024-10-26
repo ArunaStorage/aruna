@@ -4,7 +4,6 @@ use tracing_subscriber::EnvFilter;
 mod api;
 mod context;
 mod error;
-mod graph;
 mod macros;
 mod models;
 mod requests;
@@ -19,7 +18,7 @@ async fn main() {
         .add_directive("synevi_core=trace".parse().unwrap());
 
     tracing_subscriber::fmt().with_env_filter(filter).init();
-    
+
     let config = config_from_env();
 
     start_server(config, None).await.unwrap()

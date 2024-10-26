@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use super::controller::Controller;
 use crate::{context::Context, error::ArunaError};
 use serde::{Deserialize, Serialize};

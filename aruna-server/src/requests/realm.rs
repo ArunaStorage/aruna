@@ -1,18 +1,3 @@
-// use super::{
-//     auth::Auth,
-//     controller::{Controller, Get, Transaction},
-//     transaction::{ArunaTransaction, TransactionOk},
-//     utils::{get_group_field, get_realm_field},
-// };
-// use crate::{
-//     error::ArunaError,
-//     models::{self, GROUP_ADMINISTRATES_REALM, GROUP_PART_OF_REALM, PERMISSION_ADMIN},
-//     requests::transaction::{Fields, Metadata, Requester, Requests},
-// };
-// use ulid::Ulid;
-
-use std::sync::Arc;
-
 use super::{
     controller::Controller,
     request::{Request, Requester, WriteRequest},
