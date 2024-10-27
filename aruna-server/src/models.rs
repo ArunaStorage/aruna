@@ -70,14 +70,10 @@ impl TryFrom<serde_json::Number> for NodeVariant {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
-pub enum Node {
-    Resource(Resource),
-    User(User),
-    Token(Token),
-    ServiceAccount(ServiceAccount),
-    Group(Group),
-    Realm(Realm),
+pub trait Node<'a>:
+    TryFrom<&'a KvReaderU16<'a>, Error = ParseError>
+    + TryInto<serde_json::Map<String, Value>, Error = ArunaError>
+{
 }
 
 pub struct JsonInput(serde_json::Map<String, Value>);
@@ -109,20 +105,15 @@ pub fn into_serde_json_map<T: Serialize>(
     }
 }
 
-impl TryFrom<Node> for serde_json::Map<String, Value> {
+impl Node<'_> for Resource {}
+
+impl TryFrom<Resource> for serde_json::Map<String, Value> {
     type Error = ArunaError;
-    fn try_from(node: Node) -> Result<Self, Self::Error> {
-        Ok(match node {
-            Node::Resource(r) => match r.variant {
-                ResourceVariant::Project => into_serde_json_map(r, NodeVariant::ResourceProject)?,
-                ResourceVariant::Folder => into_serde_json_map(r, NodeVariant::ResourceFolder)?,
-                ResourceVariant::Object => into_serde_json_map(r, NodeVariant::ResourceObject)?,
-            },
-            Node::User(u) => into_serde_json_map(u, NodeVariant::User)?,
-            Node::Token(t) => into_serde_json_map(t, NodeVariant::Token)?,
-            Node::ServiceAccount(sa) => into_serde_json_map(sa, NodeVariant::ServiceAccount)?,
-            Node::Group(g) => into_serde_json_map(g, NodeVariant::Group)?,
-            Node::Realm(r) => into_serde_json_map(r, NodeVariant::Realm)?,
+    fn try_from(r: Resource) -> Result<Self, Self::Error> {
+        Ok(match r.variant {
+            ResourceVariant::Project => into_serde_json_map(r, NodeVariant::ResourceProject)?,
+            ResourceVariant::Folder => into_serde_json_map(r, NodeVariant::ResourceFolder)?,
+            ResourceVariant::Object => into_serde_json_map(r, NodeVariant::ResourceObject)?,
         })
     }
 }
@@ -156,6 +147,15 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Resource {
     }
 }
 
+impl Node<'_> for User {}
+
+impl TryFrom<User> for serde_json::Map<String, Value> {
+    type Error = ArunaError;
+    fn try_from(u: User) -> Result<Self, Self::Error> {
+        into_serde_json_map(u, NodeVariant::User)
+    }
+}
+
 // Implement TryFrom for User
 impl<'a> TryFrom<&KvReaderU16<'a>> for User {
     type Error = ParseError;
@@ -180,6 +180,15 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for User {
     }
 }
 
+impl Node<'_> for Token {}
+
+impl TryFrom<Token> for serde_json::Map<String, Value> {
+    type Error = ArunaError;
+    fn try_from(t: Token) -> Result<Self, Self::Error> {
+        into_serde_json_map(t, NodeVariant::Token)
+    }
+}
+
 // Implement TryFrom for Token
 impl<'a> TryFrom<&KvReaderU16<'a>> for Token {
     type Error = ParseError;
@@ -198,6 +207,15 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Token {
             name: obkv.get_field(2)?,
             expires_at: obkv.get_field(17)?,
         })
+    }
+}
+
+impl Node<'_> for ServiceAccount {}
+
+impl TryFrom<ServiceAccount> for serde_json::Map<String, Value> {
+    type Error = ArunaError;
+    fn try_from(sa: ServiceAccount) -> Result<Self, Self::Error> {
+        into_serde_json_map(sa, NodeVariant::ServiceAccount)
     }
 }
 
@@ -221,6 +239,15 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for ServiceAccount {
     }
 }
 
+impl Node<'_> for Group {}
+
+impl TryFrom<Group> for serde_json::Map<String, Value> {
+    type Error = ArunaError;
+    fn try_from(g: Group) -> Result<Self, Self::Error> {
+        into_serde_json_map(g, NodeVariant::Group)
+    }
+}
+
 // Implement TryFrom for Group
 impl<'a> TryFrom<&KvReaderU16<'a>> for Group {
     type Error = ParseError;
@@ -239,6 +266,15 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Group {
             name: obkv.get_required_field(2)?,
             description: obkv.get_field(3)?,
         })
+    }
+}
+
+impl Node<'_> for Realm {}
+
+impl TryFrom<Realm> for serde_json::Map<String, Value> {
+    type Error = ArunaError;
+    fn try_from(r: Realm) -> Result<Self, Self::Error> {
+        into_serde_json_map(r, NodeVariant::Realm)
     }
 }
 
