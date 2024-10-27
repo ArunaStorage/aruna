@@ -5,8 +5,8 @@ use super::{
 use crate::{
     context::Context,
     error::ArunaError,
-    models::{CreateRealmRequest, CreateRealmResponse},
-    requests::transaction::ArunaTransaction,
+    models::{CreateRealmRequest, CreateRealmResponse, Realm},
+    requests::{auth::Auth, transaction::ArunaTransaction},
 };
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
@@ -53,50 +53,39 @@ impl WriteRequest for CreateRealmRequestTx {
         &self,
         controller: &Controller,
     ) -> Result<super::request::SerializedResponse, crate::error::ArunaError> {
-        tokio::task::spawn_blocking(move || {});
-        unimplemented!()
+        controller.authorize(&self.requester, &self.req).await?;
+
+        let realm = Realm {
+            id: self.id,
+            tag: self.req.tag.clone(),
+            name: self.req.name.clone(),
+            description: self.req.description.clone(),
+        };
+        todo!();
+
+        let store = controller.get_store();
+        Ok(tokio::task::spawn_blocking(move || {
+            // Create realm, add user to realm
+            let realm = Realm {
+                id: self.id,
+                tag: self.req.tag.clone(),
+                name: self.req.name.clone(),
+                description: self.req.description.clone(),
+            };
+            // Create admin group, add user to admin group
+            bincode::serialize(&CreateRealmResponse {
+                realm: realm,
+                admin_group_id: Default::default(),
+            })
+        })
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
     }
 }
 
-// pub trait WriteRealmRequestHandler: Transaction + Get + Auth {
-//     async fn create_realm(
-//         &self,
-//         token: Option<String>,
-//         request: models::CreateRealmRequest,
-//     ) -> Result<models::CreateRealmResponse, ArunaError> {
-//         let transaction_id = u128::from_be_bytes(Ulid::new().to_bytes());
-
-//         // TODO: Auth
-
-//         let requester = self
-//             .authorize_token(token, &request)
-//             .await?
-//             .ok_or_else(|| {
-//                 tracing::error!("Requester not found");
-//                 ArunaError::Unauthorized
-//             })?;
-
-//         let TransactionOk::CreateRealmResponse(response) = self
-//             .transaction(
-//                 transaction_id,
-//                 ArunaTransaction {
-//                     request: Requests::CreateRealmRequest(request),
-//                     metadata: Metadata { requester },
-//                     generated_fields: Some(vec![
-//                         Fields::RealmId(Ulid::new()),
-//                         Fields::GroupId(Ulid::new()),
-//                     ]),
-//                 },
-//             )
-//             .await?
-//         else {
-//             tracing::error!("Unexpected response: Not CreateRealmResponse");
-//             return Err(ArunaError::TransactionFailure(
-//                 "Unexpected response: Not CreateRealmResponse".to_string(),
-//             ));
-//         };
-//         Ok(response)
-//     }
 //     async fn add_group(
 //         &self,
 //         token: Option<String>,

@@ -49,10 +49,14 @@ impl Auth for Controller {
         let token_handler = self.get_token_handler();
         let requester = tokio::task::spawn_blocking(move || {
             let token_id = token_handler.process_token(&token)?;
-            let requester = token_handler.get_requester_from_token_id(token_id)?;
-            Ok(requester)
+            let store = token_handler.read();
+            store.get_requester_from_token_id(&token_id)
         })
-        .await??;
+        .await
+        .map_err(|e| {
+            tracing::error!(?e, "Error joining thread");
+            ArunaError::ServerError("Internal server error".to_string())
+        })??;
 
         self.authorize(&requester, request).await?;
 
@@ -137,11 +141,6 @@ impl TokenHandler {
 
     pub fn read(&self) -> std::sync::RwLockReadGuard<Store> {
         self.store.read().unwrap()
-    }
-    pub fn get_requester_from_token_id(&self, token_id: Ulid) -> Result<Requester, ArunaError> {
-        let store = self.read();
-        let token = store.get(token_id).unwrap().unwrap();
-        Ok(token.requester)
     }
 
     ///ToDo: Rust Doc
@@ -234,7 +233,10 @@ impl TokenHandler {
             ArunaError::Unauthorized
         })?;
 
-        if self.get(token_id).await?.is_some() {
+        let reader = self.read();
+        let rtxn = reader.read_txn()?;
+
+        if reader.get_idx_from_ulid(&token_id, &rtxn).is_some() {
             Ok(token_id)
         } else {
             tracing::error!("Token id not found");

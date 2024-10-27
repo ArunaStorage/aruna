@@ -110,6 +110,10 @@ impl Controller {
         TokenHandler::new(self.store.clone())
     }
 
+    pub fn get_store(&self) -> Arc<StdRwLock<Store>> {
+        self.store.clone()
+    }
+
     // pub async fn init_testing(&self) {
     //     let mut lock = self.store.write().await;
 

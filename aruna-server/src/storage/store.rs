@@ -1,9 +1,7 @@
 use crate::{
     error::ArunaError,
     logerr,
-    models::{
-        Audience, EdgeType, Issuer, IssuerType, NodeVariant, RawRelation, RelationInfo, ServerState,
-    },
+    models::{EdgeType, Issuer, IssuerType, NodeVariant, RawRelation, RelationInfo, ServerState},
     requests::{
         controller::KeyConfig,
         request::{AuthMethod, Requester},
@@ -25,7 +23,7 @@ use milli::{CboRoaringBitmapCodec, Index, BEU32};
 use std::{collections::HashMap, fs};
 use ulid::Ulid;
 
-use super::graph::check_node_variant;
+use super::graph::{check_node_variant, IndexHelper};
 
 // LMBD database names
 pub mod db_names {
@@ -196,7 +194,7 @@ impl Store {
     /// Returns the type of user and additional information
     /// based on the token Ulid
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_request_from_token_id(&self, token_id: &Ulid) -> Result<Requester, ArunaError> {
+    pub fn get_requester_from_token_id(&self, token_id: &Ulid) -> Result<Requester, ArunaError> {
         let read_txn = self.read_txn()?;
 
         // Get the internal idx of the token
@@ -212,8 +210,11 @@ impl Store {
             return Err(ArunaError::Unauthorized);
         }
 
+        // Check the neighbors of the token
         for neighbor in self.graph.neighbors(internal_idx.into()) {
+            // Get the node variant of the neighbor
             let Some(node) = self.graph.node_weight(neighbor) else {
+                // This should never happen
                 tracing::error!("No node found");
                 return Err(ArunaError::Unauthorized);
             };
@@ -229,36 +230,45 @@ impl Store {
                     }
                 }
                 NodeVariant::ServiceAccount => {
-                    let service_account_id = self
+                    // Get the service account id
+                    let Some(service_account_id) =
+                        self.get_ulid_from_idx(&(neighbor.as_u32()), &read_txn)
+                    else {
+                        tracing::error!("No service account found");
+                        return Err(ArunaError::Unauthorized);
+                    };
+
+                    // Get the group idx of the service account
+                    let Some(group) = self
                         .graph
-                        .node_weight(neighbor)
-                        .unwrap()
-                        .get_id()
-                        .ok_or_else(|| {
-                            tracing::error!("No service account id found");
-                            ArunaError::Unauthorized
-                        })?;
-                    let group_id = self
-                        .graph
-                        .node_weight(neighbor)
-                        .unwrap()
-                        .get_group_id()
-                        .ok_or_else(|| {
-                            tracing::error!("No group id found");
-                            ArunaError::Unauthorized
-                        })?;
+                        .neighbors(neighbor)
+                        .find(|n| self.graph.node_weight(*n) == Some(&NodeVariant::Group))
+                    else {
+                        tracing::error!("No group found");
+                        return Err(ArunaError::Unauthorized);
+                    };
+
+                    // Get the group id
+                    let Some(group_id) = self.get_ulid_from_idx(&group.as_u32(), &read_txn) else {
+                        tracing::error!("No group found");
+                        return Err(ArunaError::Unauthorized);
+                    };
+
+                    // Return the requester
                     return Ok(Requester::ServiceAccount {
-                        service_account_id: *service_account_id,
+                        service_account_id,
                         token_id: *token_id,
-                        group_id: *group_id,
+                        group_id,
                     });
                 }
+
                 _ => {
                     tracing::error!("Invalid node variant");
                     return Err(ArunaError::Unauthorized);
                 }
             }
         }
-        Ok(token)
+
+        Err(ArunaError::Unauthorized)
     }
 }

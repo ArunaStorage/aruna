@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use super::{controller::Controller, request::SerializedResponse};
 use crate::{error::ArunaError, requests::request::WriteRequest};
 use synevi::{SyneviError, Transaction};
