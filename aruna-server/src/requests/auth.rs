@@ -138,6 +138,12 @@ impl TokenHandler {
     pub fn read(&self) -> std::sync::RwLockReadGuard<Store> {
         self.store.read().unwrap()
     }
+    pub fn get_requester_from_token_id(&self, token_id: Ulid) -> Result<Requester, ArunaError> {
+        let store = self.read();
+        let token = store.get(token_id).unwrap().unwrap();
+        Ok(token.requester)
+    }
+
     ///ToDo: Rust Doc
     pub fn sign_user_token(
         &self,

@@ -192,6 +192,14 @@ pub fn get_permissions(
     }
 }
 
+pub fn check_node_variant(
+    graph: &Graph<NodeVariant, EdgeType>,
+    idx: u32,
+    variant: &NodeVariant,
+) -> bool {
+    graph.node_weight(idx.into()) == Some(variant)
+}
+
 // pub fn get_requester_from_aruna_tokenidx(
 //     graph: &Graph<NodeVariant, EdgeType>,
 //     token_idx: u32,

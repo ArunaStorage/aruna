@@ -4,7 +4,10 @@ use crate::{
     models::{
         Audience, EdgeType, Issuer, IssuerType, NodeVariant, RawRelation, RelationInfo, ServerState,
     },
-    requests::controller::KeyConfig,
+    requests::{
+        controller::KeyConfig,
+        request::{AuthMethod, Requester},
+    },
     storage::{
         graph::load_graph,
         init::{self, init_issuer},
@@ -15,12 +18,14 @@ use crate::{
 use ahash::RandomState;
 use heed::{
     types::{SerdeBincode, Str},
-    Database, EnvOpenOptions,
+    Database, EnvOpenOptions, RoTxn,
 };
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use milli::{CboRoaringBitmapCodec, Index, BEU32};
 use std::{collections::HashMap, fs};
 use ulid::Ulid;
+
+use super::graph::check_node_variant;
 
 // LMBD database names
 pub mod db_names {
@@ -138,16 +143,29 @@ impl Store {
         Ok(self.milli_index.write_txn().inspect_err(logerr!())?)
     }
 
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_idx_from_ulid(&self, id: &Ulid) -> Option<u32> {
-        // TODO: Decide if the transaction should be handled here or by the caller
-        let txn = self.read_txn().ok()?;
+    #[tracing::instrument(level = "trace", skip(self, id, rtxn))]
+    pub fn get_idx_from_ulid(&self, id: &Ulid, rtxn: &RoTxn) -> Option<u32> {
         self.milli_index
             .external_documents_ids
-            .get(&txn, &id.to_string())
+            .get(rtxn, &id.to_string())
             .inspect_err(logerr!())
             .ok()
             .flatten()
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, id, rtxn))]
+    pub fn get_ulid_from_idx(&self, id: &u32, rtxn: &RoTxn) -> Option<Ulid> {
+        let response = self
+            .milli_index
+            .documents
+            .get(rtxn, &id)
+            .inspect_err(logerr!())
+            .ok()
+            .flatten()?;
+        // 0u16 is the primary key
+        Some(Ulid::from_bytes(
+            response.get(0u16)?.try_into().inspect_err(logerr!()).ok()?,
+        ))
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -165,18 +183,6 @@ impl Store {
         Some((&result.0, &result.1, result.2.as_slice()))
     }
 
-    // #[tracing::instrument(level = "trace", skip(self))]
-    // pub fn get_value(&self, id: &Ulid) -> Result<Option<NodeVariantValue>, ArunaError> {
-    //     let read_txn = self.database_env.read_txn()?;
-    //     let db: NodeDb = self
-    //         .database_env
-    //         .open_database(&read_txn, Some(NODE_DB_NAME))?
-    //         .ok_or_else(|| ArunaError::DatabaseDoesNotExist(NODE_DB_NAME))
-    //         .inspect_err(logerr!())?;
-
-    //     Ok(db.get(&read_txn, id).inspect_err(logerr!())?)
-    // }
-
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_issuer(&self, issuer: String) -> Result<Option<Issuer>, ArunaError> {
         let read_txn = self.read_txn()?;
@@ -187,21 +193,72 @@ impl Store {
         Ok(issuer)
     }
 
-    // #[tracing::instrument(level = "trace", skip(self))]
-    // pub fn get_issuer_key(&self, issuer_name: String, key_id: String) -> Option<&DecodingKey> {
-    //     self.issuer_decoding_keys.get(&(issuer_name, key_id))
-    // }
+    /// Returns the type of user and additional information
+    /// based on the token Ulid
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn get_request_from_token_id(&self, token_id: &Ulid) -> Result<Requester, ArunaError> {
+        let read_txn = self.read_txn()?;
 
-    // #[tracing::instrument(level = "trace", skip(self))]
-    // pub fn add_node(&self, node: NodeVariantValue) -> Result<(), ArunaError> {
-    //     let mut write_txn = self.database_env.write_txn().inspect_err(logerr!())?;
-    //     let db: NodeDb = self
-    //         .database_env
-    //         .create_database(&mut write_txn, Some(NODE_DB_NAME))
-    //         .inspect_err(logerr!())?;
-    //     db.put_with_flags(&mut write_txn, PutFlags::NO_OVERWRITE, node.get_id(), &node)
-    //         .inspect_err(logerr!())?;
-    //     write_txn.commit().inspect_err(logerr!())?;
-    //     Ok(())
-    // }
+        // Get the internal idx of the token
+        let internal_idx = self.get_idx_from_ulid(token_id, &read_txn).ok_or_else(|| {
+            tracing::error!("Token not found");
+            ArunaError::Unauthorized
+        })?;
+
+        // Check if the node really is a token
+        // This is a security measure to prevent unauthorized access by forging ids
+        if !check_node_variant(&self.graph, internal_idx, &NodeVariant::Token) {
+            tracing::error!("Invalid node variant");
+            return Err(ArunaError::Unauthorized);
+        }
+
+        for neighbor in self.graph.neighbors(internal_idx.into()) {
+            let Some(node) = self.graph.node_weight(neighbor) else {
+                tracing::error!("No node found");
+                return Err(ArunaError::Unauthorized);
+            };
+            match node {
+                NodeVariant::User => {
+                    if let Some(user_id) =
+                        self.get_ulid_from_idx(&(neighbor.index() as u32), &read_txn)
+                    {
+                        return Ok(Requester::User {
+                            user_id,
+                            auth_method: AuthMethod::Aruna(*token_id),
+                        });
+                    }
+                }
+                NodeVariant::ServiceAccount => {
+                    let service_account_id = self
+                        .graph
+                        .node_weight(neighbor)
+                        .unwrap()
+                        .get_id()
+                        .ok_or_else(|| {
+                            tracing::error!("No service account id found");
+                            ArunaError::Unauthorized
+                        })?;
+                    let group_id = self
+                        .graph
+                        .node_weight(neighbor)
+                        .unwrap()
+                        .get_group_id()
+                        .ok_or_else(|| {
+                            tracing::error!("No group id found");
+                            ArunaError::Unauthorized
+                        })?;
+                    return Ok(Requester::ServiceAccount {
+                        service_account_id: *service_account_id,
+                        token_id: *token_id,
+                        group_id: *group_id,
+                    });
+                }
+                _ => {
+                    tracing::error!("Invalid node variant");
+                    return Err(ArunaError::Unauthorized);
+                }
+            }
+        }
+        Ok(token)
+    }
 }

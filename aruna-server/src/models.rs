@@ -2,7 +2,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use jsonwebtoken::DecodingKey;
 use milli::ObkvCodec;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Number, Value};
 use std::fmt::Display;
 use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
@@ -78,40 +78,48 @@ pub enum Node {
 
 pub struct JsonInput(serde_json::Map<String, Value>);
 
-impl From<Node> for serde_json::Map<String, Value> {
-    fn from(node: Node) -> Self {
-        match node {
-            Node::Resource(r) => serde_json::to_value(r)
-                .unwrap()
-                .as_object()
-                .unwrap()
-                .clone(),
-            Node::User(u) => serde_json::to_value(u)
-                .unwrap()
-                .as_object()
-                .unwrap()
-                .clone(),
-            Node::Token(t) => serde_json::to_value(t)
-                .unwrap()
-                .as_object()
-                .unwrap()
-                .clone(),
-            Node::ServiceAccount(sa) => serde_json::to_value(sa)
-                .unwrap()
-                .as_object()
-                .unwrap()
-                .clone(),
-            Node::Group(g) => serde_json::to_value(g)
-                .unwrap()
-                .as_object()
-                .unwrap()
-                .clone(),
-            Node::Realm(r) => serde_json::to_value(r)
-                .unwrap()
-                .as_object()
-                .unwrap()
-                .clone(),
+// Helper fuction to convert a struct to serde_json::Map<String, Value>
+pub fn into_serde_json_map<T: Serialize>(
+    value: T,
+    variant: NodeVariant,
+) -> Result<serde_json::Map<String, Value>, ArunaError> {
+    let value = serde_json::to_value(value).map_err(|e| {
+        tracing::error!(?e, "Error converting to serde_json::Value");
+        ArunaError::ConversionError {
+            from: "models::Node".to_string(),
+            to: "serde_json::Map<String, Value>".to_string(),
         }
+    })?;
+    match value {
+        Value::Object(mut map) => {
+            map.insert(
+                "variant".to_string(),
+                Value::Number(Number::from(variant as u64)),
+            );
+            Ok(map)
+        }
+        _ => Err(ArunaError::ConversionError {
+            from: "models::Node".to_string(),
+            to: "serde_json::Map<String, Value>".to_string(),
+        }),
+    }
+}
+
+impl TryFrom<Node> for serde_json::Map<String, Value> {
+    type Error = ArunaError;
+    fn try_from(node: Node) -> Result<Self, Self::Error> {
+        Ok(match node {
+            Node::Resource(r) => match r.variant {
+                ResourceVariant::Project => into_serde_json_map(r, NodeVariant::ResourceProject)?,
+                ResourceVariant::Folder => into_serde_json_map(r, NodeVariant::ResourceFolder)?,
+                ResourceVariant::Object => into_serde_json_map(r, NodeVariant::ResourceObject)?,
+            },
+            Node::User(u) => into_serde_json_map(u, NodeVariant::User)?,
+            Node::Token(t) => into_serde_json_map(t, NodeVariant::Token)?,
+            Node::ServiceAccount(sa) => into_serde_json_map(sa, NodeVariant::ServiceAccount)?,
+            Node::Group(g) => into_serde_json_map(g, NodeVariant::Group)?,
+            Node::Realm(r) => into_serde_json_map(r, NodeVariant::Realm)?,
+        })
     }
 }
 
