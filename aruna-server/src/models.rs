@@ -1,13 +1,17 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
 use jsonwebtoken::DecodingKey;
-use milli::ObkvCodec;
+use obkv::KvReaderU16;
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use std::fmt::Display;
 use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
-use crate::{constants::relation_types::*, error::ArunaError};
+use crate::{
+    constants::relation_types::*,
+    error::ArunaError,
+    storage::obkv_ext::{FieldIterator, ParseError},
+};
 
 pub type EdgeType = u32;
 
@@ -123,9 +127,140 @@ impl TryFrom<Node> for serde_json::Map<String, Value> {
     }
 }
 
-impl From<ObkvCodec> for Node {
-    fn from(value: ObkvCodec) -> Self {
-        todo!()
+// Implement TryFrom for Resource
+impl<'a> TryFrom<&KvReaderU16<'a>> for Resource {
+    type Error = ParseError;
+
+    fn try_from(obkv: &KvReaderU16<'a>) -> Result<Self, Self::Error> {
+        let mut obkv = FieldIterator::new(obkv);
+        Ok(Resource {
+            id: obkv.get_required_field(0)?,
+            variant: obkv.get_required_field(1)?,
+            name: obkv.get_required_field(2)?,
+            description: obkv.get_field(3)?,
+            revision: 0,
+            labels: obkv.get_field(4)?,
+            identifiers: obkv.get_field(5)?,
+            content_len: obkv.get_field(6)?,
+            count: obkv.get_field(7)?,
+            visibility: obkv.get_field(8)?,
+            created_at: obkv.get_field(9)?,
+            last_modified: obkv.get_field(10)?,
+            authors: obkv.get_field(11)?,
+            locked: obkv.get_field(12)?,
+            license_tag: obkv.get_field(13)?,
+            hashes: obkv.get_field(14)?,
+            location: obkv.get_field(15)?,
+            title: obkv.get_field(22)?,
+        })
+    }
+}
+
+// Implement TryFrom for User
+impl<'a> TryFrom<&KvReaderU16<'a>> for User {
+    type Error = ParseError;
+
+    fn try_from(obkv: &KvReaderU16<'a>) -> Result<Self, Self::Error> {
+        let mut obkv = FieldIterator::new(obkv);
+        // Get the required id
+        let id: Ulid = obkv.get_required_field(0)?;
+        // Get and double check the variant
+        let variant: u8 = obkv.get_required_field(1)?;
+        if variant != NodeVariant::User as u8 {
+            return Err(ParseError(format!("Invalid variant for User: {}", variant)));
+        }
+        Ok(User {
+            id,
+            identifiers: obkv.get_field(5)?,
+            first_name: obkv.get_required_field(18)?,
+            last_name: obkv.get_required_field(19)?,
+            email: obkv.get_required_field(20)?,
+            global_admin: obkv.get_field(21)?,
+        })
+    }
+}
+
+// Implement TryFrom for Token
+impl<'a> TryFrom<&KvReaderU16<'a>> for Token {
+    type Error = ParseError;
+
+    fn try_from(obkv: &KvReaderU16<'a>) -> Result<Self, Self::Error> {
+        let mut obkv = FieldIterator::new(obkv);
+        // Get the required id
+        let id: Ulid = obkv.get_required_field(0)?;
+        // Get and double check the variant
+        let variant: u8 = obkv.get_required_field(1)?;
+        if variant != NodeVariant::Token as u8 {
+            return Err(ParseError(format!("Invalid variant for User: {}", variant)));
+        }
+        Ok(Token {
+            id,
+            name: obkv.get_field(2)?,
+            expires_at: obkv.get_field(17)?,
+        })
+    }
+}
+
+// Implement TryFrom for ServiceAccount
+impl<'a> TryFrom<&KvReaderU16<'a>> for ServiceAccount {
+    type Error = ParseError;
+
+    fn try_from(obkv: &KvReaderU16<'a>) -> Result<Self, Self::Error> {
+        let mut obkv = FieldIterator::new(obkv);
+        // Get the required id
+        let id: Ulid = obkv.get_required_field(0)?;
+        // Get and double check the variant
+        let variant: u8 = obkv.get_required_field(1)?;
+        if variant != NodeVariant::ServiceAccount as u8 {
+            return Err(ParseError(format!("Invalid variant for User: {}", variant)));
+        }
+        Ok(ServiceAccount {
+            id,
+            name: obkv.get_field(2)?,
+        })
+    }
+}
+
+// Implement TryFrom for Group
+impl<'a> TryFrom<&KvReaderU16<'a>> for Group {
+    type Error = ParseError;
+
+    fn try_from(obkv: &KvReaderU16<'a>) -> Result<Self, Self::Error> {
+        let mut obkv = FieldIterator::new(obkv);
+        // Get the required id
+        let id: Ulid = obkv.get_required_field(0)?;
+        // Get and double check the variant
+        let variant: u8 = obkv.get_required_field(1)?;
+        if variant != NodeVariant::Group as u8 {
+            return Err(ParseError(format!("Invalid variant for User: {}", variant)));
+        }
+        Ok(Group {
+            id,
+            name: obkv.get_required_field(2)?,
+            description: obkv.get_field(3)?,
+        })
+    }
+}
+
+// Implement TryFrom for Group
+impl<'a> TryFrom<&KvReaderU16<'a>> for Realm {
+    type Error = ParseError;
+
+    fn try_from(obkv: &KvReaderU16<'a>) -> Result<Self, Self::Error> {
+        let mut obkv = FieldIterator::new(obkv);
+        // Get the required id
+        let id: Ulid = obkv.get_required_field(0)?;
+        // Get and double check the variant
+        let variant: u8 = obkv.get_required_field(1)?;
+        if variant != NodeVariant::Realm as u8 {
+            return Err(ParseError(format!("Invalid variant for User: {}", variant)));
+        }
+        Ok(Realm {
+            id,
+            name: obkv.get_required_field(2)?,
+            description: obkv.get_field(3)?,
+            tag: obkv.get_field(22)?,
+        })
     }
 }
 

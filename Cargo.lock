@@ -159,6 +159,7 @@ dependencies = [
  "hmac",
  "jsonwebtoken",
  "milli",
+ "obkv",
  "petgraph",
  "prost",
  "prost-build",

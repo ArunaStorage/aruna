@@ -95,6 +95,10 @@ pub const FIELDS: &[Field] = &[
         name: "global_admin",
         index: 21,
     }, // 21 Bool - Is the user a global admin         | User
+    Field {
+        name: "tag",
+        index: 22,
+    }, // 22 String - Tag or Title of a resource        | Realm / Resource
 ];
 
 pub mod relation_types {
