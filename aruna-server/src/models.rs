@@ -76,8 +76,6 @@ pub trait Node<'a>:
 {
 }
 
-pub struct JsonInput(serde_json::Map<String, Value>);
-
 // Helper fuction to convert a struct to serde_json::Map<String, Value>
 pub fn into_serde_json_map<T: Serialize>(
     value: T,

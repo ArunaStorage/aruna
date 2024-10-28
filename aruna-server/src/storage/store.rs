@@ -17,9 +17,10 @@ use crate::{
     },
 };
 use ahash::RandomState;
+use bincode::config::BigEndian;
 use heed::{
-    types::{SerdeBincode, Str},
-    Database, EnvOpenOptions, RoTxn,
+    types::{SerdeBincode, Str, U128},
+    Database, DatabaseFlags, EnvOpenOptions, RoTxn,
 };
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use milli::{CboRoaringBitmapCodec, Index, BEU32};
@@ -54,7 +55,7 @@ pub struct Store {
     // Relations info
     relation_infos: Database<BEU32, SerdeBincode<RelationInfo>>,
     // events db
-    events: Database<BEU32, Vec<u128>>,
+    events: Database<BEU32, U128<BigEndian>>,
     // TODO:
     // Database for event_subscriber / status
     // Roaring bitmap for subscriber resources + last acknowledged event
@@ -94,14 +95,20 @@ impl Store {
         let relation_infos = env
             .create_database(&mut write_txn, Some(RELATION_INFO_DB_NAME))
             .inspect_err(logerr!())?;
-        let events = env
-            .create_database(&mut write_txn, Some(EVENT_DB_NAME))
-            .inspect_err(logerr!())?;
         let issuers = env
             .create_database(&mut write_txn, Some(ISSUER_DB_NAME))
             .inspect_err(logerr!())?;
         let read_permissions = env
             .create_database(&mut write_txn, Some(READ_GROUP_PERMS))
+            .inspect_err(logerr!())?;
+
+        // Special events database allowing for duplicates
+        let events = env
+            .database_options()
+            .types::<BEU32, U128<BigEndian>>()
+            .flags(DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED | DatabaseFlags::INTEGER_KEY)
+            .name(EVENT_DB_NAME)
+            .create(&mut write_txn)
             .inspect_err(logerr!())?;
 
         // INIT relations
