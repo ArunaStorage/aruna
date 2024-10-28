@@ -1,7 +1,10 @@
 use crate::{
     error::ArunaError,
     logerr,
-    models::{EdgeType, Issuer, IssuerType, NodeVariant, RawRelation, RelationInfo, ServerState},
+    models::{
+        EdgeType, Issuer, IssuerType, NodeVariant, Permission, RawRelation, RelationInfo,
+        ServerState,
+    },
     requests::{
         controller::KeyConfig,
         request::{AuthMethod, Requester},
@@ -23,7 +26,7 @@ use milli::{CboRoaringBitmapCodec, Index, BEU32};
 use std::{collections::HashMap, fs};
 use ulid::Ulid;
 
-use super::graph::{check_node_variant, IndexHelper};
+use super::graph::{check_node_variant, get_permissions, IndexHelper};
 
 // LMBD database names
 pub mod db_names {
@@ -189,6 +192,21 @@ impl Store {
             .get(&read_txn, &issuer)
             .inspect_err(logerr!())?;
         Ok(issuer)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn get_permissions(&self, resource: &Ulid, user: &Ulid) -> Result<Permission, ArunaError> {
+        let rtxn = self.read_txn()?;
+        let resource_idx = self.get_idx_from_ulid(resource, &rtxn).ok_or_else(|| {
+            tracing::error!("From not found");
+            ArunaError::Unauthorized
+        })?;
+        let user_idx = self.get_idx_from_ulid(user, &rtxn).ok_or_else(|| {
+            tracing::error!("To not found");
+            ArunaError::Unauthorized
+        })?;
+        drop(rtxn);
+        get_permissions(&self.graph, resource_idx, user_idx)
     }
 
     /// Returns the type of user and additional information

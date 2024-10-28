@@ -87,14 +87,18 @@ impl Auth for Controller {
                 min_permission,
                 source,
             } => {
-                let perm = self
-                    .store
-                    .read()
-                    .await
-                    .graph
-                    .get_permissions(&source, &user.get_id())?;
-
-                if perm >= min_permission {
+                let store = self.get_store();
+                let user_id = user.get_id();
+                let source = source.clone();
+                let perm = tokio::task::spawn_blocking(move || {
+                    store.read().unwrap().get_permissions(&source, &user_id)
+                })
+                .await
+                .map_err(|_| {
+                    tracing::error!("Error joining thread");
+                    ArunaError::Unauthorized
+                })??;
+                if &perm >= min_permission {
                     Ok(())
                 } else {
                     tracing::error!("Insufficient permission");
@@ -107,19 +111,37 @@ impl Auth for Controller {
                 second_min_permission,
                 second_source,
             } => {
-                let first_perm = self
-                    .store
-                    .read()
-                    .await
-                    .graph
-                    .get_permissions(&first_source, &user.get_id())?;
-                let second_perm = self
-                    .store
-                    .read()
-                    .await
-                    .graph
-                    .get_permissions(&second_source, &user.get_id())?;
-                if first_perm >= first_min_permission && second_perm >= second_min_permission {
+                let store = self.get_store();
+                let user_id = user.get_id();
+                let first_source = first_source.clone();
+
+                let first_perm = tokio::task::spawn_blocking(move || {
+                    store
+                        .read()
+                        .unwrap() // Unwrap of poison lock
+                        .get_permissions(&first_source, &user_id)
+                })
+                .await
+                .map_err(|_| {
+                    tracing::error!("Error joining thread");
+                    ArunaError::Unauthorized
+                })??;
+
+                let second_source = second_source.clone();
+                let store = self.get_store();
+                let second_perm = tokio::task::spawn_blocking(move || {
+                    store
+                        .read()
+                        .unwrap() // Unwrap of poison lock
+                        .get_permissions(&second_source, &user_id)
+                })
+                .await
+                .map_err(|_| {
+                    tracing::error!("Error joining thread");
+                    ArunaError::Unauthorized
+                })??;
+
+                if &first_perm >= first_min_permission && &second_perm >= second_min_permission {
                     Ok(())
                 } else {
                     tracing::error!("Insufficient permission");

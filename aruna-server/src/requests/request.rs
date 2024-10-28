@@ -8,7 +8,7 @@ pub type SerializedRequest = Vec<u8>;
 
 pub trait Request: Send {
     type Response: Send;
-    fn get_context(&self) -> &Context;
+    fn get_context<'a>(&'a self) -> &'a Context;
     async fn run_request(
         self,
         requester: Option<Requester>,
