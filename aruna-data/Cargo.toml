@@ -1,5 +1,5 @@
 [package]
-name = "data_proxy"
+name = "aruna_data"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

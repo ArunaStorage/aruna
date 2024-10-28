@@ -23,12 +23,13 @@ impl GroupService for GroupServiceImpl {
         let token = get_token(request.metadata());
         let controller = self.handler.clone();
 
-        Ok(tonic::Response::new(
-            controller
-                .request(request.into_inner().into(), token)
-                .await?
-                .into(),
-        ))
+        todo!()
+        // Ok(tonic::Response::new(
+        //     controller
+        //         .request(request.into_inner().into(), token)
+        //         .await?
+        //         .into(),
+        // ))
     }
 
     async fn add_user(
@@ -51,11 +52,12 @@ impl GroupService for GroupServiceImpl {
         let token = get_token(request.metadata());
         let controller = self.handler.clone();
 
-        Ok(tonic::Response::new(
-            controller
-                .get_group(token, request.into_inner().try_into()?)
-                .await?
-                .into(),
-        ))
+        todo!()
+        // Ok(tonic::Response::new(
+        //     controller
+        //         .get_group(token, request.into_inner().try_into()?)
+        //         .await?
+        //         .into(),
+        // ))
     }
 }

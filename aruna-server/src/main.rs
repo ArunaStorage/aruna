@@ -1,13 +1,5 @@
-use aruna_synevi::{config_from_env, start_server};
+use aruna_server::{config_from_env, start_server};
 use tracing_subscriber::EnvFilter;
-
-mod api;
-mod context;
-mod error;
-mod macros;
-mod models;
-mod requests;
-mod storage;
 
 #[tokio::main]
 async fn main() {

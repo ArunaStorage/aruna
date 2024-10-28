@@ -2,7 +2,7 @@ use aruna_rust_api::v3::aruna::api::v3::group_service_client::GroupServiceClient
 use aruna_rust_api::v3::aruna::api::v3::realm_service_client::RealmServiceClient;
 use aruna_rust_api::v3::aruna::api::v3::resource_service_client::ResourceServiceClient;
 use aruna_rust_api::v3::aruna::api::v3::user_service_client::UserServiceClient;
-use aruna_synevi::{start_server, Config};
+use aruna_server::{start_server, Config};
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::atomic::AtomicU16;

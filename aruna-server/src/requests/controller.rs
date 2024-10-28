@@ -3,12 +3,7 @@ use super::{
     request::{Request, SerializedResponse},
     transaction::ArunaTransaction,
 };
-use crate::{
-    error::ArunaError,
-    logerr,
-    requests::{auth::Auth, request::Requester},
-    storage::store::Store,
-};
+use crate::{error::ArunaError, logerr, requests::request::Requester, storage::store::Store};
 use std::sync::{RwLock as StdRwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use synevi::network::GrpcNetwork;
@@ -97,7 +92,7 @@ impl Controller {
             .await?
     }
 
-    pub async fn request<R: Request>(
+    pub(crate) async fn request<R: Request>(
         &self,
         request: R,
         token: Option<String>,

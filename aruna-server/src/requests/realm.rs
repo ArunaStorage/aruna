@@ -6,7 +6,7 @@ use crate::{
     context::Context,
     error::ArunaError,
     models::{CreateRealmRequest, CreateRealmResponse, Realm},
-    requests::{auth::Auth, transaction::ArunaTransaction},
+    requests::transaction::ArunaTransaction,
 };
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;

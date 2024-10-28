@@ -5,7 +5,7 @@ use tonic::Status;
 use ulid::Ulid;
 
 use crate::{error::ArunaError, models};
-use aruna_rust_api::v3::aruna::api::v3 as grpc;
+use aruna_rust_api::v3::aruna::api::v3::{self as grpc, ResourceStatus};
 
 #[derive(Debug, Error)]
 pub struct InvalidFieldError(&'static str);
@@ -121,19 +121,6 @@ impl From<models::Group> for grpc::Group {
     }
 }
 
-impl From<models::ResourceStatus> for i32 {
-    fn from(value: models::ResourceStatus) -> Self {
-        match value {
-            models::ResourceStatus::StatusInitializing => 1,
-            models::ResourceStatus::StatusValidating => 2,
-            models::ResourceStatus::StatusAvailable => 3,
-            models::ResourceStatus::StatusUnavailable => 4,
-            models::ResourceStatus::StatusError => 5,
-            models::ResourceStatus::StatusDeleted => 6,
-        }
-    }
-}
-
 impl From<models::Resource> for grpc::Resource {
     fn from(value: models::Resource) -> Self {
         Self {
@@ -148,11 +135,7 @@ impl From<models::Resource> for grpc::Resource {
                 .into_iter()
                 .map(models::KeyValue::into)
                 .collect(),
-            hook_status: value
-                .hook_status
-                .into_iter()
-                .map(models::KeyValue::into)
-                .collect(),
+            hook_status: vec![],
             identifiers: value.identifiers,
             content_len: value.content_len,
             count: value.count,
@@ -164,13 +147,9 @@ impl From<models::Resource> for grpc::Resource {
                 .into_iter()
                 .map(models::Author::into)
                 .collect(),
-            status: value.status.into(),
+            status: ResourceStatus::StatusAvailable as i32,
             locked: value.locked,
-            endpoint_status: value
-                .endpoint_status
-                .into_iter()
-                .map(models::EndpointStatus::into)
-                .collect(),
+            endpoint_status: vec![],
             hashes: value.hashes.into_iter().map(models::Hash::into).collect(),
             license_tag: value.license_tag,
         }
@@ -286,16 +265,6 @@ impl From<models::Relation> for grpc::Relation {
             from_id: value.from_id.to_string(),
             to_id: value.to_id.to_string(),
             relation_type: value.relation_type,
-        }
-    }
-}
-
-impl From<models::EndpointStatus> for grpc::EndpointStatus {
-    fn from(value: models::EndpointStatus) -> Self {
-        Self {
-            endpoint_id: value.endpoint_id.to_string(),
-            status: value.status,
-            variant: value.variant,
         }
     }
 }

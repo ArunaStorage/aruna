@@ -29,7 +29,7 @@ pub(crate) fn prepopulate_fields(
             },
         );
     } else {
-        index.put_fields_ids_map(&mut wtxn, &field_ids_map);
+        index.put_fields_ids_map(&mut wtxn, &field_ids_map)?;
     }
     Ok(())
 }

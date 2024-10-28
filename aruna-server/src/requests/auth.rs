@@ -16,21 +16,8 @@ use jsonwebtoken::{encode, Algorithm, DecodingKey, Header};
 use serde::de::DeserializeOwned;
 use ulid::Ulid;
 
-pub trait Auth: Send + Sync {
-    async fn authorize_token<'a, R: Request>(
-        &self,
-        token: Option<String>,
-        request: &'a R,
-    ) -> Result<Option<Requester>, ArunaError>;
-    async fn authorize<'a, R: Request>(
-        &self,
-        user: &Requester,
-        request: &'a R,
-    ) -> Result<(), ArunaError>;
-}
-
-impl Auth for Controller {
-    async fn authorize_token<'a, R: Request>(
+impl Controller {
+    pub(super) async fn authorize_token<'a, R: Request>(
         &self,
         token: Option<String>,
         request: &'a R,
@@ -63,7 +50,7 @@ impl Auth for Controller {
         Ok(Some(requester))
     }
 
-    async fn authorize<'a, R: Request>(
+    pub(super) async fn authorize<'a, R: Request>(
         &self,
         user: &Requester,
         request: &'a R,

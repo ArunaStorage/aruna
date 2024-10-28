@@ -6,7 +6,7 @@ use ulid::Ulid;
 pub type SerializedResponse = Vec<u8>;
 pub type SerializedRequest = Vec<u8>;
 
-pub trait Request: Send {
+pub(crate) trait Request: Send {
     type Response: Send;
     fn get_context<'a>(&'a self) -> &'a Context;
     async fn run_request(

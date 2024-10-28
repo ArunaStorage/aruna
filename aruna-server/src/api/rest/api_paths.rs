@@ -28,7 +28,8 @@ pub async fn create_resource(
     headers: HeaderMap,
     Json(create_resource_request): Json<CreateResourceRequest>,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(request, extract_token(&header)).await)
+    todo!()
+    // into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
 /// Create a new resource
@@ -49,7 +50,8 @@ pub async fn create_project(
     headers: HeaderMap,
     Json(request): Json<CreateProjectRequest>,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(request, extract_token(&header)).await)
+    todo!()
+    // into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
 /// Get  resource
@@ -72,7 +74,8 @@ pub async fn get_resource(
     Query(get_resource_request): Query<GetResourceRequest>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(request, extract_token(&header)).await)
+    todo!()
+    // into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
 /// Create a new realm
@@ -116,7 +119,8 @@ pub async fn get_realm(
     Query(request): Query<GetRealmRequest>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(request, extract_token(&header)).await)
+    todo!()
+    // into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
 /// Get realm
@@ -137,7 +141,8 @@ pub async fn add_group(
     header: HeaderMap,
     Json(request): Json<AddGroupRequest>,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(request, extract_token(&header)).await)
+    todo!()
+    // into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
 /// Create a new  
@@ -158,7 +163,8 @@ pub async fn create_group(
     header: HeaderMap,
     Json(request): Json<CreateGroupRequest>,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(request, extract_token(&header)).await)
+    todo!()
+    // into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
 /// Get realm
@@ -182,5 +188,6 @@ pub async fn get_group(
     Query(request): Query<GetGroupRequest>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(request, extract_token(&header)).await)
+    todo!()
+    // into_axum_response(state.request(request, extract_token(&header)).await)
 }

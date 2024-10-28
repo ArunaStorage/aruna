@@ -1,6 +1,5 @@
 use crate::api::grpc::grpc_helpers::get_token;
 use crate::requests::controller::Controller;
-use crate::requests::realm::{ReadRealmHandler, WriteRealmRequestHandler};
 use aruna_rust_api::v3::aruna::api::v3 as grpc;
 use aruna_rust_api::v3::aruna::api::v3::realm_service_server::RealmService;
 use std::sync::Arc;
@@ -23,12 +22,13 @@ impl RealmService for RealmServiceImpl {
         let token = get_token(request.metadata());
         let controller = self.handler.clone();
 
-        Ok(tonic::Response::new(
-            controller
-                .create_realm(token, request.into_inner().into())
-                .await?
-                .into(),
-        ))
+        todo!()
+        // Ok(tonic::Response::new(
+        //     controller
+        //         .create_realm(token, request.into_inner().into())
+        //         .await?
+        //         .into(),
+        // ))
     }
 
     async fn get_realm(
@@ -38,12 +38,13 @@ impl RealmService for RealmServiceImpl {
         let token = get_token(request.metadata());
         let controller = self.handler.clone();
 
-        Ok(tonic::Response::new(
-            controller
-                .get_realm(token, request.into_inner().try_into()?)
-                .await?
-                .into(),
-        ))
+        todo!()
+        // Ok(tonic::Response::new(
+        //     controller
+        //         .get_realm(token, request.into_inner().try_into()?)
+        //         .await?
+        //         .into(),
+        // ))
     }
     async fn add_group(
         &self,
@@ -52,12 +53,13 @@ impl RealmService for RealmServiceImpl {
         let token = get_token(request.metadata());
         let controller = self.handler.clone();
 
-        Ok(tonic::Response::new(
-            controller
-                .add_group(token, request.into_inner().try_into()?)
-                .await?
-                .into(),
-        ))
+        todo!()
+        // Ok(tonic::Response::new(
+        //     controller
+        //         .add_group(token, request.into_inner().try_into()?)
+        //         .await?
+        //         .into(),
+        // ))
     }
 
     async fn remove_group(
