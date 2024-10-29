@@ -1,5 +1,6 @@
 use axum::http::StatusCode;
 use axum::Json;
+use serde::Serialize;
 use thiserror::Error;
 use utoipa::IntoResponses;
 
@@ -12,7 +13,7 @@ macro_rules! logerr {
     };
 }
 
-#[derive(Debug, Error, IntoResponses, Clone)]
+#[derive(Debug, Error, IntoResponses, Clone, Serialize)]
 #[allow(dead_code)]
 pub enum ArunaError {
     // 400 Bad Request

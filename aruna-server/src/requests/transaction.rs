@@ -1,9 +1,10 @@
 use super::{controller::Controller, request::SerializedResponse};
 use crate::{error::ArunaError, requests::request::WriteRequest};
+use serde::Serialize;
 use synevi::{SyneviError, Transaction};
 use tracing::debug;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ArunaTransaction(pub Vec<u8>);
 
 impl Transaction for ArunaTransaction {
