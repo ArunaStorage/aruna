@@ -2,7 +2,7 @@ use crate::{
     error::ArunaError,
     logerr,
     models::{
-        EdgeType, Issuer, IssuerType, NodeVariant, Permission, RawRelation, RelationInfo,
+        EdgeType, Issuer, IssuerType, Node, NodeVariant, Permission, RawRelation, RelationInfo,
         ServerState,
     },
     requests::{
@@ -17,14 +17,16 @@ use crate::{
     },
 };
 use ahash::RandomState;
-use bincode::config::BigEndian;
 use heed::{
-    types::{SerdeBincode, Str, U128},
-    Database, DatabaseFlags, EnvOpenOptions, RoTxn,
+    byteorder::BigEndian, types::{SerdeBincode, Str, U128}, Database, DatabaseFlags, EnvOpenOptions, RoTxn
 };
 use jsonwebtoken::{DecodingKey, EncodingKey};
-use milli::{CboRoaringBitmapCodec, Index, BEU32};
-use std::{collections::HashMap, fs};
+use milli::{
+    documents::{DocumentsBatchBuilder, DocumentsBatchReader},
+    update::{IndexDocuments, IndexDocumentsConfig, IndexerConfig},
+    CboRoaringBitmapCodec, Index, BEU32,
+};
+use std::{collections::HashMap, fs, io::Cursor};
 use ulid::Ulid;
 
 use super::graph::{check_node_variant, get_permissions, IndexHelper};
@@ -174,6 +176,67 @@ impl Store {
         Some(Ulid::from_bytes(
             response.get(0u16)?.try_into().inspect_err(logerr!()).ok()?,
         ))
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, node))]
+    pub fn create_node<'a, T: Node<'a>>(&mut self, event_id: u128, node: T) -> Result<u32, ArunaError> {
+        // Use the milli transaction directly to prevent lifetime interference
+        let mut wtxn = self.milli_index.write_txn()?;
+
+        let indexer_config = IndexerConfig::default();
+        let builder = IndexDocuments::new(
+            &mut wtxn,
+            &self.milli_index,
+            &indexer_config,
+            IndexDocumentsConfig::default(),
+            |_| (),
+            || false,
+        )?;
+
+        // Request the ulid from the node
+        let id = node.get_id();
+        // Request the variant from the node
+        let variant = node.get_variant();
+
+        // Create a document batch
+        let mut documents_batch = DocumentsBatchBuilder::new(Vec::new());
+        // Add the json object to the batch
+        documents_batch.append_json_object(&node.try_into()?)?;
+        // Create a reader for the batch
+        let reader = DocumentsBatchReader::from_reader(Cursor::new(documents_batch.into_inner()?))
+            .map_err(|_| {
+                tracing::error!(?id, "Unable to index document");
+                ArunaError::DatabaseError("Unable to index document".to_string())
+            })?;
+        // Add the batch to the reader
+        let (builder, error) = builder.add_documents(reader)?;
+        error.map_err(|e|{
+            tracing::error!(?id, ?e, "Error adding document");
+            ArunaError::DatabaseError("Error adding document".to_string())
+        })?;
+
+        // Execute the indexing
+        builder.execute()?;
+
+        // Get the idx of the node
+        let idx = self
+            .get_idx_from_ulid(&id, &wtxn)
+            .ok_or_else(|| ArunaError::DatabaseError("Missing idx".to_string()))?;
+
+        // Add the node to the graph
+        let index = self.graph.add_node(variant);
+        
+        // Ensure that the index in graph and milli stays in sync
+        assert_eq!(
+            index.index() as u32,
+            idx,
+        );
+
+        // Associate the event with the new node
+        self.events.put(&mut wtxn, &idx, &event_id).inspect_err(logerr!())?;
+
+        wtxn.commit().inspect_err(logerr!())?;
+        Ok(idx)
     }
 
     #[tracing::instrument(level = "trace", skip(self))]

@@ -19,7 +19,11 @@ pub(crate) trait Request: Send {
 #[typetag::serde(tag = "type")]
 #[async_trait::async_trait]
 pub trait WriteRequest: Send {
-    async fn execute(&self, controller: &Controller) -> Result<SerializedResponse, ArunaError>;
+    async fn execute(
+        &self,
+        id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, ArunaError>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

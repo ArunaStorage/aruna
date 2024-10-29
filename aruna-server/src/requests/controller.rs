@@ -41,7 +41,12 @@ impl Controller {
         let node = SyneviNode::new_with_network_and_executor(
             node_id,
             serial,
-            GrpcNetwork::new(store_addr, format!("http://{}", store_addr), node_id, serial),
+            GrpcNetwork::new(
+                store_addr,
+                format!("http://{}", store_addr),
+                node_id,
+                serial,
+            ),
             controller.clone(),
         )
         .await
@@ -115,6 +120,6 @@ impl synevi::Executor for Controller {
     type Tx = ArunaTransaction;
     async fn execute(&self, id: u128, transaction: Self::Tx) -> SyneviResult<Self> {
         trace!("Executing transaction");
-        Ok(self.process_transaction(transaction).await)
+        Ok(self.process_transaction(id, transaction).await)
     }
 }

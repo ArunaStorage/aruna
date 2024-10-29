@@ -26,10 +26,11 @@ impl Transaction for ArunaTransaction {
 impl Controller {
     pub async fn process_transaction(
         &self,
+        id: u128,
         transaction: ArunaTransaction,
     ) -> Result<SerializedResponse, ArunaError> {
         debug!("Started transaction");
         let tx: Box<dyn WriteRequest> = bincode::deserialize(&transaction.0)?;
-        tx.execute(self).await
+        tx.execute(id, self).await
     }
 }

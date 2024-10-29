@@ -74,6 +74,8 @@ pub trait Node<'a>:
     TryFrom<&'a KvReaderU16<'a>, Error = ParseError>
     + TryInto<serde_json::Map<String, Value>, Error = ArunaError>
 {
+    fn get_id(&self) -> Ulid;
+    fn get_variant(&self) -> NodeVariant;
 }
 
 // Helper fuction to convert a struct to serde_json::Map<String, Value>
@@ -103,7 +105,18 @@ pub fn into_serde_json_map<T: Serialize>(
     }
 }
 
-impl Node<'_> for Resource {}
+impl Node<'_> for Resource {
+    fn get_id(&self) -> Ulid {
+        self.id
+    }
+    fn get_variant(&self) -> NodeVariant {
+        match self.variant {
+            ResourceVariant::Project => NodeVariant::ResourceProject,
+            ResourceVariant::Folder => NodeVariant::ResourceFolder,
+            ResourceVariant::Object => NodeVariant::ResourceObject,
+        }
+    }
+}
 
 impl TryFrom<Resource> for serde_json::Map<String, Value> {
     type Error = ArunaError;
@@ -145,7 +158,14 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Resource {
     }
 }
 
-impl Node<'_> for User {}
+impl Node<'_> for User {
+    fn get_id(&self) -> Ulid {
+        self.id
+    }
+    fn get_variant(&self) -> NodeVariant {
+        NodeVariant::User
+    }
+}
 
 impl TryFrom<User> for serde_json::Map<String, Value> {
     type Error = ArunaError;
@@ -178,7 +198,14 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for User {
     }
 }
 
-impl Node<'_> for Token {}
+impl Node<'_> for Token {
+    fn get_id(&self) -> Ulid {
+        self.id
+    }
+    fn get_variant(&self) -> NodeVariant {
+        NodeVariant::Token
+    }
+}
 
 impl TryFrom<Token> for serde_json::Map<String, Value> {
     type Error = ArunaError;
@@ -208,7 +235,14 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Token {
     }
 }
 
-impl Node<'_> for ServiceAccount {}
+impl Node<'_> for ServiceAccount {
+    fn get_id(&self) -> Ulid {
+        self.id
+    }
+    fn get_variant(&self) -> NodeVariant {
+        NodeVariant::ServiceAccount
+    }
+}
 
 impl TryFrom<ServiceAccount> for serde_json::Map<String, Value> {
     type Error = ArunaError;
@@ -237,7 +271,14 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for ServiceAccount {
     }
 }
 
-impl Node<'_> for Group {}
+impl Node<'_> for Group {
+    fn get_id(&self) -> Ulid {
+        self.id
+    }
+    fn get_variant(&self) -> NodeVariant {
+        NodeVariant::Group
+    }
+}
 
 impl TryFrom<Group> for serde_json::Map<String, Value> {
     type Error = ArunaError;
@@ -267,7 +308,14 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Group {
     }
 }
 
-impl Node<'_> for Realm {}
+impl Node<'_> for Realm {
+    fn get_id(&self) -> Ulid {
+        self.id
+    }
+    fn get_variant(&self) -> NodeVariant {
+        NodeVariant::Realm
+    }
+}
 
 impl TryFrom<Realm> for serde_json::Map<String, Value> {
     type Error = ArunaError;

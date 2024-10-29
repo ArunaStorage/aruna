@@ -51,6 +51,7 @@ pub struct CreateRealmRequestTx {
 impl WriteRequest for CreateRealmRequestTx {
     async fn execute(
         &self,
+        id: u128,
         controller: &Controller,
     ) -> Result<super::request::SerializedResponse, crate::error::ArunaError> {
         controller.authorize(&self.requester, &self.req).await?;
@@ -66,12 +67,7 @@ impl WriteRequest for CreateRealmRequestTx {
         let store = controller.get_store();
         Ok(tokio::task::spawn_blocking(move || {
             // Create realm, add user to realm
-            let realm = Realm {
-                id: self.id,
-                tag: self.req.tag.clone(),
-                name: self.req.name.clone(),
-                description: self.req.description.clone(),
-            };
+
             // Create admin group, add user to admin group
             bincode::serialize(&CreateRealmResponse {
                 realm: realm,
