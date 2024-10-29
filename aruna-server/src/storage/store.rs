@@ -18,7 +18,9 @@ use crate::{
 };
 use ahash::RandomState;
 use heed::{
-    byteorder::BigEndian, types::{SerdeBincode, Str, U128}, Database, DatabaseFlags, EnvOpenOptions, RoTxn
+    byteorder::BigEndian,
+    types::{SerdeBincode, Str, U128},
+    Database, DatabaseFlags, EnvOpenOptions, RoTxn, RwTxn,
 };
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use milli::{
@@ -26,7 +28,12 @@ use milli::{
     update::{IndexDocuments, IndexDocumentsConfig, IndexerConfig},
     CboRoaringBitmapCodec, Index, BEU32,
 };
-use std::{collections::HashMap, fs, io::Cursor};
+use std::{
+    collections::HashMap,
+    fs,
+    io::Cursor,
+    sync::{Arc, RwLock},
+};
 use ulid::Ulid;
 
 use super::graph::{check_node_variant, get_permissions, IndexHelper};
@@ -51,7 +58,7 @@ pub type IssuerInfo = (IssuerType, DecodingKey, Vec<String>); // (IssuerType, De
 
 pub struct Store {
     // Milli index to store objects and allow for search
-    milli_index: Index,
+    pub(crate) milli_index: Arc<Index>,
     // Store it in an increasing list of relations
     relations: Database<BEU32, SerdeBincode<RawRelation>>,
     // Relations info
@@ -62,7 +69,7 @@ pub struct Store {
     // Database for event_subscriber / status
     // Roaring bitmap for subscriber resources + last acknowledged event
 
-    // Database for read permissions of groups
+    // Database for read permissions of groups (and users)
     read_permissions: Database<BEU32, CboRoaringBitmapCodec>,
 
     // Database for issuers with name as key
@@ -73,7 +80,8 @@ pub struct Store {
     status: HashMap<Ulid, ServerState, RandomState>,
     issuer_decoding_keys: HashMap<DecodingKeyIdentifier, IssuerInfo, RandomState>,
     signing_info: (u32, EncodingKey, DecodingKey),
-    graph: petgraph::graph::Graph<NodeVariant, EdgeType>,
+    // This has to be a RwLock because the graph is mutable
+    graph: RwLock<petgraph::graph::Graph<NodeVariant, EdgeType>>,
 }
 
 impl Store {
@@ -130,7 +138,7 @@ impl Store {
         .inspect_err(logerr!())?;
 
         Ok(Self {
-            milli_index,
+            milli_index: Arc::new(milli_index),
             relations,
             relation_infos,
             events,
@@ -139,7 +147,7 @@ impl Store {
             status: HashMap::default(),
             issuer_decoding_keys,
             signing_info: key_config,
-            graph,
+            graph: RwLock::new(graph),
         })
     }
 
@@ -178,14 +186,45 @@ impl Store {
         ))
     }
 
-    #[tracing::instrument(level = "trace", skip(self, node))]
-    pub fn create_node<'a, T: Node<'a>>(&mut self, event_id: u128, node: T) -> Result<u32, ArunaError> {
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn create_relation(
+        &self,
+        rtxn: &mut RwTxn,
+        source: u32,
+        target: u32,
+        edge_type: EdgeType,
+    ) -> Result<(), ArunaError> {
+        let relation = RawRelation {
+            source: source,
+            target: target,
+            edge_type,
+        };
+
+        self.relations
+            .put(rtxn, &relation.source, &relation)
+            .inspect_err(logerr!())?;
+
+        self.graph.write().expect("Poisoned lock").add_edge(
+            source.into(),
+            target.into(),
+            edge_type,
+        );
+
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, node, wtxn))]
+    pub fn create_node<'a, T: Node<'a>>(
+        &'a self,
+        wtxn: &mut RwTxn<'a>,
+        event_id: u128,
+        node: T,
+    ) -> Result<u32, ArunaError> {
         // Use the milli transaction directly to prevent lifetime interference
-        let mut wtxn = self.milli_index.write_txn()?;
 
         let indexer_config = IndexerConfig::default();
         let builder = IndexDocuments::new(
-            &mut wtxn,
+            wtxn,
             &self.milli_index,
             &indexer_config,
             IndexDocumentsConfig::default(),
@@ -210,7 +249,7 @@ impl Store {
             })?;
         // Add the batch to the reader
         let (builder, error) = builder.add_documents(reader)?;
-        error.map_err(|e|{
+        error.map_err(|e| {
             tracing::error!(?id, ?e, "Error adding document");
             ArunaError::DatabaseError("Error adding document".to_string())
         })?;
@@ -224,18 +263,16 @@ impl Store {
             .ok_or_else(|| ArunaError::DatabaseError("Missing idx".to_string()))?;
 
         // Add the node to the graph
-        let index = self.graph.add_node(variant);
-        
+        let index = self.graph.write().expect("Poisoned lock").add_node(variant);
+
         // Ensure that the index in graph and milli stays in sync
-        assert_eq!(
-            index.index() as u32,
-            idx,
-        );
+        assert_eq!(index.index() as u32, idx,);
 
         // Associate the event with the new node
-        self.events.put(&mut wtxn, &idx, &event_id).inspect_err(logerr!())?;
+        self.events
+            .put(wtxn, &idx, &event_id)
+            .inspect_err(logerr!())?;
 
-        wtxn.commit().inspect_err(logerr!())?;
         Ok(idx)
     }
 
@@ -276,7 +313,8 @@ impl Store {
             ArunaError::Unauthorized
         })?;
         drop(rtxn);
-        get_permissions(&self.graph, resource_idx, user_idx)
+        let graph = self.graph.read().expect("Poisoned lock");
+        get_permissions(&graph, resource_idx, user_idx)
     }
 
     /// Returns the type of user and additional information
@@ -293,15 +331,16 @@ impl Store {
 
         // Check if the node really is a token
         // This is a security measure to prevent unauthorized access by forging ids
-        if !check_node_variant(&self.graph, internal_idx, &NodeVariant::Token) {
+        let graph = self.graph.read().expect("Poisoned lock");
+        if !check_node_variant(&graph, internal_idx, &NodeVariant::Token) {
             tracing::error!("Invalid node variant");
             return Err(ArunaError::Unauthorized);
         }
 
         // Check the neighbors of the token
-        for neighbor in self.graph.neighbors(internal_idx.into()) {
+        for neighbor in graph.neighbors(internal_idx.into()) {
             // Get the node variant of the neighbor
-            let Some(node) = self.graph.node_weight(neighbor) else {
+            let Some(node) = graph.node_weight(neighbor) else {
                 // This should never happen
                 tracing::error!("No node found");
                 return Err(ArunaError::Unauthorized);
@@ -327,10 +366,9 @@ impl Store {
                     };
 
                     // Get the group idx of the service account
-                    let Some(group) = self
-                        .graph
+                    let Some(group) = graph
                         .neighbors(neighbor)
-                        .find(|n| self.graph.node_weight(*n) == Some(&NodeVariant::Group))
+                        .find(|n| graph.node_weight(*n) == Some(&NodeVariant::Group))
                     else {
                         tracing::error!("No group found");
                         return Err(ArunaError::Unauthorized);
