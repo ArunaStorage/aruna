@@ -1,8 +1,7 @@
 use super::{controller::Controller, request::SerializedResponse};
-use crate::{error::ArunaError, transactions::request::WriteRequest};
+use crate::{error::ArunaError, logerr, transactions::request::WriteRequest};
 use serde::Serialize;
 use synevi::{SyneviError, Transaction};
-use tracing::debug;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ArunaTransaction(pub Vec<u8>);
@@ -29,8 +28,10 @@ impl Controller {
         id: u128,
         transaction: ArunaTransaction,
     ) -> Result<SerializedResponse, ArunaError> {
-        debug!("Started transaction");
-        let tx: Box<dyn WriteRequest> = bincode::deserialize(&transaction.0)?;
+        tracing::trace!(?id, "Deserializing transaction");
+        tracing::debug!(transaction = ?transaction.0.len());
+        let tx: Box<dyn WriteRequest> =
+            bincode::deserialize(&transaction.0).inspect_err(logerr!())?;
         tx.execute(id, self).await
     }
 }

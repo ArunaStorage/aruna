@@ -10,7 +10,7 @@ use crate::{
         models::{Group, Realm},
         requests::{CreateRealmRequest, CreateRealmResponse},
     },
-    transactions::{request::SerializedResponse, transaction::ArunaTransaction},
+    transactions::request::SerializedResponse,
 };
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
@@ -37,12 +37,7 @@ impl Request for CreateRealmRequest {
             requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
         };
 
-        let response = controller
-            .transaction(
-                Ulid::new().0,
-                ArunaTransaction(bincode::serialize(&request_tx)?),
-            )
-            .await?;
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
 
         Ok(bincode::deserialize(&response)?)
     }

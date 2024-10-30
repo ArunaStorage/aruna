@@ -4,7 +4,10 @@ use thiserror::Error;
 use tonic::Status;
 use ulid::Ulid;
 
-use crate::{error::ArunaError, models::{models, requests}};
+use crate::{
+    error::ArunaError,
+    models::{models, requests},
+};
 use aruna_rust_api::v3::aruna::api::v3::{self as grpc, ResourceStatus};
 
 #[derive(Debug, Error)]

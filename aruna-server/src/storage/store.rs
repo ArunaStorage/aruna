@@ -468,4 +468,35 @@ impl Store {
         tracing::error!("Group not found");
         Err(ArunaError::Unauthorized)
     }
+
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn add_token(
+        &self,
+        rtxn: &mut RwTxn,
+        event_id: u128,
+        user_id: &Ulid,
+        mut token: Token,
+    ) -> Result<Token, ArunaError> {
+        let user_idx = self
+            .get_idx_from_ulid(user_id, rtxn)
+            .ok_or_else(|| ArunaError::NotFound(user_id.to_string()))?;
+
+        let mut tokens = self
+            .tokens
+            .get(rtxn, &user_idx)
+            .inspect_err(logerr!())?
+            .unwrap_or_default();
+
+        token.id = tokens.len() as u16;
+        self.tokens
+            .put(rtxn, &user_idx, &tokens)
+            .inspect_err(logerr!())?;
+
+        // Add token creation event to user
+        self.events
+            .put(rtxn, &user_idx, &event_id)
+            .inspect_err(logerr!())?;
+
+        Ok(tokens.pop().flatten().expect("Added token before"))
+    }
 }

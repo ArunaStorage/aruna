@@ -1,16 +1,18 @@
 use super::{
+    auth::TokenHandler,
     controller::Controller,
-    request::{Request, Requester, WriteRequest},
+    request::{AuthMethod, Request, Requester, WriteRequest},
 };
 use crate::{
-    constants::relation_types,
     context::Context,
     error::ArunaError,
     models::{
-        models::{Realm, User},
-        requests::{CreateRealmResponse, RegisterUserRequest, RegisterUserResponse},
+        models::{Token, User},
+        requests::{
+            CreateTokenRequest, CreateTokenResponse, RegisterUserRequest, RegisterUserResponse,
+        },
     },
-    transactions::{request::SerializedResponse, transaction::ArunaTransaction},
+    transactions::request::SerializedResponse,
 };
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
@@ -18,26 +20,31 @@ use ulid::Ulid;
 impl Request for RegisterUserRequest {
     type Response = RegisterUserResponse;
     fn get_context(&self) -> &Context {
-        &Context::UserOnly
+        &Context::Public
     }
 
+    #[tracing::instrument(level = "trace", skip(controller))]
     async fn run_request(
         self,
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        let ulid = Ulid::new();
+        let test_requester = Requester::User {
+            user_id: ulid,
+            auth_method: AuthMethod::Aruna(0),
+        };
         let request_tx = RegisterUserRequestTx {
-            id: Ulid::new(),
+            id: ulid, //Ulid::new(),
             req: self,
-            requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
+            requester: test_requester,
+            // requester: requester.ok_or_else(|| {
+            //     tracing::error!("Missing requester");
+            //     ArunaError::Unauthorized
+            // })?,
         };
 
-        let response = controller
-            .transaction(
-                Ulid::new().0,
-                ArunaTransaction(bincode::serialize(&request_tx)?),
-            )
-            .await?;
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
 
         Ok(bincode::deserialize(&response)?)
     }
@@ -53,11 +60,13 @@ pub struct RegisterUserRequestTx {
 #[typetag::serde]
 #[async_trait::async_trait]
 impl WriteRequest for RegisterUserRequestTx {
+    #[tracing::instrument(level = "trace", skip(self, controller))]
     async fn execute(
         &self,
         id: u128,
         controller: &Controller,
     ) -> Result<SerializedResponse, crate::error::ArunaError> {
+        tracing::trace!("Executing RegisterUserRequestTx");
         controller.authorize(&self.requester, &self.req).await?;
 
         let user = User {
@@ -83,6 +92,88 @@ impl WriteRequest for RegisterUserRequestTx {
             wtxn.commit()?;
             // Create admin group, add user to admin group
             Ok::<_, ArunaError>(bincode::serialize(&RegisterUserResponse { user })?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
+    }
+}
+
+impl Request for CreateTokenRequest {
+    type Response = CreateTokenResponse;
+    fn get_context(&self) -> &Context {
+        &Context::Public
+    }
+
+    async fn run_request(
+        mut self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        if self.expires_at.is_none() {
+            self.expires_at = Some(chrono::Utc::now() + chrono::Duration::days(365));
+        }
+
+        let request_tx = CreateTokenRequestTx {
+            req: self,
+            requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
+        };
+
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response)?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateTokenRequestTx {
+    req: CreateTokenRequest,
+    requester: Requester,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for CreateTokenRequestTx {
+    async fn execute(
+        &self,
+        event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, crate::error::ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+
+        let token = Token {
+            id: 0, // This id is created in the store
+            user_id: self.requester.get_id(),
+            name: self.req.name.clone(),
+            expires_at: self.req.expires_at.expect("Got generated in Request"),
+            constraints: None, // TODO: Constraints
+        };
+
+        let is_service_account = matches!(self.requester, Requester::ServiceAccount { .. });
+
+        let store = controller.get_store();
+        Ok(tokio::task::spawn_blocking(move || {
+            let store = store.write().expect("Failed to lock store");
+            let mut wtxn = store.write_txn()?;
+
+            // Create user
+            let token = store.add_token(wtxn.get_txn(), event_id, &token.user_id.clone(), token)?;
+            // Add event to user
+
+            wtxn.commit()?;
+
+            let secret = TokenHandler::sign_user_token(
+                &store,
+                is_service_account,
+                token.id,
+                &token.user_id,
+                None,
+                Some(token.expires_at.timestamp() as u64),
+            )?;
+            // Create admin group, add user to admin group
+            Ok::<_, ArunaError>(bincode::serialize(&CreateTokenResponse { token, secret })?)
         })
         .await
         .map_err(|_e| {

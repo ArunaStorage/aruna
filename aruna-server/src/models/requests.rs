@@ -1,9 +1,11 @@
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
 use super::models::{
-    Author, Group, KeyValue, Realm, Relation, Resource, ResourceVariant, User, VisibilityClass,
+    Author, Group, KeyValue, Realm, Relation, Resource, ResourceVariant, Token, User,
+    VisibilityClass,
 };
 
 fn default_license_tag() -> String {
@@ -151,4 +153,19 @@ pub struct RegisterUserRequest {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct RegisterUserResponse {
     pub user: User,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateTokenRequest {
+    pub user_id: Ulid, // TODO: REMOVE
+    pub name: String,
+    #[serde(default)]
+    pub expires_at: Option<chrono::DateTime<Utc>>,
+    //pub constraints: Vec<Constraint>,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateTokenResponse {
+    pub token: Token,
+    pub secret: String,
 }

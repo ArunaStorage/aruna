@@ -19,6 +19,7 @@ use utoipa::{
         get_group,
         add_group,
         register_user,
+        create_token,
     ),
     components(schemas(
         CreateResourceRequest,
@@ -37,6 +38,9 @@ use utoipa::{
         AddGroupResponse,
         RegisterUserRequest,
         RegisterUserResponse,
+        CreateTokenRequest,
+        CreateTokenResponse,
+        Token,
         User,
         Author,
         Relation,

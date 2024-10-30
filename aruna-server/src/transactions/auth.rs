@@ -17,6 +17,7 @@ use serde::de::DeserializeOwned;
 use ulid::Ulid;
 
 impl Controller {
+    #[tracing::instrument(level = "trace", skip(self, request))]
     pub(super) async fn authorize_token<'a, R: Request>(
         &self,
         token: Option<String>,
@@ -150,7 +151,7 @@ impl TokenHandler {
 
     ///ToDo: Rust Doc
     pub fn sign_user_token(
-        &self,
+        store: &Store,
         is_service_account: bool,
         token_idx: u16,
         user_id: &Ulid, // User or ServiceAccount
@@ -159,7 +160,6 @@ impl TokenHandler {
     ) -> Result<String, ArunaError> {
         // Gets the signing key -> if this returns a poison error this should also panic
         // We dont want to allow poisoned / malformed encoding keys and must crash at this point
-        let store = self.read();
         let (kid, encoding_key) = store.get_encoding_key();
         let is_sa_u8 = if is_service_account { 1u8 } else { 0u8 };
 

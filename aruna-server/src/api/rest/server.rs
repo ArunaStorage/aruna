@@ -33,6 +33,8 @@ impl RestServer {
             .route("/api/v3/realm/group", post(api_paths::add_group))
             .route("/api/v3/group", post(api_paths::create_group))
             .route("/api/v3/group", get(api_paths::get_group))
+            .route("/api/v3/user", post(api_paths::register_user))
+            .route("/api/v3/token", post(api_paths::create_token))
             .with_state(handler)
             .layer(
                 TraceLayer::new_for_http()

@@ -1,15 +1,14 @@
 use super::{
     auth::TokenHandler,
-    request::{Request, SerializedResponse},
+    request::{Request, SerializedResponse, WriteRequest},
     transaction::ArunaTransaction,
 };
-use crate::{error::ArunaError, logerr, transactions::request::Requester, storage::store::Store};
-use heed::LmdbVersion;
+use crate::{error::ArunaError, logerr, storage::store::Store, transactions::request::Requester};
 use std::{
     fs,
     sync::{RwLock as StdRwLock, RwLockReadGuard, RwLockWriteGuard},
 };
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc};
 use synevi::network::GrpcNetwork;
 use synevi::storage::LmdbStore;
 use synevi::Node as SyneviNode;
@@ -91,11 +90,16 @@ impl Controller {
         self.store.write().unwrap()
     }
 
-    pub async fn transaction(
+    pub async fn transaction<R: WriteRequest>(
         &self,
         transaction_id: u128,
-        transaction: ArunaTransaction,
+        transaction: &R,
     ) -> Result<SerializedResponse, ArunaError> {
+        // This dyn cast ist necessary because otherwise typetag will not work
+        let transaction = ArunaTransaction(
+            bincode::serialize(transaction as &dyn WriteRequest).inspect_err(logerr!())?,
+        );
+
         self.node
             .read()
             .await
@@ -109,12 +113,15 @@ impl Controller {
             .await?
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
     pub(crate) async fn request<R: Request>(
         &self,
         request: R,
         token: Option<String>,
     ) -> Result<R::Response, ArunaError> {
+        tracing::info!("Received request");
         let requester: Option<Requester> = self.authorize_token(token, &request).await?;
+        tracing::trace!(?requester, "Requester authorized");
         request.run_request(requester, self).await
     }
 

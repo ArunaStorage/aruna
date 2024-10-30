@@ -192,7 +192,7 @@ pub async fn get_group(
     // into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
-/// Get realm
+/// Register a new user
 #[utoipa::path(
     post,
     path = "/api/v3/user",
@@ -211,6 +211,27 @@ pub async fn register_user(
     header: HeaderMap,
     Json(request): Json<RegisterUserRequest>,
 ) -> impl IntoResponse {
-    todo!()
-    // into_axum_response(state.request(request, extract_token(&header)).await)
+    into_axum_response(state.request(request, extract_token(&header)).await)
+}
+
+/// Create a token
+#[utoipa::path(
+    post,
+    path = "/api/v3/token",
+    request_body = CreateTokenRequest,
+    responses(
+        (status = 200, body = CreateTokenResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn create_token(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+    Json(request): Json<CreateTokenRequest>,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&header)).await)
 }

@@ -382,7 +382,7 @@ pub struct Constraints {}
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct Token {
-    pub id: u32,
+    pub id: u16,
     pub user_id: Ulid,
     pub name: String,
     pub expires_at: DateTime<Utc>,

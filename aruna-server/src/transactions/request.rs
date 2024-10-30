@@ -1,12 +1,13 @@
 use super::controller::Controller;
 use crate::{context::Context, error::ArunaError};
 use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
 use ulid::Ulid;
 
 pub type SerializedResponse = Vec<u8>;
 pub type SerializedRequest = Vec<u8>;
 
-pub(crate) trait Request: Send {
+pub(crate) trait Request: Debug + Send {
     type Response: Send;
     fn get_context<'a>(&'a self) -> &'a Context;
     async fn run_request(
