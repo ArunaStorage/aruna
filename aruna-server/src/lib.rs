@@ -12,7 +12,7 @@ use aruna_rust_api::v3::aruna::api::v3::{
     resource_service_server::ResourceServiceServer, user_service_server::UserServiceServer,
 };
 use error::ArunaError;
-use requests::controller::Controller;
+use transactions::controller::Controller;
 use tokio::{sync::Notify, task::JoinSet};
 use tonic::transport::Server;
 use tracing::info;
@@ -24,7 +24,7 @@ pub mod context;
 pub mod error;
 pub mod macros;
 pub mod models;
-pub mod requests;
+pub mod transactions;
 pub mod storage;
 
 #[derive(Debug, Clone)]

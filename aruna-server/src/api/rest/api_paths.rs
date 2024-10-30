@@ -1,6 +1,6 @@
 use crate::models::models::*;
 use crate::models::requests::*;
-use crate::{error::ArunaError, requests::controller::Controller};
+use crate::{error::ArunaError, transactions::controller::Controller};
 use axum::{
     extract::{Query, State},
     http::HeaderMap,

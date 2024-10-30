@@ -1,5 +1,5 @@
 use super::{controller::Controller, request::SerializedResponse};
-use crate::{error::ArunaError, requests::request::WriteRequest};
+use crate::{error::ArunaError, transactions::request::WriteRequest};
 use serde::Serialize;
 use synevi::{SyneviError, Transaction};
 use tracing::debug;

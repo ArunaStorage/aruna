@@ -1,5 +1,5 @@
 use crate::api::grpc::grpc_helpers::get_token;
-use crate::requests::controller::Controller;
+use crate::transactions::controller::Controller;
 use aruna_rust_api::v3::aruna::api::v3 as grpc;
 use aruna_rust_api::v3::aruna::api::v3::realm_service_server::RealmService;
 use std::sync::Arc;

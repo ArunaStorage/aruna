@@ -1,6 +1,6 @@
 use jsonwebtoken::{DecodingKey, EncodingKey};
 
-use crate::{error::ArunaError, requests::controller::KeyConfig};
+use crate::{error::ArunaError, transactions::controller::KeyConfig};
 
 pub(super) fn config_into_keys(
     (serial, encode_secret, decode_secret): KeyConfig,

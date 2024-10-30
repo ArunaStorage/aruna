@@ -1,5 +1,5 @@
 use super::grpc_helpers::get_token;
-use crate::requests::controller::Controller;
+use crate::transactions::controller::Controller;
 use aruna_rust_api::v3::aruna::api::v3::{
     resource_service_server::ResourceService, CreateProjectRequest, CreateProjectResponse,
     CreateResourceRequest, CreateResourceResponse, GetResourceRequest, GetResourceResponse,

@@ -10,7 +10,10 @@ use crate::{
         models::{Group, Realm},
         requests::{CreateRealmRequest, CreateRealmResponse}
     },
-    requests::transaction::ArunaTransaction,
+    transactions::{
+        request::SerializedResponse,
+        transaction::ArunaTransaction
+    },
 };
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
@@ -63,7 +66,7 @@ impl WriteRequest for CreateRealmRequestTx {
         &self,
         id: u128,
         controller: &Controller,
-    ) -> Result<super::request::SerializedResponse, crate::error::ArunaError> {
+    ) -> Result<SerializedResponse, crate::error::ArunaError> {
         controller.authorize(&self.requester, &self.req).await?;
 
         let realm = Realm {

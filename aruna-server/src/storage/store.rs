@@ -5,7 +5,7 @@ use crate::{
         EdgeType, Issuer, IssuerType, Node, NodeVariant, Permission, RawRelation, RelationInfo,
         ServerState, Token,
     },
-    requests::controller::KeyConfig,
+    transactions::controller::KeyConfig,
     storage::{
         graph::load_graph,
         init::{self, init_issuer},

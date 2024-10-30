@@ -1,4 +1,4 @@
-use crate::requests::controller::Controller;
+use crate::transactions::controller::Controller;
 use aruna_rust_api::v3::aruna::api::v3 as grpc;
 use aruna_rust_api::v3::aruna::api::v3::user_service_server::UserService;
 use std::sync::Arc;

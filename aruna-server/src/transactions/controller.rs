@@ -3,7 +3,7 @@ use super::{
     request::{Request, SerializedResponse},
     transaction::ArunaTransaction,
 };
-use crate::{error::ArunaError, logerr, requests::request::Requester, storage::store::Store};
+use crate::{error::ArunaError, logerr, transactions::request::Requester, storage::store::Store};
 use heed::LmdbVersion;
 use std::{
     fs,
