@@ -31,10 +31,9 @@ pub enum NodeVariant {
     ResourceFolder = 1,
     ResourceObject = 2,
     User = 3,
-    Token = 4,
-    ServiceAccount = 5,
-    Group = 6,
-    Realm = 7,
+    ServiceAccount = 4,
+    Group = 5,
+    Realm = 6,
 }
 
 impl TryFrom<serde_json::Number> for NodeVariant {
@@ -54,10 +53,9 @@ impl TryFrom<serde_json::Number> for NodeVariant {
                     1 => NodeVariant::ResourceFolder,
                     2 => NodeVariant::ResourceObject,
                     3 => NodeVariant::User,
-                    4 => NodeVariant::Token,
-                    5 => NodeVariant::ServiceAccount,
-                    6 => NodeVariant::Group,
-                    7 => NodeVariant::Realm,
+                    4 => NodeVariant::ServiceAccount,
+                    5 => NodeVariant::Group,
+                    6 => NodeVariant::Realm,
                     _ => {
                         return Err(ArunaError::ConversionError {
                             from: format!("{}u64", v),
@@ -70,8 +68,8 @@ impl TryFrom<serde_json::Number> for NodeVariant {
     }
 }
 
-pub trait Node<'a>:
-    TryFrom<&'a KvReaderU16<'a>, Error = ParseError>
+pub trait Node:
+    for<'a> TryFrom<&'a KvReaderU16<'a>, Error = ParseError>
     + TryInto<serde_json::Map<String, Value>, Error = ArunaError>
 {
     fn get_id(&self) -> Ulid;
@@ -105,7 +103,7 @@ pub fn into_serde_json_map<T: Serialize>(
     }
 }
 
-impl Node<'_> for Resource {
+impl Node for Resource {
     fn get_id(&self) -> Ulid {
         self.id
     }
@@ -158,7 +156,7 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Resource {
     }
 }
 
-impl Node<'_> for User {
+impl Node for User {
     fn get_id(&self) -> Ulid {
         self.id
     }
@@ -198,44 +196,7 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for User {
     }
 }
 
-impl Node<'_> for Token {
-    fn get_id(&self) -> Ulid {
-        self.id
-    }
-    fn get_variant(&self) -> NodeVariant {
-        NodeVariant::Token
-    }
-}
-
-impl TryFrom<Token> for serde_json::Map<String, Value> {
-    type Error = ArunaError;
-    fn try_from(t: Token) -> Result<Self, Self::Error> {
-        into_serde_json_map(t, NodeVariant::Token)
-    }
-}
-
-// Implement TryFrom for Token
-impl<'a> TryFrom<&KvReaderU16<'a>> for Token {
-    type Error = ParseError;
-
-    fn try_from(obkv: &KvReaderU16<'a>) -> Result<Self, Self::Error> {
-        let mut obkv = FieldIterator::new(obkv);
-        // Get the required id
-        let id: Ulid = obkv.get_required_field(0)?;
-        // Get and double check the variant
-        let variant: u8 = obkv.get_required_field(1)?;
-        if variant != NodeVariant::Token as u8 {
-            return Err(ParseError(format!("Invalid variant for User: {}", variant)));
-        }
-        Ok(Token {
-            id,
-            name: obkv.get_field(2)?,
-            expires_at: obkv.get_field(17)?,
-        })
-    }
-}
-
-impl Node<'_> for ServiceAccount {
+impl Node for ServiceAccount {
     fn get_id(&self) -> Ulid {
         self.id
     }
@@ -271,7 +232,7 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for ServiceAccount {
     }
 }
 
-impl Node<'_> for Group {
+impl Node for Group {
     fn get_id(&self) -> Ulid {
         self.id
     }
@@ -308,7 +269,7 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Group {
     }
 }
 
-impl Node<'_> for Realm {
+impl Node for Realm {
     fn get_id(&self) -> Ulid {
         self.id
     }
@@ -351,7 +312,6 @@ pub enum NodeVariantIdx {
     Resource(u32),
     User(u32),
     ServiceAccount(u32),
-    Token(u32),
     Group(u32),
     Realm(u32),
 }
@@ -418,10 +378,15 @@ pub struct Group {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct Constraints {}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct Token {
-    pub id: Ulid,
+    pub id: u32,
+    pub user_id: Ulid,
     pub name: String,
     pub expires_at: DateTime<Utc>,
+    pub constraints: Option<Constraints>,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
@@ -823,6 +788,9 @@ impl Issuer {
     }
 }
 
+pub type UserType = u8;
+pub type TokenIdx = u16;
+
 /// This contains claims for ArunaTokens
 /// containing 3 mandatory and 2 optional fields.
 ///
@@ -833,10 +801,14 @@ impl Issuer {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ArunaTokenClaims {
     pub iss: String, // 'aruna' or oidc issuer
-    pub sub: String, // Token id / OIDC Subject
+    pub sub: String, // User or ServiceAccount ID
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aud: Option<Audience>, // Audience;
     pub exp: u64,    // Expiration timestamp
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub info: Option<(UserType, TokenIdx)>, // Optional info for aruna tokens
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>, // Optional scope
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Clone)]

@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use super::{
     controller::Controller,
-    request::{Request, Requester},
+    request::{AuthMethod, Request, Requester},
 };
 use crate::{
     context::Context,
@@ -34,16 +34,12 @@ impl Controller {
         };
 
         let token_handler = self.get_token_handler();
-        let requester = tokio::task::spawn_blocking(move || {
-            let token_id = token_handler.process_token(&token)?;
-            let store = token_handler.read();
-            store.get_requester_from_token_id(&token_id)
-        })
-        .await
-        .map_err(|e| {
-            tracing::error!(?e, "Error joining thread");
-            ArunaError::ServerError("Internal server error".to_string())
-        })??;
+        let requester = tokio::task::spawn_blocking(move || token_handler.process_token(&token))
+            .await
+            .map_err(|e| {
+                tracing::error!(?e, "Error joining thread");
+                ArunaError::ServerError("Internal server error".to_string())
+            })??;
 
         self.authorize(&requester, request).await?;
 
@@ -155,23 +151,29 @@ impl TokenHandler {
     ///ToDo: Rust Doc
     pub fn sign_user_token(
         &self,
-        token_id: &Ulid,
+        is_service_account: bool,
+        token_idx: u16,
+        user_id: &Ulid, // User or ServiceAccount
+        scope: Option<String>,
         expires_at: Option<u64>,
     ) -> Result<String, ArunaError> {
         // Gets the signing key -> if this returns a poison error this should also panic
         // We dont want to allow poisoned / malformed encoding keys and must crash at this point
         let store = self.read();
         let (kid, encoding_key) = store.get_encoding_key();
+        let is_sa_u8 = if is_service_account { 1u8 } else { 0u8 };
 
         let claims = ArunaTokenClaims {
             iss: "aruna".to_string(),
-            sub: token_id.to_string(),
+            sub: user_id.to_string(),
             exp: if let Some(expiration) = expires_at {
                 expiration
             } else {
                 // Add 10 years to token lifetime if  expiry unspecified
                 (Utc::now().timestamp() as u64) + 315360000
             },
+            info: Some((is_sa_u8, token_idx)),
+            scope,
             aud: Some(Audience::String("aruna".to_string())),
         };
 
@@ -187,7 +189,7 @@ impl TokenHandler {
         })
     }
 
-    fn process_token(&self, token: &str) -> Result<Ulid, ArunaError> {
+    fn process_token(&self, token: &str) -> Result<Requester, ArunaError> {
         // Split the token into header and payload
         let mut split = token.split('.').map(b64_decode);
 
@@ -214,7 +216,7 @@ impl TokenHandler {
 
         match issuer_type {
             IssuerType::OIDC => self.validate_oidc_token(&claims),
-            IssuerType::ARUNA => self.token_exists(&claims.sub),
+            IssuerType::ARUNA => self.extract_token_info(&claims),
         }
     }
 
@@ -235,26 +237,49 @@ impl TokenHandler {
     }
 
     ///ToDo: Rust Doc
-    fn token_exists(&self, subject: &str) -> Result<Ulid, ArunaError> {
-        // Fetch user from cache
-        let token_id = Ulid::from_string(subject).map_err(|_| {
+    fn extract_token_info(&self, subject: &ArunaTokenClaims) -> Result<Requester, ArunaError> {
+        let user_id = Ulid::from_string(&subject.sub).map_err(|_| {
             tracing::error!("Invalid token id provided");
             ArunaError::Unauthorized
         })?;
 
-        let reader = self.read();
-        let rtxn = reader.read_txn()?;
+        let store = self.store.read().expect("Poisoned lock");
 
-        if reader.get_idx_from_ulid(&token_id, &rtxn).is_some() {
-            Ok(token_id)
-        } else {
-            tracing::error!("Token id not found");
-            Err(ArunaError::Unauthorized)
+        let Some((is_service_account, token_idx)) = subject.info else {
+            tracing::error!("No token info provided");
+            return Err(ArunaError::Unauthorized);
+        };
+        match is_service_account {
+            0u8 => {
+                // False
+
+                store.ensure_token_exists(&user_id, token_idx)?;
+
+                Ok(Requester::User {
+                    user_id,
+                    auth_method: AuthMethod::Aruna(token_idx),
+                })
+            }
+            1u8 => {
+                // True
+                store.ensure_token_exists(&user_id, token_idx)?;
+                let group_id = store.get_group_from_sa(&user_id)?;
+
+                Ok(Requester::ServiceAccount {
+                    service_account_id: user_id,
+                    token_id: token_idx,
+                    group_id,
+                })
+            }
+            _ => {
+                tracing::error!("Invalid service account flag");
+                Err(ArunaError::Unauthorized)
+            }
         }
     }
 
     ///ToDo: Rust Doc
-    fn validate_oidc_token(&self, claims: &ArunaTokenClaims) -> Result<Ulid, ArunaError> {
+    fn validate_oidc_token(&self, claims: &ArunaTokenClaims) -> Result<Requester, ArunaError> {
         let _oidc_mapping = (claims.iss.clone(), claims.sub.clone());
         // Fetch user from oidc provider
         //self.controller.get_user_by_oidc(oidc_mapping)

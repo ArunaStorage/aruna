@@ -34,7 +34,7 @@ pub enum Requester {
     },
     ServiceAccount {
         service_account_id: Ulid,
-        token_id: Ulid,
+        token_id: u16,
         group_id: Ulid,
     },
 }
@@ -45,7 +45,7 @@ pub enum AuthMethod {
         oidc_realm: String,
         oidc_subject: String,
     },
-    Aruna(Ulid),
+    Aruna(u16),
 }
 
 impl Requester {
@@ -56,9 +56,11 @@ impl Requester {
                 user_id,
             } => match auth_method {
                 AuthMethod::Oidc { .. } => *user_id,
-                AuthMethod::Aruna(token_id) => *token_id,
+                AuthMethod::Aruna(_) => *user_id,
             },
-            Self::ServiceAccount { token_id, .. } => *token_id,
+            Self::ServiceAccount {
+                service_account_id, ..
+            } => *service_account_id,
         }
     }
 }

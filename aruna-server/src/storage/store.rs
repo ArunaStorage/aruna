@@ -3,12 +3,9 @@ use crate::{
     logerr,
     models::{
         EdgeType, Issuer, IssuerType, Node, NodeVariant, Permission, RawRelation, RelationInfo,
-        ServerState,
+        ServerState, Token,
     },
-    requests::{
-        controller::KeyConfig,
-        request::{AuthMethod, Requester},
-    },
+    requests::controller::KeyConfig,
     storage::{
         graph::load_graph,
         init::{self, init_issuer},
@@ -24,9 +21,11 @@ use heed::{
 };
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use milli::{
-    documents::{DocumentsBatchBuilder, DocumentsBatchReader}, update::{IndexDocuments, IndexDocumentsConfig, IndexerConfig}, CboRoaringBitmapCodec, Index, ObkvCodec, BEU32
+    documents::{DocumentsBatchBuilder, DocumentsBatchReader},
+    update::{IndexDocuments, IndexDocumentsConfig, IndexerConfig},
+    CboRoaringBitmapCodec, Index, ObkvCodec, BEU32,
 };
-use petgraph::Graph;
+use petgraph::{visit::EdgeRef, Graph};
 use std::{
     collections::HashMap,
     fs,
@@ -35,7 +34,7 @@ use std::{
 };
 use ulid::Ulid;
 
-use super::graph::{check_node_variant, get_permissions, IndexHelper};
+use super::graph::{get_permissions, IndexHelper};
 
 pub struct WriteTxn<'a> {
     milli_index: &'a Index,
@@ -46,7 +45,7 @@ pub struct WriteTxn<'a> {
     tracker: u16,
 }
 
-impl <'a> WriteTxn<'a> {
+impl<'a> WriteTxn<'a> {
     pub fn get_txn(&mut self) -> &mut RwTxn<'a> {
         self.txn.as_mut().expect("Transaction already committed")
     }
@@ -63,27 +62,28 @@ impl <'a> WriteTxn<'a> {
     }
 }
 
-impl <'a> Drop for WriteTxn<'a> {
+impl<'a> Drop for WriteTxn<'a> {
     fn drop(&mut self) {
         if self.txn.is_some() && self.tracker != 0 {
             // Recovering graph state
             tracing::error!("Transaction dropped without commit -> Recovering graph state");
             // Abort the transaction
-            self.txn.take().expect("Transaction already committed").abort();
+            self.txn
+                .take()
+                .expect("Transaction already committed")
+                .abort();
 
             // Reset the graph
-            let write_txn = self.milli_index.write_txn().expect("Failed to create write transaction");
+            let write_txn = self
+                .milli_index
+                .write_txn()
+                .expect("Failed to create write transaction");
 
-            *self.graph_lock = load_graph(
-                &write_txn,
-                self.relations,
-                self.documents,
-            ).expect("Failed to load graph");
+            *self.graph_lock = load_graph(&write_txn, self.relations, self.documents)
+                .expect("Failed to load graph");
         }
     }
 }
-
-
 
 // LMBD database names
 pub mod db_names {
@@ -92,6 +92,7 @@ pub mod db_names {
     pub const RELATION_DB_NAME: &str = "relations"; // -> HashSet with Source/Type/Target
     pub const OIDC_MAPPING_DB_NAME: &str = "oidc_mappings";
     pub const PUBKEY_DB_NAME: &str = "pubkeys";
+    pub const TOKENS_DB_NAME: &str = "tokens";
     pub const ISSUER_DB_NAME: &str = "issuers";
     pub const SERVER_INFO_DB_NAME: &str = "server_infos";
     pub const EVENT_DB_NAME: &str = "events";
@@ -119,6 +120,9 @@ pub struct Store {
     // Database for read permissions of groups (and users)
     read_permissions: Database<BEU32, CboRoaringBitmapCodec>,
 
+    // Database for tokens with user_idx as key and a list of tokens as value
+    tokens: Database<BEU32, SerdeBincode<Vec<Option<Token>>>>,
+
     // Database for issuers with name as key
     issuers: Database<Str, SerdeBincode<Issuer>>,
     // -------------------
@@ -135,6 +139,7 @@ impl Store {
     #[tracing::instrument(level = "trace", skip(key_config))]
     pub fn new(path: String, key_config: KeyConfig) -> Result<Self, ArunaError> {
         use db_names::*;
+        let path = format!("{path}/store");
         fs::create_dir_all(&path).inspect_err(logerr!())?;
         // SAFETY: This opens a memory mapped file that may introduce UB
         //         if handled incorrectly
@@ -151,6 +156,9 @@ impl Store {
             .inspect_err(logerr!())?;
         let relation_infos = env
             .create_database(&mut write_txn, Some(RELATION_INFO_DB_NAME))
+            .inspect_err(logerr!())?;
+        let tokens = env
+            .create_database(&mut write_txn, Some(TOKENS_DB_NAME))
             .inspect_err(logerr!())?;
         let issuers = env
             .create_database(&mut write_txn, Some(ISSUER_DB_NAME))
@@ -189,6 +197,7 @@ impl Store {
             relations,
             relation_infos,
             events,
+            tokens,
             issuers,
             read_permissions,
             status: HashMap::default(),
@@ -209,7 +218,7 @@ impl Store {
         // Invariant: You can only aquire a write transaction if the graph is locked
         let graph_lock = self.graph.write().expect("Poisoned lock");
 
-        Ok(WriteTxn{
+        Ok(WriteTxn {
             milli_index: &self.milli_index,
             graph_lock,
             txn: Some(self.milli_index.write_txn().inspect_err(logerr!())?),
@@ -261,18 +270,28 @@ impl Store {
         self.relations
             .put(wtxn.get_txn(), &relation.source, &relation)
             .inspect_err(logerr!())?;
-        
-        wtxn.get_graph().add_edge(
-            source.into(),
-            target.into(),
-            edge_type,
-        );
+
+        wtxn.get_graph()
+            .add_edge(source.into(), target.into(), edge_type);
 
         Ok(())
     }
 
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn get_node<T: Node>(&self, rtxn: &RoTxn<'_>, node_idx: u32) -> Option<T> {
+        let response = self
+            .milli_index
+            .documents
+            .get(rtxn, &node_idx)
+            .inspect_err(logerr!())
+            .ok()
+            .flatten()?;
+
+        T::try_from(&response).ok()
+    }
+
     #[tracing::instrument(level = "trace", skip(self, node, wtxn))]
-    pub fn create_node<'a, T: Node<'a>>(
+    pub fn create_node<'a, T: Node>(
         &'a self,
         wtxn: &mut WriteTxn<'a>,
         event_id: u128,
@@ -378,81 +397,68 @@ impl Store {
     /// Returns the type of user and additional information
     /// based on the token Ulid
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_requester_from_token_id(&self, token_id: &Ulid) -> Result<Requester, ArunaError> {
+    pub fn ensure_token_exists(
+        &self,
+        requester_id: &Ulid,
+        token_idx: u16,
+    ) -> Result<(), ArunaError> {
         let read_txn = self.read_txn()?;
 
         // Get the internal idx of the token
-        let internal_idx = self.get_idx_from_ulid(token_id, &read_txn).ok_or_else(|| {
-            tracing::error!("Token not found");
-            ArunaError::Unauthorized
-        })?;
+        let requester_internal_idx =
+            self.get_idx_from_ulid(requester_id, &read_txn)
+                .ok_or_else(|| {
+                    tracing::error!("User not found");
+                    ArunaError::Unauthorized
+                })?;
 
-        // Check if the node really is a token
-        // This is a security measure to prevent unauthorized access by forging ids
-        let graph = self.graph.read().expect("Poisoned lock");
-        if !check_node_variant(&graph, internal_idx, &NodeVariant::Token) {
-            tracing::error!("Invalid node variant");
+        let Some(tokens) = self
+            .tokens
+            .get(&read_txn, &requester_internal_idx)
+            .inspect_err(logerr!())?
+        else {
+            tracing::error!("No tokens found");
             return Err(ArunaError::Unauthorized);
-        }
+        };
 
-        // Check the neighbors of the token
-        for neighbor in graph.neighbors(internal_idx.into()) {
-            // Get the node variant of the neighbor
-            let Some(node) = graph.node_weight(neighbor) else {
-                // This should never happen
-                tracing::error!("No node found");
-                return Err(ArunaError::Unauthorized);
-            };
-            match node {
-                NodeVariant::User => {
-                    if let Some(user_id) =
-                        self.get_ulid_from_idx(&(neighbor.index() as u32), &read_txn)
-                    {
-                        return Ok(Requester::User {
-                            user_id,
-                            auth_method: AuthMethod::Aruna(*token_id),
-                        });
-                    }
+        let Some(Some(_token)) = tokens.get(token_idx as usize) else {
+            tracing::error!("Token not found");
+            return Err(ArunaError::Unauthorized);
+        };
+        Ok(())
+    }
+
+    // Returns the group_id of the service account
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn get_group_from_sa(&self, service_account: &Ulid) -> Result<Ulid, ArunaError> {
+        use crate::constants::relation_types::*;
+        let read_txn = self.read_txn()?;
+
+        let sa_idx = self
+            .get_idx_from_ulid(service_account, &read_txn)
+            .ok_or_else(|| {
+                tracing::error!("User not found");
+                ArunaError::Unauthorized
+            })?;
+
+        let graph = self.graph.read().expect("Poisoned lock");
+        for edge in graph.edges_directed(sa_idx.into(), petgraph::Direction::Outgoing) {
+            match edge.weight() {
+                PERMISSION_NONE..=PERMISSION_ADMIN => {
+                    let group_idx = edge.target().as_u32();
+                    let group = self
+                        .get_ulid_from_idx(&group_idx, &read_txn)
+                        .ok_or_else(|| {
+                            tracing::error!("Group not found");
+                            ArunaError::Unauthorized
+                        })?;
+                    return Ok(group);
                 }
-                NodeVariant::ServiceAccount => {
-                    // Get the service account id
-                    let Some(service_account_id) =
-                        self.get_ulid_from_idx(&(neighbor.as_u32()), &read_txn)
-                    else {
-                        tracing::error!("No service account found");
-                        return Err(ArunaError::Unauthorized);
-                    };
-
-                    // Get the group idx of the service account
-                    let Some(group) = graph
-                        .neighbors(neighbor)
-                        .find(|n| graph.node_weight(*n) == Some(&NodeVariant::Group))
-                    else {
-                        tracing::error!("No group found");
-                        return Err(ArunaError::Unauthorized);
-                    };
-
-                    // Get the group id
-                    let Some(group_id) = self.get_ulid_from_idx(&group.as_u32(), &read_txn) else {
-                        tracing::error!("No group found");
-                        return Err(ArunaError::Unauthorized);
-                    };
-
-                    // Return the requester
-                    return Ok(Requester::ServiceAccount {
-                        service_account_id,
-                        token_id: *token_id,
-                        group_id,
-                    });
-                }
-
-                _ => {
-                    tracing::error!("Invalid node variant");
-                    return Err(ArunaError::Unauthorized);
-                }
+                _ => {}
             }
         }
 
+        tracing::error!("Group not found");
         Err(ArunaError::Unauthorized)
     }
 }

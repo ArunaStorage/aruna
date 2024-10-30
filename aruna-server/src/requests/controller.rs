@@ -4,16 +4,21 @@ use super::{
     transaction::ArunaTransaction,
 };
 use crate::{error::ArunaError, logerr, requests::request::Requester, storage::store::Store};
-use std::sync::{RwLock as StdRwLock, RwLockReadGuard, RwLockWriteGuard};
+use heed::LmdbVersion;
+use std::{
+    fs,
+    sync::{RwLock as StdRwLock, RwLockReadGuard, RwLockWriteGuard},
+};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use synevi::network::GrpcNetwork;
+use synevi::storage::LmdbStore;
 use synevi::Node as SyneviNode;
 use synevi::SyneviResult;
 use tokio::sync::RwLock;
 use tracing::trace;
 use ulid::Ulid;
 
-type ConsensusNode = RwLock<Option<Arc<SyneviNode<GrpcNetwork, Arc<Controller>>>>>;
+type ConsensusNode = RwLock<Option<Arc<SyneviNode<GrpcNetwork, Arc<Controller>, LmdbStore>>>>;
 
 pub struct Controller {
     pub(super) store: Arc<StdRwLock<Store>>,
@@ -23,7 +28,7 @@ pub struct Controller {
 pub type KeyConfig = (u32, String, String);
 
 impl Controller {
-    #[tracing::instrument(level = "trace", skip(key_config))]
+    //#[tracing::instrument(level = "trace", skip(key_config))]
     pub async fn new(
         path: String,
         node_id: Ulid,
@@ -32,13 +37,19 @@ impl Controller {
         members: Vec<(Ulid, u16, String)>,
         key_config: KeyConfig,
     ) -> Result<Arc<Self>, ArunaError> {
-        let store = Store::new(path, key_config)?;
+        let store = Store::new(path.clone(), key_config)?;
 
         let controller = Arc::new(Controller {
             store: Arc::new(StdRwLock::new(store)),
             node: RwLock::new(None),
         });
-        let node = SyneviNode::new_with_network_and_executor(
+
+        let path = format!("{path}/events");
+        fs::create_dir_all(&path)?;
+        let synevi_lmdb: synevi::storage::LmdbStore =
+            synevi::storage::LmdbStore::new(path, serial)?;
+
+        let node = SyneviNode::new(
             node_id,
             serial,
             GrpcNetwork::new(
@@ -48,24 +59,25 @@ impl Controller {
                 serial,
             ),
             controller.clone(),
+            synevi_lmdb,
         )
         .await
         .inspect_err(logerr!())?;
 
-        for (id, serial, host) in members {
-            let mut counter = 0;
-            loop {
-                let Err(_) = node.add_member(id, serial, host.clone(), true).await else {
-                    break;
-                };
-                tokio::time::sleep(Duration::from_secs(10)).await;
-                if counter > 6 {
-                    tracing::error!("Failed to add member");
-                    return Err(ArunaError::ServerError("Failed to add member".to_string()));
-                }
-                counter += 1;
-            }
-        }
+        // for (id, serial, host) in members {
+        //     let mut counter = 0;
+        //     loop {
+        //         let Err(_) = node.add_member(id, serial, host.clone(), true).await else {
+        //             break;
+        //         };
+        //         tokio::time::sleep(Duration::from_secs(10)).await;
+        //         if counter > 6 {
+        //             tracing::error!("Failed to add member");
+        //             return Err(ArunaError::ServerError("Failed to add member".to_string()));
+        //         }
+        //         counter += 1;
+        //     }
+        // }
         *controller.node.write().await = Some(node);
 
         Ok(controller)
