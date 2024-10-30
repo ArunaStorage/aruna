@@ -80,7 +80,7 @@ impl WriteRequest for CreateRealmRequestTx {
             let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
 
-            let Some(user_idx) = store.get_idx_from_ulid(&requester_id, &mut wtxn) else {
+            let Some(user_idx) = store.get_idx_from_ulid(&requester_id, wtxn.get_txn()) else {
                 return Err(ArunaError::NotFound(requester_id.to_string()));
             };
 

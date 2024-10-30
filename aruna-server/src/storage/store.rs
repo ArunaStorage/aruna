@@ -24,19 +24,66 @@ use heed::{
 };
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use milli::{
-    documents::{DocumentsBatchBuilder, DocumentsBatchReader},
-    update::{IndexDocuments, IndexDocumentsConfig, IndexerConfig},
-    CboRoaringBitmapCodec, Index, BEU32,
+    documents::{DocumentsBatchBuilder, DocumentsBatchReader}, update::{IndexDocuments, IndexDocumentsConfig, IndexerConfig}, CboRoaringBitmapCodec, Index, ObkvCodec, BEU32
 };
+use petgraph::Graph;
 use std::{
     collections::HashMap,
     fs,
     io::Cursor,
-    sync::{Arc, RwLock},
+    sync::{RwLock, RwLockWriteGuard},
 };
 use ulid::Ulid;
 
 use super::graph::{check_node_variant, get_permissions, IndexHelper};
+
+pub struct WriteTxn<'a> {
+    milli_index: &'a Index,
+    txn: Option<RwTxn<'a>>,
+    graph_lock: RwLockWriteGuard<'a, Graph<NodeVariant, EdgeType>>,
+    relations: &'a Database<BEU32, SerdeBincode<RawRelation>>,
+    documents: &'a Database<BEU32, ObkvCodec>,
+    tracker: u16,
+}
+
+impl <'a> WriteTxn<'a> {
+    pub fn get_txn(&mut self) -> &mut RwTxn<'a> {
+        self.txn.as_mut().expect("Transaction already committed")
+    }
+
+    pub fn get_graph(&mut self) -> &mut RwLockWriteGuard<'a, Graph<NodeVariant, EdgeType>> {
+        self.tracker += 1;
+        &mut self.graph_lock
+    }
+
+    pub fn commit(mut self) -> Result<(), ArunaError> {
+        let txn = self.txn.take().expect("Transaction already committed");
+        txn.commit().inspect_err(logerr!())?;
+        Ok(())
+    }
+}
+
+impl <'a> Drop for WriteTxn<'a> {
+    fn drop(&mut self) {
+        if self.txn.is_some() && self.tracker != 0 {
+            // Recovering graph state
+            tracing::error!("Transaction dropped without commit -> Recovering graph state");
+            // Abort the transaction
+            self.txn.take().expect("Transaction already committed").abort();
+
+            // Reset the graph
+            let write_txn = self.milli_index.write_txn().expect("Failed to create write transaction");
+
+            *self.graph_lock = load_graph(
+                &write_txn,
+                self.relations,
+                self.documents,
+            ).expect("Failed to load graph");
+        }
+    }
+}
+
+
 
 // LMBD database names
 pub mod db_names {
@@ -58,7 +105,7 @@ pub type IssuerInfo = (IssuerType, DecodingKey, Vec<String>); // (IssuerType, De
 
 pub struct Store {
     // Milli index to store objects and allow for search
-    pub(crate) milli_index: Arc<Index>,
+    milli_index: Index,
     // Store it in an increasing list of relations
     relations: Database<BEU32, SerdeBincode<RawRelation>>,
     // Relations info
@@ -81,7 +128,7 @@ pub struct Store {
     issuer_decoding_keys: HashMap<DecodingKeyIdentifier, IssuerInfo, RandomState>,
     signing_info: (u32, EncodingKey, DecodingKey),
     // This has to be a RwLock because the graph is mutable
-    graph: RwLock<petgraph::graph::Graph<NodeVariant, EdgeType>>,
+    graph: RwLock<Graph<NodeVariant, EdgeType>>,
 }
 
 impl Store {
@@ -138,7 +185,7 @@ impl Store {
         .inspect_err(logerr!())?;
 
         Ok(Self {
-            milli_index: Arc::new(milli_index),
+            milli_index,
             relations,
             relation_infos,
             events,
@@ -157,8 +204,19 @@ impl Store {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn write_txn(&self) -> Result<heed::RwTxn, ArunaError> {
-        Ok(self.milli_index.write_txn().inspect_err(logerr!())?)
+    pub fn write_txn(&self) -> Result<WriteTxn, ArunaError> {
+        // Lock the graph first
+        // Invariant: You can only aquire a write transaction if the graph is locked
+        let graph_lock = self.graph.write().expect("Poisoned lock");
+
+        Ok(WriteTxn{
+            milli_index: &self.milli_index,
+            graph_lock,
+            txn: Some(self.milli_index.write_txn().inspect_err(logerr!())?),
+            relations: &self.relations,
+            documents: &self.milli_index.documents,
+            tracker: 0,
+        })
     }
 
     #[tracing::instrument(level = "trace", skip(self, id, rtxn))]
@@ -186,10 +244,10 @@ impl Store {
         ))
     }
 
-    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    #[tracing::instrument(level = "trace", skip(self, wtxn))]
     pub fn create_relation(
         &self,
-        rtxn: &mut RwTxn,
+        wtxn: &mut WriteTxn,
         source: u32,
         target: u32,
         edge_type: EdgeType,
@@ -201,10 +259,10 @@ impl Store {
         };
 
         self.relations
-            .put(rtxn, &relation.source, &relation)
+            .put(wtxn.get_txn(), &relation.source, &relation)
             .inspect_err(logerr!())?;
-
-        self.graph.write().expect("Poisoned lock").add_edge(
+        
+        wtxn.get_graph().add_edge(
             source.into(),
             target.into(),
             edge_type,
@@ -216,7 +274,7 @@ impl Store {
     #[tracing::instrument(level = "trace", skip(self, node, wtxn))]
     pub fn create_node<'a, T: Node<'a>>(
         &'a self,
-        wtxn: &mut RwTxn<'a>,
+        wtxn: &mut WriteTxn<'a>,
         event_id: u128,
         node: T,
     ) -> Result<u32, ArunaError> {
@@ -224,7 +282,7 @@ impl Store {
 
         let indexer_config = IndexerConfig::default();
         let builder = IndexDocuments::new(
-            wtxn,
+            wtxn.get_txn(),
             &self.milli_index,
             &indexer_config,
             IndexDocumentsConfig::default(),
@@ -259,18 +317,18 @@ impl Store {
 
         // Get the idx of the node
         let idx = self
-            .get_idx_from_ulid(&id, &wtxn)
+            .get_idx_from_ulid(&id, &wtxn.get_txn())
             .ok_or_else(|| ArunaError::DatabaseError("Missing idx".to_string()))?;
 
         // Add the node to the graph
-        let index = self.graph.write().expect("Poisoned lock").add_node(variant);
+        let index = wtxn.get_graph().add_node(variant);
 
         // Ensure that the index in graph and milli stays in sync
         assert_eq!(index.index() as u32, idx,);
 
         // Associate the event with the new node
         self.events
-            .put(wtxn, &idx, &event_id)
+            .put(wtxn.get_txn(), &idx, &event_id)
             .inspect_err(logerr!())?;
 
         Ok(idx)
