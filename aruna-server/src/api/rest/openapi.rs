@@ -1,6 +1,6 @@
 use super::api_paths::*;
-use crate::models::requests::*;
 use crate::models::models::*;
+use crate::models::requests::*;
 use utoipa::{
     openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
     Modify, OpenApi,
@@ -18,6 +18,7 @@ use utoipa::{
         create_group,
         get_group,
         add_group,
+        register_user,
     ),
     components(schemas(
         CreateResourceRequest,
@@ -34,6 +35,9 @@ use utoipa::{
         GetGroupResponse,
         AddGroupRequest,
         AddGroupResponse,
+        RegisterUserRequest,
+        RegisterUserResponse,
+        User,
         Author,
         Relation,
         Resource,

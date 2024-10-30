@@ -1,4 +1,3 @@
-use crate::models::models::*;
 use crate::models::requests::*;
 use crate::{error::ArunaError, transactions::controller::Controller};
 use axum::{
@@ -188,6 +187,29 @@ pub async fn get_group(
     State(state): State<Arc<Controller>>,
     Query(request): Query<GetGroupRequest>,
     header: HeaderMap,
+) -> impl IntoResponse {
+    todo!()
+    // into_axum_response(state.request(request, extract_token(&header)).await)
+}
+
+/// Get realm
+#[utoipa::path(
+    post,
+    path = "/api/v3/user",
+    request_body = RegisterUserRequest,
+    responses(
+        (status = 200, body = RegisterUserResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn register_user(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+    Json(request): Json<RegisterUserRequest>,
 ) -> impl IntoResponse {
     todo!()
     // into_axum_response(state.request(request, extract_token(&header)).await)

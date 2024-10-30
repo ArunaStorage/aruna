@@ -8,12 +8,9 @@ use crate::{
     error::ArunaError,
     models::{
         models::{Group, Realm},
-        requests::{CreateRealmRequest, CreateRealmResponse}
+        requests::{CreateRealmRequest, CreateRealmResponse},
     },
-    transactions::{
-        request::SerializedResponse,
-        transaction::ArunaTransaction
-    },
+    transactions::{request::SerializedResponse, transaction::ArunaTransaction},
 };
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
@@ -91,9 +88,9 @@ impl WriteRequest for CreateRealmRequestTx {
             };
 
             // Create realm
-            let realm_idx = store.create_node(&mut wtxn, id, realm.clone())?;
+            let realm_idx = store.create_node(&mut wtxn, id, &realm)?;
             // Create group
-            let group_idx = store.create_node(&mut wtxn, id, group)?;
+            let group_idx = store.create_node(&mut wtxn, id, &group)?;
 
             // Add relation user --ADMIN--> group
             store.create_relation(

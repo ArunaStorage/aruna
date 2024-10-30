@@ -5,13 +5,13 @@ use crate::{
         EdgeType, Issuer, IssuerType, Node, NodeVariant, Permission, RawRelation, RelationInfo,
         ServerState, Token,
     },
-    transactions::controller::KeyConfig,
     storage::{
         graph::load_graph,
         init::{self, init_issuer},
         milli_helpers::prepopulate_fields,
         utils::config_into_keys,
     },
+    transactions::controller::KeyConfig,
 };
 use ahash::RandomState;
 use heed::{
@@ -26,6 +26,7 @@ use milli::{
     CboRoaringBitmapCodec, Index, ObkvCodec, BEU32,
 };
 use petgraph::{visit::EdgeRef, Graph};
+use serde_json::Value;
 use std::{
     collections::HashMap,
     fs,
@@ -278,7 +279,10 @@ impl Store {
     }
 
     #[tracing::instrument(level = "trace", skip(self, rtxn))]
-    pub fn get_node<T: Node>(&self, rtxn: &RoTxn<'_>, node_idx: u32) -> Option<T> {
+    pub fn get_node<T: Node>(&self, rtxn: &RoTxn<'_>, node_idx: u32) -> Option<T>
+    where
+        for<'a> &'a T: TryInto<serde_json::Map<String, Value>, Error = ArunaError>,
+    {
         let response = self
             .milli_index
             .documents
@@ -295,8 +299,11 @@ impl Store {
         &'a self,
         wtxn: &mut WriteTxn<'a>,
         event_id: u128,
-        node: T,
-    ) -> Result<u32, ArunaError> {
+        node: &T,
+    ) -> Result<u32, ArunaError>
+    where
+        for<'b> &'b T: TryInto<serde_json::Map<String, Value>, Error = ArunaError>,
+    {
         // Use the milli transaction directly to prevent lifetime interference
 
         let indexer_config = IndexerConfig::default();

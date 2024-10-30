@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
-use super::models::{Author, Group, KeyValue, Realm, Relation, Resource, ResourceVariant, VisibilityClass};
+use super::models::{
+    Author, Group, KeyValue, Realm, Relation, Resource, ResourceVariant, User, VisibilityClass,
+};
 
 fn default_license_tag() -> String {
     "CC-BY-SA-4.0".to_string()
@@ -136,4 +138,17 @@ pub struct GetGroupRequest {
 pub struct GetGroupResponse {
     pub group: Group,
     pub members: Vec<Ulid>,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct RegisterUserRequest {
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub identifier: String,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct RegisterUserResponse {
+    pub user: User,
 }

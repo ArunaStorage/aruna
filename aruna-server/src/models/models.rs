@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use std::fmt::Display;
 use ulid::Ulid;
-use utoipa::{IntoParams, ToSchema};
+use utoipa::ToSchema;
 
 use crate::{
     constants::relation_types::*,
@@ -68,9 +68,9 @@ impl TryFrom<serde_json::Number> for NodeVariant {
     }
 }
 
-pub trait Node:
-    for<'a> TryFrom<&'a KvReaderU16<'a>, Error = ParseError>
-    + TryInto<serde_json::Map<String, Value>, Error = ArunaError>
+pub trait Node: for<'a> TryFrom<&'a KvReaderU16<'a>, Error = ParseError>
+where
+    for<'a> &'a Self: TryInto<serde_json::Map<String, Value>, Error = ArunaError>,
 {
     fn get_id(&self) -> Ulid;
     fn get_variant(&self) -> NodeVariant;
@@ -116,9 +116,9 @@ impl Node for Resource {
     }
 }
 
-impl TryFrom<Resource> for serde_json::Map<String, Value> {
+impl TryFrom<&Resource> for serde_json::Map<String, Value> {
     type Error = ArunaError;
-    fn try_from(r: Resource) -> Result<Self, Self::Error> {
+    fn try_from(r: &Resource) -> Result<Self, Self::Error> {
         Ok(match r.variant {
             ResourceVariant::Project => into_serde_json_map(r, NodeVariant::ResourceProject)?,
             ResourceVariant::Folder => into_serde_json_map(r, NodeVariant::ResourceFolder)?,
@@ -165,9 +165,9 @@ impl Node for User {
     }
 }
 
-impl TryFrom<User> for serde_json::Map<String, Value> {
+impl TryFrom<&User> for serde_json::Map<String, Value> {
     type Error = ArunaError;
-    fn try_from(u: User) -> Result<Self, Self::Error> {
+    fn try_from(u: &User) -> Result<Self, Self::Error> {
         into_serde_json_map(u, NodeVariant::User)
     }
 }
@@ -205,9 +205,9 @@ impl Node for ServiceAccount {
     }
 }
 
-impl TryFrom<ServiceAccount> for serde_json::Map<String, Value> {
+impl TryFrom<&ServiceAccount> for serde_json::Map<String, Value> {
     type Error = ArunaError;
-    fn try_from(sa: ServiceAccount) -> Result<Self, Self::Error> {
+    fn try_from(sa: &ServiceAccount) -> Result<Self, Self::Error> {
         into_serde_json_map(sa, NodeVariant::ServiceAccount)
     }
 }
@@ -241,9 +241,9 @@ impl Node for Group {
     }
 }
 
-impl TryFrom<Group> for serde_json::Map<String, Value> {
+impl TryFrom<&Group> for serde_json::Map<String, Value> {
     type Error = ArunaError;
-    fn try_from(g: Group) -> Result<Self, Self::Error> {
+    fn try_from(g: &Group) -> Result<Self, Self::Error> {
         into_serde_json_map(g, NodeVariant::Group)
     }
 }
@@ -278,9 +278,9 @@ impl Node for Realm {
     }
 }
 
-impl TryFrom<Realm> for serde_json::Map<String, Value> {
+impl TryFrom<&Realm> for serde_json::Map<String, Value> {
     type Error = ArunaError;
-    fn try_from(r: Realm) -> Result<Self, Self::Error> {
+    fn try_from(r: &Realm) -> Result<Self, Self::Error> {
         into_serde_json_map(r, NodeVariant::Realm)
     }
 }
