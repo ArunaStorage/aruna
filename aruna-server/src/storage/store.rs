@@ -1,7 +1,7 @@
 use crate::{
     error::ArunaError,
     logerr,
-    models::{
+    models::models::{
         EdgeType, Issuer, IssuerType, Node, NodeVariant, Permission, RawRelation, RelationInfo,
         ServerState, Token,
     },

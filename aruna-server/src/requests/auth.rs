@@ -7,7 +7,7 @@ use super::{
 use crate::{
     context::Context,
     error::ArunaError,
-    models::{ArunaTokenClaims, Audience, IssuerType},
+    models::models::{ArunaTokenClaims, Audience, IssuerType},
     storage::store::Store,
 };
 use base64::{engine::general_purpose, Engine};

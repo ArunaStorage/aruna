@@ -12,7 +12,7 @@ use crate::{
     constants::const_relations,
     error::ArunaError,
     logerr,
-    models::{Issuer, IssuerType, RelationInfo},
+    models::models::{Issuer, IssuerType, RelationInfo},
 };
 
 use super::store::{DecodingKeyIdentifier, IssuerInfo};
@@ -32,7 +32,7 @@ pub(super) fn init_issuer(
                 issuer_name: "aruna".to_string(),
                 pubkey_endpoint: None,
                 audiences: vec!["aruna".to_string()],
-                issuer_type: crate::models::IssuerType::ARUNA,
+                issuer_type: IssuerType::ARUNA,
             },
         )
         .inspect_err(logerr!())?;

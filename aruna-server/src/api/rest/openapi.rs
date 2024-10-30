@@ -1,5 +1,6 @@
 use super::api_paths::*;
-use crate::models::*;
+use crate::models::requests::*;
+use crate::models::models::*;
 use utoipa::{
     openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
     Modify, OpenApi,

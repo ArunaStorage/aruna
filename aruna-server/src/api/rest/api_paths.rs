@@ -1,4 +1,5 @@
-use crate::models::*;
+use crate::models::models::*;
+use crate::models::requests::*;
 use crate::{error::ArunaError, requests::controller::Controller};
 use axum::{
     extract::{Query, State},

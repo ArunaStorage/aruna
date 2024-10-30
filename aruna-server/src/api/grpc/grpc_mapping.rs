@@ -4,7 +4,7 @@ use thiserror::Error;
 use tonic::Status;
 use ulid::Ulid;
 
-use crate::{error::ArunaError, models};
+use crate::{error::ArunaError, models::{models, requests}};
 use aruna_rust_api::v3::aruna::api::v3::{self as grpc, ResourceStatus};
 
 #[derive(Debug, Error)]
@@ -156,7 +156,7 @@ impl From<models::Resource> for grpc::Resource {
     }
 }
 
-impl TryFrom<grpc::CreateResourceRequest> for models::CreateResourceRequest {
+impl TryFrom<grpc::CreateResourceRequest> for requests::CreateResourceRequest {
     type Error = InvalidFieldError;
     fn try_from(value: grpc::CreateResourceRequest) -> Result<Self, Self::Error> {
         Ok(Self {
@@ -183,7 +183,7 @@ impl TryFrom<grpc::CreateResourceRequest> for models::CreateResourceRequest {
     }
 }
 
-impl From<grpc::CreateRealmRequest> for models::CreateRealmRequest {
+impl From<grpc::CreateRealmRequest> for requests::CreateRealmRequest {
     fn from(value: grpc::CreateRealmRequest) -> Self {
         Self {
             tag: value.tag,
@@ -192,8 +192,8 @@ impl From<grpc::CreateRealmRequest> for models::CreateRealmRequest {
         }
     }
 }
-impl From<models::CreateRealmResponse> for grpc::CreateRealmResponse {
-    fn from(value: models::CreateRealmResponse) -> Self {
+impl From<requests::CreateRealmResponse> for grpc::CreateRealmResponse {
+    fn from(value: requests::CreateRealmResponse) -> Self {
         Self {
             realm: Some(value.realm.into()),
             admin_group_id: value.admin_group_id.to_string(),
@@ -201,7 +201,7 @@ impl From<models::CreateRealmResponse> for grpc::CreateRealmResponse {
     }
 }
 
-impl From<grpc::CreateGroupRequest> for models::CreateGroupRequest {
+impl From<grpc::CreateGroupRequest> for requests::CreateGroupRequest {
     fn from(value: grpc::CreateGroupRequest) -> Self {
         Self {
             name: value.name,
@@ -210,7 +210,7 @@ impl From<grpc::CreateGroupRequest> for models::CreateGroupRequest {
     }
 }
 
-impl TryFrom<grpc::CreateProjectRequest> for models::CreateProjectRequest {
+impl TryFrom<grpc::CreateProjectRequest> for requests::CreateProjectRequest {
     type Error = InvalidFieldError;
     fn try_from(value: grpc::CreateProjectRequest) -> Result<Self, Self::Error> {
         Ok(Self {
@@ -238,16 +238,16 @@ impl TryFrom<grpc::CreateProjectRequest> for models::CreateProjectRequest {
     }
 }
 
-impl From<models::CreateResourceResponse> for grpc::CreateResourceResponse {
-    fn from(value: models::CreateResourceResponse) -> Self {
+impl From<requests::CreateResourceResponse> for grpc::CreateResourceResponse {
+    fn from(value: requests::CreateResourceResponse) -> Self {
         grpc::CreateResourceResponse {
             resource: Some(value.resource.into()),
         }
     }
 }
 
-impl From<models::GetResourceResponse> for grpc::GetResourceResponse {
-    fn from(value: models::GetResourceResponse) -> Self {
+impl From<requests::GetResourceResponse> for grpc::GetResourceResponse {
+    fn from(value: requests::GetResourceResponse) -> Self {
         grpc::GetResourceResponse {
             resource: Some(value.resource.into()),
             relations: value
@@ -278,7 +278,7 @@ impl From<models::Hash> for grpc::Hash {
     }
 }
 
-impl TryFrom<grpc::GetResourceRequest> for models::GetResourceRequest {
+impl TryFrom<grpc::GetResourceRequest> for requests::GetResourceRequest {
     type Error = InvalidFieldError;
 
     fn try_from(value: grpc::GetResourceRequest) -> Result<Self, Self::Error> {
@@ -299,11 +299,11 @@ impl From<models::Realm> for grpc::Realm {
     }
 }
 
-impl TryFrom<grpc::AddGroupRequest> for models::AddGroupRequest {
+impl TryFrom<grpc::AddGroupRequest> for requests::AddGroupRequest {
     type Error = InvalidFieldError;
 
     fn try_from(value: grpc::AddGroupRequest) -> Result<Self, Self::Error> {
-        Ok(models::AddGroupRequest {
+        Ok(requests::AddGroupRequest {
             realm_id: Ulid::from_string(&value.realm_id)
                 .map_err(|_| InvalidFieldError("realm_id"))?,
             group_id: Ulid::from_string(&value.group_id)
@@ -312,29 +312,29 @@ impl TryFrom<grpc::AddGroupRequest> for models::AddGroupRequest {
     }
 }
 
-impl From<models::AddGroupResponse> for grpc::AddGroupResponse {
-    fn from(_value: models::AddGroupResponse) -> Self {
+impl From<requests::AddGroupResponse> for grpc::AddGroupResponse {
+    fn from(_value: requests::AddGroupResponse) -> Self {
         grpc::AddGroupResponse {}
     }
 }
 
-impl From<models::CreateGroupResponse> for grpc::CreateGroupResponse {
-    fn from(value: models::CreateGroupResponse) -> Self {
+impl From<requests::CreateGroupResponse> for grpc::CreateGroupResponse {
+    fn from(value: requests::CreateGroupResponse) -> Self {
         Self {
             group: Some(value.group.into()),
         }
     }
 }
 
-impl From<models::CreateProjectResponse> for grpc::CreateProjectResponse {
-    fn from(value: models::CreateProjectResponse) -> Self {
+impl From<requests::CreateProjectResponse> for grpc::CreateProjectResponse {
+    fn from(value: requests::CreateProjectResponse) -> Self {
         Self {
             resource: Some(value.resource.into()),
         }
     }
 }
 
-impl TryFrom<grpc::GetRealmRequest> for models::GetRealmRequest {
+impl TryFrom<grpc::GetRealmRequest> for requests::GetRealmRequest {
     type Error = InvalidFieldError;
 
     fn try_from(value: grpc::GetRealmRequest) -> Result<Self, Self::Error> {
@@ -344,8 +344,8 @@ impl TryFrom<grpc::GetRealmRequest> for models::GetRealmRequest {
     }
 }
 
-impl From<models::GetRealmResponse> for grpc::GetRealmResponse {
-    fn from(value: models::GetRealmResponse) -> Self {
+impl From<requests::GetRealmResponse> for grpc::GetRealmResponse {
+    fn from(value: requests::GetRealmResponse) -> Self {
         Self {
             realm: Some(value.realm.into()),
             group_ids: value.groups.into_iter().map(|id| id.to_string()).collect(),
@@ -353,7 +353,7 @@ impl From<models::GetRealmResponse> for grpc::GetRealmResponse {
     }
 }
 
-impl TryFrom<grpc::GetGroupRequest> for models::GetGroupRequest {
+impl TryFrom<grpc::GetGroupRequest> for requests::GetGroupRequest {
     type Error = InvalidFieldError;
 
     fn try_from(value: grpc::GetGroupRequest) -> Result<Self, Self::Error> {
@@ -363,8 +363,8 @@ impl TryFrom<grpc::GetGroupRequest> for models::GetGroupRequest {
     }
 }
 
-impl From<models::GetGroupResponse> for grpc::GetGroupResponse {
-    fn from(value: models::GetGroupResponse) -> Self {
+impl From<requests::GetGroupResponse> for grpc::GetGroupResponse {
+    fn from(value: requests::GetGroupResponse) -> Self {
         Self {
             group: Some(value.group.into()),
             members: value.members.into_iter().map(|id| id.to_string()).collect(),

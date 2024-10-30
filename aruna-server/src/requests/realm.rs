@@ -6,7 +6,10 @@ use crate::{
     constants::relation_types,
     context::Context,
     error::ArunaError,
-    models::{CreateRealmRequest, CreateRealmResponse, Group, Realm},
+    models::{
+        models::{Group, Realm},
+        requests::{CreateRealmRequest, CreateRealmResponse}
+    },
     requests::transaction::ArunaTransaction,
 };
 use serde::{Deserialize, Serialize};

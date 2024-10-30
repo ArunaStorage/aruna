@@ -3,7 +3,7 @@ use std::{cmp::min, collections::VecDeque};
 use crate::{
     error::ArunaError,
     logerr,
-    models::{EdgeType, NodeVariant, Permission, RawRelation},
+    models::models::{EdgeType, NodeVariant, Permission, RawRelation},
 };
 use heed::{types::SerdeBincode, Database, RoTxn};
 use milli::{ObkvCodec, BEU32};

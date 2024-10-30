@@ -1,4 +1,4 @@
-use crate::models::Permission;
+use crate::models::models::Permission;
 use ulid::Ulid;
 
 pub enum Context {

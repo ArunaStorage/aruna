@@ -1,4 +1,4 @@
-use crate::models::RelationInfo;
+use crate::models::models::RelationInfo;
 
 pub struct Field {
     pub name: &'static str,
