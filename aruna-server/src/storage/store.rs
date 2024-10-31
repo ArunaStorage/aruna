@@ -488,6 +488,8 @@ impl Store {
             .unwrap_or_default();
 
         token.id = tokens.len() as u16;
+
+        tokens.push(Some(token));
         self.tokens
             .put(rtxn, &user_idx, &tokens)
             .inspect_err(logerr!())?;

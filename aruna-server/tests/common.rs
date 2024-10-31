@@ -18,7 +18,7 @@ use tonic::transport::Channel;
 use tracing_subscriber::EnvFilter;
 use ulid::Ulid;
 
-pub const TEST_TOKEN: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSIsImtpZCI6IjEifQ.eyJpc3MiOiJhcnVuYSIsInN1YiI6IjAxSjZIUzMzTlRCODFTTTczTkU0RFRDOTY4IiwiYXVkIjoiYXJ1bmEiLCJleHAiOjIwNDA2MjIyMzV9.nUsa6u3hbMeujIny9--6KltU0Hf_kMEamRsn5Ux-n1mm5JVGIcO48nZ8SQBi6vwgDJ4w02UzCA1g4bRHEf4SCg";
+pub const TEST_TOKEN: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSIsImtpZCI6IjEifQ.eyJpc3MiOiJhcnVuYSIsInN1YiI6IjAxSkJHVDFUWVY4UVo3WkZaS1hQNERRS05OIiwiYXVkIjoiYXJ1bmEiLCJleHAiOjE3MzU2MzIyODQsImluZm8iOlswLDBdfQ.lCvp27T537Ygm8bCt3TPl7hLwaLObHqNkFwet-J19-QoT_YmbO7tJ9O_aWNXT1KLnmbxq8WJUlvROecxXf0UDA";
 pub static SUBSCRIBERS: AtomicU16 = AtomicU16::new(0);
 static INIT_TRACING: Once = Once::new();
 const MAX_RETRIES: u8 = 50;
@@ -65,6 +65,7 @@ pub async fn init_test(offset: u16) -> Clients {
         if retries == 0 {
             panic!()
         }
+        sleep(Duration::from_millis(10)).await;
         match endpoint.connect().await {
             Ok(channel) => break channel,
             Err(e) => {
@@ -100,9 +101,13 @@ async fn init_testing_server(offset: u16) -> (u16, Arc<Notify>) {
     // Copy & create db
     let node_id = Ulid::new();
     let test_path = format!("/dev/shm/{node_id}");
-    fs::create_dir(&test_path).await.unwrap();
-    let database_path = format!("{test_path}/data.mdb");
-    fs::copy("./tests/init_db.mdb", &database_path)
+    fs::create_dir_all(format!("{test_path}/events")).await.unwrap();
+    fs::create_dir_all(format!("{test_path}/store")).await.unwrap();
+    fs::copy("./tests/test_db/events/data.mdb", &format!("{test_path}/events/data.mdb"))
+        .await
+        .unwrap();
+
+    fs::copy("./tests/test_db/store/data.mdb", &format!("{test_path}/store/data.mdb"))
         .await
         .unwrap();
 

@@ -1,3 +1,95 @@
+use serde::{Deserialize, Serialize};
+use ulid::Ulid;
+
+use crate::{constants::relation_types, context::Context, error::ArunaError, logerr, models::{models::Group, requests::{CreateGroupRequest, CreateGroupResponse}}, transactions::request::WriteRequest};
+
+use super::{controller::Controller, request::{Request, Requester, SerializedResponse}};
+
+impl Request for CreateGroupRequest {
+    type Response = CreateGroupResponse;
+    fn get_context(&self) -> &Context {
+        &Context::UserOnly
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &super::controller::Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let request_tx = CreateGroupRequestTx {
+            id: Ulid::new(),
+            req: self,
+            requester: requester.ok_or_else(|| ArunaError::Unauthorized).inspect_err(logerr!())?,
+        };
+
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response)?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateGroupRequestTx {
+    id: Ulid,
+    req: CreateGroupRequest,
+    requester: Requester,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for CreateGroupRequestTx {
+    async fn execute(
+        &self,
+        id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, ArunaError> {
+
+        controller.authorize(&self.requester, &self.req).await?;
+
+        let group = Group{
+            id: self.id,
+            name: self.req.name.clone(),
+            description: self.req.description.clone(),
+        };
+        let requester_id = self.requester.get_id();
+
+        let store = controller.get_store();
+        Ok(tokio::task::spawn_blocking(move || {
+            let store = store.write().expect("Failed to lock store");
+            let mut wtxn = store.write_txn()?;
+
+            let Some(user_idx) = store.get_idx_from_ulid(&requester_id, wtxn.get_txn()) else {
+                return Err(ArunaError::NotFound(requester_id.to_string()));
+            };
+
+            // Create group
+            let group_idx = store.create_node(&mut wtxn, id, &group)?;
+
+            // Add relation user --ADMIN--> group
+            store.create_relation(
+                &mut wtxn,
+                user_idx,
+                group_idx,
+                relation_types::PERMISSION_ADMIN,
+            )?;
+
+            wtxn.commit()?;
+            // Create admin group, add user to admin group
+            Ok::<_, ArunaError>(bincode::serialize(&CreateGroupResponse {
+                group,
+            })?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
+    }
+}
+
+
+
+
 // use super::{
 //     auth::Auth,
 //     controller::{Controller, Get, Transaction},

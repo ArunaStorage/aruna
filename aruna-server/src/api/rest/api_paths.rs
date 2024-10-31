@@ -163,8 +163,7 @@ pub async fn create_group(
     header: HeaderMap,
     Json(request): Json<CreateGroupRequest>,
 ) -> impl IntoResponse {
-    todo!()
-    // into_axum_response(state.request(request, extract_token(&header)).await)
+    into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
 /// Get realm

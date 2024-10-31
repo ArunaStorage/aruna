@@ -107,7 +107,7 @@ impl WriteRequest for CreateRealmRequestTx {
             // Create admin group, add user to admin group
             Ok::<_, ArunaError>(bincode::serialize(&CreateRealmResponse {
                 realm: realm,
-                admin_group_id: Default::default(),
+                admin_group_id: group.id,
             })?)
         })
         .await

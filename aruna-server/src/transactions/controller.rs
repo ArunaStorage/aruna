@@ -1,7 +1,6 @@
 use super::{
     auth::TokenHandler,
     request::{Request, SerializedResponse, WriteRequest},
-    transaction::ArunaTransaction,
 };
 use crate::{error::ArunaError, logerr, storage::store::Store, transactions::request::Requester};
 use std::{
@@ -9,12 +8,13 @@ use std::{
     sync::{RwLock as StdRwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 use std::{net::SocketAddr, sync::Arc};
-use synevi::network::GrpcNetwork;
+use synevi::{network::GrpcNetwork, SyneviError, Transaction};
 use synevi::storage::LmdbStore;
 use synevi::Node as SyneviNode;
 use synevi::SyneviResult;
 use tokio::sync::RwLock;
 use tracing::trace;
+use serde::Serialize;
 use ulid::Ulid;
 
 type ConsensusNode = RwLock<Option<Arc<SyneviNode<GrpcNetwork, Arc<Controller>, LmdbStore>>>>;
@@ -27,7 +27,7 @@ pub struct Controller {
 pub type KeyConfig = (u32, String, String);
 
 impl Controller {
-    //#[tracing::instrument(level = "trace", skip(key_config))]
+    #[tracing::instrument(level = "trace", skip(key_config))]
     pub async fn new(
         path: String,
         node_id: Ulid,
@@ -125,6 +125,18 @@ impl Controller {
         request.run_request(requester, self).await
     }
 
+    pub async fn process_transaction(
+        &self,
+        id: u128,
+        transaction: ArunaTransaction,
+    ) -> Result<SerializedResponse, ArunaError> {
+        tracing::trace!(?id, "Deserializing transaction");
+        tracing::debug!(transaction = ?transaction.0.len());
+        let tx: Box<dyn WriteRequest> =
+            bincode::deserialize(&transaction.0).inspect_err(logerr!())?;
+        tx.execute(id, self).await
+    }
+
     pub fn get_token_handler(&self) -> TokenHandler {
         TokenHandler::new(self.store.clone())
     }
@@ -140,5 +152,25 @@ impl synevi::Executor for Controller {
     async fn execute(&self, id: u128, transaction: Self::Tx) -> SyneviResult<Self> {
         trace!("Executing transaction");
         Ok(self.process_transaction(id, transaction).await)
+    }
+}
+
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ArunaTransaction(pub Vec<u8>);
+
+impl Transaction for ArunaTransaction {
+    type TxErr = ArunaError;
+    type TxOk = SerializedResponse;
+
+    fn as_bytes(&self) -> Vec<u8> {
+        self.0.clone()
+    }
+
+    fn from_bytes(bytes: Vec<u8>) -> Result<Self, SyneviError>
+    where
+        Self: Sized,
+    {
+        Ok(Self(bytes))
     }
 }
