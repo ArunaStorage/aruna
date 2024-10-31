@@ -1,5 +1,5 @@
 [workspace]
-members = ["aruna*"]
+members = ["aruna*", "hack"]
 resolver = "2"
 
 [workspace.package]

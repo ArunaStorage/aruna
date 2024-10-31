@@ -1,0 +1,11 @@
+[package]
+name = "hacks"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+heed = "0.20.5"
+
+[[bin]]
+name = "lmdb_compact"
+path = "lmdb_compact.rs"
