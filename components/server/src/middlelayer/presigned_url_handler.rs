@@ -131,19 +131,17 @@ impl DatabaseHandler {
 
         let upload_id = if let Some(upload_id) = request.get_upload_id() {
             Some(upload_id)
+        } else if multipart && part_nr == 1 {
+            DatabaseHandler::impersonated_multi_upload_init(
+                &credentials.access_key,
+                &credentials.secret_key,
+                &endpoint_s3_url,
+                &bucket_name,
+                &key,
+            )
+            .await?
         } else {
-            if multipart && part_nr == 1 {
-                DatabaseHandler::impersonated_multi_upload_init(
-                    &credentials.access_key,
-                    &credentials.secret_key,
-                    &endpoint_s3_url,
-                    &bucket_name,
-                    &key,
-                )
-                .await?
-            } else {
-                None
-            }
+            None
         };
 
         let signed_url = sign_url(
