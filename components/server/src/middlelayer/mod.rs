@@ -8,6 +8,8 @@ pub mod delete_db_handler;
 pub mod delete_request_types;
 pub mod endpoints_db_handler;
 pub mod endpoints_request_types;
+pub mod finish_db_handler;
+pub mod finish_request_types;
 pub mod hooks_db_handler;
 pub mod hooks_request_types;
 pub mod license_db_handler;
