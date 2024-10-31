@@ -561,6 +561,7 @@ impl GrpcQueryHandler {
             content_len,
             hashes,
             completed_parts: vec![],
+            upload_id: "".to_string(), // Upload id only needed in requests from users
         });
 
         Self::add_token_to_md(req.metadata_mut(), token)?;
@@ -624,6 +625,7 @@ impl GrpcQueryHandler {
             content_len,
             hashes: proxy_object.get_hashes(), // Hashes stay the same
             completed_parts: vec![],
+            upload_id: "".to_string(), // Upload id only needed in requests from users
         });
 
         Self::add_token_to_md(req.metadata_mut(), token)?;
@@ -1314,6 +1316,7 @@ impl GrpcQueryHandler {
             content_len,
             hashes: vec![],
             completed_parts: vec![],
+            upload_id: "".to_string(), // Upload id only needed in requests from users
         });
 
         Self::add_token_to_md(req.metadata_mut(), token)?;

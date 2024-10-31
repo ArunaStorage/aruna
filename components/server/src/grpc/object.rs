@@ -137,7 +137,7 @@ impl ObjectService for ObjectServiceImpl {
             "Unauthorized"
         );
 
-        let signed_url = tonic_internal!(
+        let (url, upload_id) = tonic_internal!(
             self.database_handler
                 .get_presigend_upload(
                     self.cache.clone(),
@@ -150,7 +150,10 @@ impl ObjectService for ObjectServiceImpl {
             "Error while building presigned url"
         );
 
-        let result = GetUploadUrlResponse { url: signed_url };
+        let result = GetUploadUrlResponse {
+            url,
+            upload_id: upload_id.unwrap_or("".to_string()),
+        };
 
         return_with_log!(result);
     }
