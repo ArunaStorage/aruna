@@ -24,6 +24,17 @@ pub enum ResourceVariant {
     Object,
 }
 
+
+// TODO: Choose better naming and perhaps remove entirely after search is implemented correctly
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+pub enum NodeWrapper {
+    Resource(Resource),
+    User(User),
+    ServiceAccount(ServiceAccount),
+    Group(Group),
+    Realm(Realm),
+}
+
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum NodeVariant {

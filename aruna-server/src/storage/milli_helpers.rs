@@ -3,11 +3,14 @@ use crate::{
     error::ArunaError,
 };
 use heed::RwTxn;
-use milli::{FieldsIdsMap, Index};
+use milli::{
+    update::{IndexerConfig, Settings},
+    FieldsIdsMap, Index,
+};
 
-pub(crate) fn prepopulate_fields(
-    index: &Index,
-    mut wtxn: &mut RwTxn<'_>,
+pub(crate) fn prepopulate_fields<'a: 'b, 'b>(
+    index: &'a Index,
+    mut wtxn: &mut RwTxn<'b>,
 ) -> Result<(), ArunaError> {
     let mut field_ids_map = FieldsIdsMap::default();
     for (idx, Field { name, index }) in FIELDS.iter().enumerate() {
@@ -17,6 +20,13 @@ pub(crate) fn prepopulate_fields(
         assert_eq!(idx, *index as usize);
         assert_eq!(field_map_index, *index as u16);
     }
+
+    // Make fields search and filterable
+    let config = IndexerConfig::default();
+    let mut settings = Settings::new(&mut wtxn, &index, &config);
+    settings.set_filterable_fields(FIELDS.iter().map(|s| s.name.to_string()).collect());
+    settings.set_searchable_fields(FIELDS.iter().map(|s| s.name.to_string()).collect());
+    settings.execute(|_| (), || false).unwrap();
 
     // Ensure that the existing map has the expected field u32 mappings
     let existing_map = index.fields_ids_map(&wtxn)?;

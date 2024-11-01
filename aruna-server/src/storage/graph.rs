@@ -1,4 +1,4 @@
-use std::{cmp::min, collections::VecDeque};
+use std::{cmp::min, collections::VecDeque, sync::atomic::AtomicU64};
 
 use crate::{
     error::ArunaError,
@@ -6,7 +6,7 @@ use crate::{
     models::models::{EdgeType, NodeVariant, Permission, RawRelation},
 };
 use heed::{types::SerdeBincode, Database, RoTxn};
-use milli::{ObkvCodec, BEU32};
+use milli::{ObkvCodec, BEU32, BEU64};
 use petgraph::{
     visit::EdgeRef,
     Direction::{self, Incoming, Outgoing},
@@ -27,7 +27,8 @@ impl IndexHelper for petgraph::graph::NodeIndex {
 #[tracing::instrument(level = "trace", skip(rtxn, relations, documents))]
 pub fn load_graph(
     rtxn: &RoTxn<'_>,
-    relations: &Database<BEU32, SerdeBincode<RawRelation>>,
+    relation_idx: &AtomicU64,
+    relations: &Database<BEU64, SerdeBincode<RawRelation>>,
     documents: &Database<BEU32, ObkvCodec>,
 ) -> Result<petgraph::graph::Graph<NodeVariant, EdgeType>, ArunaError> {
     let mut graph = petgraph::graph::Graph::new();
@@ -52,8 +53,11 @@ pub fn load_graph(
         Ok::<(), ArunaError>(())
     })?;
 
+    // TODO: Not sure if this can produce interleaving idx invariants
+    relation_idx.store(0, std::sync::atomic::Ordering::Relaxed);
     relations.iter(&rtxn)?.try_for_each(|entry| {
         let (_idx, relation) = entry.map_err(|e| ArunaError::ServerError(format!("{e}")))?;
+        relation_idx.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         graph.add_edge(
             relation.source.into(),
             relation.target.into(),

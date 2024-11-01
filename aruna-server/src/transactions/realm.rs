@@ -8,7 +8,7 @@ use crate::{
     error::ArunaError,
     models::{
         models::{Group, Realm},
-        requests::{CreateRealmRequest, CreateRealmResponse},
+        requests::{AddGroupRequest, AddGroupResponse, CreateRealmRequest, CreateRealmResponse},
     },
     transactions::request::SerializedResponse,
 };
@@ -17,8 +17,8 @@ use ulid::Ulid;
 
 impl Request for CreateRealmRequest {
     type Response = CreateRealmResponse;
-    fn get_context(&self) -> &Context {
-        &Context::UserOnly
+    fn get_context(&self) -> Context {
+        Context::UserOnly
     }
 
     async fn run_request(
@@ -56,7 +56,7 @@ pub struct CreateRealmRequestTx {
 impl WriteRequest for CreateRealmRequestTx {
     async fn execute(
         &self,
-        id: u128,
+        associated_event_id: u128,
         controller: &Controller,
     ) -> Result<SerializedResponse, crate::error::ArunaError> {
         controller.authorize(&self.requester, &self.req).await?;
@@ -78,18 +78,36 @@ impl WriteRequest for CreateRealmRequestTx {
             let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
 
+            // Exemplary check via search for unique tag fields
+            // TODO: escape tag filter
+            if !store
+                .search(
+                    "".to_string(),
+                    format!("tag='{}' AND variant=6", realm.tag.clone()),
+                    &wtxn.get_txn(),
+                )?
+                .is_empty()
+            {
+                drop(wtxn);
+                return Err(ArunaError::ConflictParameter {
+                    name: "tag".to_string(),
+                    error: "Realm tag not unique".to_string(),
+                });
+            };
+
             let Some(user_idx) = store.get_idx_from_ulid(&requester_id, wtxn.get_txn()) else {
                 return Err(ArunaError::NotFound(requester_id.to_string()));
             };
 
             // Create realm
-            let realm_idx = store.create_node(&mut wtxn, id, &realm)?;
+            let realm_idx = store.create_node(&mut wtxn, associated_event_id, &realm)?;
             // Create group
-            let group_idx = store.create_node(&mut wtxn, id, &group)?;
+            let group_idx = store.create_node(&mut wtxn, associated_event_id, &group)?;
 
             // Add relation user --ADMIN--> group
             store.create_relation(
                 &mut wtxn,
+                associated_event_id,
                 user_idx,
                 group_idx,
                 relation_types::PERMISSION_ADMIN,
@@ -98,6 +116,7 @@ impl WriteRequest for CreateRealmRequestTx {
             // Add relation group --ADMINISTRATES--> realm
             store.create_relation(
                 &mut wtxn,
+                associated_event_id,
                 group_idx,
                 realm_idx,
                 relation_types::GROUP_ADMINISTRATES_REALM,
@@ -106,9 +125,87 @@ impl WriteRequest for CreateRealmRequestTx {
             wtxn.commit()?;
             // Create admin group, add user to admin group
             Ok::<_, ArunaError>(bincode::serialize(&CreateRealmResponse {
-                realm: realm,
+                realm,
                 admin_group_id: group.id,
             })?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
+    }
+}
+
+impl Request for AddGroupRequest {
+    type Response = CreateRealmResponse;
+    fn get_context(&self) -> Context {
+        Context::Permission {
+            min_permission: crate::models::models::Permission::Write,
+            source: self.realm_id,
+        }
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let request_tx = AddGroupRequestTx {
+            req: self,
+            requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
+        };
+
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response)?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AddGroupRequestTx {
+    req: AddGroupRequest,
+    requester: Requester,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for AddGroupRequestTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, crate::error::ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+        let group_id = self.req.group_id;
+        let realm_id = self.req.realm_id;
+        let store = controller.get_store();
+        Ok(tokio::task::spawn_blocking(move || {
+            // Create realm, add user to realm
+
+            let store = store.write().expect("Failed to lock store");
+            let mut wtxn = store.write_txn()?;
+
+            let Some(group_idx) = store.get_idx_from_ulid(&group_id, wtxn.get_txn()) else {
+                return Err(ArunaError::NotFound(group_id.to_string()));
+            };
+
+            let Some(realm_idx) = store.get_idx_from_ulid(&realm_id, wtxn.get_txn()) else {
+                return Err(ArunaError::NotFound(realm_id.to_string()));
+            };
+            // Add relation user --ADMIN--> group
+            store.create_relation(
+                &mut wtxn,
+                associated_event_id,
+                // TODO: Not sure which direction
+                group_idx,
+                realm_idx,
+                relation_types::GROUP_PART_OF_REALM,
+            )?;
+
+            wtxn.commit()?;
+            // Create admin group, add user to admin group
+            Ok::<_, ArunaError>(bincode::serialize(&AddGroupResponse {})?)
         })
         .await
         .map_err(|_e| {

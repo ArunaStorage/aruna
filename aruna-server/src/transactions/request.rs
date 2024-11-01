@@ -9,7 +9,7 @@ pub type SerializedRequest = Vec<u8>;
 
 pub(crate) trait Request: Debug + Send {
     type Response: Send;
-    fn get_context<'a>(&'a self) -> &'a Context;
+    fn get_context<'a>(&'a self) -> Context;
     async fn run_request(
         self,
         requester: Option<Requester>,
@@ -22,7 +22,7 @@ pub(crate) trait Request: Debug + Send {
 pub trait WriteRequest: Send {
     async fn execute(
         &self,
-        id: u128,
+        associated_event_id: u128,
         controller: &Controller,
     ) -> Result<SerializedResponse, ArunaError>;
 }

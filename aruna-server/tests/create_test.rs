@@ -31,6 +31,20 @@ mod create_tests {
         assert_eq!(&realm.name, &request.name);
         assert_eq!(&realm.tag, &request.tag);
         assert_eq!(&realm.description, &request.description);
+
+        let request = CreateRealmRequest {
+            // Same tag
+            tag: "test".to_string(),
+            name: "SecondTestRealm".to_string(),
+            description: String::new(),
+        };
+
+        // Tags must be unique
+        assert!(clients
+            .realm_client
+            .create_realm(request.clone())
+            .await
+            .is_err())
     }
 
     #[tokio::test(flavor = "multi_thread")]

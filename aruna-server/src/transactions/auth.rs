@@ -82,7 +82,7 @@ impl Controller {
                     tracing::error!("Error joining thread");
                     ArunaError::Unauthorized
                 })??;
-                if &perm >= min_permission {
+                if perm >= min_permission {
                     Ok(())
                 } else {
                     tracing::error!("Insufficient permission");
@@ -125,7 +125,7 @@ impl Controller {
                     ArunaError::Unauthorized
                 })??;
 
-                if &first_perm >= first_min_permission && &second_perm >= second_min_permission {
+                if first_perm >= first_min_permission && second_perm >= second_min_permission {
                     Ok(())
                 } else {
                     tracing::error!("Insufficient permission");

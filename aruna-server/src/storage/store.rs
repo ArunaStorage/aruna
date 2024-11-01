@@ -2,8 +2,7 @@ use crate::{
     error::ArunaError,
     logerr,
     models::models::{
-        EdgeType, Issuer, IssuerType, Node, NodeVariant, Permission, RawRelation, RelationInfo,
-        ServerState, Token,
+        EdgeType, Issuer, IssuerType, Node, NodeVariant, NodeWrapper, Permission, RawRelation, RelationInfo, ServerState, Token
     },
     storage::{
         graph::load_graph,
@@ -17,13 +16,15 @@ use ahash::RandomState;
 use heed::{
     byteorder::BigEndian,
     types::{SerdeBincode, Str, U128},
-    Database, DatabaseFlags, EnvOpenOptions, RoTxn, RwTxn,
+    Database, DatabaseFlags, EnvOpenOptions, PutFlags, RoTxn, RwTxn,
 };
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use milli::{
     documents::{DocumentsBatchBuilder, DocumentsBatchReader},
+    execute_search, filtered_universe,
     update::{IndexDocuments, IndexDocumentsConfig, IndexerConfig},
-    CboRoaringBitmapCodec, Index, ObkvCodec, BEU32,
+    CboRoaringBitmapCodec, DefaultSearchLogger, Filter, GeoSortStrategy, Index, ObkvCodec, Search,
+    SearchContext, SearchLogger, TermsMatchingStrategy, TimeBudget, BEU32, BEU64,
 };
 use petgraph::{visit::EdgeRef, Graph};
 use serde_json::Value;
@@ -31,7 +32,7 @@ use std::{
     collections::HashMap,
     fs,
     io::Cursor,
-    sync::{RwLock, RwLockWriteGuard},
+    sync::{atomic::AtomicU64, RwLock, RwLockWriteGuard},
 };
 use ulid::Ulid;
 
@@ -41,7 +42,8 @@ pub struct WriteTxn<'a> {
     milli_index: &'a Index,
     txn: Option<RwTxn<'a>>,
     graph_lock: RwLockWriteGuard<'a, Graph<NodeVariant, EdgeType>>,
-    relations: &'a Database<BEU32, SerdeBincode<RawRelation>>,
+    relation_idx: &'a AtomicU64,
+    relations: &'a Database<BEU64, SerdeBincode<RawRelation>>,
     documents: &'a Database<BEU32, ObkvCodec>,
     tracker: u16,
 }
@@ -80,8 +82,13 @@ impl<'a> Drop for WriteTxn<'a> {
                 .write_txn()
                 .expect("Failed to create write transaction");
 
-            *self.graph_lock = load_graph(&write_txn, self.relations, self.documents)
-                .expect("Failed to load graph");
+            *self.graph_lock = load_graph(
+                &write_txn,
+                self.relation_idx,
+                self.relations,
+                self.documents,
+            )
+            .expect("Failed to load graph");
         }
     }
 }
@@ -109,7 +116,9 @@ pub struct Store {
     // Milli index to store objects and allow for search
     milli_index: Index,
     // Store it in an increasing list of relations
-    relations: Database<BEU32, SerdeBincode<RawRelation>>,
+    relations: Database<BEU64, SerdeBincode<RawRelation>>,
+    // Increasing relation index
+    relation_idx: AtomicU64,
     // Relations info
     relation_infos: Database<BEU32, SerdeBincode<RelationInfo>>,
     // events db
@@ -186,8 +195,10 @@ impl Store {
             init_issuer(&mut write_txn, &issuers, &key_config.0, &key_config.2)?;
         write_txn.commit().inspect_err(logerr!())?;
 
+        let relation_idx = AtomicU64::new(0);
         let graph = load_graph(
             &milli_index.read_txn().inspect_err(logerr!())?,
+            &relation_idx,
             &relations,
             &milli_index.documents,
         )
@@ -196,6 +207,7 @@ impl Store {
         Ok(Self {
             milli_index,
             relations,
+            relation_idx,
             relation_infos,
             events,
             tokens,
@@ -223,6 +235,7 @@ impl Store {
             milli_index: &self.milli_index,
             graph_lock,
             txn: Some(self.milli_index.write_txn().inspect_err(logerr!())?),
+            relation_idx: &self.relation_idx,
             relations: &self.relations,
             documents: &self.milli_index.documents,
             tracker: 0,
@@ -258,22 +271,38 @@ impl Store {
     pub fn create_relation(
         &self,
         wtxn: &mut WriteTxn,
+        event_id: u128,
         source: u32,
         target: u32,
         edge_type: EdgeType,
     ) -> Result<(), ArunaError> {
         let relation = RawRelation {
-            source: source,
-            target: target,
+            source,
+            target,
             edge_type,
         };
 
         self.relations
-            .put(wtxn.get_txn(), &relation.source, &relation)
+            .put_with_flags(
+                wtxn.get_txn(),
+                PutFlags::APPEND,
+                &self
+                    .relation_idx
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                &relation,
+            )
             .inspect_err(logerr!())?;
 
         wtxn.get_graph()
             .add_edge(source.into(), target.into(), edge_type);
+
+        // Associate event with both nodes
+        self.events
+            .put(wtxn.get_txn(), &source, &event_id)
+            .inspect_err(logerr!())?;
+        self.events
+            .put(wtxn.get_txn(), &target, &event_id)
+            .inspect_err(logerr!())?;
 
         Ok(())
     }
@@ -500,5 +529,55 @@ impl Store {
             .inspect_err(logerr!())?;
 
         Ok(tokens.pop().flatten().expect("Added token before"))
+    }
+
+    // TODO: This is a very generic search and should probably be changed to a better
+    // implementation
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn search(&self, query: String, filter: String, rtxn: &RoTxn) -> Result<Vec<NodeWrapper>, ArunaError> {
+        let mut search = Search::new(&rtxn, &self.milli_index);
+        // TODO: Escape query string with safe queries!
+        search.query(query);
+        search.filter(Filter::from_str(&filter).unwrap().unwrap());
+        let result = search.execute().unwrap();
+
+        let nodes = self
+            .milli_index
+            .documents(&rtxn, result.documents_ids.iter().copied())
+            .unwrap()
+            .into_iter()
+            .map(|(idx, obkv)| {
+                // TODO: More efficient conversion for found nodes
+                let variant: serde_json::Number =
+                    serde_json::from_slice(obkv.get(1).unwrap()).unwrap();
+                let variant: NodeVariant = variant.try_into().unwrap();
+
+                match variant {
+                    NodeVariant::ResourceProject => NodeWrapper::Resource(self
+                        .get_node::<crate::models::models::Resource>(&rtxn, idx)
+                        .unwrap()),
+                    NodeVariant::ResourceFolder => NodeWrapper::Resource(self
+                        .get_node::<crate::models::models::Resource>(&rtxn, idx)
+                        .unwrap()),
+                    NodeVariant::ResourceObject => NodeWrapper::Resource(self
+                        .get_node::<crate::models::models::Resource>(&rtxn, idx)
+                        .unwrap()),
+                    NodeVariant::User => NodeWrapper::User(self
+                        .get_node::<crate::models::models::User>(&rtxn, idx)
+                        .unwrap()),
+                    NodeVariant::ServiceAccount => NodeWrapper::ServiceAccount(self
+                        .get_node::<crate::models::models::ServiceAccount>(&rtxn, idx)
+                        .unwrap()),
+                    NodeVariant::Group => NodeWrapper::Group(self
+                        .get_node::<crate::models::models::Group>(&rtxn, idx)
+                        .unwrap()),
+                    NodeVariant::Realm => NodeWrapper::Realm(self
+                        .get_node::<crate::models::models::Realm>(&rtxn, idx)
+                        .unwrap()),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        Ok(nodes)
     }
 }

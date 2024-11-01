@@ -1,3 +1,249 @@
+use super::{
+    controller::Controller,
+    request::{Request, Requester, SerializedResponse},
+};
+use crate::{
+    constants::relation_types,
+    context::Context,
+    error::ArunaError,
+    models::{
+        models::Resource,
+        requests::{
+            CreateProjectRequest, CreateProjectResponse, CreateResourceRequest,
+            CreateResourceResponse,
+        },
+    },
+    transactions::request::WriteRequest,
+};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use ulid::Ulid;
+
+impl Request for CreateProjectRequest {
+    type Response = CreateProjectResponse;
+    fn get_context(&self) -> Context {
+        Context::Permission {
+            min_permission: crate::models::models::Permission::Write,
+            source: self.group_id,
+        }
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let request_tx = CreateProjectRequestTx {
+            req: self,
+            project_id: Ulid::new(),
+            requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
+            created_at: Utc::now().timestamp(),
+        };
+
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response)?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateProjectRequestTx {
+    req: CreateProjectRequest,
+    requester: Requester,
+    project_id: Ulid,
+    created_at: i64,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for CreateProjectRequestTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, crate::error::ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+
+        let time = DateTime::from_timestamp_millis(self.created_at).ok_or_else(|| {
+            ArunaError::ConversionError {
+                from: "i64".to_string(),
+                to: "Chrono::DateTime".to_string(),
+            }
+        })?;
+
+        let project = Resource {
+            id: self.project_id,
+            name: self.req.name.clone(),
+            description: self.req.description.clone(),
+            title: self.req.title.clone(),
+            revision: 0,
+            variant: crate::models::models::ResourceVariant::Project,
+            labels: self.req.labels.clone(),
+            identifiers: self.req.identifiers.clone(),
+            content_len: 0,
+            count: 0,
+            visibility: self.req.visibility.clone(),
+            created_at: time,
+            last_modified: time,
+            authors: self.req.authors.clone(),
+            license_tag: self.req.license_tag.clone(),
+            locked: false,
+            location: vec![], // TODO: Locations and DataProxies
+            hashes: vec![],
+        };
+
+        let group_id = self.req.group_id;
+
+        let store = controller.get_store();
+        Ok(tokio::task::spawn_blocking(move || {
+            // Create realm, add user to realm
+
+            let store = store.write().expect("Failed to lock store");
+            let mut wtxn = store.write_txn()?;
+
+            let Some(group_idx) = store.get_idx_from_ulid(&group_id, wtxn.get_txn()) else {
+                return Err(ArunaError::NotFound(group_id.to_string()));
+            };
+
+            // Create realm
+            let project_idx = store.create_node(&mut wtxn, associated_event_id, &project)?;
+
+            // Add relation user --ADMIN--> group
+            store.create_relation(
+                &mut wtxn,
+                associated_event_id,
+                group_idx,
+                project_idx,
+                relation_types::OWNS_PROJECT,
+            )?;
+
+            wtxn.commit()?;
+            // Create admin group, add user to admin group
+            Ok::<_, ArunaError>(bincode::serialize(&CreateProjectResponse {
+                resource: project,
+            })?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
+    }
+}
+
+impl Request for CreateResourceRequest {
+    type Response = CreateResourceResponse;
+    fn get_context(&self) -> Context {
+        Context::Permission {
+            min_permission: crate::models::models::Permission::Write,
+            source: self.parent_id,
+        }
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let request_tx = CreateResourceRequestTx {
+            req: self,
+            resource_id: Ulid::new(),
+            requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
+            created_at: Utc::now().timestamp(),
+        };
+
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response)?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateResourceRequestTx {
+    req: CreateResourceRequest,
+    requester: Requester,
+    resource_id: Ulid,
+    created_at: i64,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for CreateResourceRequestTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, crate::error::ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+
+        let time = DateTime::from_timestamp_millis(self.created_at).ok_or_else(|| {
+            ArunaError::ConversionError {
+                from: "i64".to_string(),
+                to: "Chrono::DateTime".to_string(),
+            }
+        })?;
+
+        let resource = Resource {
+            id: self.resource_id,
+            name: self.req.name.clone(),
+            description: self.req.description.clone(),
+            title: self.req.title.clone(),
+            revision: 0,
+            variant: self.req.variant.clone(),
+            labels: self.req.labels.clone(),
+            identifiers: self.req.identifiers.clone(),
+            content_len: 0,
+            count: 0,
+            visibility: self.req.visibility.clone(),
+            created_at: time,
+            last_modified: time,
+            authors: self.req.authors.clone(),
+            license_tag: self.req.license_tag.clone(),
+            locked: false,
+            location: vec![], // TODO: Locations and DataProxies
+            hashes: vec![],
+        };
+
+        let parent_id = self.req.parent_id;
+
+        let store = controller.get_store();
+        Ok(tokio::task::spawn_blocking(move || {
+            // Create realm, add user to realm
+
+            let store = store.write().expect("Failed to lock store");
+            let mut wtxn = store.write_txn()?;
+
+            let Some(parent_idx) = store.get_idx_from_ulid(&parent_id, wtxn.get_txn()) else {
+                return Err(ArunaError::NotFound(parent_id.to_string()));
+            };
+
+            // Create realm
+            let resource_idx = store.create_node(&mut wtxn, associated_event_id, &resource)?;
+
+            // Add relation user --ADMIN--> group
+            store.create_relation(
+                &mut wtxn,
+                associated_event_id,
+                parent_idx,
+                resource_idx,
+                relation_types::OWNS_PROJECT,
+            )?;
+
+            wtxn.commit()?;
+            // Create admin group, add user to admin group
+            Ok::<_, ArunaError>(bincode::serialize(&CreateProjectResponse {
+                resource,
+            })?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
+    }
+}
+
+//
 // use super::auth::Auth;
 // use super::controller::{Get, Transaction};
 // use super::transaction::{ArunaTransaction, Fields, Metadata, Requests, TransactionOk};

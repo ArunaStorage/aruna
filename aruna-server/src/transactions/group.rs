@@ -1,14 +1,27 @@
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
-use crate::{constants::relation_types, context::Context, error::ArunaError, logerr, models::{models::Group, requests::{CreateGroupRequest, CreateGroupResponse}}, transactions::request::WriteRequest};
+use crate::{
+    constants::relation_types,
+    context::Context,
+    error::ArunaError,
+    logerr,
+    models::{
+        models::Group,
+        requests::{CreateGroupRequest, CreateGroupResponse},
+    },
+    transactions::request::WriteRequest,
+};
 
-use super::{controller::Controller, request::{Request, Requester, SerializedResponse}};
+use super::{
+    controller::Controller,
+    request::{Request, Requester, SerializedResponse},
+};
 
 impl Request for CreateGroupRequest {
     type Response = CreateGroupResponse;
-    fn get_context(&self) -> &Context {
-        &Context::UserOnly
+    fn get_context(&self) -> Context {
+        Context::UserOnly
     }
 
     async fn run_request(
@@ -19,7 +32,9 @@ impl Request for CreateGroupRequest {
         let request_tx = CreateGroupRequestTx {
             id: Ulid::new(),
             req: self,
-            requester: requester.ok_or_else(|| ArunaError::Unauthorized).inspect_err(logerr!())?,
+            requester: requester
+                .ok_or_else(|| ArunaError::Unauthorized)
+                .inspect_err(logerr!())?,
         };
 
         let response = controller.transaction(Ulid::new().0, &request_tx).await?;
@@ -40,13 +55,12 @@ pub struct CreateGroupRequestTx {
 impl WriteRequest for CreateGroupRequestTx {
     async fn execute(
         &self,
-        id: u128,
+        associated_event_id: u128,
         controller: &Controller,
     ) -> Result<SerializedResponse, ArunaError> {
-
         controller.authorize(&self.requester, &self.req).await?;
 
-        let group = Group{
+        let group = Group {
             id: self.id,
             name: self.req.name.clone(),
             description: self.req.description.clone(),
@@ -63,11 +77,12 @@ impl WriteRequest for CreateGroupRequestTx {
             };
 
             // Create group
-            let group_idx = store.create_node(&mut wtxn, id, &group)?;
+            let group_idx = store.create_node(&mut wtxn, associated_event_id, &group)?;
 
             // Add relation user --ADMIN--> group
             store.create_relation(
                 &mut wtxn,
+                associated_event_id,
                 user_idx,
                 group_idx,
                 relation_types::PERMISSION_ADMIN,
@@ -75,9 +90,7 @@ impl WriteRequest for CreateGroupRequestTx {
 
             wtxn.commit()?;
             // Create admin group, add user to admin group
-            Ok::<_, ArunaError>(bincode::serialize(&CreateGroupResponse {
-                group,
-            })?)
+            Ok::<_, ArunaError>(bincode::serialize(&CreateGroupResponse { group })?)
         })
         .await
         .map_err(|_e| {
@@ -86,9 +99,6 @@ impl WriteRequest for CreateGroupRequestTx {
         })??)
     }
 }
-
-
-
 
 // use super::{
 //     auth::Auth,

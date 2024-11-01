@@ -16,8 +16,8 @@ use ulid::Ulid;
 
 impl Request for RegisterUserRequest {
     type Response = RegisterUserResponse;
-    fn get_context(&self) -> &Context {
-        &Context::Public
+    fn get_context(&self) -> Context {
+        Context::Public
     }
 
     #[tracing::instrument(level = "trace", skip(controller))]
@@ -100,8 +100,8 @@ impl WriteRequest for RegisterUserRequestTx {
 
 impl Request for CreateTokenRequest {
     type Response = CreateTokenResponse;
-    fn get_context(&self) -> &Context {
-        &Context::Public
+    fn get_context(&self) -> Context {
+        Context::Public
     }
 
     async fn run_request(
