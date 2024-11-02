@@ -237,10 +237,10 @@ pub async fn create_token(
 
 /// Search for resources
 #[utoipa::path(
-    post,
+    get,
     path = "/api/v3/search",
     params(
-        GetResourceRequest,
+        SearchRequest,
     ),
     responses(
         (status = 200, body = SearchResponse),

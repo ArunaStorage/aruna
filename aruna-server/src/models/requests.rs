@@ -170,8 +170,11 @@ pub struct CreateTokenResponse {
     pub secret: String,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, IntoParams,
+)]
 pub struct SearchRequest {
+    #[serde(default)]
     pub query: String,
     #[serde(default)]
     pub filter: Option<String>,
