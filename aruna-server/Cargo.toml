@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 petgraph = "0.6.5"
 milli = { git = "https://github.com/ArunaStorage/meilisearch.git" }
-synevi = { git = "https://github.com/ArunaStorage/synevi.git", branch="feat/refactor_wait_handler" }
+synevi = { git = "https://github.com/ArunaStorage/synevi.git", branch = "feat/refactor_wait_handler" }
 aruna-rust-api = { git = "https://github.com/ArunaStorage/rust-api.git", branch = "feat/v3" }
 serde = { version = "1.0.213", features = ["derive"] }
 bincode = "1.3.3"
@@ -36,6 +36,7 @@ prost-wkt-types = "0.6"
 heed = "0.20.5"
 typetag = "0.2.18"
 obkv = "0.2.2"
+roaring = "0.10.6"
 
 [build-dependencies]
 tonic-build = { version = "0.12.3", features = ["prost"] }

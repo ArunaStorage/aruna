@@ -35,6 +35,7 @@ impl RestServer {
             .route("/api/v3/group", get(api_paths::get_group))
             .route("/api/v3/user", post(api_paths::register_user))
             .route("/api/v3/token", post(api_paths::create_token))
+            .route("/api/v3/search", get(api_paths::search))
             .with_state(handler)
             .layer(
                 TraceLayer::new_for_http()

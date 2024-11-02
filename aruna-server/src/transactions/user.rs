@@ -4,12 +4,16 @@ use super::{
     request::{AuthMethod, Request, Requester, WriteRequest},
 };
 use crate::{
-    context::Context, error::ArunaError, logerr, models::{
+    context::Context,
+    error::ArunaError,
+    logerr,
+    models::{
         models::{Token, User},
         requests::{
             CreateTokenRequest, CreateTokenResponse, RegisterUserRequest, RegisterUserResponse,
         },
-    }, transactions::request::SerializedResponse
+    },
+    transactions::request::SerializedResponse,
 };
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
@@ -115,7 +119,9 @@ impl Request for CreateTokenRequest {
 
         let request_tx = CreateTokenRequestTx {
             req: self,
-            requester: requester.ok_or_else(|| ArunaError::Unauthorized).inspect_err(logerr!())?,
+            requester: requester
+                .ok_or_else(|| ArunaError::Unauthorized)
+                .inspect_err(logerr!())?,
         };
 
         let response = controller.transaction(Ulid::new().0, &request_tx).await?;

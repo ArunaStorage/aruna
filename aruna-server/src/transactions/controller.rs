@@ -3,18 +3,18 @@ use super::{
     request::{Request, SerializedResponse, WriteRequest},
 };
 use crate::{error::ArunaError, logerr, storage::store::Store, transactions::request::Requester};
+use serde::Serialize;
 use std::{
     fs,
     sync::{RwLock as StdRwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 use std::{net::SocketAddr, sync::Arc};
-use synevi::{network::GrpcNetwork, SyneviError, Transaction};
 use synevi::storage::LmdbStore;
 use synevi::Node as SyneviNode;
 use synevi::SyneviResult;
+use synevi::{network::GrpcNetwork, SyneviError, Transaction};
 use tokio::sync::RwLock;
 use tracing::trace;
-use serde::Serialize;
 use ulid::Ulid;
 
 type ConsensusNode = RwLock<Option<Arc<SyneviNode<GrpcNetwork, Arc<Controller>, LmdbStore>>>>;
@@ -154,7 +154,6 @@ impl synevi::Executor for Controller {
         Ok(self.process_transaction(id, transaction).await)
     }
 }
-
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ArunaTransaction(pub Vec<u8>);

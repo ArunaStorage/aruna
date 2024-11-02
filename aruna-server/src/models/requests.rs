@@ -4,7 +4,7 @@ use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
 use super::models::{
-    Author, Group, KeyValue, Realm, Relation, Resource, ResourceVariant, Token, User,
+    Author, GenericNode, Group, KeyValue, Realm, Relation, Resource, ResourceVariant, Token, User,
     VisibilityClass,
 };
 
@@ -168,4 +168,21 @@ pub struct CreateTokenRequest {
 pub struct CreateTokenResponse {
     pub token: Token,
     pub secret: String,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct SearchRequest {
+    pub query: String,
+    #[serde(default)]
+    pub filter: Option<String>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub offset: Option<usize>,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct SearchResponse {
+    pub expected_hits: usize,
+    pub resources: Vec<GenericNode>,
 }

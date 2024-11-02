@@ -101,15 +101,25 @@ async fn init_testing_server(offset: u16) -> (u16, Arc<Notify>) {
     // Copy & create db
     let node_id = Ulid::new();
     let test_path = format!("/dev/shm/{node_id}");
-    fs::create_dir_all(format!("{test_path}/events")).await.unwrap();
-    fs::create_dir_all(format!("{test_path}/store")).await.unwrap();
-    fs::copy("./tests/test_db/events/data.mdb", &format!("{test_path}/events/data.mdb"))
+    fs::create_dir_all(format!("{test_path}/events"))
         .await
         .unwrap();
+    fs::create_dir_all(format!("{test_path}/store"))
+        .await
+        .unwrap();
+    fs::copy(
+        "./tests/test_db/events/data.mdb",
+        &format!("{test_path}/events/data.mdb"),
+    )
+    .await
+    .unwrap();
 
-    fs::copy("./tests/test_db/store/data.mdb", &format!("{test_path}/store/data.mdb"))
-        .await
-        .unwrap();
+    fs::copy(
+        "./tests/test_db/store/data.mdb",
+        &format!("{test_path}/store/data.mdb"),
+    )
+    .await
+    .unwrap();
 
     // Create server config with unused ports
     let subscriber_count = SUBSCRIBERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + offset;

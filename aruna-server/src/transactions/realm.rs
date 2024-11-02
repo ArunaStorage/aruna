@@ -78,12 +78,11 @@ impl WriteRequest for CreateRealmRequestTx {
             let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
 
-            // Exemplary check via search for unique tag fields
+            // Exemplary check via the universe filter
             // TODO: escape tag filter
             if !store
-                .search(
-                    "".to_string(),
-                    format!("tag='{}' AND variant=6", realm.tag.clone()),
+                .filtered_universe(
+                    Some(&format!("tag='{}' AND variant=6", realm.tag.clone())),
                     &wtxn.get_txn(),
                 )?
                 .is_empty()

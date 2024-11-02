@@ -236,6 +236,7 @@ dependencies = [
  "prost-wkt-build",
  "prost-wkt-types",
  "reqwest",
+ "roaring",
  "serde",
  "serde_json",
  "sha2",

@@ -2,7 +2,7 @@ use crate::{
     error::ArunaError,
     logerr,
     models::models::{
-        EdgeType, Group, Issuer, IssuerType, Node, NodeVariant, NodeWrapper, Permission,
+        EdgeType, GenericNode, Group, Issuer, IssuerType, Node, NodeVariant, Permission,
         RawRelation, Realm, RelationInfo, Resource, ServerState, ServiceAccount, Token, User,
     },
     storage::{
@@ -24,10 +24,11 @@ use milli::{
     documents::{DocumentsBatchBuilder, DocumentsBatchReader},
     execute_search, filtered_universe,
     update::{IndexDocuments, IndexDocumentsConfig, IndexerConfig},
-    CboRoaringBitmapCodec, DefaultSearchLogger, Filter, GeoSortStrategy, Index, ObkvCodec, Search,
-    SearchContext, SearchLogger, TermsMatchingStrategy, TimeBudget, BEU32, BEU64,
+    CboRoaringBitmapCodec, DefaultSearchLogger, Filter, GeoSortStrategy, Index, ObkvCodec,
+    SearchContext, TermsMatchingStrategy, TimeBudget, BEU32, BEU64,
 };
 use petgraph::{visit::EdgeRef, Graph};
+use roaring::RoaringBitmap;
 use serde_json::Value;
 use std::{
     collections::HashMap,
@@ -532,54 +533,90 @@ impl Store {
         Ok(tokens.pop().flatten().expect("Added token before"))
     }
 
-    // TODO: This is a very generic search and should probably be changed to a better
-    // implementation
     #[tracing::instrument(level = "trace", skip(self, rtxn))]
     pub fn search(
         &self,
         query: String,
-        filter: String,
+        from: usize,
+        limit: usize,
+        filter: Option<&str>,
         rtxn: &RoTxn,
-    ) -> Result<Vec<NodeWrapper>, ArunaError> {
-        let mut search = Search::new(&rtxn, &self.milli_index);
-        // TODO: Escape query string with safe queries!
-        search.query(query);
-        if let Some(filter) = Filter::from_str(&filter).inspect_err(logerr!())? {
-            search.filter(filter);
-        }
-        let result = search.execute().inspect_err(logerr!())?;
+    ) -> Result<(usize, Vec<GenericNode>), ArunaError> {
+        let universe = self.filtered_universe(filter, rtxn)?;
+        let mut ctx = SearchContext::new(&self.milli_index, &rtxn).inspect_err(logerr!())?;
+        let result = execute_search(
+            &mut ctx,                                         // Search context
+            (!query.trim().is_empty()).then(|| query.trim()), // Query
+            TermsMatchingStrategy::Last,                      // Terms matching strategy
+            milli::score_details::ScoringStrategy::Skip,      // Scoring strategy
+            false,                                            // exhaustive number of hits ?
+            universe,                                         // Universe
+            &None,                                            // Sort criteria
+            &None,                                            // Distinct criteria
+            GeoSortStrategy::default(),                       // Geo sort strategy
+            from,                                             // From (for pagination)
+            limit,                                            // Limit (for pagination)
+            None,                                             // Words limit
+            &mut DefaultSearchLogger,                         // Search logger
+            &mut DefaultSearchLogger,                         // Search logger
+            TimeBudget::max(),                                // Time budget
+            None,                                             // Ranking score threshold
+            None,                                             // Locales (Languages)
+        )
+        .inspect_err(logerr!())?;
 
-        self.milli_index
-            .documents(&rtxn, result.documents_ids.iter().copied())
-            .inspect_err(logerr!())?
-            .into_iter()
-            .map(|(_idx, obkv)| {
-                // TODO: More efficient conversion for found nodes
-                let variant: serde_json::Number =
-                    serde_json::from_slice(obkv.get(1).expect("Obkv variant key not found"))
-                        .inspect_err(logerr!())?;
-                let variant: NodeVariant = variant.try_into().inspect_err(logerr!())?;
+        Ok((
+            result.candidates.len() as usize,
+            self.milli_index
+                .documents(&rtxn, result.documents_ids)
+                .inspect_err(logerr!())?
+                .into_iter()
+                .map(|(_idx, obkv)| {
+                    // TODO: More efficient conversion for found nodes
+                    let variant: serde_json::Number =
+                        serde_json::from_slice(obkv.get(1).expect("Obkv variant key not found"))
+                            .inspect_err(logerr!())?;
+                    let variant: NodeVariant = variant.try_into().inspect_err(logerr!())?;
 
-                Ok(match variant {
-                    NodeVariant::ResourceProject
-                    | NodeVariant::ResourceFolder
-                    | NodeVariant::ResourceObject => {
-                        NodeWrapper::Resource(Resource::try_from(&obkv).inspect_err(logerr!())?)
-                    }
-                    NodeVariant::User => {
-                        NodeWrapper::User(User::try_from(&obkv).inspect_err(logerr!())?)
-                    }
-                    NodeVariant::ServiceAccount => NodeWrapper::ServiceAccount(
-                        ServiceAccount::try_from(&obkv).inspect_err(logerr!())?,
-                    ),
-                    NodeVariant::Group => {
-                        NodeWrapper::Group(Group::try_from(&obkv).inspect_err(logerr!())?)
-                    }
-                    NodeVariant::Realm => {
-                        NodeWrapper::Realm(Realm::try_from(&obkv).inspect_err(logerr!())?)
-                    }
+                    Ok(match variant {
+                        NodeVariant::ResourceProject
+                        | NodeVariant::ResourceFolder
+                        | NodeVariant::ResourceObject => {
+                            GenericNode::Resource(Resource::try_from(&obkv).inspect_err(logerr!())?)
+                        }
+                        NodeVariant::User => {
+                            GenericNode::User(User::try_from(&obkv).inspect_err(logerr!())?)
+                        }
+                        NodeVariant::ServiceAccount => GenericNode::ServiceAccount(
+                            ServiceAccount::try_from(&obkv).inspect_err(logerr!())?,
+                        ),
+                        NodeVariant::Group => {
+                            GenericNode::Group(Group::try_from(&obkv).inspect_err(logerr!())?)
+                        }
+                        NodeVariant::Realm => {
+                            GenericNode::Realm(Realm::try_from(&obkv).inspect_err(logerr!())?)
+                        }
+                    })
                 })
-            })
-            .collect::<Result<Vec<_>, ArunaError>>()
+                .collect::<Result<Vec<_>, ArunaError>>()?,
+        ))
+    }
+
+    // This is a lower level function that only returns the filtered universe
+    // We can use this to check for generic "exists" queries
+    // For full search results use the search function
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn filtered_universe(
+        &self,
+        filter: Option<&str>,
+        rtxn: &RoTxn,
+    ) -> Result<RoaringBitmap, ArunaError> {
+        let filter = if let Some(filter) = filter {
+            Filter::from_str(filter).inspect_err(logerr!())?
+        } else {
+            None
+        };
+
+        Ok(filtered_universe(&self.milli_index, rtxn, &filter).inspect_err(logerr!())?)
     }
 }

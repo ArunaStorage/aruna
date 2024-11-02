@@ -231,9 +231,7 @@ impl WriteRequest for CreateResourceRequestTx {
 
             wtxn.commit()?;
             // Create admin group, add user to admin group
-            Ok::<_, ArunaError>(bincode::serialize(&CreateProjectResponse {
-                resource,
-            })?)
+            Ok::<_, ArunaError>(bincode::serialize(&CreateProjectResponse { resource })?)
         })
         .await
         .map_err(|_e| {

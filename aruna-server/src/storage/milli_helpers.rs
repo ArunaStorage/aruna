@@ -1,6 +1,7 @@
 use crate::{
     constants::{Field, FIELDS},
     error::ArunaError,
+    logerr,
 };
 use heed::RwTxn;
 use milli::{
@@ -26,7 +27,7 @@ pub(crate) fn prepopulate_fields<'a: 'b, 'b>(
     let mut settings = Settings::new(&mut wtxn, &index, &config);
     settings.set_filterable_fields(FIELDS.iter().map(|s| s.name.to_string()).collect());
     settings.set_searchable_fields(FIELDS.iter().map(|s| s.name.to_string()).collect());
-    settings.execute(|_| (), || false).unwrap();
+    settings.execute(|_| (), || false).inspect_err(logerr!())?;
 
     // Ensure that the existing map has the expected field u32 mappings
     let existing_map = index.fields_ids_map(&wtxn)?;

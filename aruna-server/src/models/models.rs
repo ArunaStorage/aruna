@@ -24,10 +24,8 @@ pub enum ResourceVariant {
     Object,
 }
 
-
-// TODO: Choose better naming and perhaps remove entirely after search is implemented correctly
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
-pub enum NodeWrapper {
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub enum GenericNode {
     Resource(Resource),
     User(User),
     ServiceAccount(ServiceAccount),

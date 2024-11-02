@@ -234,3 +234,27 @@ pub async fn create_token(
 ) -> impl IntoResponse {
     into_axum_response(state.request(request, extract_token(&header)).await)
 }
+
+/// Search for resources
+#[utoipa::path(
+    post,
+    path = "/api/v3/search",
+    params(
+        GetResourceRequest,
+    ),
+    responses(
+        (status = 200, body = SearchResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn search(
+    State(state): State<Arc<Controller>>,
+    Query(request): Query<SearchRequest>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&header)).await)
+}
