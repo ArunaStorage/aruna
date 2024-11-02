@@ -4,6 +4,8 @@ use serde::Serialize;
 use thiserror::Error;
 use utoipa::IntoResponses;
 
+use crate::storage::obkv_ext::ParseError;
+
 #[macro_export]
 macro_rules! logerr {
     () => {
@@ -141,5 +143,20 @@ impl From<synevi::SyneviError> for ArunaError {
 impl From<milli::Error> for ArunaError {
     fn from(e: milli::Error) -> Self {
         ArunaError::DatabaseError(e.to_string())
+    }
+}
+
+impl From<ParseError> for ArunaError {
+    fn from(e: ParseError) -> Self {
+        ArunaError::DatabaseError(e.to_string())
+    }
+}
+
+impl From<serde_json::Error> for ArunaError {
+    fn from(e: serde_json::Error) -> Self {
+        ArunaError::ConversionError {
+            from: "serde_json::Error".to_string(),
+            to: e.to_string(),
+        }
     }
 }

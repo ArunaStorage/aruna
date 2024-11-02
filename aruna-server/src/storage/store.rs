@@ -2,7 +2,8 @@ use crate::{
     error::ArunaError,
     logerr,
     models::models::{
-        EdgeType, Issuer, IssuerType, Node, NodeVariant, NodeWrapper, Permission, RawRelation, RelationInfo, ServerState, Token
+        EdgeType, Group, Issuer, IssuerType, Node, NodeVariant, NodeWrapper, Permission,
+        RawRelation, Realm, RelationInfo, Resource, ServerState, ServiceAccount, Token, User,
     },
     storage::{
         graph::load_graph,
@@ -534,50 +535,51 @@ impl Store {
     // TODO: This is a very generic search and should probably be changed to a better
     // implementation
     #[tracing::instrument(level = "trace", skip(self, rtxn))]
-    pub fn search(&self, query: String, filter: String, rtxn: &RoTxn) -> Result<Vec<NodeWrapper>, ArunaError> {
+    pub fn search(
+        &self,
+        query: String,
+        filter: String,
+        rtxn: &RoTxn,
+    ) -> Result<Vec<NodeWrapper>, ArunaError> {
         let mut search = Search::new(&rtxn, &self.milli_index);
         // TODO: Escape query string with safe queries!
         search.query(query);
-        search.filter(Filter::from_str(&filter).unwrap().unwrap());
-        let result = search.execute().unwrap();
+        if let Some(filter) = Filter::from_str(&filter).inspect_err(logerr!())? {
+            search.filter(filter);
+        }
+        let result = search.execute().inspect_err(logerr!())?;
 
-        let nodes = self
-            .milli_index
+        self.milli_index
             .documents(&rtxn, result.documents_ids.iter().copied())
-            .unwrap()
+            .inspect_err(logerr!())?
             .into_iter()
-            .map(|(idx, obkv)| {
+            .map(|(_idx, obkv)| {
                 // TODO: More efficient conversion for found nodes
                 let variant: serde_json::Number =
-                    serde_json::from_slice(obkv.get(1).unwrap()).unwrap();
-                let variant: NodeVariant = variant.try_into().unwrap();
+                    serde_json::from_slice(obkv.get(1).expect("Obkv variant key not found"))
+                        .inspect_err(logerr!())?;
+                let variant: NodeVariant = variant.try_into().inspect_err(logerr!())?;
 
-                match variant {
-                    NodeVariant::ResourceProject => NodeWrapper::Resource(self
-                        .get_node::<crate::models::models::Resource>(&rtxn, idx)
-                        .unwrap()),
-                    NodeVariant::ResourceFolder => NodeWrapper::Resource(self
-                        .get_node::<crate::models::models::Resource>(&rtxn, idx)
-                        .unwrap()),
-                    NodeVariant::ResourceObject => NodeWrapper::Resource(self
-                        .get_node::<crate::models::models::Resource>(&rtxn, idx)
-                        .unwrap()),
-                    NodeVariant::User => NodeWrapper::User(self
-                        .get_node::<crate::models::models::User>(&rtxn, idx)
-                        .unwrap()),
-                    NodeVariant::ServiceAccount => NodeWrapper::ServiceAccount(self
-                        .get_node::<crate::models::models::ServiceAccount>(&rtxn, idx)
-                        .unwrap()),
-                    NodeVariant::Group => NodeWrapper::Group(self
-                        .get_node::<crate::models::models::Group>(&rtxn, idx)
-                        .unwrap()),
-                    NodeVariant::Realm => NodeWrapper::Realm(self
-                        .get_node::<crate::models::models::Realm>(&rtxn, idx)
-                        .unwrap()),
-                }
+                Ok(match variant {
+                    NodeVariant::ResourceProject
+                    | NodeVariant::ResourceFolder
+                    | NodeVariant::ResourceObject => {
+                        NodeWrapper::Resource(Resource::try_from(&obkv).inspect_err(logerr!())?)
+                    }
+                    NodeVariant::User => {
+                        NodeWrapper::User(User::try_from(&obkv).inspect_err(logerr!())?)
+                    }
+                    NodeVariant::ServiceAccount => NodeWrapper::ServiceAccount(
+                        ServiceAccount::try_from(&obkv).inspect_err(logerr!())?,
+                    ),
+                    NodeVariant::Group => {
+                        NodeWrapper::Group(Group::try_from(&obkv).inspect_err(logerr!())?)
+                    }
+                    NodeVariant::Realm => {
+                        NodeWrapper::Realm(Realm::try_from(&obkv).inspect_err(logerr!())?)
+                    }
+                })
             })
-            .collect::<Vec<_>>();
-
-        Ok(nodes)
+            .collect::<Result<Vec<_>, ArunaError>>()
     }
 }
