@@ -268,11 +268,13 @@ impl WriteRequest for CreateResourceRequestTx {
                 .get_raw_node(wtxn.get_txn(), parent_idx)
                 .expect("Idx exist but no node in documents -> corrupted database");
 
-            let variant: NodeVariant = serde_json::from_slice(
+            let variant: NodeVariant = serde_json::from_slice::<u8>(
                 raw_parent_node
                     .get(1)
                     .expect("Missing variant -> corrupted database"),
             )
+            .inspect_err(logerr!())?
+            .try_into()
             .inspect_err(logerr!())?;
 
             if !matches!(

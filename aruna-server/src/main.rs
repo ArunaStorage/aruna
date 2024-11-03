@@ -10,7 +10,11 @@ async fn main() {
         .add_directive("aruna_synevi=debug".parse().unwrap())
         .add_directive("synevi_core=trace".parse().unwrap());
 
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    tracing_subscriber::fmt()
+        .with_file(true)
+        .with_line_number(true)
+        .with_env_filter(filter)
+        .init();
 
     let config = config_from_env();
 

@@ -26,10 +26,9 @@ use super::utils::{extract_token, into_axum_response};
 pub async fn create_resource(
     State(state): State<Arc<Controller>>,
     headers: HeaderMap,
-    Json(create_resource_request): Json<CreateResourceRequest>,
+    Json(request): Json<CreateResourceRequest>,
 ) -> impl IntoResponse {
-    todo!()
-    // into_axum_response(state.request(request, extract_token(&header)).await)
+    into_axum_response(state.request(request, extract_token(&headers)).await)
 }
 
 /// Create a new resource
@@ -50,8 +49,7 @@ pub async fn create_project(
     headers: HeaderMap,
     Json(request): Json<CreateProjectRequest>,
 ) -> impl IntoResponse {
-    todo!()
-    // into_axum_response(state.request(request, extract_token(&header)).await)
+    into_axum_response(state.request(request, extract_token(&headers)).await)
 }
 
 /// Get  resource

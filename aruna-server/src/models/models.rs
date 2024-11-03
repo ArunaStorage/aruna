@@ -18,10 +18,29 @@ pub type EdgeType = u32;
 // Constants for the models
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[repr(u8)]
 pub enum ResourceVariant {
     Project,
     Folder,
     Object,
+}
+
+impl TryFrom<u8> for ResourceVariant {
+    type Error = ArunaError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Ok(match value {
+            0 => ResourceVariant::Project,
+            1 => ResourceVariant::Folder,
+            2 => ResourceVariant::Object,
+            _ => {
+                return Err(ArunaError::ConversionError {
+                    from: format!("{}u8", value),
+                    to: "models::ResourceVariant".to_string(),
+                })
+            }
+        })
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
@@ -43,6 +62,28 @@ pub enum NodeVariant {
     ServiceAccount = 4,
     Group = 5,
     Realm = 6,
+}
+
+impl TryFrom<u8> for NodeVariant {
+    type Error = ArunaError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Ok(match value {
+            0 => NodeVariant::ResourceProject,
+            1 => NodeVariant::ResourceFolder,
+            2 => NodeVariant::ResourceObject,
+            3 => NodeVariant::User,
+            4 => NodeVariant::ServiceAccount,
+            5 => NodeVariant::Group,
+            6 => NodeVariant::Realm,
+            _ => {
+                return Err(ArunaError::ConversionError {
+                    from: format!("{}u8", value),
+                    to: "models::NodeVariant".to_string(),
+                })
+            }
+        })
+    }
 }
 
 impl TryFrom<serde_json::Number> for NodeVariant {
@@ -142,9 +183,25 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Resource {
 
     fn try_from(obkv: &KvReaderU16<'a>) -> Result<Self, Self::Error> {
         let mut obkv = FieldIterator::new(obkv);
+
+        let id: Ulid = obkv.get_required_field(0)?;
+        let variant: u8 = obkv.get_required_field(1)?;
+
+        let variant = match variant {
+            0 => ResourceVariant::Project,
+            1 => ResourceVariant::Folder,
+            2 => ResourceVariant::Object,
+            _ => {
+                return Err(ParseError(format!(
+                    "Invalid variant for Resource: {}",
+                    variant
+                )))
+            }
+        };
+
         Ok(Resource {
-            id: obkv.get_required_field(0)?,
-            variant: obkv.get_required_field(1)?,
+            id,
+            variant,
             name: obkv.get_required_field(2)?,
             description: obkv.get_field(3)?,
             revision: 0,
