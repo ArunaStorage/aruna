@@ -128,12 +128,11 @@ impl WriteRequest for CreateProjectRequestTx {
             }
 
             // Create project
-            let project_idx = store.create_node(&mut wtxn, associated_event_id, &project)?;
+            let project_idx = store.create_node(&mut wtxn, &project)?;
 
             // Add relation group --OWNS_PROJECT--> project
             store.create_relation(
                 &mut wtxn,
-                associated_event_id,
                 group_idx,
                 project_idx,
                 relation_types::OWNS_PROJECT,
@@ -142,10 +141,16 @@ impl WriteRequest for CreateProjectRequestTx {
             // Add relation realm --PROJECT_PART_OF_REALM--> project
             store.create_relation(
                 &mut wtxn,
-                associated_event_id,
                 realm_idx,
                 project_idx,
                 relation_types::PROJECT_PART_OF_REALM,
+            )?;
+
+            // Affected nodes: Group, Realm, Project
+            store.register_event(
+                &mut wtxn,
+                associated_event_id,
+                &[realm_idx, group_idx, project_idx],
             )?;
 
             wtxn.commit()?;
@@ -300,16 +305,18 @@ impl WriteRequest for CreateResourceRequestTx {
             }
 
             // Create resource
-            let resource_idx = store.create_node(&mut wtxn, associated_event_id, &resource)?;
+            let resource_idx = store.create_node(&mut wtxn, &resource)?;
 
             // Add relation parent --HAS_PART--> resource
             store.create_relation(
                 &mut wtxn,
-                associated_event_id,
                 parent_idx,
                 resource_idx,
                 relation_types::HAS_PART,
             )?;
+
+            // Affected nodes: Group, Realm, Project
+            store.register_event(&mut wtxn, associated_event_id, &[parent_idx, resource_idx])?;
 
             wtxn.commit()?;
             Ok::<_, ArunaError>(bincode::serialize(&CreateProjectResponse { resource })?)

@@ -77,16 +77,18 @@ impl WriteRequest for CreateGroupRequestTx {
             };
 
             // Create group
-            let group_idx = store.create_node(&mut wtxn, associated_event_id, &group)?;
+            let group_idx = store.create_node(&mut wtxn, &group)?;
 
             // Add relation user --ADMIN--> group
             store.create_relation(
                 &mut wtxn,
-                associated_event_id,
                 user_idx,
                 group_idx,
                 relation_types::PERMISSION_ADMIN,
             )?;
+
+            // Affected nodes: User and Group
+            store.register_event(&mut wtxn, associated_event_id, &[user_idx, group_idx])?;
 
             wtxn.commit()?;
             // Create admin group, add user to admin group

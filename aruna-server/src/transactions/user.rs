@@ -64,7 +64,7 @@ impl WriteRequest for RegisterUserRequestTx {
     #[tracing::instrument(level = "trace", skip(self, controller))]
     async fn execute(
         &self,
-        id: u128,
+        event_id: u128,
         controller: &Controller,
     ) -> Result<SerializedResponse, crate::error::ArunaError> {
         tracing::trace!("Executing RegisterUserRequestTx");
@@ -88,7 +88,10 @@ impl WriteRequest for RegisterUserRequestTx {
             let mut wtxn = store.write_txn()?;
 
             // Create user
-            let _user_idx = store.create_node(&mut wtxn, id, &user)?;
+            let user_idx = store.create_node(&mut wtxn, &user)?;
+
+            // Affected nodes: Group, Realm, Project
+            store.register_event(&mut wtxn, event_id, &[user_idx])?;
 
             wtxn.commit()?;
             // Create admin group, add user to admin group

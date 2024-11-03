@@ -280,7 +280,6 @@ impl Store {
     pub fn create_relation(
         &self,
         wtxn: &mut WriteTxn,
-        event_id: u128,
         source: u32,
         target: u32,
         edge_type: EdgeType,
@@ -304,14 +303,6 @@ impl Store {
 
         wtxn.get_graph()
             .add_edge(source.into(), target.into(), edge_type);
-
-        // Associate event with both nodes
-        self.events
-            .put(wtxn.get_txn(), &source, &event_id)
-            .inspect_err(logerr!())?;
-        self.events
-            .put(wtxn.get_txn(), &target, &event_id)
-            .inspect_err(logerr!())?;
 
         Ok(())
     }
@@ -350,7 +341,6 @@ impl Store {
     pub fn create_node<'a, T: Node>(
         &'a self,
         wtxn: &mut WriteTxn<'a>,
-        event_id: u128,
         node: &T,
     ) -> Result<u32, ArunaError>
     where
@@ -402,12 +392,22 @@ impl Store {
         // Ensure that the index in graph and milli stays in sync
         assert_eq!(index.index() as u32, idx);
 
-        // Associate the event with the new node
-        self.events
-            .put(wtxn.get_txn(), &idx, &event_id)
-            .inspect_err(logerr!())?;
-
         Ok(idx)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, wtxn))]
+    pub fn register_event(
+        &self,
+        wtxn: &mut WriteTxn<'_>,
+        event_id: u128,
+        affected: &[u32],
+    ) -> Result<(), ArunaError> {
+        for idx in affected {
+            self.events
+                .put(wtxn.get_txn(), idx, &event_id)
+                .inspect_err(logerr!())?;
+        }
+        Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip(self))]

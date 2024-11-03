@@ -99,14 +99,13 @@ impl WriteRequest for CreateRealmRequestTx {
             };
 
             // Create realm
-            let realm_idx = store.create_node(&mut wtxn, associated_event_id, &realm)?;
+            let realm_idx = store.create_node(&mut wtxn, &realm)?;
             // Create group
-            let group_idx = store.create_node(&mut wtxn, associated_event_id, &group)?;
+            let group_idx = store.create_node(&mut wtxn, &group)?;
 
             // Add relation user --ADMIN--> group
             store.create_relation(
                 &mut wtxn,
-                associated_event_id,
                 user_idx,
                 group_idx,
                 relation_types::PERMISSION_ADMIN,
@@ -115,10 +114,16 @@ impl WriteRequest for CreateRealmRequestTx {
             // Add relation group --ADMINISTRATES--> realm
             store.create_relation(
                 &mut wtxn,
-                associated_event_id,
                 group_idx,
                 realm_idx,
                 relation_types::GROUP_ADMINISTRATES_REALM,
+            )?;
+
+            // Affected nodes: User, Realm and Group
+            store.register_event(
+                &mut wtxn,
+                associated_event_id,
+                &[user_idx, realm_idx, group_idx],
             )?;
 
             wtxn.commit()?;
@@ -192,15 +197,16 @@ impl WriteRequest for AddGroupRequestTx {
             let Some(realm_idx) = store.get_idx_from_ulid(&realm_id, wtxn.get_txn()) else {
                 return Err(ArunaError::NotFound(realm_id.to_string()));
             };
-            // Add relation user --ADMIN--> group
+            // Add relation group --GROUP_PART_OF_REALM--> realm
             store.create_relation(
                 &mut wtxn,
-                associated_event_id,
-                // TODO: Not sure which direction
                 group_idx,
                 realm_idx,
                 relation_types::GROUP_PART_OF_REALM,
             )?;
+
+            // Affected nodes: Realm and Group
+            store.register_event(&mut wtxn, associated_event_id, &[realm_idx, group_idx])?;
 
             wtxn.commit()?;
             // Create admin group, add user to admin group
