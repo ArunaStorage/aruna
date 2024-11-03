@@ -96,7 +96,7 @@ impl WriteRequest for CreateProjectRequestTx {
 
         let store = controller.get_store();
         Ok(tokio::task::spawn_blocking(move || {
-            // Create realm, add user to realm
+            // Create project
 
             let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
@@ -105,7 +105,20 @@ impl WriteRequest for CreateProjectRequestTx {
                 return Err(ArunaError::NotFound(group_id.to_string()));
             };
 
-            // Create realm
+            if !store
+                .filtered_universe(
+                    Some(&format!("name='{}' AND variant=0", project.name)),
+                    wtxn.get_txn(),
+                )?
+                .is_empty()
+            {
+                return Err(ArunaError::ConflictParameter {
+                    name: "name".to_string(),
+                    error: "Project with this name already exists".to_string(),
+                });
+            }
+
+            // Create project
             let project_idx = store.create_node(&mut wtxn, associated_event_id, &project)?;
 
             // Add relation user --ADMIN--> group
