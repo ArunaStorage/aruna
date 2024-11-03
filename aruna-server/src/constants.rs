@@ -114,9 +114,10 @@ pub mod relation_types {
     pub const GROUP_PART_OF_REALM: u32 = 9u32;
     pub const GROUP_ADMINISTRATES_REALM: u32 = 10u32;
     pub const REALM_USES_ENDPOINT: u32 = 11u32;
+    pub const PROJECT_PART_OF_REALM: u32 = 12u32;
 }
 
-pub fn const_relations() -> [RelationInfo; 12] {
+pub fn const_relations() -> [RelationInfo; 13] {
     [
         // Resource only
         // Target can only have one origin
@@ -199,6 +200,13 @@ pub fn const_relations() -> [RelationInfo; 12] {
             idx: 11,
             forward_type: "RealmUsesEndpoint".to_string(),
             backward_type: "EndpointUsedByRealm".to_string(),
+            internal: true,
+        },
+        // Realm -> Project
+        RelationInfo {
+            idx: 12,
+            forward_type: "ProjectPartOfRealm".to_string(),
+            backward_type: "RealmHasProject".to_string(),
             internal: true,
         },
     ]

@@ -95,6 +95,7 @@ impl WriteRequest for CreateProjectRequestTx {
         };
 
         let group_id = self.req.group_id;
+        let realm_id = self.req.realm_id;
 
         let store = controller.get_store();
         Ok(tokio::task::spawn_blocking(move || {
@@ -103,7 +104,12 @@ impl WriteRequest for CreateProjectRequestTx {
             let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
 
+            // Get group idx
             let Some(group_idx) = store.get_idx_from_ulid(&group_id, wtxn.get_txn()) else {
+                return Err(ArunaError::NotFound(group_id.to_string()));
+            };
+            // Get the realm
+            let Some(realm_idx) = store.get_idx_from_ulid(&realm_id, wtxn.get_txn()) else {
                 return Err(ArunaError::NotFound(group_id.to_string()));
             };
 
@@ -124,13 +130,22 @@ impl WriteRequest for CreateProjectRequestTx {
             // Create project
             let project_idx = store.create_node(&mut wtxn, associated_event_id, &project)?;
 
-            // Add relation user --ADMIN--> group
+            // Add relation group --OWNS_PROJECT--> project
             store.create_relation(
                 &mut wtxn,
                 associated_event_id,
                 group_idx,
                 project_idx,
                 relation_types::OWNS_PROJECT,
+            )?;
+
+            // Add relation realm --PROJECT_PART_OF_REALM--> project
+            store.create_relation(
+                &mut wtxn,
+                associated_event_id,
+                realm_idx,
+                project_idx,
+                relation_types::PROJECT_PART_OF_REALM,
             )?;
 
             wtxn.commit()?;
