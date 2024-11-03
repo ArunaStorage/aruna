@@ -27,6 +27,7 @@ use milli::{
     CboRoaringBitmapCodec, DefaultSearchLogger, Filter, GeoSortStrategy, Index, ObkvCodec,
     SearchContext, TermsMatchingStrategy, TimeBudget, BEU32, BEU64,
 };
+use obkv::KvReader;
 use petgraph::{visit::EdgeRef, Graph};
 use roaring::RoaringBitmap;
 use serde_json::Value;
@@ -58,6 +59,12 @@ impl<'a> WriteTxn<'a> {
     pub fn get_graph(&mut self) -> &mut RwLockWriteGuard<'a, Graph<NodeVariant, EdgeType>> {
         self.tracker += 1;
         &mut self.graph_lock
+    }
+
+    // This is a read-only function that allows for the graph to be accessed
+    // SAFETY: The caller must guarantee that the graph is not modified with this guard
+    pub fn get_ro_graph(&self) -> &RwLockWriteGuard<'a, Graph<NodeVariant, EdgeType>> {
+        &self.graph_lock
     }
 
     pub fn commit(mut self) -> Result<(), ArunaError> {
@@ -325,6 +332,20 @@ impl Store {
         T::try_from(&response).ok()
     }
 
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn get_raw_node<'a>(
+        &self,
+        rtxn: &'a RoTxn<'a>,
+        node_idx: u32,
+    ) -> Option<KvReader<'a, u16>> {
+        self.milli_index
+            .documents
+            .get(rtxn, &node_idx)
+            .inspect_err(logerr!())
+            .ok()
+            .flatten()
+    }
+
     #[tracing::instrument(level = "trace", skip(self, node, wtxn))]
     pub fn create_node<'a, T: Node>(
         &'a self,
@@ -335,8 +356,6 @@ impl Store {
     where
         for<'b> &'b T: TryInto<serde_json::Map<String, Value>, Error = ArunaError>,
     {
-        // Use the milli transaction directly to prevent lifetime interference
-
         let indexer_config = IndexerConfig::default();
         let builder = IndexDocuments::new(
             wtxn.get_txn(),
@@ -381,7 +400,7 @@ impl Store {
         let index = wtxn.get_graph().add_node(variant);
 
         // Ensure that the index in graph and milli stays in sync
-        assert_eq!(index.index() as u32, idx,);
+        assert_eq!(index.index() as u32, idx);
 
         // Associate the event with the new node
         self.events

@@ -6,13 +6,15 @@ use crate::{
     constants::relation_types,
     context::Context,
     error::ArunaError,
+    logerr,
     models::{
-        models::Resource,
+        models::{NodeVariant, Resource},
         requests::{
             CreateProjectRequest, CreateProjectResponse, CreateResourceRequest,
             CreateResourceResponse,
         },
     },
+    storage::graph::get_parents,
     transactions::request::WriteRequest,
 };
 use chrono::{DateTime, Utc};
@@ -105,6 +107,7 @@ impl WriteRequest for CreateProjectRequestTx {
                 return Err(ArunaError::NotFound(group_id.to_string()));
             };
 
+            // Check that name is unique
             if !store
                 .filtered_universe(
                     Some(&format!("name='{}' AND variant=0", project.name)),
@@ -158,10 +161,20 @@ impl Request for CreateResourceRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Check the variant before running consensus
+        if self.variant == crate::models::models::ResourceVariant::Project {
+            return Err(ArunaError::InvalidParameter {
+                name: "variant".to_string(),
+                error: "Wrong request, use CreateProjectRequest to create projects".to_string(),
+            });
+        }
+
         let request_tx = CreateResourceRequestTx {
             req: self,
             resource_id: Ulid::new(),
-            requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
+            requester: requester
+                .ok_or_else(|| ArunaError::Unauthorized)
+                .inspect_err(logerr!())?,
             created_at: Utc::now().timestamp(),
         };
 
@@ -221,7 +234,7 @@ impl WriteRequest for CreateResourceRequestTx {
 
         let store = controller.get_store();
         Ok(tokio::task::spawn_blocking(move || {
-            // Create realm, add user to realm
+            // Create resource
 
             let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
@@ -230,20 +243,60 @@ impl WriteRequest for CreateResourceRequestTx {
                 return Err(ArunaError::NotFound(parent_id.to_string()));
             };
 
-            // Create realm
+            // Make sure that the parent is a folder or project
+            let raw_parent_node = store
+                .get_raw_node(wtxn.get_txn(), parent_idx)
+                .expect("Idx exist but no node in documents -> corrupted database");
+
+            let variant: NodeVariant = serde_json::from_slice(
+                raw_parent_node
+                    .get(1)
+                    .expect("Missing variant -> corrupted database"),
+            )
+            .inspect_err(logerr!())?;
+
+            if !matches!(
+                variant,
+                NodeVariant::ResourceProject | NodeVariant::ResourceFolder
+            ) {
+                return Err(ArunaError::InvalidParameter {
+                    name: "parent_id".to_string(),
+                    error: "Wrong parent, must be folder or project".to_string(),
+                });
+            }
+
+            // Check for unique name 1. Get all resources with the same name
+            // 0 Project, 1 Folder, 2 Object -> < 3
+            let universe = store.filtered_universe(
+                Some(&format!("name='{}' AND variant < 3", resource.name)),
+                wtxn.get_txn(),
+            )?;
+
+            // 2. Check if any of the resources in the universe have the same parent as a parent
+            for idx in universe {
+                // We need to use this because we have a lock on the store
+                if get_parents(wtxn.get_ro_graph(), idx).contains(&parent_idx) {
+                    return Err(ArunaError::ConflictParameter {
+                        name: "name".to_string(),
+                        error: "Resource with this name already exists in this hierarchy"
+                            .to_string(),
+                    });
+                }
+            }
+
+            // Create resource
             let resource_idx = store.create_node(&mut wtxn, associated_event_id, &resource)?;
 
-            // Add relation user --ADMIN--> group
+            // Add relation parent --HAS_PART--> resource
             store.create_relation(
                 &mut wtxn,
                 associated_event_id,
                 parent_idx,
                 resource_idx,
-                relation_types::OWNS_PROJECT,
+                relation_types::HAS_PART,
             )?;
 
             wtxn.commit()?;
-            // Create admin group, add user to admin group
             Ok::<_, ArunaError>(bincode::serialize(&CreateProjectResponse { resource })?)
         })
         .await
