@@ -108,12 +108,17 @@ pub fn get_relatives(
         .edges_directed(idx, direction)
         .filter_map(|e| {
             if e.weight() == &0 {
-                match graph.node_weight(e.source()) {
+                let target_idx = match direction {
+                    Direction::Outgoing => e.target(),
+                    Direction::Incoming => e.source(),
+                };
+
+                match graph.node_weight(target_idx) {
                     None => None,
                     Some(variant) => match variant {
                         NodeVariant::ResourceProject
                         | NodeVariant::ResourceFolder
-                        | NodeVariant::ResourceObject => Some(idx.as_u32()),
+                        | NodeVariant::ResourceObject => Some(target_idx.as_u32()),
                         _ => None,
                     },
                 }
