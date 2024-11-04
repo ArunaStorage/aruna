@@ -15,7 +15,7 @@ use crate::middlelayer::update_request_types::{
 };
 use anyhow::{anyhow, Result};
 use aruna_rust_api::api::notification::services::v2::EventVariant;
-use aruna_rust_api::api::storage::services::v2::{FinishObjectStagingRequest, UpdateObjectRequest};
+use aruna_rust_api::api::storage::services::v2::UpdateObjectRequest;
 use deadpool_postgres::GenericClient;
 use diesel_ulid::DieselUlid;
 use itertools::Itertools;
@@ -583,95 +583,6 @@ impl DatabaseHandler {
         Ok((owr, is_new))
     }
 
-    pub async fn finish_object(
-        &self,
-        request: FinishObjectStagingRequest,
-        dataproxy_id: Option<DieselUlid>,
-    ) -> Result<ObjectWithRelations> {
-        let mut client = self.database.get_client().await?;
-        let id = DieselUlid::from_str(&request.object_id)?;
-        let object = Object::get(id, &client)
-            .await?
-            .ok_or_else(|| anyhow!("Object not found"))?;
-        let (endpoint_id, endpoint_info) = if let Some(id) = dataproxy_id {
-            let temp = object
-                .endpoints
-                .0
-                .get(&id)
-                .ok_or_else(|| anyhow!("No endpoints defined in object"))?;
-            (id, temp.clone())
-        } else {
-            return Err(anyhow!("Could not retrieve endpoint info"));
-        };
-
-        let transaction = client.transaction().await?;
-        let transaction_client = transaction.client();
-        let hashes = if request.hashes.is_empty() {
-            None
-        } else {
-            Some(request.hashes.try_into()?)
-        };
-        let content_len = request.content_len;
-        Object::finish_object_staging(
-            &id,
-            transaction_client,
-            hashes,
-            content_len,
-            ObjectStatus::AVAILABLE,
-        )
-        .await?;
-        Object::update_endpoints(
-            endpoint_id,
-            crate::database::dsls::object_dsl::EndpointInfo {
-                replication: endpoint_info.replication,
-                status: Some(crate::database::enums::ReplicationStatus::Finished),
-            },
-            vec![id],
-            transaction_client,
-        )
-        .await?;
-
-        self.evaluate_rules(&vec![id], transaction_client).await?;
-        transaction.commit().await?;
-
-        let object = Object::get_object_with_relations(&id, &client).await?;
-        let db_handler = DatabaseHandler {
-            database: self.database.clone(),
-            natsio_handler: self.natsio_handler.clone(),
-            cache: self.cache.clone(),
-            hook_sender: self.hook_sender.clone(),
-        };
-        let owr = object.clone();
-        tokio::spawn(async move {
-            let call = db_handler
-                .trigger_hooks(owr, vec![TriggerVariant::OBJECT_FINISHED], None)
-                .await;
-            if call.is_err() {
-                log::error!("{:?}", call);
-            }
-        });
-
-        // Try to emit object updated notification(s)
-        let hierarchies = object.object.fetch_object_hierarchies(&client).await?;
-        if let Err(err) = self
-            .natsio_handler
-            .register_resource_event(
-                &object,
-                hierarchies,
-                EventVariant::Updated,
-                Some(&DieselUlid::generate()), // block_id for deduplication
-            )
-            .await
-        {
-            // Log error, rollback transaction and return
-            log::error!("{}", err);
-            //transaction.rollback().await?;
-            Err(anyhow::anyhow!("Notification emission failed"))
-        } else {
-            //transaction.commit().await?;
-            Ok(object)
-        }
-    }
     pub async fn update_title(&self, request: UpdateTitle) -> Result<ObjectWithRelations> {
         // Init
         let id = request.get_id()?;

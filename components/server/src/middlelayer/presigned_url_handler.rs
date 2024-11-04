@@ -116,23 +116,26 @@ impl DatabaseHandler {
         authorizer: Arc<PermissionHandler>,
         user_id: DieselUlid,
         token: Option<DieselUlid>,
-    ) -> Result<String> {
+    ) -> Result<(String, Option<String>)> {
         let object_id = request.get_id()?;
         let multipart = request.get_multipart();
-        let parts = request.get_parts()?;
+        let part_nr = request.get_parts()?;
 
         let (project_id, bucket_name, key) =
             DatabaseHandler::get_path(object_id, cache.clone()).await?;
 
         let endpoint = self.get_fullsync_endpoint(project_id).await?;
-        let (endpoint_host_url, endpoint_s3_url, ssl, credentials) =
+        let (_, endpoint_s3_url, ssl, credentials) =
             DatabaseHandler::get_or_create_credentials(authorizer, user_id, token, endpoint, true)
                 .await?;
-        let upload_id = if multipart {
+
+        let upload_id = if let Some(upload_id) = request.get_upload_id() {
+            Some(upload_id)
+        } else if multipart && part_nr == 1 {
             DatabaseHandler::impersonated_multi_upload_init(
                 &credentials.access_key,
                 &credentials.secret_key,
-                &endpoint_host_url,
+                &endpoint_s3_url,
                 &bucket_name,
                 &key,
             )
@@ -147,16 +150,18 @@ impl DatabaseHandler {
             &credentials.secret_key,
             ssl,
             multipart,
-            parts,
-            upload_id,
+            part_nr,
+            upload_id.clone(),
             &bucket_name,
             &key,
             &endpoint_s3_url,
             604800,
         )?;
-        Ok(signed_url)
+
+        Ok((signed_url, upload_id))
     }
-    async fn get_path(
+
+    pub async fn get_path(
         object_id: DieselUlid,
         cache: Arc<Cache>,
     ) -> Result<(DieselUlid, String, String)> {
@@ -468,6 +473,13 @@ impl PresignedUpload {
             (_, false) => 1,
         };
         Ok(parts)
+    }
+    pub fn get_upload_id(&self) -> Option<String> {
+        if self.0.upload_id.is_empty() {
+            None
+        } else {
+            Some(self.0.upload_id.clone())
+        }
     }
 }
 

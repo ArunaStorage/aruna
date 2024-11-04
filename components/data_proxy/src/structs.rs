@@ -420,7 +420,7 @@ impl User {
             }
         }
 
-        for (k, _) in &other.tokens {
+        for k in other.tokens.keys() {
             if !self.tokens.contains_key(k) {
                 to_delete.push(k.to_string());
             }

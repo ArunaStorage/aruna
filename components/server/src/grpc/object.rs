@@ -26,6 +26,7 @@ use crate::middlelayer::clone_request_types::CloneObject;
 use crate::middlelayer::create_request_types::CreateRequest;
 use crate::middlelayer::db_handler::DatabaseHandler;
 use crate::middlelayer::delete_request_types::DeleteRequest;
+use crate::middlelayer::finish_request_types::FinishRequest;
 use crate::middlelayer::presigned_url_handler::{PresignedDownload, PresignedUpload};
 use crate::middlelayer::update_request_types::{
     SetHashes, UpdateAuthor, UpdateObject, UpdateTitle,
@@ -137,7 +138,7 @@ impl ObjectService for ObjectServiceImpl {
             "Unauthorized"
         );
 
-        let signed_url = tonic_internal!(
+        let (url, upload_id) = tonic_internal!(
             self.database_handler
                 .get_presigend_upload(
                     self.cache.clone(),
@@ -150,7 +151,10 @@ impl ObjectService for ObjectServiceImpl {
             "Error while building presigned url"
         );
 
-        let result = GetUploadUrlResponse { url: signed_url };
+        let result = GetUploadUrlResponse {
+            url,
+            upload_id: upload_id.unwrap_or("".to_string()),
+        };
 
         return_with_log!(result);
     }
@@ -208,21 +212,22 @@ impl ObjectService for ObjectServiceImpl {
             "Token authentication error."
         );
 
-        let request = request.into_inner();
+        // Convert to FinishRequest
+        let request = FinishRequest(request.into_inner());
+        let object_id = &tonic_invalid!(request.get_object_id(), "Invalid object id");
 
+        // Check permissions for finish
         let PermissionCheck {
+            user_id,
+            token: token_id,
             is_proxy,
             proxy_id: dataproxy_id,
-            ..
         } = tonic_auth!(
             self.authorizer
                 .check_permissions_verbose(
                     &token,
                     vec![Context::res_ctx(
-                        tonic_invalid!(
-                            DieselUlid::from_str(&request.object_id),
-                            "Invalid object_id"
-                        ),
+                        tonic_invalid!(request.get_object_id(), "Invalid object_id"),
                         DbPermissionLevel::APPEND,
                         true
                     )]
@@ -230,13 +235,27 @@ impl ObjectService for ObjectServiceImpl {
                 .await,
             "Unauthorized"
         );
+
+        // Manual user started
         if !is_proxy {
+            // Send CompleteMultipartFinish to proxy
+            tonic_internal!(
+                self.database_handler
+                    .complete_multipart_upload(
+                        request,
+                        user_id,
+                        self.cache.clone(),
+                        self.authorizer.clone(),
+                        token_id
+                    )
+                    .await,
+                "Multipart object finish failed"
+            );
+
+            // Fetch Object from updated cache and return
             let object = self
                 .cache
-                .get_wrapped_object(&tonic_invalid!(
-                    DieselUlid::from_str(&request.object_id),
-                    "Invalid id"
-                ))
+                .get_wrapped_object(object_id)
                 .ok_or_else(|| Status::not_found("Object not found"))?;
             let object: generic_resource::Resource = object.into();
             let response = FinishObjectStagingResponse {
