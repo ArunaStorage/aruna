@@ -12,7 +12,7 @@ fn default_license_tag() -> String {
     "CC-BY-SA-4.0".to_string()
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
 pub struct CreateResourceRequest {
     pub name: String,
     #[serde(default)]

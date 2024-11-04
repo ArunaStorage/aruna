@@ -15,9 +15,7 @@ use crate::{
 };
 use ahash::RandomState;
 use heed::{
-    byteorder::BigEndian,
-    types::{SerdeBincode, Str, U128},
-    Database, DatabaseFlags, EnvOpenOptions, PutFlags, RoTxn, RwTxn,
+    byteorder::BigEndian, types::{SerdeBincode, Str, U128}, Database, DatabaseFlags, EnvFlags, EnvOpenOptions, PutFlags, RoTxn, RwTxn
 };
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use milli::{
@@ -163,7 +161,12 @@ impl Store {
         // SAFETY: This opens a memory mapped file that may introduce UB
         //         if handled incorrectly
         //         see: https://docs.rs/heed/latest/heed/struct.EnvOpenOptions.html#safety-1
-        let milli_index = Index::new(EnvOpenOptions::new(), path).inspect_err(logerr!())?;
+
+        let mut env_options = EnvOpenOptions::new();
+        unsafe {env_options.flags(EnvFlags::MAP_ASYNC | EnvFlags::WRITE_MAP)};
+        env_options.map_size(1024 * 1024 * 1024); // 1GB
+
+        let milli_index = Index::new(env_options, path).inspect_err(logerr!())?;
 
         let mut write_txn = milli_index.write_txn().inspect_err(logerr!())?;
 

@@ -17,11 +17,12 @@ pub type EdgeType = u32;
 
 // Constants for the models
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
 #[repr(u8)]
 pub enum ResourceVariant {
     Project,
     Folder,
+    #[default]
     Object,
 }
 

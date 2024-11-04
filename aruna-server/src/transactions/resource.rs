@@ -19,6 +19,7 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use tracing::info;
 use ulid::Ulid;
 
 impl Request for CreateProjectRequest {
@@ -139,6 +140,7 @@ impl WriteRequest for CreateProjectRequestTx {
             )?;
 
             // Add relation realm --PROJECT_PART_OF_REALM--> project
+            // TODO: Check if this should be a relation or a field
             store.create_relation(
                 &mut wtxn,
                 realm_idx,
@@ -200,7 +202,7 @@ impl Request for CreateResourceRequest {
 
         let response = controller.transaction(Ulid::new().0, &request_tx).await?;
 
-        Ok(bincode::deserialize(&response)?)
+        Ok(bincode::deserialize(&response).inspect_err(logerr!())?)
     }
 }
 
@@ -220,6 +222,9 @@ impl WriteRequest for CreateResourceRequestTx {
         associated_event_id: u128,
         controller: &Controller,
     ) -> Result<SerializedResponse, crate::error::ArunaError> {
+
+        info!("Executing CreateResourceRequestTx");
+
         controller.authorize(&self.requester, &self.req).await?;
 
         let time = DateTime::from_timestamp_millis(self.created_at).ok_or_else(|| {
@@ -317,7 +322,7 @@ impl WriteRequest for CreateResourceRequestTx {
                 relation_types::HAS_PART,
             )?;
 
-            // Affected nodes: Group, Realm, Project
+            // Affected nodes: Group, Project
             store.register_event(&mut wtxn, associated_event_id, &[parent_idx, resource_idx])?;
 
             wtxn.commit()?;

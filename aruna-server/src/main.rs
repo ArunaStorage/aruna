@@ -6,9 +6,8 @@ async fn main() {
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or("none".into())
         .add_directive("aruna_server=trace".parse().unwrap())
-        .add_directive("tower_http=debug".parse().unwrap())
-        .add_directive("aruna_synevi=debug".parse().unwrap())
-        .add_directive("synevi_core=trace".parse().unwrap());
+        .add_directive("tower_http=info".parse().unwrap())
+        .add_directive("synevi_core=info".parse().unwrap());
 
     tracing_subscriber::fmt()
         .with_file(true)
