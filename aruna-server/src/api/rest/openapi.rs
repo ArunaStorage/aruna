@@ -23,6 +23,8 @@ use utoipa::{
         search,
     ),
     components(schemas(
+        CreateResourceBatchRequest,
+        CreateResourceBatchResponse,
         CreateResourceRequest,
         CreateResourceResponse,
         CreateProjectRequest,
@@ -55,6 +57,7 @@ use utoipa::{
         Group,
         VisibilityClass,
         ResourceVariant,
+        BatchResource,
     ))
 )]
 pub struct ArunaApi;

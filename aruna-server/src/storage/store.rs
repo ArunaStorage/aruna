@@ -15,7 +15,9 @@ use crate::{
 };
 use ahash::RandomState;
 use heed::{
-    byteorder::BigEndian, types::{SerdeBincode, Str, U128}, Database, DatabaseFlags, EnvFlags, EnvOpenOptions, PutFlags, RoTxn, RwTxn
+    byteorder::BigEndian,
+    types::{SerdeBincode, Str, U128},
+    Database, DatabaseFlags, EnvFlags, EnvOpenOptions, PutFlags, RoTxn, RwTxn,
 };
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use milli::{
@@ -163,7 +165,7 @@ impl Store {
         //         see: https://docs.rs/heed/latest/heed/struct.EnvOpenOptions.html#safety-1
 
         let mut env_options = EnvOpenOptions::new();
-        unsafe {env_options.flags(EnvFlags::MAP_ASYNC | EnvFlags::WRITE_MAP)};
+        unsafe { env_options.flags(EnvFlags::MAP_ASYNC | EnvFlags::WRITE_MAP) };
         env_options.map_size(1024 * 1024 * 1024); // 1GB
 
         let milli_index = Index::new(env_options, path).inspect_err(logerr!())?;
@@ -396,6 +398,74 @@ impl Store {
         assert_eq!(index.index() as u32, idx);
 
         Ok(idx)
+    }
+
+    pub fn create_nodes_batch<'a, T: Node>(
+        &'a self,
+        wtxn: &mut WriteTxn<'a>,
+        nodes: Vec<&T>,
+    ) -> Result<Vec<(Ulid, u32)>, ArunaError>
+    where
+        for<'b> &'b T: TryInto<serde_json::Map<String, Value>, Error = ArunaError>,
+    {
+        let indexer_config = IndexerConfig::default();
+        let builder = IndexDocuments::new(
+            wtxn.get_txn(),
+            &self.milli_index,
+            &indexer_config,
+            IndexDocumentsConfig::default(),
+            |_| (),
+            || false,
+        )?;
+
+        // Create a document batch
+        let mut documents_batch = DocumentsBatchBuilder::new(Vec::new());
+
+        let mut ids = Vec::new();
+        for node in nodes {
+            // Request the ulid from the node
+            let id = node.get_id();
+            // Request the variant from the node
+            let variant = node.get_variant();
+
+            ids.push((id, variant));
+
+            // Add the json object to the batch
+            documents_batch.append_json_object(&node.try_into()?)?;
+        }
+        // Create a reader for the batch
+        let reader = DocumentsBatchReader::from_reader(Cursor::new(documents_batch.into_inner()?))
+            .map_err(|_| {
+                tracing::error!(?ids, "Unable to index document");
+                ArunaError::DatabaseError("Unable to index document".to_string())
+            })?;
+        // Add the batch to the reader
+        let (builder, error) = builder.add_documents(reader)?;
+        error.map_err(|e| {
+            tracing::error!(?ids, ?e, "Error adding document");
+            ArunaError::DatabaseError("Error adding document".to_string())
+        })?;
+
+        // Execute the indexing
+        builder.execute()?;
+
+        let mut result = Vec::new();
+        for (id, variant) in ids {
+            // Get the idx of the node
+            let idx = self
+                .get_idx_from_ulid(&id, &wtxn.get_txn())
+                .ok_or_else(|| ArunaError::DatabaseError("Missing idx".to_string()))?;
+
+            // Add the node to the graph
+            let index = wtxn.get_graph().add_node(variant);
+
+            // Ensure that the index in graph and milli stays in sync
+            assert_eq!(index.index() as u32, idx);
+
+            result.push((id, idx));
+        }
+
+        Ok(result)
     }
 
     #[tracing::instrument(level = "trace", skip(self, wtxn))]

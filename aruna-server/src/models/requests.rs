@@ -33,6 +33,32 @@ pub struct CreateResourceRequest {
     pub parent_id: Ulid,
 }
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
+pub struct BatchResource {
+    pub name: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
+    pub variant: ResourceVariant,
+    #[serde(default)]
+    pub labels: Vec<KeyValue>,
+    #[serde(default)]
+    pub identifiers: Vec<String>,
+    #[serde(default)]
+    pub visibility: VisibilityClass,
+    #[serde(default)]
+    pub authors: Vec<Author>,
+    #[serde(default = "default_license_tag")]
+    pub license_tag: String,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
+pub struct CreateResourceBatchRequest {
+    pub resources: Vec<BatchResource>,
+    pub parent_id: Ulid,
+}
+
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct CreateProjectRequest {
     pub name: String,
@@ -95,6 +121,11 @@ pub struct CreateProjectResponse {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct CreateResourceResponse {
     pub resource: Resource,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateResourceBatchResponse {
+    pub resources: Vec<Resource>,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]

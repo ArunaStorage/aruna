@@ -48,16 +48,17 @@ pub struct Clients {
     pub group_client: GroupServiceClient<InterceptedService<Channel, ClientInterceptor>>,
     pub user_client: UserServiceClient<InterceptedService<Channel, ClientInterceptor>>,
     pub resource_client: ResourceServiceClient<InterceptedService<Channel, ClientInterceptor>>,
+    pub rest_endpoint: String,
 }
 pub async fn init_test(offset: u16) -> Clients {
     INIT_TRACING.call_once(init_tracing);
 
     // Start server and get port
-    let (port, notify) = init_testing_server(offset).await;
+    let (grpc_port, rest_port, notify) = init_testing_server(offset).await;
     notify.notified().await;
     // Create connection to the Aruna instance via gRPC
     let api_token = TEST_TOKEN;
-    let endpoint = Channel::from_shared(format!("http://0.0.0.0:{port}")).unwrap();
+    let endpoint = Channel::from_shared(format!("http://0.0.0.0:{grpc_port}")).unwrap();
 
     let mut retries = MAX_RETRIES;
     let channel = loop {
@@ -90,10 +91,11 @@ pub async fn init_test(offset: u16) -> Clients {
         group_client,
         user_client,
         resource_client,
+        rest_endpoint: format!("http://localhost:{}", rest_port),
     }
 }
 
-async fn init_testing_server(offset: u16) -> (u16, Arc<Notify>) {
+async fn init_testing_server(offset: u16) -> (u16, u16, Arc<Notify>) {
     // Create notifier
     let notify = Arc::new(Notify::new());
     let notify_clone = notify.clone();
@@ -152,7 +154,7 @@ async fn init_testing_server(offset: u16) -> (u16, Arc<Notify>) {
     });
 
     // Return grpc port
-    (grpc_port, notify)
+    (grpc_port, rest_port, notify)
 }
 
 fn init_tracing() {

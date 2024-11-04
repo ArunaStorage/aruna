@@ -31,6 +31,28 @@ pub async fn create_resource(
     into_axum_response(state.request(request, extract_token(&headers)).await)
 }
 
+
+/// Create a new resource
+#[utoipa::path(
+    post,
+    path = "/api/v3/resource/batch",
+    request_body = CreateResourceBatchRequest,
+    responses(
+        (status = 200, body = CreateResourceResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+)]
+pub async fn create_resource_batch(
+    State(state): State<Arc<Controller>>,
+    headers: HeaderMap,
+    Json(request): Json<CreateResourceBatchRequest>,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&headers)).await)
+}
+
 /// Create a new resource
 #[utoipa::path(
     post,

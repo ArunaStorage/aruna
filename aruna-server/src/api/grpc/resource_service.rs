@@ -1,7 +1,8 @@
 use super::grpc_helpers::get_token;
 use crate::transactions::controller::Controller;
+use crate::models;
 use aruna_rust_api::v3::aruna::api::v3::{
-    resource_service_server::ResourceService, CreateProjectRequest, CreateProjectResponse,
+    resource_service_server::ResourceService, CreateProjectResponse, CreateProjectRequest,
     CreateResourceRequest, CreateResourceResponse, GetResourceRequest, GetResourceResponse,
 };
 use std::{result::Result, sync::Arc};
@@ -26,13 +27,12 @@ impl ResourceService for ResourceServiceImpl {
         let token = get_token(request.metadata());
         let controller = self.handler.clone();
 
-        todo!()
-        // Ok(tonic::Response::new(
-        //     controller
-        //         .create_project(token, request.into_inner().try_into()?)
-        //         .await?
-        //         .into(),
-        // ))
+        Ok(tonic::Response::new(
+            controller
+                .request(models::requests::CreateProjectRequest::try_from(request.into_inner())?, token)
+                .await?
+                .into(),
+        ))
     }
     async fn create_resource(
         &self,
