@@ -130,6 +130,9 @@ impl WriteRequest for CreateProjectRequestTx {
             // Create project
             let project_idx = store.create_node(&mut wtxn, &project)?;
 
+            
+
+
             // Add relation group --OWNS_PROJECT--> project
             store.create_relation(
                 &mut wtxn,

@@ -118,6 +118,8 @@ pub mod db_names {
 pub mod single_entry_names {
     pub const ISSUER_KEYS: &str = "issuer_keys";
     pub const SIGNING_KEYS: &str = "signing_keys";
+    pub const PUBLIC_RESOURCES: &str = "public_resources";
+    pub const SEARCHABLE_USERS: &str = "searchable_users";
 }
 
 pub(super) type DecodingKeyIdentifier = (String, String); // (IssuerName, KeyID)
@@ -728,5 +730,103 @@ impl Store {
         };
 
         Ok(filtered_universe(&self.milli_index, rtxn, &filter).inspect_err(logerr!())?)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn add_public_resources_universe(
+        &self,
+        rtxn: &mut WriteTxn,
+        universe: &[u32],
+    ) -> Result<(), ArunaError> {
+
+        let mut universe = RoaringBitmap::from_iter(universe.iter().copied());
+
+        let existing = self.single_entry_database.remap_types::<Str, CboRoaringBitmapCodec>()
+        .get(&rtxn.get_txn(), single_entry_names::PUBLIC_RESOURCES)
+        .inspect_err(logerr!())?.unwrap_or_default();
+
+        // Union of the newly added universe and the existing universe
+        universe |= existing;
+
+        self.single_entry_database
+            .remap_types::<Str, CboRoaringBitmapCodec>()
+            .put(rtxn.get_txn(), single_entry_names::PUBLIC_RESOURCES, &universe)
+            .inspect_err(logerr!())?;
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn add_user_universe(
+        &self,
+        rtxn: &mut WriteTxn,
+        user: u32,
+    ) -> Result<(), ArunaError> {
+
+        let mut universe = RoaringBitmap::new();
+        universe.insert(user);
+
+        let existing = self.single_entry_database.remap_types::<Str, CboRoaringBitmapCodec>()
+        .get(&rtxn.get_txn(), single_entry_names::SEARCHABLE_USERS)
+        .inspect_err(logerr!())?.unwrap_or_default();
+
+        // Union of the newly added user and the existing universe
+        universe |= existing;
+        
+        self.single_entry_database
+            .remap_types::<Str, CboRoaringBitmapCodec>()
+            .put(rtxn.get_txn(), single_entry_names::SEARCHABLE_USERS, &universe)
+            .inspect_err(logerr!())?;
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn add_read_permission_universe(
+        &self,
+        rtxn: &mut WriteTxn,
+        group: u32,
+        universe: &[u32],
+    ) -> Result<(), ArunaError> {
+
+        let mut universe = RoaringBitmap::from_iter(universe.iter().copied());
+
+        let existing = self.read_permissions
+        .get(&rtxn.get_txn(), &group)
+        .inspect_err(logerr!())?.unwrap_or_default();
+
+        // Union of the newly added user and the existing universe
+        universe |= existing;
+
+        self.read_permissions
+            .put(rtxn.get_txn(), &group, &universe)
+            .inspect_err(logerr!())?;
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn get_read_permission_universe(
+        &self,
+        rtxn: &RoTxn,
+        read_resources: &[u32],
+    ) -> Result<RoaringBitmap, ArunaError> {
+
+        let mut universe = RoaringBitmap::new();
+        for read_resource in read_resources {
+            universe |= self.read_permissions.get(rtxn, read_resource).inspect_err(logerr!())?.unwrap_or_default();
+        }
+        Ok(universe)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn get_public_universe(&self, rtxn: &RoTxn) -> Result<RoaringBitmap, ArunaError> {
+        Ok(self.single_entry_database.remap_types::<Str, CboRoaringBitmapCodec>()
+            .get(&rtxn, single_entry_names::PUBLIC_RESOURCES)
+            .inspect_err(logerr!())?.unwrap_or_default())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn get_user_universe(&self, rtxn: &RoTxn) -> Result<RoaringBitmap, ArunaError> {
+        Ok(self.single_entry_database.remap_types::<Str, CboRoaringBitmapCodec>()
+            .get(&rtxn, single_entry_names::SEARCHABLE_USERS)
+            .inspect_err(logerr!())?.unwrap_or_default())
     }
 }
