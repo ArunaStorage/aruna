@@ -31,7 +31,6 @@ pub async fn create_resource(
     into_axum_response(state.request(request, extract_token(&headers)).await)
 }
 
-
 /// Create a new resource
 #[utoipa::path(
     post,

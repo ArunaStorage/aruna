@@ -12,7 +12,9 @@ fn default_license_tag() -> String {
     "CC-BY-SA-4.0".to_string()
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
 pub struct CreateResourceRequest {
     pub name: String,
     #[serde(default)]
@@ -33,7 +35,9 @@ pub struct CreateResourceRequest {
     pub parent_id: Ulid,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
 pub struct BatchResource {
     pub name: String,
     #[serde(default)]
@@ -53,7 +57,9 @@ pub struct BatchResource {
     pub license_tag: String,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
 pub struct CreateResourceBatchRequest {
     pub resources: Vec<BatchResource>,
     pub parent_id: Ulid,

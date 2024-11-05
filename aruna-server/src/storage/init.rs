@@ -1,57 +1,87 @@
-use std::collections::HashMap;
-
-use ahash::RandomState;
 use heed::{
     types::{SerdeBincode, Str},
-    Database,
+    Database, Unspecified,
 };
-use jsonwebtoken::DecodingKey;
 use milli::BEU32;
 
 use crate::{
     constants::const_relations,
     error::ArunaError,
     logerr,
-    models::models::{Issuer, IssuerType, RelationInfo},
+    models::models::{IssuerKey, IssuerType, RelationInfo},
 };
 
-use super::store::{DecodingKeyIdentifier, IssuerInfo};
+use super::{
+    store::single_entry_names,
+    utils::{config_into_keys, SigningInfoCodec},
+};
 
-#[tracing::instrument(level = "trace", skip(key_id, decoding_key, write_txn))]
-pub(super) fn init_issuer(
+#[tracing::instrument(level = "trace", skip(write_txn))]
+pub(super) fn init_encoding_keys(
     mut write_txn: &mut heed::RwTxn,
-    issuers: &Database<Str, SerdeBincode<Issuer>>,
-    key_id: &u32,
-    decoding_key: &DecodingKey,
-) -> Result<HashMap<DecodingKeyIdentifier, IssuerInfo, RandomState>, ArunaError> {
-    issuers
+    key_config: &(u32, String, String),
+    single_entry_db: &Database<Unspecified, Unspecified>,
+) -> Result<(), ArunaError> {
+    let key_config = config_into_keys(key_config).inspect_err(logerr!())?;
+
+    let single_entry_decode = single_entry_db.remap_types::<Str, SigningInfoCodec>();
+    single_entry_decode
         .put(
             &mut write_txn,
-            "aruna",
-            &Issuer {
-                issuer_name: "aruna".to_string(),
-                pubkey_endpoint: None,
-                audiences: vec!["aruna".to_string()],
-                issuer_type: IssuerType::ARUNA,
-            },
+            single_entry_names::SIGNING_KEYS,
+            &key_config,
         )
         .inspect_err(logerr!())?;
+    Ok(())
+}
 
-    // TODO: Read existing issuers
-    // Query the endpoint for the decoding key -> Add to hashmap
-    //todo!();
+#[tracing::instrument(level = "trace", skip(write_txn))]
+pub(super) fn init_issuers(
+    mut write_txn: &mut heed::RwTxn,
+    key_config: &(u32, String, String),
+    single_entry_db: &Database<Unspecified, Unspecified>,
+) -> Result<(), ArunaError> {
+    let config_into_keys = config_into_keys(key_config)?;
 
-    let mut iss: HashMap<DecodingKeyIdentifier, IssuerInfo, RandomState> = HashMap::default();
-    iss.insert(
-        ("aruna".to_string(), key_id.to_string()),
-        (
-            IssuerType::ARUNA,
-            decoding_key.clone(),
-            vec!["aruna".to_string()],
-        ),
-    );
+    let issuer_single_entry_db = single_entry_db.remap_types::<Str, SerdeBincode<Vec<IssuerKey>>>();
 
-    Ok(iss)
+    let current_aruna_issuer_key = IssuerKey {
+        key_id: format!("{}", config_into_keys.0),
+        issuer_name: "aruna".to_string(),
+        issuer_endpoint: None,
+        issuer_type: IssuerType::ARUNA,
+        decoding_key: config_into_keys.2,
+        audiences: vec!["aruna".to_string()],
+    };
+
+    match issuer_single_entry_db
+        .get(&write_txn, single_entry_names::ISSUER_KEYS)
+        .inspect_err(logerr!())?
+    {
+        Some(current_keys) if current_keys.contains(&current_aruna_issuer_key) => {
+            return Ok(());
+        }
+        Some(mut current_keys) if !current_keys.contains(&current_aruna_issuer_key) => {
+            current_keys.push(current_aruna_issuer_key);
+            issuer_single_entry_db
+                .put(
+                    &mut write_txn,
+                    single_entry_names::ISSUER_KEYS,
+                    &current_keys,
+                )
+                .inspect_err(logerr!())?;
+            return Ok(());
+        }
+        _ => {}
+    }
+    issuer_single_entry_db
+        .put(
+            &mut write_txn,
+            single_entry_names::ISSUER_KEYS,
+            &vec![current_aruna_issuer_key],
+        )
+        .inspect_err(logerr!())?;
+    Ok(())
 }
 
 #[tracing::instrument(level = "trace", skip(write_txn))]

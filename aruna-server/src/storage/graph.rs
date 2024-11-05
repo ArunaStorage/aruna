@@ -8,7 +8,7 @@ use crate::{
 use heed::{types::SerdeBincode, Database, RoTxn};
 use milli::{ObkvCodec, BEU32, BEU64};
 use petgraph::{
-    visit::EdgeRef,
+    visit::{EdgeRef, NodeRef},
     Direction::{self, Incoming, Outgoing},
     Graph,
 };
@@ -146,7 +146,7 @@ pub fn get_children(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Vec<u32> 
 #[tracing::instrument(level = "trace", skip(graph))]
 pub fn get_permissions(
     graph: &Graph<NodeVariant, EdgeType>,
-    resource_id: u32,
+    resource_idx: u32,
     identity: u32,
 ) -> Result<Permission, ArunaError> {
     use crate::constants::relation_types::*;
@@ -154,7 +154,7 @@ pub fn get_permissions(
 
     let mut highest_perm: Option<u32> = None;
     let mut queue = VecDeque::new();
-    queue.push_back((resource_id.into(), u32::MAX));
+    queue.push_back((resource_idx.into(), u32::MAX));
     while let Some((idx, current_perm)) = queue.pop_front() {
         // Iterate over all incoming edges
         for edge in graph.edges_directed(idx, Incoming) {
@@ -207,4 +207,67 @@ pub fn check_node_variant(
     variant: &NodeVariant,
 ) -> bool {
     graph.node_weight(idx.into()) == Some(variant)
+}
+
+#[tracing::instrument(level = "trace", skip(graph))]
+pub fn get_related_user_or_groups(
+    graph: &Graph<NodeVariant, EdgeType>,
+    resource_idx: u32,
+) -> Result<Vec<u32>, ArunaError> {
+    use crate::constants::relation_types::*;
+    // Resource could be: Group, User, Projects, Folder, Object || TODO: Realm, ServiceAccount, Hooks, etc.
+    let mut user_or_group_idx = vec![];
+    let mut queue = VecDeque::new();
+    queue.push_back(resource_idx.into());
+    while let Some(idx) = queue.pop_front() {
+        // Iterate over all incoming edges
+        for edge in graph.edges_directed(idx, Incoming) {
+            match edge.weight() {
+                // We know that this is a group or user
+                &OWNS_PROJECT | PERMISSION_READ..=PERMISSION_ADMIN => {
+                    user_or_group_idx.push(edge.source().as_u32());
+                }
+                &HAS_PART => {
+                    queue.push_back(edge.source());
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(user_or_group_idx)
+}
+
+#[tracing::instrument(level = "trace", skip(graph))]
+pub fn get_realm_and_groups(
+    graph: &Graph<NodeVariant, EdgeType>,
+    user_idx: u32,
+) -> Result<Vec<u32>, ArunaError> {
+    use crate::constants::relation_types::*;
+    // Resource could be: Group, User, Projects, Folder, Object || TODO: Realm, ServiceAccount, Hooks, etc.
+    let mut indizes = vec![user_idx];
+    let mut queue = VecDeque::new();
+    queue.push_back(user_idx.into());
+    while let Some(idx) = queue.pop_front() {
+        // Iterate over all incoming edges
+        for edge in graph.edges_directed(idx, Outgoing) {
+            match edge.weight() {
+                // The target is a group (but may have child groups)
+                PERMISSION_READ..=PERMISSION_ADMIN
+                    if graph.node_weight(edge.target()) == Some(&NodeVariant::Group) =>
+                {
+                    indizes.push(edge.target().as_u32());
+                    // Loop detection
+                    if !indizes.contains(&edge.source().as_u32()) {
+                        queue.push_back(edge.source());
+                    }
+                }
+                // The target is a realm
+                &GROUP_ADMINISTRATES_REALM | &GROUP_PART_OF_REALM => {
+                    indizes.push(edge.target().as_u32());
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(indizes)
 }

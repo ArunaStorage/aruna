@@ -28,7 +28,7 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter", "fmt"] }
 async-trait = "0.1.83"
 base64 = "0.22.1"
 hmac = "0.12.1"
-jsonwebtoken = "9.3.0"
+jsonwebtoken = {git = "https://github.com/arunaengine/jsonwebtoken.git"}
 sha2 = "0.10.8"
 reqwest = { version = "0.12.9", features = ["json"] }
 prost-wkt = "0.6"

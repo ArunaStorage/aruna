@@ -495,14 +495,8 @@ impl WriteRequest for CreateResourceBatchRequestTx {
 
             let mut affected = vec![parent_idx];
             for (_id, idx) in &resource_idx {
-
                 // Add relation parent --HAS_PART--> resource
-                store.create_relation(
-                    &mut wtxn,
-                    parent_idx,
-                    *idx,
-                    relation_types::HAS_PART,
-                )?;
+                store.create_relation(&mut wtxn, parent_idx, *idx, relation_types::HAS_PART)?;
                 affected.push(*idx);
             }
 

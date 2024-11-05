@@ -2,14 +2,11 @@ use crate::{
     error::ArunaError,
     logerr,
     models::models::{
-        EdgeType, GenericNode, Group, Issuer, IssuerType, Node, NodeVariant, Permission,
+        EdgeType, GenericNode, Group, IssuerKey, IssuerType, Node, NodeVariant, Permission,
         RawRelation, Realm, RelationInfo, Resource, ServerState, ServiceAccount, Token, User,
     },
     storage::{
-        graph::load_graph,
-        init::{self, init_issuer},
-        milli_helpers::prepopulate_fields,
-        utils::config_into_keys,
+        graph::load_graph, init, milli_helpers::prepopulate_fields, utils::SigningInfoCodec
     },
     transactions::controller::KeyConfig,
 };
@@ -17,7 +14,7 @@ use ahash::RandomState;
 use heed::{
     byteorder::BigEndian,
     types::{SerdeBincode, Str, U128},
-    Database, DatabaseFlags, EnvFlags, EnvOpenOptions, PutFlags, RoTxn, RwTxn,
+    Database, DatabaseFlags, EnvFlags, EnvOpenOptions, PutFlags, RoTxn, RwTxn, Unspecified,
 };
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use milli::{
@@ -110,12 +107,17 @@ pub mod db_names {
     pub const OIDC_MAPPING_DB_NAME: &str = "oidc_mappings";
     pub const PUBKEY_DB_NAME: &str = "pubkeys";
     pub const TOKENS_DB_NAME: &str = "tokens";
-    pub const ISSUER_DB_NAME: &str = "issuers";
     pub const SERVER_INFO_DB_NAME: &str = "server_infos";
     pub const EVENT_DB_NAME: &str = "events";
     pub const TOKENS: &str = "tokens";
     pub const USER: &str = "users";
     pub const READ_GROUP_PERMS: &str = "read_group_perms";
+    pub const SINGLE_ENTRY_DB: &str = "single_entry_database";
+}
+
+pub mod single_entry_names {
+    pub const ISSUER_KEYS: &str = "issuer_keys";
+    pub const SIGNING_KEYS: &str = "signing_keys";
 }
 
 pub(super) type DecodingKeyIdentifier = (String, String); // (IssuerName, KeyID)
@@ -124,6 +126,13 @@ pub type IssuerInfo = (IssuerType, DecodingKey, Vec<String>); // (IssuerType, De
 pub struct Store {
     // Milli index to store objects and allow for search
     milli_index: Index,
+
+    // Contains the following entries
+    // ISSUER_KEYS
+    // SigningKeys
+    // Config?
+    single_entry_database: Database<Unspecified, Unspecified>,
+
     // Store it in an increasing list of relations
     relations: Database<BEU64, SerdeBincode<RawRelation>>,
     // Increasing relation index
@@ -142,14 +151,12 @@ pub struct Store {
     // Database for tokens with user_idx as key and a list of tokens as value
     tokens: Database<BEU32, SerdeBincode<Vec<Option<Token>>>>,
 
-    // Database for issuers with name as key
-    issuers: Database<Str, SerdeBincode<Issuer>>,
     // -------------------
     // Volatile data
     // Component status
-    status: HashMap<Ulid, ServerState, RandomState>,
-    issuer_decoding_keys: HashMap<DecodingKeyIdentifier, IssuerInfo, RandomState>,
-    signing_info: (u32, EncodingKey, DecodingKey),
+    status: RwLock<HashMap<Ulid, ServerState, RandomState>>,
+    //issuer_decoding_keys: HashMap<DecodingKeyIdentifier, IssuerInfo, RandomState>,
+    //signing_info: (u32, EncodingKey, DecodingKey),
     // This has to be a RwLock because the graph is mutable
     graph: RwLock<Graph<NodeVariant, EdgeType>>,
 }
@@ -184,11 +191,11 @@ impl Store {
         let tokens = env
             .create_database(&mut write_txn, Some(TOKENS_DB_NAME))
             .inspect_err(logerr!())?;
-        let issuers = env
-            .create_database(&mut write_txn, Some(ISSUER_DB_NAME))
-            .inspect_err(logerr!())?;
         let read_permissions = env
             .create_database(&mut write_txn, Some(READ_GROUP_PERMS))
+            .inspect_err(logerr!())?;
+        let single_entry_database = env
+            .create_database(&mut write_txn, Some(SINGLE_ENTRY_DB))
             .inspect_err(logerr!())?;
 
         // Special events database allowing for duplicates
@@ -202,11 +209,11 @@ impl Store {
 
         // INIT relations
         init::init_relations(&mut write_txn, &relation_infos)?;
-        // INIT issuer
-        let key_config = config_into_keys(key_config).inspect_err(logerr!())?;
+        // INIT encoding_keys
+        init::init_encoding_keys(&mut write_txn, &key_config, &single_entry_database)?;
+        // INIT issuer_keys
+        init::init_issuers(&mut write_txn, &key_config, &single_entry_database)?;
 
-        let issuer_decoding_keys =
-            init_issuer(&mut write_txn, &issuers, &key_config.0, &key_config.2)?;
         write_txn.commit().inspect_err(logerr!())?;
 
         let relation_idx = AtomicU64::new(0);
@@ -225,11 +232,11 @@ impl Store {
             relation_infos,
             events,
             tokens,
-            issuers,
             read_permissions,
-            status: HashMap::default(),
-            issuer_decoding_keys,
-            signing_info: key_config,
+            status: RwLock::new(HashMap::default()),
+            single_entry_database,
+            //issuer_decoding_keys,
+            //signing_info: key_config,
             graph: RwLock::new(graph),
         })
     }
@@ -484,8 +491,19 @@ impl Store {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_encoding_key(&self) -> (&u32, &EncodingKey) {
-        (&self.signing_info.0, &self.signing_info.1)
+    pub fn get_encoding_key(&self) -> Result<(u32, EncodingKey), ArunaError> {
+
+        let rtxn = self.read_txn()?;
+
+        let signing_info = self
+            .single_entry_database
+            .remap_types::<Str, SigningInfoCodec>()
+            .get(&rtxn, single_entry_names::SIGNING_KEYS)
+            .inspect_err(logerr!())
+            .expect("Signing info not found")
+            .expect("Signing info not found");
+
+        Ok((signing_info.0, signing_info.1))
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -493,19 +511,19 @@ impl Store {
         &self,
         issuer_name: String,
         key_id: String,
-    ) -> Option<(&IssuerType, &DecodingKey, &[String])> {
-        let result = self.issuer_decoding_keys.get(&(issuer_name, key_id))?;
-        Some((&result.0, &result.1, result.2.as_slice()))
-    }
+    ) -> Option<(IssuerType, DecodingKey, Vec<String>)> {
 
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_issuer(&self, issuer: String) -> Result<Option<Issuer>, ArunaError> {
-        let read_txn = self.read_txn()?;
-        let issuer = self
-            .issuers
-            .get(&read_txn, &issuer)
-            .inspect_err(logerr!())?;
-        Ok(issuer)
+        let read_txn = self.read_txn().ok()?;
+
+        let issuers = self
+            .single_entry_database
+            .remap_types::<Str, SerdeBincode<Vec<IssuerKey>>>()
+            .get(&read_txn, single_entry_names::ISSUER_KEYS)
+            .inspect_err(logerr!())
+            .ok()??;
+
+        issuers.into_iter().find(|issuer| issuer.key_id == key_id && issuer.issuer_name == issuer_name)
+            .map(|issuer| (issuer.issuer_type, issuer.decoding_key, issuer.audiences))
     }
 
     #[tracing::instrument(level = "trace", skip(self))]

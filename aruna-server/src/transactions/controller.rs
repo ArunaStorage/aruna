@@ -20,7 +20,7 @@ use ulid::Ulid;
 type ConsensusNode = RwLock<Option<Arc<SyneviNode<GrpcNetwork, Arc<Controller>, LmdbStore>>>>;
 
 pub struct Controller {
-    pub(super) store: Arc<StdRwLock<Store>>,
+    pub(super) store: Arc<Store>,
     node: ConsensusNode,
 }
 
@@ -39,7 +39,7 @@ impl Controller {
         let store = Store::new(path.clone(), key_config)?;
 
         let controller = Arc::new(Controller {
-            store: Arc::new(StdRwLock::new(store)),
+            store: Arc::new(store),
             node: RwLock::new(None),
         });
 
@@ -82,12 +82,8 @@ impl Controller {
         Ok(controller)
     }
 
-    pub fn read_store(&self) -> RwLockReadGuard<'_, Store> {
-        self.store.read().unwrap()
-    }
-
-    pub fn write_store(&self) -> RwLockWriteGuard<'_, Store> {
-        self.store.write().unwrap()
+    pub fn get_store(&self) -> Arc<Store> {
+        self.store.clone()
     }
 
     pub async fn transaction<R: WriteRequest>(
@@ -139,10 +135,6 @@ impl Controller {
 
     pub fn get_token_handler(&self) -> TokenHandler {
         TokenHandler::new(self.store.clone())
-    }
-
-    pub fn get_store(&self) -> Arc<StdRwLock<Store>> {
-        self.store.clone()
     }
 }
 
