@@ -6,7 +6,7 @@ use crate::{
         RawRelation, Realm, RelationInfo, Resource, ServerState, ServiceAccount, Token, User,
     },
     storage::{
-        graph::load_graph, init, milli_helpers::prepopulate_fields, utils::SigningInfoCodec
+        graph::load_graph, init, milli_helpers::prepopulate_fields, utils::SigningInfoCodec,
     },
     transactions::controller::KeyConfig,
 };
@@ -492,7 +492,6 @@ impl Store {
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn get_encoding_key(&self) -> Result<(u32, EncodingKey), ArunaError> {
-
         let rtxn = self.read_txn()?;
 
         let signing_info = self
@@ -512,7 +511,6 @@ impl Store {
         issuer_name: String,
         key_id: String,
     ) -> Option<(IssuerType, DecodingKey, Vec<String>)> {
-
         let read_txn = self.read_txn().ok()?;
 
         let issuers = self
@@ -522,7 +520,9 @@ impl Store {
             .inspect_err(logerr!())
             .ok()??;
 
-        issuers.into_iter().find(|issuer| issuer.key_id == key_id && issuer.issuer_name == issuer_name)
+        issuers
+            .into_iter()
+            .find(|issuer| issuer.key_id == key_id && issuer.issuer_name == issuer_name)
             .map(|issuer| (issuer.issuer_type, issuer.decoding_key, issuer.audiences))
     }
 

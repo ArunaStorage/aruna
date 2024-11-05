@@ -102,7 +102,6 @@ impl WriteRequest for CreateProjectRequestTx {
         Ok(tokio::task::spawn_blocking(move || {
             // Create project
 
-            let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
 
             // Get group idx
@@ -260,7 +259,6 @@ impl WriteRequest for CreateResourceRequestTx {
         Ok(tokio::task::spawn_blocking(move || {
             // Create resource
 
-            let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
 
             let Some(parent_idx) = store.get_idx_from_ulid(&parent_id, wtxn.get_txn()) else {
@@ -439,7 +437,6 @@ impl WriteRequest for CreateResourceBatchRequestTx {
         Ok(tokio::task::spawn_blocking(move || {
             // Create resource
 
-            let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
 
             let Some(parent_idx) = store.get_idx_from_ulid(&parent_id, wtxn.get_txn()) else {

@@ -74,14 +74,13 @@ impl Controller {
                 let store = self.get_store();
                 let user_id = user.get_id();
                 let source = source.clone();
-                let perm = tokio::task::spawn_blocking(move || {
-                    store.get_permissions(&source, &user_id)
-                })
-                .await
-                .map_err(|_| {
-                    tracing::error!("Error joining thread");
-                    ArunaError::Unauthorized
-                })??;
+                let perm =
+                    tokio::task::spawn_blocking(move || store.get_permissions(&source, &user_id))
+                        .await
+                        .map_err(|_| {
+                            tracing::error!("Error joining thread");
+                            ArunaError::Unauthorized
+                        })??;
                 if perm >= min_permission {
                     Ok(())
                 } else {
@@ -100,8 +99,7 @@ impl Controller {
                 let first_source = first_source.clone();
 
                 let first_perm = tokio::task::spawn_blocking(move || {
-                    store
-                        .get_permissions(&first_source, &user_id)
+                    store.get_permissions(&first_source, &user_id)
                 })
                 .await
                 .map_err(|_| {
@@ -112,8 +110,7 @@ impl Controller {
                 let second_source = second_source.clone();
                 let store = self.get_store();
                 let second_perm = tokio::task::spawn_blocking(move || {
-                    store
-                        .get_permissions(&second_source, &user_id)
+                    store.get_permissions(&second_source, &user_id)
                 })
                 .await
                 .map_err(|_| {
@@ -190,7 +187,8 @@ impl TokenHandler {
         // Decode and deserialize a potential payload to get the claims and issuer
         let unvalidated_claims = deserialize_field::<ArunaTokenClaims>(&mut split)?;
 
-        let (issuer_type, decoding_key, audiences) = self.store
+        let (issuer_type, decoding_key, audiences) = self
+            .store
             .get_issuer_info(
                 unvalidated_claims.iss.to_string(),
                 header.kid.ok_or_else(|| {

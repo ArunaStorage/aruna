@@ -69,7 +69,6 @@ impl WriteRequest for CreateGroupRequestTx {
 
         let store = controller.get_store();
         Ok(tokio::task::spawn_blocking(move || {
-            let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
 
             let Some(user_idx) = store.get_idx_from_ulid(&requester_id, wtxn.get_txn()) else {

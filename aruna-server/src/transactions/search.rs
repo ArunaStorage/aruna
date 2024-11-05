@@ -30,11 +30,9 @@ impl Request for SearchRequest {
         let limit = self.limit.unwrap_or(20);
 
         tokio::task::spawn_blocking(move || {
-            let store_lock = store.read().expect("Poisoned lock on store");
-
-            let rtxn = store_lock.read_txn()?;
+            let rtxn = store.read_txn()?;
             let (expected_hits, result) =
-                store_lock.search(query, offset, limit, filter.as_deref(), &rtxn)?;
+                store.search(query, offset, limit, filter.as_deref(), &rtxn)?;
 
             Ok(SearchResponse {
                 expected_hits,

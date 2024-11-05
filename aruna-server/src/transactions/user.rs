@@ -84,7 +84,6 @@ impl WriteRequest for RegisterUserRequestTx {
 
         let store = controller.get_store();
         Ok(tokio::task::spawn_blocking(move || {
-            let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
 
             // Create user
@@ -161,7 +160,6 @@ impl WriteRequest for CreateTokenRequestTx {
 
         let store = controller.get_store();
         Ok(tokio::task::spawn_blocking(move || {
-            let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
 
             // Create user

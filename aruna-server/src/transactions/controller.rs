@@ -4,10 +4,7 @@ use super::{
 };
 use crate::{error::ArunaError, logerr, storage::store::Store, transactions::request::Requester};
 use serde::Serialize;
-use std::{
-    fs,
-    sync::{RwLock as StdRwLock, RwLockReadGuard, RwLockWriteGuard},
-};
+use std::fs;
 use std::{net::SocketAddr, sync::Arc};
 use synevi::storage::LmdbStore;
 use synevi::Node as SyneviNode;
