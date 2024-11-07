@@ -3,7 +3,8 @@ use crate::{
     logerr,
     models::models::{
         EdgeType, GenericNode, Group, Issuer, IssuerType, Node, NodeVariant, Permission,
-        RawRelation, Realm, RelationInfo, Resource, ServerState, ServiceAccount, Token, User,
+        RawRelation, Realm, Relation, RelationInfo, Resource, ServerState, ServiceAccount, Token,
+        User,
     },
     storage::{
         graph::load_graph,
@@ -28,7 +29,7 @@ use milli::{
     SearchContext, TermsMatchingStrategy, TimeBudget, BEU32, BEU64,
 };
 use obkv::KvReader;
-use petgraph::{visit::EdgeRef, Graph};
+use petgraph::{visit::EdgeRef, Direction, Graph};
 use roaring::RoaringBitmap;
 use serde_json::Value;
 use std::{
@@ -166,7 +167,7 @@ impl Store {
 
         let mut env_options = EnvOpenOptions::new();
         unsafe { env_options.flags(EnvFlags::MAP_ASYNC | EnvFlags::WRITE_MAP) };
-        env_options.map_size(1024 * 1024 * 1024); // 1GB
+        env_options.map_size(10 * 1024 * 1024 * 1024); // 1GB
 
         let milli_index = Index::new(env_options, path).inspect_err(logerr!())?;
 
@@ -506,6 +507,54 @@ impl Store {
             .get(&read_txn, &issuer)
             .inspect_err(logerr!())?;
         Ok(issuer)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn get_relations(
+        &self,
+        idx: u32,
+        filter: &[EdgeType],
+        direction: Direction,
+        rtxn: &RoTxn,
+    ) -> Result<Vec<Relation>, ArunaError> {
+        let graph_lock = self.graph.read().expect("Poisoned lock");
+
+        let relations = super::graph::get_relations(&graph_lock, idx, filter, direction);
+
+        let mut result = Vec::new();
+        for raw_relation in relations {
+            let relation = match direction {
+                Direction::Outgoing => Relation {
+                    from_id: self
+                        .get_ulid_from_idx(&raw_relation.source, rtxn)
+                        .ok_or_else(|| ArunaError::NotFound("Index not found".to_string()))?,
+                    to_id: self
+                        .get_ulid_from_idx(&raw_relation.target, rtxn)
+                        .ok_or_else(|| ArunaError::NotFound("Index not found".to_string()))?,
+                    relation_type: self
+                        .relation_infos
+                        .get(&rtxn, &raw_relation.edge_type)?
+                        .ok_or_else(|| ArunaError::NotFound("Edge type not found".to_string()))?
+                        .forward_type,
+                },
+                Direction::Incoming => Relation {
+                    from_id: self
+                        .get_ulid_from_idx(&raw_relation.source, rtxn)
+                        .ok_or_else(|| ArunaError::NotFound("Index not found".to_string()))?,
+                    to_id: self
+                        .get_ulid_from_idx(&raw_relation.target, rtxn)
+                        .ok_or_else(|| ArunaError::NotFound("Index not found".to_string()))?,
+                    relation_type: self
+                        .relation_infos
+                        .get(&rtxn, &raw_relation.edge_type)?
+                        .ok_or_else(|| ArunaError::NotFound("Edge type not found".to_string()))?
+                        .backward_type,
+                },
+            };
+            result.push(relation);
+        }
+
+        Ok(result)
     }
 
     #[tracing::instrument(level = "trace", skip(self))]

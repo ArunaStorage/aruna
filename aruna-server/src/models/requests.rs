@@ -36,6 +36,7 @@ pub struct CreateResourceRequest {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
 pub struct BatchResource {
     pub name: String,
+    pub parent: Parent,
     #[serde(default)]
     pub title: String,
     #[serde(default)]
@@ -53,10 +54,22 @@ pub struct BatchResource {
     pub license_tag: String,
 }
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Hash)]
+pub enum Parent {
+    ID(Ulid),
+    Idx(u32),
+}
+
+impl Default for Parent {
+    fn default() -> Self {
+        Parent::Idx(0)
+    }
+}
+
+
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
 pub struct CreateResourceBatchRequest {
     pub resources: Vec<BatchResource>,
-    pub parent_id: Ulid,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]

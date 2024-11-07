@@ -43,6 +43,7 @@ impl tonic::service::Interceptor for ClientInterceptor {
     }
 }
 
+#[allow(unused)]
 pub struct Clients {
     pub realm_client: RealmServiceClient<InterceptedService<Channel, ClientInterceptor>>,
     pub group_client: GroupServiceClient<InterceptedService<Channel, ClientInterceptor>>,

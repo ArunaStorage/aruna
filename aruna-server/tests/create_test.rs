@@ -9,7 +9,6 @@ mod create_tests {
     use aruna_server::models::requests::{
         BatchResource, CreateResourceBatchRequest, CreateResourceBatchResponse,
     };
-    use tokio::time::Instant;
     use ulid::Ulid;
     pub const OFFSET: u16 = 0;
 
@@ -207,23 +206,30 @@ mod create_tests {
         )
         .unwrap();
 
+        // Check if linking works
         let mut resources = Vec::new();
         for i in 0..1000 {
-            resources.push(BatchResource {
-                name: format!("TestObjectNo{i}"),
-                ..Default::default()
-            });
+            if i == 0 {
+                resources.push(BatchResource {
+                    name: format!("TestObjectNo{i}"),
+                    parent: aruna_server::models::requests::Parent::ID(parent_id),
+                    ..Default::default()
+                });
+            } else {
+                resources.push(BatchResource {
+                    name: format!("TestObjectNo{i}"),
+                    parent: aruna_server::models::requests::Parent::Idx(i - 1),
+                    ..Default::default()
+                });
+            }
         }
-        let request = CreateResourceBatchRequest {
-            resources,
-            parent_id,
-        };
+        let request = CreateResourceBatchRequest { resources };
+
+        //dbg!(&request);
 
         let client = reqwest::Client::new();
         let url = format!("{}/api/v3/resource/batch", clients.rest_endpoint);
-        println!("{}", &url);
 
-        let time = Instant::now();
         let response: CreateResourceBatchResponse = client
             .post(url)
             .header("Authorization", format!("Bearer {}", TEST_TOKEN))
@@ -234,9 +240,37 @@ mod create_tests {
             .json()
             .await
             .unwrap();
+        assert_eq!(response.resources.len(), 1000);
 
-        println!("{:?}", time.elapsed());
+        // Check if linking fails when not correctly chaining parents
+        let mut resources = Vec::new();
+        for i in 0..1000 {
+            if i == 0 {
+                resources.push(BatchResource {
+                    name: format!("Test2ObjectNo{i}"),
+                    parent: aruna_server::models::requests::Parent::ID(parent_id),
+                    ..Default::default()
+                });
+            } else {
+                resources.push(BatchResource {
+                    name: format!("Test2ObjectNo{i}"),
+                    parent: aruna_server::models::requests::Parent::Idx(i + 1),
+                    ..Default::default()
+                });
+            }
+        }
+        let request = CreateResourceBatchRequest { resources };
 
-        dbg!(&response);
+        let client = reqwest::Client::new();
+        let url = format!("{}/api/v3/resource/batch", clients.rest_endpoint);
+
+
+
+        assert!(client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+            .json(&request)
+            .send()
+            .await.unwrap().error_for_status().is_err())
     }
 }

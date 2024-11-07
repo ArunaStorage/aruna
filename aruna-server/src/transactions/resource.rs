@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     constants::relation_types,
-    context::Context,
+    context::{BatchPermission, Context},
     error::ArunaError,
     logerr,
     models::{
@@ -12,13 +12,17 @@ use crate::{
         requests::{
             CreateProjectRequest, CreateProjectResponse, CreateResourceBatchRequest,
             CreateResourceBatchResponse, CreateResourceRequest, CreateResourceResponse,
+            GetResourceRequest, GetResourceResponse, Parent,
         },
     },
     storage::graph::get_parents,
     transactions::request::WriteRequest,
 };
+use ahash::RandomState;
 use chrono::{DateTime, Utc};
+use petgraph::Direction;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use tracing::info;
 use ulid::Ulid;
 
@@ -338,10 +342,21 @@ impl WriteRequest for CreateResourceRequestTx {
 impl Request for CreateResourceBatchRequest {
     type Response = CreateResourceBatchResponse;
     fn get_context(&self) -> Context {
-        Context::Permission {
-            min_permission: crate::models::models::Permission::Write,
-            source: self.parent_id,
-        }
+        Context::PermissionBatch(
+            self.resources
+                .iter()
+                .filter_map(|r| {
+                    if let Parent::ID(id) = r.parent {
+                        Some(BatchPermission {
+                            min_permission: crate::models::models::Permission::Write,
+                            source: id,
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+        )
     }
 
     async fn run_request(
@@ -376,7 +391,7 @@ impl Request for CreateResourceBatchRequest {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CreateResourceBatchRequestTx {
     req: CreateResourceBatchRequest,
     requester: Requester,
@@ -384,18 +399,16 @@ pub struct CreateResourceBatchRequestTx {
     created_at: i64,
 }
 
-#[typetag::serde]
-#[async_trait::async_trait]
-impl WriteRequest for CreateResourceBatchRequestTx {
-    async fn execute(
+impl CreateResourceBatchRequestTx {
+    fn parse_resources(
         &self,
-        associated_event_id: u128,
-        controller: &Controller,
-    ) -> Result<SerializedResponse, crate::error::ArunaError> {
-        info!("Executing CreateResourceRequestTx");
-
-        controller.authorize(&self.requester, &self.req).await?;
-
+    ) -> Result<
+        (
+            HashMap<Ulid, Vec<Resource>, RandomState>, // Only for checking existing parents
+            Vec<(Ulid, Resource)>,                     // Includes all resources with their parents
+        ),
+        ArunaError,
+    > {
         let time = DateTime::from_timestamp_millis(self.created_at).ok_or_else(|| {
             ArunaError::ConversionError {
                 from: "i64".to_string(),
@@ -403,7 +416,10 @@ impl WriteRequest for CreateResourceBatchRequestTx {
             }
         })?;
 
-        let mut resources = Vec::new();
+        //let mut resources = Vec::new();
+        let mut existing: HashMap<Ulid, Vec<Resource>, RandomState> = HashMap::default();
+        let mut new: HashMap<u32, Vec<Resource>, RandomState> = HashMap::default();
+        let mut all = Vec::new();
 
         for (idx, id) in self.resource_ids.iter().enumerate() {
             let res = self.req.resources.get(idx).cloned().ok_or_else(|| {
@@ -411,9 +427,10 @@ impl WriteRequest for CreateResourceBatchRequestTx {
                     "No entry for id found in CreateResourceBatchRequest".to_string(),
                 )
             })?;
-            resources.push(Resource {
+
+            let resource = Resource {
                 id: *id,
-                name: res.name,
+                name: res.name.clone(),
                 description: res.description,
                 title: res.title,
                 revision: 0,
@@ -430,10 +447,93 @@ impl WriteRequest for CreateResourceBatchRequestTx {
                 locked: false,
                 location: vec![], // TODO: Locations and DataProxies
                 hashes: vec![],
-            });
+            };
+            match res.parent {
+                Parent::ID(parent_id) => {
+                    let entry = existing.entry(parent_id).or_default();
+                    if entry.iter().find(|r| &r.name == &res.name).is_some() {
+                        return Err(ArunaError::ConflictParameter {
+                            name: "name".to_string(),
+                            error: "Name is not unique in parent resource".to_string(),
+                        });
+                    } else {
+                        entry.push(resource.clone());
+                        all.push((parent_id, resource));
+                    }
+                }
+                Parent::Idx(parent_idx) => {
+                    let entry = new.entry(parent_idx).or_default();
+                    if entry.iter().find(|r| r.name == res.name).is_some() {
+                        return Err(ArunaError::ConflictParameter {
+                            name: "name".to_string(),
+                            error: "Name is not unique in parent resource".to_string(),
+                        });
+                    } else {
+                        let parent_id =
+                            self.resource_ids.get(parent_idx as usize).ok_or_else(|| {
+                                ArunaError::InvalidParameter {
+                                    name: "parent".to_string(),
+                                    error: "Parent not found in idx".to_string(),
+                                }
+                            })?;
+                        entry.push(resource.clone());
+                        all.push((*parent_id, resource));
+                    }
+                }
+            }
         }
 
-        let parent_id = self.req.parent_id;
+        let mut to_check: Vec<u32> = new.keys().cloned().collect();
+        to_check.sort();
+        let mut checked: Vec<u32> = Vec::new();
+        for new_parent in &to_check {
+            let entry = self.req.resources.get(*new_parent as usize).ok_or_else(|| {
+                ArunaError::InvalidParameter {
+                    name: "parent".to_string(),
+                    error: "Parent not found in resources".to_string(),
+                }
+            })?;
+            match entry.parent {
+                Parent::ID(_) => {
+                    checked.push(*new_parent);
+                }
+                Parent::Idx(idx) => {
+                    if checked.contains(&idx) {
+                        checked.push(*new_parent);
+                    } else {
+                        return Err(ArunaError::InvalidParameter {
+                            name: "parent".to_string(),
+                            error: "Parents not linked".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+        if to_check.len() != checked.len() {
+            dbg!(&to_check);
+            return Err(ArunaError::InvalidParameter {
+                name: "parent".to_string(),
+                error: "New parent does not connect to existing resource".to_string(),
+            });
+        }
+        Ok((existing, all))
+    }
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for CreateResourceBatchRequestTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, crate::error::ArunaError> {
+        info!("Executing CreateResourceRequestTx");
+
+        controller.authorize(&self.requester, &self.req).await?;
+
+        //let transaction = self.clone();
+        let (parents_to_check, resources) = self.parse_resources()?;
 
         let store = controller.get_store();
         Ok(tokio::task::spawn_blocking(move || {
@@ -442,67 +542,72 @@ impl WriteRequest for CreateResourceBatchRequestTx {
             let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
 
-            let Some(parent_idx) = store.get_idx_from_ulid(&parent_id, wtxn.get_txn()) else {
-                return Err(ArunaError::NotFound(parent_id.to_string()));
-            };
+            // Check naming conflicts and if existing parents exist
+            for (parent_id, subresources) in parents_to_check.into_iter() {
+                let Some(parent_idx) = store.get_idx_from_ulid(&parent_id, wtxn.get_txn()) else {
+                    return Err(ArunaError::NotFound(parent_id.to_string()));
+                };
 
-            // Make sure that the parent is a folder or project
-            let raw_parent_node = store
-                .get_raw_node(wtxn.get_txn(), parent_idx)
-                .expect("Idx exist but no node in documents -> corrupted database");
+                // Make sure that the parent is a folder or project
+                let raw_parent_node = store
+                    .get_raw_node(wtxn.get_txn(), parent_idx)
+                    .expect("Idx exist but no node in documents -> corrupted database");
 
-            let variant: NodeVariant = serde_json::from_slice::<u8>(
-                raw_parent_node
-                    .get(1)
-                    .expect("Missing variant -> corrupted database"),
-            )
-            .inspect_err(logerr!())?
-            .try_into()
-            .inspect_err(logerr!())?;
+                let variant: NodeVariant = serde_json::from_slice::<u8>(
+                    raw_parent_node
+                        .get(1)
+                        .expect("Missing variant -> corrupted database"),
+                )
+                .inspect_err(logerr!())?
+                .try_into()
+                .inspect_err(logerr!())?;
 
-            if !matches!(
-                variant,
-                NodeVariant::ResourceProject | NodeVariant::ResourceFolder
-            ) {
-                return Err(ArunaError::InvalidParameter {
-                    name: "parent_id".to_string(),
-                    error: "Wrong parent, must be folder or project".to_string(),
-                });
-            }
+                if !matches!(
+                    variant,
+                    NodeVariant::ResourceProject | NodeVariant::ResourceFolder
+                ) {
+                    return Err(ArunaError::InvalidParameter {
+                        name: "parent_id".to_string(),
+                        error: "Wrong parent, must be folder or project".to_string(),
+                    });
+                }
 
-            for resource in &resources {
-                // Check for unique name 1. Get all resources with the same name
-                // 0 Project, 1 Folder, 2 Object -> < 3
-                let universe = store.filtered_universe(
-                    Some(&format!("name='{}' AND variant < 3", resource.name)),
-                    wtxn.get_txn(),
-                )?;
+                for resource in &subresources {
+                    // Check for unique name 1. Get all resources with the same name
+                    // 0 Project, 1 Folder, 2 Object -> < 3
+                    let universe = store.filtered_universe(
+                        Some(&format!("name='{}' AND variant < 3", resource.name)),
+                        wtxn.get_txn(),
+                    )?;
 
-                // 2. Check if any of the resources in the universe have the same parent as a parent
-                for idx in universe {
-                    // We need to use this because we have a lock on the store
-                    if get_parents(wtxn.get_ro_graph(), idx).contains(&parent_idx) {
-                        return Err(ArunaError::ConflictParameter {
-                            name: "name".to_string(),
-                            error: "Resource with this name already exists in this hierarchy"
-                                .to_string(),
-                        });
+                    // 2. Check if any of the resources in the universe have the same parent as a parent
+                    for idx in universe {
+                        // We need to use this because we have a lock on the store
+                        if get_parents(wtxn.get_ro_graph(), idx).contains(&parent_idx) {
+                            return Err(ArunaError::ConflictParameter {
+                                name: "name".to_string(),
+                                error: "Resource with this name already exists in this hierarchy"
+                                    .to_string(),
+                            });
+                        }
                     }
                 }
             }
 
-            let resource_idx = store.create_nodes_batch(&mut wtxn, resources.iter().collect())?;
+            let resource_idx =
+                store.create_nodes_batch(&mut wtxn, resources.iter().map(|(_, r)| r).collect())?;
 
-            let mut affected = vec![parent_idx];
-            for (_id, idx) in &resource_idx {
-
+            let mut affected = vec![];
+            for (parent_id, resource) in &resources {
+                let Some(parent_idx) = store.get_idx_from_ulid(&parent_id, wtxn.get_txn()) else {
+                    return Err(ArunaError::NotFound(parent_id.to_string()));
+                };
+                let (_, idx) = resource_idx
+                    .iter()
+                    .find(|(id, _)| id == &resource.id)
+                    .ok_or_else(|| ArunaError::DeserializeError("Idx not found".to_string()))?;
                 // Add relation parent --HAS_PART--> resource
-                store.create_relation(
-                    &mut wtxn,
-                    parent_idx,
-                    *idx,
-                    relation_types::HAS_PART,
-                )?;
+                store.create_relation(&mut wtxn, parent_idx, *idx, relation_types::HAS_PART)?;
                 affected.push(*idx);
             }
 
@@ -511,7 +616,7 @@ impl WriteRequest for CreateResourceBatchRequestTx {
 
             wtxn.commit()?;
             Ok::<_, ArunaError>(bincode::serialize(&CreateResourceBatchResponse {
-                resources,
+                resources: resources.into_iter().map(|(_, r)| r).collect(),
             })?)
         })
         .await
@@ -519,6 +624,48 @@ impl WriteRequest for CreateResourceBatchRequestTx {
             tracing::error!("Failed to join task");
             ArunaError::ServerError("".to_string())
         })??)
+    }
+}
+
+impl Request for GetResourceRequest {
+    type Response = GetResourceResponse;
+    fn get_context(&self) -> Context {
+        Context::Permission {
+            min_permission: crate::models::models::Permission::Read,
+            source: self.id,
+        }
+    }
+
+    async fn run_request(
+        self,
+        _requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let store = controller.get_store();
+        let response = tokio::task::spawn_blocking(move || {
+            let read_store = store.read().unwrap();
+            let rtxn = read_store.read_txn()?;
+
+            let idx = read_store
+                .get_idx_from_ulid(&self.id, &rtxn)
+                .ok_or_else(|| ArunaError::NotFound(self.id.to_string()))?;
+
+            let resource = read_store
+                .get_node::<Resource>(&rtxn, idx)
+                .ok_or_else(|| ArunaError::NotFound(self.id.to_string()))?;
+
+            let mut relations = read_store.get_relations(idx, &[], Direction::Outgoing, &rtxn)?;
+            relations.extend(read_store.get_relations(idx, &[], Direction::Incoming, &rtxn)?);
+
+            Ok::<_, ArunaError>(bincode::serialize(&GetResourceResponse {
+                resource,
+                relations,
+            })?)
+        })
+        .await
+        .map_err(|e| ArunaError::ServerError(e.to_string()))??;
+
+        Ok(bincode::deserialize(&response)?)
     }
 }
 

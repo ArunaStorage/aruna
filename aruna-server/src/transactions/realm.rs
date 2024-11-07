@@ -142,7 +142,7 @@ impl WriteRequest for CreateRealmRequestTx {
 }
 
 impl Request for AddGroupRequest {
-    type Response = CreateRealmResponse;
+    type Response = AddGroupResponse;
     fn get_context(&self) -> Context {
         Context::Permission {
             min_permission: crate::models::models::Permission::Write,

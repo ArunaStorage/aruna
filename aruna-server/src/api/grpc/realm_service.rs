@@ -1,5 +1,5 @@
 use crate::api::grpc::grpc_helpers::get_token;
-use crate::models::requests::CreateRealmRequest;
+use crate::models::requests::{AddGroupRequest, CreateRealmRequest};
 use crate::transactions::controller::Controller;
 use aruna_rust_api::v3::aruna::api::v3 as grpc;
 use aruna_rust_api::v3::aruna::api::v3::realm_service_server::RealmService;
@@ -53,13 +53,12 @@ impl RealmService for RealmServiceImpl {
         let token = get_token(request.metadata());
         let controller = self.handler.clone();
 
-        todo!()
-        // Ok(tonic::Response::new(
-        //     controller
-        //         .add_group(token, request.into_inner().try_into()?)
-        //         .await?
-        //         .into(),
-        // ))
+        Ok(tonic::Response::new(
+            controller
+                .request(AddGroupRequest::try_from(request.into_inner())?, token)
+                .await?
+                .into(),
+        ))
     }
 
     async fn remove_group(

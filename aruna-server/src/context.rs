@@ -11,7 +11,7 @@ pub enum Context {
         source: Ulid,
         // target can only be known after the token is serialized in get_token()
     },
-    Permissions {
+    PermissionFork {
         // Source for finding a path to the user
         first_source: Ulid,
         first_min_permission: Permission,
@@ -20,6 +20,12 @@ pub enum Context {
         second_min_permission: Permission,
         second_source: Ulid,
     },
+    PermissionBatch(Vec<BatchPermission>),
+}
+
+pub struct BatchPermission {
+    pub min_permission: Permission,
+    pub source: Ulid,
 }
 
 // #[async_trait::async_trait]

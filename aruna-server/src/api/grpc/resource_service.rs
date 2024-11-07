@@ -41,13 +41,12 @@ impl ResourceService for ResourceServiceImpl {
         let token = get_token(request.metadata());
         let controller = self.handler.clone();
 
-        todo!()
-        // Ok(tonic::Response::new(
-        //     controller
-        //         .create_resource(token, request.into_inner().try_into()?)
-        //         .await?
-        //         .into(),
-        // ))
+        Ok(tonic::Response::new(
+            controller
+                .request(models::requests::CreateResourceRequest::try_from(request.into_inner())?, token)
+                .await?
+                .into(),
+        ))
     }
 
     async fn get_resource(
@@ -57,12 +56,11 @@ impl ResourceService for ResourceServiceImpl {
         let token = get_token(request.metadata());
         let controller = self.handler.clone();
 
-        todo!()
-        // Ok(tonic::Response::new(
-        //     controller
-        //         .get_resource(token, request.into_inner().try_into()?)
-        //         .await?
-        //         .into(),
-        // ))
+        Ok(tonic::Response::new(
+            controller
+                .request(models::requests::GetResourceRequest::try_from(request.into_inner())?, token)
+                .await?
+                .into(),
+        ))
     }
 }

@@ -89,7 +89,29 @@ impl Controller {
                     return Err(ArunaError::Forbidden("Permission denied".to_string()));
                 }
             }
-            Context::Permissions {
+            Context::PermissionBatch(permissions) => {
+                let user_id = user.get_id();
+                for permission in permissions {
+                    let store = self.get_store();
+                    let source = permission.source.clone();
+                    let perm = tokio::task::spawn_blocking(move || {
+                        store.read().unwrap().get_permissions(&source, &user_id)
+                    })
+                    .await
+                    .map_err(|_| {
+                        tracing::error!("Error joining thread");
+                        ArunaError::Unauthorized
+                    })??;
+                    if perm >= permission.min_permission {
+                        continue;
+                    } else {
+                        tracing::error!("Insufficient permission");
+                        return Err(ArunaError::Forbidden("Permission denied".to_string()));
+                    }
+                }
+                Ok(())
+            }
+            Context::PermissionFork {
                 first_min_permission,
                 first_source,
                 second_min_permission,
