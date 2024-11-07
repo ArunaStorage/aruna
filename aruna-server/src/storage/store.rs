@@ -2,9 +2,7 @@ use crate::{
     error::ArunaError,
     logerr,
     models::models::{
-        EdgeType, GenericNode, Group, Issuer, IssuerType, Node, NodeVariant, Permission,
-        RawRelation, Realm, Relation, RelationInfo, Resource, ServerState, ServiceAccount, Token,
-        User,
+        EdgeType, GenericNode, Group, Issuer, IssuerKey, IssuerType, Node, NodeVariant, Permission, RawRelation, Realm, Relation, RelationInfo, Resource, ServerState, ServiceAccount, Token, User
     },
     storage::{
         graph::load_graph, init, milli_helpers::prepopulate_fields, utils::SigningInfoCodec,

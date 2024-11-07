@@ -94,7 +94,7 @@ impl Controller {
                     let store = self.get_store();
                     let source = permission.source.clone();
                     let perm = tokio::task::spawn_blocking(move || {
-                        store.read().unwrap().get_permissions(&source, &user_id)
+                        store.get_permissions(&source, &user_id)
                     })
                     .await
                     .map_err(|_| {
