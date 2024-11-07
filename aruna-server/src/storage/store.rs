@@ -37,7 +37,7 @@ use std::{
 };
 use ulid::Ulid;
 
-use super::graph::{get_groups_for_user, get_permissions, IndexHelper};
+use super::graph::{get_permissions, get_realm_and_groups, IndexHelper};
 
 pub struct WriteTxn<'a> {
     milli_index: &'a Index,
@@ -901,7 +901,7 @@ impl Store {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_groups_for_user(&self, user_idx: u32) -> Vec<u32> {
-        get_groups_for_user(&self.graph.read().expect("RWLock poison error"), user_idx)
+    pub fn get_realm_and_groups(&self, user_idx: u32) -> Result<Vec<u32>, ArunaError> {
+        get_realm_and_groups(&self.graph.read().expect("RWLock poison error"), user_idx)
     }
 }

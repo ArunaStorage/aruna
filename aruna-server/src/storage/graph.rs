@@ -134,56 +134,6 @@ pub fn get_parents(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Vec<u32> {
     get_relatives(graph, idx, Incoming)
 }
 
-pub fn get_groups_for_resource(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Vec<u32> {
-    let idx = idx.into();
-    let mut groups = Vec::new();
-    for edge in graph.edges_directed(idx, Incoming) {
-        if [HAS_PART, OWNS_PROJECT, OWNED_BY_USER].contains(edge.weight()) {
-            let source = edge.source();
-            match graph.node_weight(source) {
-                None => continue,
-                Some(variant) => match variant {
-                    NodeVariant::Group => groups.push(source.as_u32()),
-                    NodeVariant::ResourceFolder
-                    | NodeVariant::ResourceObject
-                    | NodeVariant::ResourceProject => {
-                        groups.extend(get_groups_for_resource(graph, source.as_u32()))
-                    }
-                    _ => continue,
-                },
-            }
-        } else {
-            continue;
-        }
-    }
-
-    groups
-}
-
-pub fn get_groups_for_user(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Vec<u32> {
-    let idx = idx.into();
-    let mut groups = Vec::new();
-    for edge in graph.edges_directed(idx, Outgoing) {
-        if [PERMISSION_READ, PERMISSION_APPEND, PERMISSION_WRITE, PERMISSION_ADMIN, SHARES_PERMISSION].contains(edge.weight()) {
-            let target = edge.target();
-            match graph.node_weight(target) {
-                None => continue,
-                Some(variant) => match variant {
-                    NodeVariant::Group => {
-                        groups.push(target.as_u32());
-                        groups.extend(get_groups_for_user(graph, target.as_u32()));
-                    }
-                    _ => continue,
-                },
-            }
-        } else {
-            continue;
-        }
-    }
-
-    groups
-}
-
 pub fn get_children(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Vec<u32> {
     get_relatives(graph, idx, Outgoing)
 }

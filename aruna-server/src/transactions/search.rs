@@ -38,7 +38,7 @@ impl Request for SearchRequest {
                     let user_idx = store
                         .get_idx_from_ulid(&requester.get_id(), &rtxn)
                         .ok_or_else(|| ArunaError::NotFound("Requester not found".to_string()))?;
-                    let groups = store.get_groups_for_user(user_idx);
+                    let groups = store.get_realm_and_groups(user_idx)?;
                     let mut universe = store.get_read_permission_universe(&rtxn, &groups)?;
                     universe |= store.get_public_universe(&rtxn)?;
                     universe

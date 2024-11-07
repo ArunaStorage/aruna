@@ -15,7 +15,7 @@ use crate::{
             GetResourceRequest, GetResourceResponse, Parent,
         },
     },
-    storage::graph::{get_groups_for_resource, get_parents},
+    storage::graph::{get_parents, get_related_user_or_groups},
     transactions::request::WriteRequest,
 };
 use ahash::RandomState;
@@ -339,7 +339,7 @@ impl WriteRequest for CreateResourceRequestTx {
                     store.add_public_resources_universe(&mut wtxn, &[resource_idx])?;
                 }
                 crate::models::models::VisibilityClass::Private => {
-                    let groups = get_groups_for_resource(wtxn.get_ro_graph(), parent_idx);
+                    let groups = get_related_user_or_groups(wtxn.get_ro_graph(), parent_idx)?;
                     for group_idx in groups {
                         store.add_read_permission_universe(
                             &mut wtxn,
@@ -644,7 +644,7 @@ impl WriteRequest for CreateResourceBatchRequestTx {
                         store.add_public_resources_universe(&mut wtxn, &[*idx])?;
                     }
                     crate::models::models::VisibilityClass::Private => {
-                        let groups = get_groups_for_resource(wtxn.get_ro_graph(), parent_idx);
+                        let groups = get_related_user_or_groups(wtxn.get_ro_graph(), parent_idx)?;
                         for group_idx in groups {
                             store.add_read_permission_universe(&mut wtxn, group_idx, &[*idx])?;
                         }
