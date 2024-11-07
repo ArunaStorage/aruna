@@ -15,14 +15,14 @@ use crate::{
             GetResourceRequest, GetResourceResponse, Parent,
         },
     },
-    storage::graph::get_parents,
+    storage::graph::{get_groups_for_resource, get_parents},
     transactions::request::WriteRequest,
 };
 use ahash::RandomState;
 use chrono::{DateTime, Utc};
 use petgraph::Direction;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use tracing::info;
 use ulid::Ulid;
 
@@ -150,6 +150,16 @@ impl WriteRequest for CreateProjectRequestTx {
                 project_idx,
                 relation_types::PROJECT_PART_OF_REALM,
             )?;
+
+            match project.visibility {
+                crate::models::models::VisibilityClass::Public
+                | crate::models::models::VisibilityClass::PublicMetadata => {
+                    store.add_public_resources_universe(&mut wtxn, &[project_idx])?;
+                }
+                crate::models::models::VisibilityClass::Private => {
+                    store.add_read_permission_universe(&mut wtxn, group_idx, &[project_idx])?;
+                }
+            };
 
             // Affected nodes: Group, Realm, Project
             store.register_event(
@@ -322,6 +332,23 @@ impl WriteRequest for CreateResourceRequestTx {
                 resource_idx,
                 relation_types::HAS_PART,
             )?;
+
+            match resource.visibility {
+                crate::models::models::VisibilityClass::Public
+                | crate::models::models::VisibilityClass::PublicMetadata => {
+                    store.add_public_resources_universe(&mut wtxn, &[resource_idx])?;
+                }
+                crate::models::models::VisibilityClass::Private => {
+                    let groups = get_groups_for_resource(wtxn.get_ro_graph(), parent_idx);
+                    for group_idx in groups {
+                        store.add_read_permission_universe(
+                            &mut wtxn,
+                            group_idx,
+                            &[resource_idx],
+                        )?;
+                    }
+                }
+            };
 
             // Affected nodes: Group, Project
             store.register_event(&mut wtxn, associated_event_id, &[parent_idx, resource_idx])?;
@@ -605,9 +632,24 @@ impl WriteRequest for CreateResourceBatchRequestTx {
                     .iter()
                     .find(|(id, _)| id == &resource.id)
                     .ok_or_else(|| ArunaError::DeserializeError("Idx not found".to_string()))?;
+
                 // Add relation parent --HAS_PART--> resource
                 store.create_relation(&mut wtxn, parent_idx, *idx, relation_types::HAS_PART)?;
                 affected.push(*idx);
+
+                // Add resource to related universes
+                match resource.visibility {
+                    crate::models::models::VisibilityClass::Public
+                    | crate::models::models::VisibilityClass::PublicMetadata => {
+                        store.add_public_resources_universe(&mut wtxn, &[*idx])?;
+                    }
+                    crate::models::models::VisibilityClass::Private => {
+                        let groups = get_groups_for_resource(wtxn.get_ro_graph(), parent_idx);
+                        for group_idx in groups {
+                            store.add_read_permission_universe(&mut wtxn, group_idx, &[*idx])?;
+                        }
+                    }
+                };
             }
 
             // Affected nodes: Group, Project

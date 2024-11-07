@@ -2,7 +2,9 @@ use crate::{
     error::ArunaError,
     logerr,
     models::models::{
-        EdgeType, GenericNode, Group, Issuer, IssuerKey, IssuerType, Node, NodeVariant, Permission, RawRelation, Realm, Relation, RelationInfo, Resource, ServerState, ServiceAccount, Token, User
+        EdgeType, GenericNode, Group, IssuerKey, IssuerType, Node, NodeVariant, Permission,
+        RawRelation, Realm, Relation, RelationInfo, Resource, ServerState, ServiceAccount, Token,
+        User,
     },
     storage::{
         graph::load_graph, init, milli_helpers::prepopulate_fields, utils::SigningInfoCodec,
@@ -35,7 +37,7 @@ use std::{
 };
 use ulid::Ulid;
 
-use super::graph::{get_permissions, IndexHelper};
+use super::graph::{get_groups_for_user, get_permissions, IndexHelper};
 
 pub struct WriteTxn<'a> {
     milli_index: &'a Index,
@@ -700,8 +702,11 @@ impl Store {
         limit: usize,
         filter: Option<&str>,
         rtxn: &RoTxn,
+        filter_universe: RoaringBitmap,
     ) -> Result<(usize, Vec<GenericNode>), ArunaError> {
-        let universe = self.filtered_universe(filter, rtxn)?;
+        let mut universe = self.filtered_universe(filter, rtxn)?;
+        universe &= filter_universe;
+
         let mut ctx = SearchContext::new(&self.milli_index, &rtxn).inspect_err(logerr!())?;
         let result = execute_search(
             &mut ctx,                                         // Search context
@@ -785,43 +790,51 @@ impl Store {
         rtxn: &mut WriteTxn,
         universe: &[u32],
     ) -> Result<(), ArunaError> {
-
         let mut universe = RoaringBitmap::from_iter(universe.iter().copied());
 
-        let existing = self.single_entry_database.remap_types::<Str, CboRoaringBitmapCodec>()
-        .get(&rtxn.get_txn(), single_entry_names::PUBLIC_RESOURCES)
-        .inspect_err(logerr!())?.unwrap_or_default();
+        let existing = self
+            .single_entry_database
+            .remap_types::<Str, CboRoaringBitmapCodec>()
+            .get(&rtxn.get_txn(), single_entry_names::PUBLIC_RESOURCES)
+            .inspect_err(logerr!())?
+            .unwrap_or_default();
 
         // Union of the newly added universe and the existing universe
         universe |= existing;
 
         self.single_entry_database
             .remap_types::<Str, CboRoaringBitmapCodec>()
-            .put(rtxn.get_txn(), single_entry_names::PUBLIC_RESOURCES, &universe)
+            .put(
+                rtxn.get_txn(),
+                single_entry_names::PUBLIC_RESOURCES,
+                &universe,
+            )
             .inspect_err(logerr!())?;
         Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip(self, rtxn))]
-    pub fn add_user_universe(
-        &self,
-        rtxn: &mut WriteTxn,
-        user: u32,
-    ) -> Result<(), ArunaError> {
-
+    pub fn add_user_universe(&self, rtxn: &mut WriteTxn, user: u32) -> Result<(), ArunaError> {
         let mut universe = RoaringBitmap::new();
         universe.insert(user);
 
-        let existing = self.single_entry_database.remap_types::<Str, CboRoaringBitmapCodec>()
-        .get(&rtxn.get_txn(), single_entry_names::SEARCHABLE_USERS)
-        .inspect_err(logerr!())?.unwrap_or_default();
+        let existing = self
+            .single_entry_database
+            .remap_types::<Str, CboRoaringBitmapCodec>()
+            .get(&rtxn.get_txn(), single_entry_names::SEARCHABLE_USERS)
+            .inspect_err(logerr!())?
+            .unwrap_or_default();
 
         // Union of the newly added user and the existing universe
         universe |= existing;
-        
+
         self.single_entry_database
             .remap_types::<Str, CboRoaringBitmapCodec>()
-            .put(rtxn.get_txn(), single_entry_names::SEARCHABLE_USERS, &universe)
+            .put(
+                rtxn.get_txn(),
+                single_entry_names::SEARCHABLE_USERS,
+                &universe,
+            )
             .inspect_err(logerr!())?;
         Ok(())
     }
@@ -833,12 +846,13 @@ impl Store {
         group: u32,
         universe: &[u32],
     ) -> Result<(), ArunaError> {
-
         let mut universe = RoaringBitmap::from_iter(universe.iter().copied());
 
-        let existing = self.read_permissions
-        .get(&rtxn.get_txn(), &group)
-        .inspect_err(logerr!())?.unwrap_or_default();
+        let existing = self
+            .read_permissions
+            .get(&rtxn.get_txn(), &group)
+            .inspect_err(logerr!())?
+            .unwrap_or_default();
 
         // Union of the newly added user and the existing universe
         universe |= existing;
@@ -855,25 +869,39 @@ impl Store {
         rtxn: &RoTxn,
         read_resources: &[u32],
     ) -> Result<RoaringBitmap, ArunaError> {
-
         let mut universe = RoaringBitmap::new();
         for read_resource in read_resources {
-            universe |= self.read_permissions.get(rtxn, read_resource).inspect_err(logerr!())?.unwrap_or_default();
+            universe |= self
+                .read_permissions
+                .get(rtxn, read_resource)
+                .inspect_err(logerr!())?
+                .unwrap_or_default();
         }
         Ok(universe)
     }
 
     #[tracing::instrument(level = "trace", skip(self, rtxn))]
     pub fn get_public_universe(&self, rtxn: &RoTxn) -> Result<RoaringBitmap, ArunaError> {
-        Ok(self.single_entry_database.remap_types::<Str, CboRoaringBitmapCodec>()
+        Ok(self
+            .single_entry_database
+            .remap_types::<Str, CboRoaringBitmapCodec>()
             .get(&rtxn, single_entry_names::PUBLIC_RESOURCES)
-            .inspect_err(logerr!())?.unwrap_or_default())
+            .inspect_err(logerr!())?
+            .unwrap_or_default())
     }
 
     #[tracing::instrument(level = "trace", skip(self, rtxn))]
     pub fn get_user_universe(&self, rtxn: &RoTxn) -> Result<RoaringBitmap, ArunaError> {
-        Ok(self.single_entry_database.remap_types::<Str, CboRoaringBitmapCodec>()
+        Ok(self
+            .single_entry_database
+            .remap_types::<Str, CboRoaringBitmapCodec>()
             .get(&rtxn, single_entry_names::SEARCHABLE_USERS)
-            .inspect_err(logerr!())?.unwrap_or_default())
+            .inspect_err(logerr!())?
+            .unwrap_or_default())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn get_groups_for_user(&self, user_idx: u32) -> Vec<u32> {
+        get_groups_for_user(&self.graph.read().expect("RWLock poison error"), user_idx)
     }
 }

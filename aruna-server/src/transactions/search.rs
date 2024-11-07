@@ -18,10 +18,11 @@ impl Request for SearchRequest {
 
     async fn run_request(
         self,
-        _requester: Option<Requester>,
+        requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, crate::error::ArunaError> {
         // TODO: Create universe filter for auth
+
         let store = controller.get_store();
 
         let query = self.query.clone();
@@ -31,8 +32,21 @@ impl Request for SearchRequest {
 
         tokio::task::spawn_blocking(move || {
             let rtxn = store.read_txn()?;
+
+            let universe = match requester {
+                Some(requester) => {
+                    let user_idx = store
+                        .get_idx_from_ulid(&requester.get_id(), &rtxn)
+                        .ok_or_else(|| ArunaError::NotFound("Requester not found".to_string()))?;
+                    let groups = store.get_groups_for_user(user_idx);
+                    let mut universe = store.get_read_permission_universe(&rtxn, &groups)?;
+                    universe |= store.get_public_universe(&rtxn)?;
+                    universe
+                }
+                None => store.get_public_universe(&rtxn)?,
+            };
             let (expected_hits, result) =
-                store.search(query, offset, limit, filter.as_deref(), &rtxn)?;
+                store.search(query, offset, limit, filter.as_deref(), &rtxn, universe)?;
 
             Ok(SearchResponse {
                 expected_hits,
