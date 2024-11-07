@@ -21,8 +21,6 @@ impl Request for SearchRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, crate::error::ArunaError> {
-        // TODO: Create universe filter for auth
-
         let store = controller.get_store();
 
         let query = self.query.clone();

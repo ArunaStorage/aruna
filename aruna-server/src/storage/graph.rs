@@ -1,7 +1,6 @@
 use std::{cmp::min, collections::VecDeque, sync::atomic::AtomicU64};
 
 use crate::{
-    constants::relation_types::{HAS_PART, OWNED_BY_USER, OWNS_PROJECT, PERMISSION_ADMIN, PERMISSION_APPEND, PERMISSION_READ, PERMISSION_WRITE, SHARES_PERMISSION},
     error::ArunaError,
     logerr,
     models::models::{EdgeType, NodeVariant, Permission, RawRelation},
@@ -216,7 +215,6 @@ pub fn get_related_user_or_groups(
     resource_idx: u32,
 ) -> Result<Vec<u32>, ArunaError> {
     use crate::constants::relation_types::*;
-    // Resource could be: Group, User, Projects, Folder, Object || TODO: Realm, ServiceAccount, Hooks, etc.
     let mut user_or_group_idx = vec![];
     let mut queue = VecDeque::new();
     queue.push_back(resource_idx.into());
@@ -244,7 +242,6 @@ pub fn get_realm_and_groups(
     user_idx: u32,
 ) -> Result<Vec<u32>, ArunaError> {
     use crate::constants::relation_types::*;
-    // Resource could be: Group, User, Projects, Folder, Object || TODO: Realm, ServiceAccount, Hooks, etc.
     let mut indizes = vec![user_idx];
     let mut queue = VecDeque::new();
     queue.push_back(user_idx.into());
