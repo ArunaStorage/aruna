@@ -75,7 +75,6 @@ impl WriteRequest for CreateRealmRequestTx {
         Ok(tokio::task::spawn_blocking(move || {
             // Create realm, add user to realm
 
-            let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
 
             // Exemplary check via the universe filter
@@ -187,7 +186,6 @@ impl WriteRequest for AddGroupRequestTx {
         Ok(tokio::task::spawn_blocking(move || {
             // Create realm, add user to realm
 
-            let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
 
             let Some(group_idx) = store.get_idx_from_ulid(&group_id, wtxn.get_txn()) else {

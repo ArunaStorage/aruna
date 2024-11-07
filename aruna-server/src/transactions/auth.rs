@@ -74,14 +74,13 @@ impl Controller {
                 let store = self.get_store();
                 let user_id = user.get_id();
                 let source = source.clone();
-                let perm = tokio::task::spawn_blocking(move || {
-                    store.read().unwrap().get_permissions(&source, &user_id)
-                })
-                .await
-                .map_err(|_| {
-                    tracing::error!("Error joining thread");
-                    ArunaError::Unauthorized
-                })??;
+                let perm =
+                    tokio::task::spawn_blocking(move || store.get_permissions(&source, &user_id))
+                        .await
+                        .map_err(|_| {
+                            tracing::error!("Error joining thread");
+                            ArunaError::Unauthorized
+                        })??;
                 if perm >= min_permission {
                     Ok(())
                 } else {
@@ -122,10 +121,7 @@ impl Controller {
                 let first_source = first_source.clone();
 
                 let first_perm = tokio::task::spawn_blocking(move || {
-                    store
-                        .read()
-                        .unwrap() // Unwrap of poison lock
-                        .get_permissions(&first_source, &user_id)
+                    store.get_permissions(&first_source, &user_id)
                 })
                 .await
                 .map_err(|_| {
@@ -136,10 +132,7 @@ impl Controller {
                 let second_source = second_source.clone();
                 let store = self.get_store();
                 let second_perm = tokio::task::spawn_blocking(move || {
-                    store
-                        .read()
-                        .unwrap() // Unwrap of poison lock
-                        .get_permissions(&second_source, &user_id)
+                    store.get_permissions(&second_source, &user_id)
                 })
                 .await
                 .map_err(|_| {
@@ -159,16 +152,12 @@ impl Controller {
 }
 
 pub struct TokenHandler {
-    store: Arc<RwLock<Store>>,
+    store: Arc<Store>,
 }
 
 impl TokenHandler {
-    pub fn new(store: Arc<RwLock<Store>>) -> Self {
+    pub fn new(store: Arc<Store>) -> Self {
         Self { store }
-    }
-
-    pub fn read(&self) -> std::sync::RwLockReadGuard<Store> {
-        self.store.read().unwrap()
     }
 
     ///ToDo: Rust Doc
@@ -182,7 +171,7 @@ impl TokenHandler {
     ) -> Result<String, ArunaError> {
         // Gets the signing key -> if this returns a poison error this should also panic
         // We dont want to allow poisoned / malformed encoding keys and must crash at this point
-        let (kid, encoding_key) = store.get_encoding_key();
+        let (kid, encoding_key) = store.get_encoding_key()?;
         let is_sa_u8 = if is_service_account { 1u8 } else { 0u8 };
 
         let claims = ArunaTokenClaims {
@@ -205,7 +194,7 @@ impl TokenHandler {
             ..Default::default()
         };
 
-        encode(&header, &claims, encoding_key).map_err(|e| {
+        encode(&header, &claims, &encoding_key).map_err(|e| {
             tracing::error!("User token signing failed: {:?}", e);
             ArunaError::ServerError("Error creating token".to_string())
         })
@@ -220,8 +209,8 @@ impl TokenHandler {
         // Decode and deserialize a potential payload to get the claims and issuer
         let unvalidated_claims = deserialize_field::<ArunaTokenClaims>(&mut split)?;
 
-        let store = self.read();
-        let (issuer_type, decoding_key, audiences) = store
+        let (issuer_type, decoding_key, audiences) = self
+            .store
             .get_issuer_info(
                 unvalidated_claims.iss.to_string(),
                 header.kid.ok_or_else(|| {
@@ -234,7 +223,7 @@ impl TokenHandler {
                 ArunaError::Unauthorized
             })?;
 
-        let claims = Self::get_validate_claims(token, header.alg, decoding_key, &audiences)?;
+        let claims = Self::get_validate_claims(token, header.alg, &decoding_key, &audiences)?;
 
         match issuer_type {
             IssuerType::OIDC => self.validate_oidc_token(&claims),
@@ -265,8 +254,6 @@ impl TokenHandler {
             ArunaError::Unauthorized
         })?;
 
-        let store = self.store.read().expect("Poisoned lock");
-
         let Some((is_service_account, token_idx)) = subject.info else {
             tracing::error!("No token info provided");
             return Err(ArunaError::Unauthorized);
@@ -275,7 +262,7 @@ impl TokenHandler {
             0u8 => {
                 // False
 
-                store.ensure_token_exists(&user_id, token_idx)?;
+                self.store.ensure_token_exists(&user_id, token_idx)?;
 
                 Ok(Requester::User {
                     user_id,
@@ -284,8 +271,8 @@ impl TokenHandler {
             }
             1u8 => {
                 // True
-                store.ensure_token_exists(&user_id, token_idx)?;
-                let group_id = store.get_group_from_sa(&user_id)?;
+                self.store.ensure_token_exists(&user_id, token_idx)?;
+                let group_id = self.store.get_group_from_sa(&user_id)?;
 
                 Ok(Requester::ServiceAccount {
                     service_account_id: user_id,

@@ -13,11 +13,23 @@ use crate::{
     storage::obkv_ext::{FieldIterator, ParseError},
 };
 
+#[derive(Serialize, Deserialize, PartialEq)]
+pub struct IssuerKey {
+    pub key_id: String,
+    pub issuer_name: String,
+    pub issuer_endpoint: Option<String>,
+    pub issuer_type: IssuerType,
+    pub decoding_key: DecodingKey,
+    pub audiences: Vec<String>,
+}
+
 pub type EdgeType = u32;
 
 // Constants for the models
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
 #[repr(u8)]
 pub enum ResourceVariant {
     Project,

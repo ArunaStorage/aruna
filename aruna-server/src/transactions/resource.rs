@@ -106,7 +106,6 @@ impl WriteRequest for CreateProjectRequestTx {
         Ok(tokio::task::spawn_blocking(move || {
             // Create project
 
-            let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
 
             // Get group idx
@@ -264,7 +263,6 @@ impl WriteRequest for CreateResourceRequestTx {
         Ok(tokio::task::spawn_blocking(move || {
             // Create resource
 
-            let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
 
             let Some(parent_idx) = store.get_idx_from_ulid(&parent_id, wtxn.get_txn()) else {
@@ -487,12 +485,14 @@ impl CreateResourceBatchRequestTx {
         to_check.sort();
         let mut checked: Vec<u32> = Vec::new();
         for new_parent in &to_check {
-            let entry = self.req.resources.get(*new_parent as usize).ok_or_else(|| {
-                ArunaError::InvalidParameter {
+            let entry = self
+                .req
+                .resources
+                .get(*new_parent as usize)
+                .ok_or_else(|| ArunaError::InvalidParameter {
                     name: "parent".to_string(),
                     error: "Parent not found in resources".to_string(),
-                }
-            })?;
+                })?;
             match entry.parent {
                 Parent::ID(_) => {
                     checked.push(*new_parent);
@@ -539,7 +539,6 @@ impl WriteRequest for CreateResourceBatchRequestTx {
         Ok(tokio::task::spawn_blocking(move || {
             // Create resource
 
-            let store = store.write().expect("Failed to lock store");
             let mut wtxn = store.write_txn()?;
 
             // Check naming conflicts and if existing parents exist
@@ -643,19 +642,18 @@ impl Request for GetResourceRequest {
     ) -> Result<Self::Response, ArunaError> {
         let store = controller.get_store();
         let response = tokio::task::spawn_blocking(move || {
-            let read_store = store.read().unwrap();
-            let rtxn = read_store.read_txn()?;
+            let rtxn = store.read_txn()?;
 
-            let idx = read_store
+            let idx = store
                 .get_idx_from_ulid(&self.id, &rtxn)
                 .ok_or_else(|| ArunaError::NotFound(self.id.to_string()))?;
 
-            let resource = read_store
+            let resource = store
                 .get_node::<Resource>(&rtxn, idx)
                 .ok_or_else(|| ArunaError::NotFound(self.id.to_string()))?;
 
-            let mut relations = read_store.get_relations(idx, &[], Direction::Outgoing, &rtxn)?;
-            relations.extend(read_store.get_relations(idx, &[], Direction::Incoming, &rtxn)?);
+            let mut relations = store.get_relations(idx, &[], Direction::Outgoing, &rtxn)?;
+            relations.extend(store.get_relations(idx, &[], Direction::Incoming, &rtxn)?);
 
             Ok::<_, ArunaError>(bincode::serialize(&GetResourceResponse {
                 resource,
