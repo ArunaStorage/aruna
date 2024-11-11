@@ -4,7 +4,7 @@ use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
 use super::models::{
-    Author, GenericNode, Group, KeyValue, Realm, Relation, RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass
+    Author, GenericNode, Group, KeyValue, Permission, Realm, Relation, RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass
 };
 
 fn default_license_tag() -> String {
@@ -238,6 +238,15 @@ pub struct SearchResponse {
 }
 
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct AddUserRequest {
+    pub group_id: Ulid,
+    pub user_id: Ulid,
+    pub permission: Permission,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct AddUserResponse {}
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub enum Direction {
@@ -274,7 +283,7 @@ pub struct GetRelationInfoResponse {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GetUsersFromGroupRequest {
-    pub group: Ulid,
+    pub group_id: Ulid,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
@@ -284,7 +293,7 @@ pub struct GetUsersFromGroupResponse {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GetGroupsFromRealmRequest {
-    pub realm: Ulid,
+    pub realm_id: Ulid,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]

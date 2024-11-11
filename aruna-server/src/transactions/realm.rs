@@ -3,18 +3,18 @@ use super::{
     request::{Request, Requester, WriteRequest},
 };
 use crate::{
-    constants::relation_types::{self},
+    constants::relation_types::{self, GROUP_PART_OF_REALM},
     context::Context,
     error::ArunaError,
     models::{
         models::{Group, Realm},
         requests::{
-            AddGroupRequest, AddGroupResponse, CreateRealmRequest, CreateRealmResponse,
-            GetRealmRequest, GetRealmResponse,
+            AddGroupRequest, AddGroupResponse, CreateRealmRequest, CreateRealmResponse, GetGroupsFromRealmRequest, GetGroupsFromRealmResponse, GetRealmRequest, GetRealmResponse
         },
     },
     transactions::request::SerializedResponse,
 };
+use petgraph::Direction;
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
@@ -251,8 +251,62 @@ impl Request for GetRealmRequest {
                 .get_node::<Realm>(&rtxn, realm_idx)
                 .ok_or_else(|| ArunaError::NotFound(self.id.to_string()))?;
 
-            // Create admin group, add user to admin group
             Ok::<_, ArunaError>(GetRealmResponse { realm })
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??;
+
+        Ok(response)
+    }
+}
+
+impl Request for GetGroupsFromRealmRequest {
+    type Response = GetGroupsFromRealmResponse;
+    fn get_context(&self) -> Context {
+        Context::UserOnly
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        if let Some(requester) = requester {
+            controller.authorize(&requester, &self).await?;
+        } else {
+            return Err(ArunaError::Unauthorized);
+        }
+        let store = controller.get_store();
+        let response = tokio::task::spawn_blocking(move || {
+            // Create realm, add user to realm
+            let rtxn = store.read_txn()?;
+
+            let Some(realm_idx) = store.get_idx_from_ulid(&self.realm_id, &rtxn) else {
+                return Err(ArunaError::NotFound(self.realm_id.to_string()));
+            };
+
+            let mut groups = Vec::new();
+            for source in store
+                .get_relations(realm_idx, &[GROUP_PART_OF_REALM], Direction::Incoming, &rtxn)?
+                .into_iter()
+                .map(|r| r.from_id)
+            {
+                let source_idx = store
+                    .get_idx_from_ulid(&source, &rtxn)
+                    .ok_or_else(|| return ArunaError::NotFound(source.to_string()))?;
+
+                if let Some(user) = store.get_node(&rtxn, source_idx) {
+                    groups.push(user);
+                } else {
+                    tracing::error!("Idx not found in database");
+                };
+            }
+            rtxn.commit()?;
+
+            Ok::<_, ArunaError>(GetGroupsFromRealmResponse { groups })
         })
         .await
         .map_err(|_e| {

@@ -3,14 +3,18 @@ use ulid::Ulid;
 
 use crate::{
     constants::relation_types::{
-        self,
+        self, PERMISSION_ADMIN, PERMISSION_APPEND, PERMISSION_NONE, PERMISSION_READ,
+        PERMISSION_WRITE,
     },
     context::Context,
     error::ArunaError,
     logerr,
     models::{
         models::Group,
-        requests::{CreateGroupRequest, CreateGroupResponse, GetGroupRequest, GetGroupResponse},
+        requests::{
+            AddUserRequest, AddUserResponse, CreateGroupRequest, CreateGroupResponse,
+            GetGroupRequest, GetGroupResponse, GetUsersFromGroupRequest, GetUsersFromGroupResponse,
+        },
     },
     transactions::request::WriteRequest,
 };
@@ -138,6 +142,148 @@ impl Request for GetGroupRequest {
             rtxn.commit()?;
             // Create admin group, add user to admin group
             Ok::<_, ArunaError>(GetGroupResponse { group })
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??;
+
+        Ok(response)
+    }
+}
+
+impl Request for AddUserRequest {
+    type Response = AddUserResponse;
+    fn get_context(&self) -> Context {
+        Context::Permission {
+            min_permission: crate::models::models::Permission::Admin,
+            source: self.group_id,
+        }
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &super::controller::Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let request_tx = AddUserRequestTx {
+            id: Ulid::new(),
+            req: self,
+            requester: requester
+                .ok_or_else(|| ArunaError::Unauthorized)
+                .inspect_err(logerr!())?,
+        };
+
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response)?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AddUserRequestTx {
+    id: Ulid,
+    req: AddUserRequest,
+    requester: Requester,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for AddUserRequestTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+
+        let group_id = self.req.group_id;
+        let requester_id = self.requester.get_id();
+        let permission = match self.req.permission {
+            crate::models::models::Permission::None => PERMISSION_NONE,
+            crate::models::models::Permission::Read => PERMISSION_READ,
+            crate::models::models::Permission::Append => PERMISSION_APPEND,
+            crate::models::models::Permission::Write => PERMISSION_WRITE,
+            crate::models::models::Permission::Admin => PERMISSION_ADMIN,
+        };
+
+        let store = controller.get_store();
+        Ok(tokio::task::spawn_blocking(move || {
+            let mut wtxn = store.write_txn()?;
+
+            // Get indices
+            let Some(user_idx) = store.get_idx_from_ulid(&requester_id, wtxn.get_txn()) else {
+                return Err(ArunaError::NotFound(requester_id.to_string()));
+            };
+            let Some(group_idx) = store.get_idx_from_ulid(&group_id, wtxn.get_txn()) else {
+                return Err(ArunaError::NotFound(group_id.to_string()));
+            };
+
+            // Add relation user --PERMISSION--> group
+            store.create_relation(&mut wtxn, user_idx, group_idx, permission)?;
+
+            // Affected nodes: User and Group
+            store.register_event(&mut wtxn, associated_event_id, &[user_idx, group_idx])?;
+
+            wtxn.commit()?;
+            Ok::<_, ArunaError>(bincode::serialize(&AddUserResponse {})?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
+    }
+}
+
+impl Request for GetUsersFromGroupRequest {
+    type Response = GetUsersFromGroupResponse;
+    fn get_context(&self) -> Context {
+        Context::Permission {
+            min_permission: crate::models::models::Permission::Read,
+            source: self.group_id,
+        }
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &super::controller::Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        if let Some(requester) = requester {
+            controller.authorize(&requester, &self).await?;
+        } else {
+            return Err(ArunaError::Unauthorized);
+        }
+        let store = controller.get_store();
+        let response = tokio::task::spawn_blocking(move || {
+            let rtxn = store.read_txn()?;
+
+            let idx = store
+                .get_idx_from_ulid(&self.group_id, &rtxn)
+                .ok_or_else(|| return ArunaError::NotFound(self.group_id.to_string()))?;
+
+            let filter = (PERMISSION_NONE..=PERMISSION_ADMIN).collect::<Vec<u32>>();
+
+            let mut users = Vec::new();
+            for source in store
+                .get_relations(idx, &filter, petgraph::Direction::Incoming, &rtxn)?
+                .into_iter()
+                .map(|r| r.from_id)
+            {
+                let source_idx = store
+                    .get_idx_from_ulid(&source, &rtxn)
+                    .ok_or_else(|| return ArunaError::NotFound(source.to_string()))?;
+
+                if let Some(user) = store.get_node(&rtxn, source_idx) {
+                    users.push(user);
+                } else {
+                    tracing::error!("Idx not found in database");
+                };
+            }
+            rtxn.commit()?;
+            Ok::<_, ArunaError>(GetUsersFromGroupResponse { users })
         })
         .await
         .map_err(|_e| {

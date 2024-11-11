@@ -388,3 +388,40 @@ impl From<ArunaError> for tonic::Status {
         }
     }
 }
+
+impl TryFrom<grpc::AddUserRequest> for requests::AddUserRequest {
+    type Error = InvalidFieldError;
+
+    fn try_from(value: grpc::AddUserRequest) -> Result<Self, Self::Error> {
+        Ok(Self {
+            group_id: Ulid::from_string(&value.group_id).map_err(|_| InvalidFieldError("id"))?,
+            user_id: Ulid::from_string(&value.user_id).map_err(|_| InvalidFieldError("id"))?,
+            permission: grpc::Permission::try_from(value.permission)
+                .map_err(|_| InvalidFieldError("id"))?
+                .try_into()
+                .map_err(|_| InvalidFieldError("id"))?,
+        })
+    }
+}
+
+impl From<requests::AddUserResponse> for grpc::AddUserResponse {
+    fn from(_value: requests::AddUserResponse) -> Self {
+        Self {}
+    }
+}
+
+impl TryFrom<grpc::Permission> for models::Permission {
+    type Error = InvalidFieldError;
+    fn try_from(value: grpc::Permission) -> Result<Self, Self::Error> {
+        Ok(match value {
+            grpc::Permission::Unspecified => {
+                return Err(InvalidFieldError("permission"));
+            }
+            grpc::Permission::None => models::Permission::None,
+            grpc::Permission::Read => models::Permission::Read,
+            grpc::Permission::Append => models::Permission::Append,
+            grpc::Permission::Write => models::Permission::Write,
+            grpc::Permission::Admin => models::Permission::Admin,
+        })
+    }
+}

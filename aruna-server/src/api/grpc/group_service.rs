@@ -1,4 +1,4 @@
-use crate::models::requests::{CreateGroupRequest, GetGroupRequest};
+use crate::models::requests::{AddUserRequest, CreateGroupRequest, GetGroupRequest};
 use crate::transactions::controller::Controller;
 use aruna_rust_api::v3::aruna::api::v3 as grpc;
 use aruna_rust_api::v3::aruna::api::v3::group_service_server::GroupService;
@@ -34,9 +34,17 @@ impl GroupService for GroupServiceImpl {
 
     async fn add_user(
         &self,
-        _request: tonic::Request<grpc::AddUserRequest>,
+        request: tonic::Request<grpc::AddUserRequest>,
     ) -> Result<tonic::Response<grpc::AddUserResponse>, tonic::Status> {
-        todo!()
+        let token = get_token(request.metadata());
+        let controller = self.handler.clone();
+
+        Ok(tonic::Response::new(
+            controller
+                .request(AddUserRequest::try_from(request.into_inner())?, token)
+                .await?
+                .into(),
+        ))
     }
 
     async fn share_permission_to_group(
@@ -54,9 +62,7 @@ impl GroupService for GroupServiceImpl {
 
         Ok(tonic::Response::new(
             controller
-                .request(GetGroupRequest::try_from(request.into_inner())?, token)
-                .await?
-                .into(),
+                .request(GetGroupRequest::try_from(request.into_inner())?, token) .await? .into(),
         ))
     }
 }
