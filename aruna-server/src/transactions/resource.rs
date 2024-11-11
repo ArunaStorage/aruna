@@ -20,7 +20,6 @@ use crate::{
 };
 use ahash::RandomState;
 use chrono::{DateTime, Utc};
-use petgraph::Direction;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::info;
@@ -694,13 +693,7 @@ impl Request for GetResourceRequest {
                 .get_node::<Resource>(&rtxn, idx)
                 .ok_or_else(|| ArunaError::NotFound(self.id.to_string()))?;
 
-            let mut relations = store.get_relations(idx, &[], Direction::Outgoing, &rtxn)?;
-            relations.extend(store.get_relations(idx, &[], Direction::Incoming, &rtxn)?);
-
-            Ok::<_, ArunaError>(bincode::serialize(&GetResourceResponse {
-                resource,
-                relations,
-            })?)
+            Ok::<_, ArunaError>(bincode::serialize(&GetResourceResponse { resource })?)
         })
         .await
         .map_err(|e| ArunaError::ServerError(e.to_string()))??;

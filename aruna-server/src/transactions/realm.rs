@@ -3,12 +3,15 @@ use super::{
     request::{Request, Requester, WriteRequest},
 };
 use crate::{
-    constants::relation_types,
+    constants::relation_types::{self},
     context::Context,
     error::ArunaError,
     models::{
         models::{Group, Realm},
-        requests::{AddGroupRequest, AddGroupResponse, CreateRealmRequest, CreateRealmResponse},
+        requests::{
+            AddGroupRequest, AddGroupResponse, CreateRealmRequest, CreateRealmResponse,
+            GetRealmRequest, GetRealmResponse,
+        },
     },
     transactions::request::SerializedResponse,
 };
@@ -195,6 +198,7 @@ impl WriteRequest for AddGroupRequestTx {
             let Some(realm_idx) = store.get_idx_from_ulid(&realm_id, wtxn.get_txn()) else {
                 return Err(ArunaError::NotFound(realm_id.to_string()));
             };
+
             // Add relation group --GROUP_PART_OF_REALM--> realm
             store.create_relation(
                 &mut wtxn,
@@ -215,6 +219,48 @@ impl WriteRequest for AddGroupRequestTx {
             tracing::error!("Failed to join task");
             ArunaError::ServerError("".to_string())
         })??)
+    }
+}
+
+impl Request for GetRealmRequest {
+    type Response = GetRealmResponse;
+    fn get_context(&self) -> Context {
+        Context::UserOnly
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        if let Some(requester) = requester {
+            controller.authorize(&requester, &self).await?;
+        } else {
+            return Err(ArunaError::Unauthorized);
+        }
+        let store = controller.get_store();
+        let response = tokio::task::spawn_blocking(move || {
+            // Create realm, add user to realm
+            let rtxn = store.read_txn()?;
+
+            let Some(realm_idx) = store.get_idx_from_ulid(&self.id, &rtxn) else {
+                return Err(ArunaError::NotFound(self.id.to_string()));
+            };
+
+            let realm = store
+                .get_node::<Realm>(&rtxn, realm_idx)
+                .ok_or_else(|| ArunaError::NotFound(self.id.to_string()))?;
+
+            // Create admin group, add user to admin group
+            Ok::<_, ArunaError>(bincode::serialize(&GetRealmResponse { realm })?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??;
+
+        Ok(bincode::deserialize(&response)?)
     }
 }
 

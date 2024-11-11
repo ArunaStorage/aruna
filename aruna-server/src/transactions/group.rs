@@ -2,13 +2,15 @@ use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
 use crate::{
-    constants::relation_types,
+    constants::relation_types::{
+        self,
+    },
     context::Context,
     error::ArunaError,
     logerr,
     models::{
         models::Group,
-        requests::{CreateGroupRequest, CreateGroupResponse},
+        requests::{CreateGroupRequest, CreateGroupResponse, GetGroupRequest, GetGroupResponse},
     },
     transactions::request::WriteRequest,
 };
@@ -98,6 +100,52 @@ impl WriteRequest for CreateGroupRequestTx {
             tracing::error!("Failed to join task");
             ArunaError::ServerError("".to_string())
         })??)
+    }
+}
+
+impl Request for GetGroupRequest {
+    type Response = GetGroupResponse;
+    fn get_context(&self) -> Context {
+        // Do we need this?
+        Context::Permission {
+            min_permission: crate::models::models::Permission::Read,
+            source: self.id,
+        }
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &super::controller::Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        if let Some(requester) = requester {
+            controller.authorize(&requester, &self).await?;
+        } else {
+            return Err(ArunaError::Unauthorized);
+        }
+        let store = controller.get_store();
+        let response = tokio::task::spawn_blocking(move || {
+            let rtxn = store.read_txn()?;
+
+            let idx = store
+                .get_idx_from_ulid(&self.id, &rtxn)
+                .ok_or_else(|| return ArunaError::NotFound(self.id.to_string()))?;
+
+            let group = store
+                .get_node(&rtxn, idx)
+                .ok_or_else(|| return ArunaError::NotFound(self.id.to_string()))?;
+
+            rtxn.commit()?;
+            // Create admin group, add user to admin group
+            Ok::<_, ArunaError>(bincode::serialize(&GetGroupResponse { group })?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??;
+
+        Ok(bincode::deserialize(&response)?)
     }
 }
 

@@ -253,11 +253,7 @@ impl From<requests::GetResourceResponse> for grpc::GetResourceResponse {
     fn from(value: requests::GetResourceResponse) -> Self {
         grpc::GetResourceResponse {
             resource: Some(value.resource.into()),
-            relations: value
-                .relations
-                .into_iter()
-                .map(grpc::Relation::from)
-                .collect::<Vec<_>>(),
+            relations: Vec::new(), // TODO: Remove from API
         }
     }
 }
@@ -351,7 +347,7 @@ impl From<requests::GetRealmResponse> for grpc::GetRealmResponse {
     fn from(value: requests::GetRealmResponse) -> Self {
         Self {
             realm: Some(value.realm.into()),
-            group_ids: value.groups.into_iter().map(|id| id.to_string()).collect(),
+            group_ids: Vec::new(), // TODO: Remove from api
         }
     }
 }
@@ -370,7 +366,7 @@ impl From<requests::GetGroupResponse> for grpc::GetGroupResponse {
     fn from(value: requests::GetGroupResponse) -> Self {
         Self {
             group: Some(value.group.into()),
-            members: value.members.into_iter().map(|id| id.to_string()).collect(),
+            members: Vec::new(), // TODO: Remove from api
         }
     }
 }

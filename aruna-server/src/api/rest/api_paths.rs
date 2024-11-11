@@ -90,11 +90,10 @@ pub async fn create_project(
 )]
 pub async fn get_resource(
     State(state): State<Arc<Controller>>,
-    Query(get_resource_request): Query<GetResourceRequest>,
+    Query(request): Query<GetResourceRequest>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!()
-    // into_axum_response(state.request(request, extract_token(&header)).await)
+    into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
 /// Create a new realm
@@ -138,11 +137,10 @@ pub async fn get_realm(
     Query(request): Query<GetRealmRequest>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!()
-    // into_axum_response(state.request(request, extract_token(&header)).await)
+    into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
-/// Get realm
+/// Add group
 #[utoipa::path(
     post,
     path = "/api/v3/realm/group",
@@ -160,8 +158,7 @@ pub async fn add_group(
     header: HeaderMap,
     Json(request): Json<AddGroupRequest>,
 ) -> impl IntoResponse {
-    todo!()
-    // into_axum_response(state.request(request, extract_token(&header)).await)
+    into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
 /// Create a new  
@@ -206,8 +203,7 @@ pub async fn get_group(
     Query(request): Query<GetGroupRequest>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!()
-    // into_axum_response(state.request(request, extract_token(&header)).await)
+    into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
 /// Register a new user

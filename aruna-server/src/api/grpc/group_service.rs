@@ -1,4 +1,4 @@
-use crate::models::requests::CreateGroupRequest;
+use crate::models::requests::{CreateGroupRequest, GetGroupRequest};
 use crate::transactions::controller::Controller;
 use aruna_rust_api::v3::aruna::api::v3 as grpc;
 use aruna_rust_api::v3::aruna::api::v3::group_service_server::GroupService;
@@ -52,12 +52,11 @@ impl GroupService for GroupServiceImpl {
         let token = get_token(request.metadata());
         let controller = self.handler.clone();
 
-        todo!()
-        // Ok(tonic::Response::new(
-        //     controller
-        //         .get_group(token, request.into_inner().try_into()?)
-        //         .await?
-        //         .into(),
-        // ))
+        Ok(tonic::Response::new(
+            controller
+                .request(GetGroupRequest::try_from(request.into_inner())?, token)
+                .await?
+                .into(),
+        ))
     }
 }
