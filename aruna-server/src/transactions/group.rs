@@ -137,7 +137,7 @@ impl Request for GetGroupRequest {
 
             rtxn.commit()?;
             // Create admin group, add user to admin group
-            Ok::<_, ArunaError>(bincode::serialize(&GetGroupResponse { group })?)
+            Ok::<_, ArunaError>(GetGroupResponse { group })
         })
         .await
         .map_err(|_e| {
@@ -145,7 +145,7 @@ impl Request for GetGroupRequest {
             ArunaError::ServerError("".to_string())
         })??;
 
-        Ok(bincode::deserialize(&response)?)
+        Ok(response)
     }
 }
 

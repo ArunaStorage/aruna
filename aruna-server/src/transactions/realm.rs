@@ -252,7 +252,7 @@ impl Request for GetRealmRequest {
                 .ok_or_else(|| ArunaError::NotFound(self.id.to_string()))?;
 
             // Create admin group, add user to admin group
-            Ok::<_, ArunaError>(bincode::serialize(&GetRealmResponse { realm })?)
+            Ok::<_, ArunaError>(GetRealmResponse { realm })
         })
         .await
         .map_err(|_e| {
@@ -260,7 +260,7 @@ impl Request for GetRealmRequest {
             ArunaError::ServerError("".to_string())
         })??;
 
-        Ok(bincode::deserialize(&response)?)
+        Ok(response)
     }
 }
 

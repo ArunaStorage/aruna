@@ -904,4 +904,14 @@ impl Store {
     pub fn get_realm_and_groups(&self, user_idx: u32) -> Result<Vec<u32>, ArunaError> {
         get_realm_and_groups(&self.graph.read().expect("RWLock poison error"), user_idx)
     }
+
+
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn get_relation_info(&self, relation_idx: &u32, rtxn: &RoTxn) -> Result<Option<RelationInfo>, ArunaError> {
+        let relation_info = self
+            .relation_infos
+            .get(&rtxn, relation_idx)
+            .inspect_err(logerr!())?;
+        Ok(relation_info)
+    }
 }

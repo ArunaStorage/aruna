@@ -238,16 +238,24 @@ pub struct SearchResponse {
 }
 
 
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub enum Direction {
+    Incoming,
+    Outgoing,
+}
+
 // TODO: Impl relation requests
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GetRelationsRequest {
     pub node: Ulid,
-    pub direction: String, // wrapper type for petgraph::Direction enum
+    pub direction: Direction, // wrapper type for petgraph::Direction enum
     pub filter: Vec<u32>, // Filter with Strings for directions or idx for rel idx?
     pub offset: Option<usize>,
     pub page_size: usize, // Max value 1000? Default 100
 }
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GetRelationsResponse {
     pub relations: Vec<Relation>,
     pub offset: Option<usize>,
@@ -265,21 +273,21 @@ pub struct GetRelationInfoResponse {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
-pub struct GetGroupUsersRequest {
+pub struct GetUsersFromGroupRequest {
     pub group: Ulid,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
-pub struct GetGroupUsersResponse {
+pub struct GetUsersFromGroupResponse {
     pub users: Vec<User>,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
-pub struct GetRealmGroupsRequest {
+pub struct GetGroupsFromRealmRequest {
     pub realm: Ulid,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
-pub struct GetRealmGroupsResponse {
+pub struct GetGroupsFromRealmResponse {
     pub groups: Vec<Group>,
 }
