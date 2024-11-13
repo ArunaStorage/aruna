@@ -133,6 +133,7 @@ pub fn get_parents(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Vec<u32> {
     get_relatives(graph, idx, Incoming)
 }
 
+#[allow(unused)]
 pub fn get_children(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Vec<u32> {
     get_relatives(graph, idx, Outgoing)
 }
@@ -201,6 +202,7 @@ pub fn get_permissions(
     }
 }
 
+#[allow(unused)]
 pub fn check_node_variant(
     graph: &Graph<NodeVariant, EdgeType>,
     idx: u32,

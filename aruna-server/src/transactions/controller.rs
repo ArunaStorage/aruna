@@ -30,7 +30,7 @@ impl Controller {
         node_id: Ulid,
         serial: u16,
         store_addr: SocketAddr,
-        members: Vec<(Ulid, u16, String)>,
+        init_node: Option<String>,
         key_config: KeyConfig,
     ) -> Result<Arc<Self>, ArunaError> {
         let store = Store::new(path.clone(), key_config)?;
@@ -45,35 +45,38 @@ impl Controller {
         let synevi_lmdb: synevi::storage::LmdbStore =
             synevi::storage::LmdbStore::new(path, serial)?;
 
-        let node = SyneviNode::new(
-            node_id,
-            serial,
-            GrpcNetwork::new(
-                store_addr,
-                format!("http://{}", store_addr),
+        let node = match init_node {
+            Some(init_node) => SyneviNode::new_with_member(
                 node_id,
                 serial,
-            ),
-            controller.clone(),
-            synevi_lmdb,
-        )
-        .await
-        .inspect_err(logerr!())?;
+                GrpcNetwork::new(
+                    store_addr,
+                    format!("http://{}", store_addr),
+                    node_id,
+                    serial,
+                ),
+                controller.clone(),
+                synevi_lmdb,
+                init_node,
+            )
+            .await
+            .inspect_err(logerr!())?,
+            None => SyneviNode::new(
+                node_id,
+                serial,
+                GrpcNetwork::new(
+                    store_addr,
+                    format!("http://{}", store_addr),
+                    node_id,
+                    serial,
+                ),
+                controller.clone(),
+                synevi_lmdb,
+            )
+            .await
+            .inspect_err(logerr!())?,
+        };
 
-        // for (id, serial, host) in members {
-        //     let mut counter = 0;
-        //     loop {
-        //         let Err(_) = node.add_member(id, serial, host.clone(), true).await else {
-        //             break;
-        //         };
-        //         tokio::time::sleep(Duration::from_secs(10)).await;
-        //         if counter > 6 {
-        //             tracing::error!("Failed to add member");
-        //             return Err(ArunaError::ServerError("Failed to add member".to_string()));
-        //         }
-        //         counter += 1;
-        //     }
-        // }
         *controller.node.write().await = Some(node);
 
         Ok(controller)

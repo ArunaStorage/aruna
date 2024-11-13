@@ -34,7 +34,7 @@ pub struct Config {
     pub rest_port: u16,
     pub node_serial: u16,
     pub database_path: String,
-    pub members: Vec<(Ulid, u16, String)>,
+    pub init_node: Option<String>,
     pub key_config: (u32, String, String),
     pub socket_addr: SocketAddr,
 }
@@ -54,20 +54,7 @@ pub fn config_from_env() -> Config {
     let rest_port = dotenvy::var("REST_PORT").unwrap().parse::<u16>().unwrap();
     let node_serial = dotenvy::var("NODE_SERIAL").unwrap().parse::<u16>().unwrap();
     let database_path = dotenvy::var("DB_PATH").unwrap();
-
-    // ID,SERIAL,HOST;
-    let members = dotenvy::var("MEMBERS")
-        .unwrap()
-        .split(";")
-        .map(|x| {
-            let parts: Vec<&str> = x.split(",").collect();
-            (
-                Ulid::from_string(parts[0]).unwrap(),
-                parts[1].parse::<u16>().unwrap(),
-                parts[2].to_string(),
-            )
-        })
-        .collect::<Vec<(Ulid, u16, String)>>();
+    let init_node = dotenvy::var("INIT_NODE").ok();
 
     let socket_addr = SocketAddr::from(([0, 0, 0, 0], grpc_port_consensus));
 
@@ -83,7 +70,7 @@ pub fn config_from_env() -> Config {
         rest_port,
         node_serial,
         database_path,
-        members,
+        init_node,
         key_config,
         socket_addr,
     }
@@ -96,10 +83,10 @@ pub async fn start_server(
         node_id,
         node_serial,
         socket_addr,
-        members,
         key_config,
         grpc_port,
         rest_port,
+        init_node,
     }: Config,
     notify: Option<Arc<Notify>>,
 ) -> Result<(), ArunaError> {
@@ -108,7 +95,7 @@ pub async fn start_server(
         node_id,
         node_serial,
         socket_addr,
-        members,
+        init_node,
         key_config,
     )
     .await

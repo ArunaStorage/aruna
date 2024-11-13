@@ -123,9 +123,11 @@ pub mod single_entry_names {
     pub const SEARCHABLE_USERS: &str = "searchable_users";
 }
 
+#[allow(unused)]
 pub(super) type DecodingKeyIdentifier = (String, String); // (IssuerName, KeyID)
 pub type IssuerInfo = (IssuerType, DecodingKey, Vec<String>); // (IssuerType, DecodingKey, Audiences)
 
+#[allow(unused)]
 pub struct Store {
     // Milli index to store objects and allow for search
     milli_index: Index,
