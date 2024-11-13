@@ -1,5 +1,5 @@
 fn main() {
-    let file = "./tests/test_db/store/";
+    let file = "./aruna-server/tests/test_db/store/";
     let env = unsafe {
         heed::EnvOpenOptions::new()
             .map_size(10 * 1024 * 1024)

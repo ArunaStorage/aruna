@@ -160,7 +160,7 @@ pub fn get_permissions(
         for edge in graph.edges_directed(idx, Incoming) {
             match edge.weight() {
                 // If the edge is a "permission related" edge
-                &HAS_PART | &OWNS_PROJECT | &SHARES_PERMISSION => {
+                &HAS_PART | &OWNS_PROJECT | &SHARES_PERMISSION | &GROUP_ADMINISTRATES_REALM => {
                     queue.push_back((edge.source(), current_perm));
                     if edge.source().as_u32() == identity {
                         if let Some(perm) = highest_perm.as_mut() {

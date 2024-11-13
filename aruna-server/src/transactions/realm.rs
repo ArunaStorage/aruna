@@ -147,7 +147,7 @@ impl Request for AddGroupRequest {
     type Response = AddGroupResponse;
     fn get_context(&self) -> Context {
         Context::Permission {
-            min_permission: crate::models::models::Permission::Write,
+            min_permission: crate::models::models::Permission::Admin,
             source: self.realm_id,
         }
     }

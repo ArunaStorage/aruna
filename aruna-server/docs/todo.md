@@ -7,6 +7,8 @@
 - [ ] Add hooks, create a generic workflow / workflow executions table 
 - [ ] Decide if workflow runs are part of the graph ?
 
+- [ ] Check that groups are associated with a realm when creating projects
+
 
 ### Ideas
 Separate Provenance graph ?

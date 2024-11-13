@@ -19,6 +19,9 @@ use tracing_subscriber::EnvFilter;
 use ulid::Ulid;
 
 pub const TEST_TOKEN: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSIsImtpZCI6IjEifQ.eyJpc3MiOiJhcnVuYSIsInN1YiI6IjAxSkJHVDFUWVY4UVo3WkZaS1hQNERRS05OIiwiYXVkIjoiYXJ1bmEiLCJleHAiOjE3MzU2MzIyODQsImluZm8iOlswLDBdfQ.lCvp27T537Ygm8bCt3TPl7hLwaLObHqNkFwet-J19-QoT_YmbO7tJ9O_aWNXT1KLnmbxq8WJUlvROecxXf0UDA";
+
+pub const SECOND_TOKEN: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSIsImtpZCI6IjEifQ.eyJpc3MiOiJhcnVuYSIsInN1YiI6IjAxSkNHNFpNNzVZOU1QWE5QTkpGOUpZUU1ZIiwiYXVkIjoiYXJ1bmEiLCJleHAiOjE3NjI5NDk5MjIsImluZm8iOlswLDBdfQ.30c6OjYb-eaBGajrlIj05zxnN83sP3NYAR3yFB_blJa8ZahbQxFFJXD05mlQ6M7d0mnQojWcoVPq-L7eViesCA";
+
 pub static SUBSCRIBERS: AtomicU16 = AtomicU16::new(0);
 static INIT_TRACING: Once = Once::new();
 const MAX_RETRIES: u8 = 50;

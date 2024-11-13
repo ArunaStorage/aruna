@@ -3,12 +3,12 @@ mod common;
 #[cfg(test)]
 mod read_tests {
 
-    use crate::common::{init_test, TEST_TOKEN};
+    use crate::common::{init_test, SECOND_TOKEN, TEST_TOKEN};
     use aruna_rust_api::v3::aruna::api::v3::{
-        CreateProjectRequest, CreateRealmRequest, GetRealmRequest, Realm as GrpcRealm,
+        AddGroupRequest, CreateProjectRequest, CreateRealmRequest, GetRealmRequest, Realm
     };
     use aruna_server::models::requests::{
-        BatchResource, CreateResourceBatchRequest, CreateResourceBatchResponse, SearchResponse,
+        BatchResource, CreateGroupRequest, CreateGroupResponse, CreateProjectResponse, CreateResourceBatchRequest, CreateResourceBatchResponse, SearchResponse, CreateProjectRequest as ModelsCreateProject,
     };
     use ulid::Ulid;
     pub const OFFSET: u16 = 100;
@@ -65,7 +65,7 @@ mod read_tests {
             .await
             .unwrap()
             .into_inner();
-        let GrpcRealm { id: realm_id, .. } = response.realm.unwrap();
+        let Realm { id: realm_id, .. } = response.realm.unwrap();
 
         // Create project
         let request = CreateProjectRequest {
@@ -131,7 +131,6 @@ mod read_tests {
             .await
             .unwrap();
 
-        let client = reqwest::Client::new();
         let url = format!("{}/api/v3/search", clients.rest_endpoint);
 
         let response: SearchResponse = client
@@ -145,7 +144,6 @@ mod read_tests {
             .unwrap();
         assert_eq!(response.expected_hits, 25);
 
-
         let response: SearchResponse = client
             .get(url)
             .header("Authorization", format!("Bearer {}", TEST_TOKEN))
@@ -157,5 +155,226 @@ mod read_tests {
             .await
             .unwrap();
         assert_eq!(response.expected_hits, 50);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_search_permissions() {
+        //
+        // Setup for search permissions
+        //
+        let mut clients = init_test(OFFSET).await;
+        let client = reqwest::Client::new();
+
+        // 1. Create realm
+        let request = CreateRealmRequest {
+            tag: "test".to_string(),
+            name: "TestRealm".to_string(),
+            description: String::new(),
+        };
+        let response = clients
+            .realm_client
+            .create_realm(request)
+            .await
+            .unwrap()
+            .into_inner();
+        let Realm { id: realm_id, .. } = response.realm.unwrap();
+
+        // 2. Create project for user 1
+        let request = CreateProjectRequest {
+            name: "TestProject".to_string(),
+            group_id: response.admin_group_id,
+            realm_id: realm_id.clone(),
+            visibility: 1,
+            ..Default::default()
+        };
+        let parent_id = Ulid::from_string(
+            &clients
+                .resource_client
+                .create_project(request.clone())
+                .await
+                .unwrap()
+                .into_inner()
+                .resource
+                .unwrap()
+                .id,
+        )
+        .unwrap();
+
+        // 3. Create resources for user 1
+        let mut resources = Vec::new();
+        for i in 0..5 {
+            resources.push(BatchResource {
+                name: format!("PUBLIC_TEST_U1_{i}"),
+                parent: aruna_server::models::requests::Parent::ID(parent_id),
+                visibility: aruna_server::models::models::VisibilityClass::Public,
+                ..Default::default()
+            });
+        }
+        for i in 5..10 {
+            resources.push(BatchResource {
+                name: format!("PRIVATE_TEST_U1_{i}"),
+                parent: aruna_server::models::requests::Parent::ID(parent_id),
+                visibility: aruna_server::models::models::VisibilityClass::Private,
+                ..Default::default()
+            });
+        }
+        let request = CreateResourceBatchRequest { resources };
+        let url = format!("{}/api/v3/resource/batch", clients.rest_endpoint);
+        let _batch_response1: CreateResourceBatchResponse = client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+            .json(&request)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+        // 5.Create resources for user 2
+        // 5.1. Create group
+        let request = CreateGroupRequest {
+            name: "SecondGroup".to_string(),
+            description: String::new(),
+        };
+        let url = format!("{}/api/v3/group", clients.rest_endpoint);
+        let response: CreateGroupResponse = client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", SECOND_TOKEN))
+            .json(&request)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+        // 5.2. Add group to realm
+        let request = AddGroupRequest {
+            realm_id: realm_id.clone(),
+            group_id: response.group.id.to_string(),
+        };
+        let _response = clients
+            .realm_client
+            .add_group(request)
+            .await
+            .unwrap()
+            .into_inner();
+
+        // 5.3 Create Project
+        let request = ModelsCreateProject {
+            name: "TestProjectNo2".to_string(),
+            group_id: response.group.id,
+            realm_id: Ulid::from_string(&realm_id).unwrap(),
+            visibility: aruna_server::models::models::VisibilityClass::Public,
+            ..Default::default()
+        };
+        let url = format!("{}/api/v3/resource/project", clients.rest_endpoint);
+        let response: CreateProjectResponse = client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", SECOND_TOKEN))
+            .json(&request)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+        // 5.4. Create resources for user 1
+        let mut resources = Vec::new();
+        for i in 0..5 {
+            resources.push(BatchResource {
+                name: format!("PUBLIC_TEST_U2_{i}"),
+                parent: aruna_server::models::requests::Parent::ID(response.resource.id),
+                visibility: aruna_server::models::models::VisibilityClass::Public,
+                ..Default::default()
+            });
+        }
+        for i in 5..10 {
+            resources.push(BatchResource {
+                name: format!("PRIVATE_TEST_U2_{i}"),
+                parent: aruna_server::models::requests::Parent::ID(response.resource.id),
+                visibility: aruna_server::models::models::VisibilityClass::Private,
+                ..Default::default()
+            });
+        }
+        let request = CreateResourceBatchRequest { resources };
+        let url = format!("{}/api/v3/resource/batch", clients.rest_endpoint);
+        let _batch_response2: CreateResourceBatchResponse = client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", SECOND_TOKEN))
+            .json(&request)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+        //
+        // Test search
+        //
+        let url = format!("{}/api/v3/search", clients.rest_endpoint);
+
+        let response: SearchResponse = client
+            .get(url.clone())
+            .query(&[("query", "PUBLIC")])
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(response.expected_hits, 12);
+
+        let response: SearchResponse = client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+            .query(&[("query", "PRIVATE")])
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(&response.expected_hits, &5);
+        assert!(response.resources.iter().all(|r| {
+            match r {
+                aruna_server::models::models::GenericNode::Resource(n) => n.name.contains("U1"),
+                _ => false
+            }
+        }));
+        assert!(response.resources.iter().all(|r| {
+            match r {
+                aruna_server::models::models::GenericNode::Resource(n) => !n.name.contains("U2"),
+                _ => false
+            }
+        }));
+
+        let url = format!("{}/api/v3/search", clients.rest_endpoint);
+        let response: SearchResponse = client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", SECOND_TOKEN))
+            .query(&[("query", "PRIVATE")])
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(&response.expected_hits, &5);
+        assert!(response.resources.iter().all(|r| {
+            match r {
+                aruna_server::models::models::GenericNode::Resource(n) => !n.name.contains("U1"),
+                _ => false
+            }
+        }));
+        assert!(response.resources.iter().all(|r| {
+            match r {
+                aruna_server::models::models::GenericNode::Resource(n) => n.name.contains("U2"),
+                _ => false
+            }
+        }))
     }
 }

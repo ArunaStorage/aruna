@@ -74,7 +74,7 @@ pub struct CreateResourceBatchRequest {
     pub resources: Vec<BatchResource>,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
 pub struct CreateProjectRequest {
     pub name: String,
     #[serde(default)]
