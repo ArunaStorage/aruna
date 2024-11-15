@@ -12,6 +12,7 @@ use aruna_rust_api::v3::aruna::api::v3::{
     resource_service_server::ResourceServiceServer, user_service_server::UserServiceServer,
 };
 use error::ArunaError;
+use models::{models::IssuerKey, requests::AddOidcProviderRequest};
 use tokio::{sync::Notify, task::JoinSet};
 use tonic::transport::Server;
 use tracing::info;
@@ -90,6 +91,7 @@ pub async fn start_server(
     }: Config,
     notify: Option<Arc<Notify>>,
 ) -> Result<(), ArunaError> {
+    let first_node = init_node.is_none();
     let controller = Controller::new(
         database_path,
         node_id,
@@ -100,6 +102,35 @@ pub async fn start_server(
     )
     .await
     .unwrap();
+
+    match (
+        dotenvy::var("OIDC_ISSUER_NAME").ok(),
+        dotenvy::var("OIDC_ISSUER_ENDPOINT").ok(),
+        dotenvy::var("OIDC_ISSUER_AUDIENCES").ok(),
+    ) {
+        (Some(issuer_name), Some(issuer_endpoint), Some(aud)) => {
+            if first_node {
+                info!("Adding OIDC provider");
+                let audiences = aud.split(';').map(|s| s.to_string()).collect();
+                let store = controller.get_store();
+                let keys = IssuerKey::fetch_jwks(&issuer_endpoint).await?;
+
+                tokio::task::spawn_blocking(move || {
+                    let mut wtxn = store.write_txn()?;
+
+                    store.add_issuer(&mut wtxn, issuer_name, issuer_endpoint, audiences, keys)?;
+
+                    wtxn.commit()?;
+                    Ok::<_, ArunaError>(())
+                })
+                .await
+                .map_err(|e| ArunaError::ServerError(e.to_string()))??;
+            } else {
+                info!("Ignoring OIDC config, because consensus is needed");
+            }
+        }
+        _ => {}
+    };
 
     let mut join_set = JoinSet::new();
 

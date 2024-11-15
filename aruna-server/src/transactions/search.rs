@@ -32,15 +32,21 @@ impl Request for SearchRequest {
             let rtxn = store.read_txn()?;
 
             let universe = match requester {
-                Some(requester) => {
-                    let user_idx = store
-                        .get_idx_from_ulid(&requester.get_id(), &rtxn)
-                        .ok_or_else(|| ArunaError::NotFound("Requester not found".to_string()))?;
-                    let groups = store.get_realm_and_groups(user_idx)?;
-                    let mut universe = store.get_read_permission_universe(&rtxn, &groups)?;
-                    universe |= store.get_public_universe(&rtxn)?;
-                    universe
-                }
+                Some(requester) => match requester.get_id() {
+                    Some(requester_id) => {
+                        let user_idx =
+                            store
+                                .get_idx_from_ulid(&requester_id, &rtxn)
+                                .ok_or_else(|| {
+                                    ArunaError::NotFound("Requester not found".to_string())
+                                })?;
+                        let groups = store.get_realm_and_groups(user_idx)?;
+                        let mut universe = store.get_read_permission_universe(&rtxn, &groups)?;
+                        universe |= store.get_public_universe(&rtxn)?;
+                        universe
+                    }
+                    None => store.get_public_universe(&rtxn)?,
+                },
                 None => store.get_public_universe(&rtxn)?,
             };
             let (expected_hits, result) =

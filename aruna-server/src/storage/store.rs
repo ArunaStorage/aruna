@@ -9,9 +9,10 @@ use crate::{
     storage::{
         graph::load_graph, init, milli_helpers::prepopulate_fields, utils::SigningInfoCodec,
     },
-    transactions::controller::KeyConfig,
+    transactions::{controller::KeyConfig, request::Requester},
 };
 use ahash::RandomState;
+use chrono::NaiveDateTime;
 use heed::{
     byteorder::BigEndian,
     types::{SerdeBincode, Str, U128},
@@ -155,6 +156,8 @@ pub struct Store {
 
     // Database for tokens with user_idx as key and a list of tokens as value
     tokens: Database<BEU32, SerdeBincode<Vec<Option<Token>>>>,
+    // Database for (oidc_user_id, oidc_provider) to UserNodeIdx mappings
+    oidc_mappings: Database<SerdeBincode<(String, String)>, BEU32>,
 
     // -------------------
     // Volatile data
@@ -202,6 +205,9 @@ impl Store {
         let single_entry_database = env
             .create_database(&mut write_txn, Some(SINGLE_ENTRY_DB))
             .inspect_err(logerr!())?;
+        let oidc_mappings = env
+            .create_database(&mut write_txn, Some(OIDC_MAPPING_DB_NAME))
+            .inspect_err(logerr!())?;
 
         // Special events database allowing for duplicates
         let events = env
@@ -240,6 +246,7 @@ impl Store {
             read_permissions,
             status: RwLock::new(HashMap::default()),
             single_entry_database,
+            oidc_mappings,
             //issuer_decoding_keys,
             //signing_info: key_config,
             graph: RwLock::new(graph),
@@ -907,13 +914,111 @@ impl Store {
         get_realm_and_groups(&self.graph.read().expect("RWLock poison error"), user_idx)
     }
 
-
     #[tracing::instrument(level = "trace", skip(self, rtxn))]
-    pub fn get_relation_info(&self, relation_idx: &u32, rtxn: &RoTxn) -> Result<Option<RelationInfo>, ArunaError> {
+    pub fn get_relation_info(
+        &self,
+        relation_idx: &u32,
+        rtxn: &RoTxn,
+    ) -> Result<Option<RelationInfo>, ArunaError> {
         let relation_info = self
             .relation_infos
             .get(&rtxn, relation_idx)
             .inspect_err(logerr!())?;
         Ok(relation_info)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, wtxn, keys))]
+    pub fn add_issuer(
+        &self,
+        wtxn: &mut WriteTxn,
+        issuer_name: String,
+        issuer_endpoint: String,
+        audiences: Vec<String>,
+        keys: (Vec<(String, DecodingKey)>, NaiveDateTime),
+    ) -> Result<(), ArunaError> {
+        let mut wtxn = wtxn.get_txn();
+        let issuer_single_entry_db = self
+            .single_entry_database
+            .remap_types::<Str, SerdeBincode<Vec<IssuerKey>>>();
+
+        let mut entries = issuer_single_entry_db
+            .get(&wtxn, single_entry_names::ISSUER_KEYS)
+            .inspect_err(logerr!())?;
+
+        for key in keys.0.into_iter().map(|(key_id, decoding_key)| IssuerKey {
+            key_id,
+            issuer_name: issuer_name.clone(),
+            issuer_endpoint: Some(issuer_endpoint.clone()),
+            issuer_type: IssuerType::OIDC,
+            decoding_key,
+            audiences: audiences.clone(),
+        }) {
+            match entries {
+                Some(ref current_keys) if current_keys.contains(&key) => {
+                    continue;
+                }
+                Some(ref mut current_keys) if !current_keys.contains(&key) => {
+                    current_keys.push(key);
+                    issuer_single_entry_db
+                        .put(&mut wtxn, single_entry_names::ISSUER_KEYS, &current_keys)
+                        .inspect_err(logerr!())?;
+                }
+                _ => {
+                    // TODO: This should not happen at this stage right?
+                    issuer_single_entry_db
+                        .put(&mut wtxn, single_entry_names::ISSUER_KEYS, &vec![key])
+                        .inspect_err(logerr!())?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, wtxn))]
+    pub fn add_oidc_mapping(
+        &self,
+        wtxn: &mut WriteTxn,
+        user_idx: u32,
+        oidc_mapping: (String, String), // (oidc_id, issuer_name)
+    ) -> Result<(), ArunaError> {
+        let mut wtxn = wtxn.get_txn();
+        self.oidc_mappings
+            .put(&mut wtxn, &oidc_mapping, &user_idx)
+            .inspect_err(logerr!())?;
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, oidc_mapping))]
+    pub fn get_user_by_oidc(
+        &self,
+        oidc_mapping: (String, String), // (oidc_id, issuer_name)
+    ) -> Result<Requester, ArunaError> {
+        let read_txn = self.read_txn()?;
+
+        let user_idx = if let Some(user_idx) = self
+            .oidc_mappings
+            .get(&read_txn, &oidc_mapping)
+            .inspect_err(logerr!())?
+        {
+            user_idx
+        } else {
+            return Ok(Requester::Unregistered {
+                oidc_subject: oidc_mapping.0,
+                oidc_realm: oidc_mapping.1,
+            })
+        };
+
+        let user: User = self
+            .get_node(&read_txn, user_idx)
+            .ok_or_else(|| ArunaError::NotFound(format!("{user_idx}")))?;
+
+        Ok(Requester::User {
+            user_id: user.id,
+            auth_method: crate::transactions::request::AuthMethod::Oidc {
+                oidc_realm: oidc_mapping.1,
+                oidc_subject: oidc_mapping.0,
+            },
+        })
     }
 }

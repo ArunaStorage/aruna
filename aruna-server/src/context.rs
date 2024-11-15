@@ -3,6 +3,7 @@ use ulid::Ulid;
 
 pub enum Context {
     Public,
+    NotRegistered,
     UserOnly,
     GlobalAdmin,
     Permission {

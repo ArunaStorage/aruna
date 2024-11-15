@@ -1,7 +1,7 @@
 use super::{
     auth::TokenHandler,
     controller::Controller,
-    request::{AuthMethod, Request, Requester, WriteRequest},
+    request::{Request, Requester, WriteRequest},
 };
 use crate::{
     context::Context,
@@ -30,19 +30,13 @@ impl Request for RegisterUserRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
-        let ulid = Ulid::new();
-        let test_requester = Requester::User {
-            user_id: ulid,
-            auth_method: AuthMethod::Aruna(0),
-        };
         let request_tx = RegisterUserRequestTx {
-            id: ulid, //Ulid::new(),
+            id: Ulid::new(),
             req: self,
-            requester: test_requester,
-            // requester: requester.ok_or_else(|| {
-            //     tracing::error!("Missing requester");
-            //     ArunaError::Unauthorized
-            // })?,
+            requester: requester.ok_or_else(|| {
+                tracing::error!("Missing requester");
+                ArunaError::Unauthorized
+            })?,
         };
 
         let response = controller.transaction(Ulid::new().0, &request_tx).await?;
@@ -80,6 +74,16 @@ impl WriteRequest for RegisterUserRequestTx {
             global_admin: false,
         };
 
+        let oidc_mapping = match &self.requester {
+            Requester::Unregistered {
+                oidc_realm,
+                oidc_subject,
+            } => (oidc_subject.clone(), oidc_realm.clone()),
+            _ => {
+                return Err(ArunaError::Unauthorized);
+            }
+        };
+
         // TODO: Extract OIDC context from Requester -> Add oidc mapping support
 
         let store = controller.get_store();
@@ -88,6 +92,7 @@ impl WriteRequest for RegisterUserRequestTx {
 
             // Create user
             let user_idx = store.create_node(&mut wtxn, &user)?;
+            store.add_oidc_mapping(&mut wtxn, user_idx, oidc_mapping)?;
 
             // Affected nodes: Group, Realm, Project
             store.register_event(&mut wtxn, event_id, &[user_idx])?;
@@ -147,10 +152,14 @@ impl WriteRequest for CreateTokenRequestTx {
         controller: &Controller,
     ) -> Result<SerializedResponse, crate::error::ArunaError> {
         controller.authorize(&self.requester, &self.req).await?;
+        let user_id = self
+            .requester
+            .get_id()
+            .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
 
         let token = Token {
             id: 0, // This id is created in the store
-            user_id: self.requester.get_id(),
+            user_id,
             name: self.req.name.clone(),
             expires_at: self.req.expires_at.expect("Got generated in Request"),
             constraints: None, // TODO: Constraints

@@ -2,18 +2,21 @@ use std::sync::Arc;
 
 use super::{
     controller::Controller,
-    request::{AuthMethod, Request, Requester},
+    request::{AuthMethod, Request, Requester, SerializedResponse, WriteRequest},
 };
 use crate::{
     context::Context,
     error::ArunaError,
-    models::models::{ArunaTokenClaims, Audience, IssuerType},
+    models::{
+        models::{ArunaTokenClaims, Audience, IssuerKey, IssuerType},
+        requests::{AddOidcProviderRequest, AddOidcProviderResponse},
+    },
     storage::store::Store,
 };
 use base64::{engine::general_purpose, Engine};
 use chrono::Utc;
 use jsonwebtoken::{encode, Algorithm, DecodingKey, Header};
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use ulid::Ulid;
 
 impl Controller {
@@ -56,6 +59,7 @@ impl Controller {
 
         match ctx {
             Context::Public => Ok(()),
+            Context::NotRegistered => Ok(()), // Must provide valid oidc_token
             Context::UserOnly => {
                 if matches!(user, Requester::User { .. }) {
                     Ok(())
@@ -66,13 +70,14 @@ impl Controller {
                     ))
                 }
             }
-            Context::GlobalAdmin => Ok(()),
+            Context::GlobalAdmin => Err(ArunaError::Forbidden(String::new())), // TODO: Impl global
+            // admins
             Context::Permission {
                 min_permission,
                 source,
             } => {
                 let store = self.get_store();
-                let user_id = user.get_id();
+                let user_id = user.get_id().ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
                 let source = source.clone();
                 let perm =
                     tokio::task::spawn_blocking(move || store.get_permissions(&source, &user_id))
@@ -89,7 +94,7 @@ impl Controller {
                 }
             }
             Context::PermissionBatch(permissions) => {
-                let user_id = user.get_id();
+                let user_id = user.get_id().ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
                 for permission in permissions {
                     let store = self.get_store();
                     let source = permission.source.clone();
@@ -117,7 +122,7 @@ impl Controller {
                 second_source,
             } => {
                 let store = self.get_store();
-                let user_id = user.get_id();
+                let user_id = user.get_id().ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
                 let first_source = first_source.clone();
 
                 let first_perm = tokio::task::spawn_blocking(move || {
@@ -261,7 +266,6 @@ impl TokenHandler {
         match is_service_account {
             0u8 => {
                 // False
-
                 self.store.ensure_token_exists(&user_id, token_idx)?;
 
                 Ok(Requester::User {
@@ -289,10 +293,13 @@ impl TokenHandler {
 
     ///ToDo: Rust Doc
     fn validate_oidc_token(&self, claims: &ArunaTokenClaims) -> Result<Requester, ArunaError> {
-        let _oidc_mapping = (claims.iss.clone(), claims.sub.clone());
+        let oidc_mapping = (claims.sub.clone(), claims.iss.clone());
+        println!("{oidc_mapping:?}");
         // Fetch user from oidc provider
-        //self.controller.get_user_by_oidc(oidc_mapping)
-        todo!()
+        Ok(self.store.get_user_by_oidc(oidc_mapping).map_err(|e| {
+            tracing::error!("{e}");
+            ArunaError::Unauthorized
+        })?)
     }
 }
 
@@ -316,4 +323,61 @@ pub(crate) fn b64_decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, ArunaError
         tracing::error!(?e, "Error decoding base64");
         ArunaError::Unauthorized
     })
+}
+
+impl Request for AddOidcProviderRequest {
+    type Response = AddOidcProviderResponse;
+    fn get_context(&self) -> Context {
+        Context::GlobalAdmin
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let request_tx = AddOidcProviderRequestTx {
+            req: self,
+            requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
+        };
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response)?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AddOidcProviderRequestTx {
+    req: AddOidcProviderRequest,
+    requester: Requester,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for AddOidcProviderRequestTx {
+    async fn execute(
+        &self,
+        _associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, crate::error::ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+
+        let store = controller.get_store();
+        let keys = IssuerKey::fetch_jwks(&self.req.issuer_endpoint).await?;
+        let issuer_name = self.req.issuer_name.clone();
+        let issuer_endpoint = self.req.issuer_endpoint.clone();
+        let audiences = self.req.audiences.clone();
+
+        Ok(tokio::task::spawn_blocking(move || {
+            let mut wtxn = store.write_txn()?;
+
+            store.add_issuer(&mut wtxn, issuer_name, issuer_endpoint, audiences, keys)?;
+            // TODO: Register event?
+            wtxn.commit()?;
+
+            Ok::<_, ArunaError>(bincode::serialize(&AddOidcProviderResponse {})?)
+        })
+        .await
+        .map_err(|e| ArunaError::ServerError(e.to_string()))??)
+    }
 }

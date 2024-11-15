@@ -13,7 +13,7 @@ use crate::{
     storage::obkv_ext::{FieldIterator, ParseError},
 };
 
-#[derive(Serialize, Deserialize, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq, Clone)]
 pub struct IssuerKey {
     pub key_id: String,
     pub issuer_name: String,
@@ -486,8 +486,15 @@ pub struct User {
     pub last_name: String,
     pub email: String,
     pub identifiers: String, // TODO: Vec<String>?
-    /// TODO: OIDC mapping ?
+    // TODO: OIDC mapping ?
+    // pub oidc_mappings: Vec<OidcMapping>,
     pub global_admin: bool,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
+pub struct OidcMapping {
+    pub provider: String,
+    pub id: String,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
@@ -668,41 +675,15 @@ pub enum IssuerType {
     OIDC,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Issuer {
-    pub issuer_name: String,
-    pub pubkey_endpoint: Option<String>,
-    pub audiences: Vec<String>,
-    pub issuer_type: IssuerType,
-}
+// #[derive(Clone, Serialize, Deserialize)]
+// pub struct Issuer {
+//     pub issuer_name: String,
+//     pub pubkey_endpoint: Option<String>,
+//     pub audiences: Vec<String>,
+//     pub issuer_type: IssuerType,
+// }
 
-impl Issuer {
-    pub async fn new_with_endpoint(
-        issuer_name: String,
-        pubkey_endpoint: String,
-        audiences: Vec<String>,
-    ) -> Self {
-        Self {
-            issuer_name,
-            pubkey_endpoint: Some(pubkey_endpoint),
-            audiences,
-            issuer_type: IssuerType::OIDC,
-        }
-    }
-
-    pub async fn new_with_keys(
-        issuer_name: String,
-        audiences: Vec<String>,
-        issuer_type: IssuerType,
-    ) -> Self {
-        Self {
-            issuer_name,
-            pubkey_endpoint: None,
-            audiences,
-            issuer_type,
-        }
-    }
-
+impl IssuerKey {
     pub async fn fetch_jwks(
         endpoint: &str,
     ) -> Result<(Vec<(String, DecodingKey)>, NaiveDateTime), ArunaError> {

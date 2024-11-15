@@ -1,54 +1,11 @@
 services:
-  nats:
-    image: nats:latest
-    ports:
-      - 4222:4222
-      - 8222:8222
-    command: --http_port 8222 --js
-  meili:
-    image: getmeili/meilisearch:latest
-    ports:
-      - 7700:7700
-    environment:
-      MEILI_MASTER_KEY: "MASTER_KEY"
-  yugabyte:
-    image: yugabytedb/yugabyte:2.19.2.0-b121
-    hostname: yugabyte
-    ports:
-      - 5433:5433
-    command: 'bin/yugabyted start --tserver_flags="enable_wait_queues=true,enable_deadlock_detection=true,yb_enable_read_committed_isolation=true" --daemon=false'
-    healthcheck:
-      test: ["CMD-SHELL", 'ysqlsh -h yugabyte -p 5433 --command="\l"']
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 20s
-      start_interval: 5s
   keycloak:
-    image: quay.io/keycloak/keycloak:21.0.2
+    image: quay.io/keycloak/keycloak:26.0.5
     ports:
       - 1998:8080
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
     volumes:
-      - ./components/server/tests/common/keycloak/realm.json:/opt/keycloak/data/import/realm.json
+      - ./aruna-server/tests/test_db/realm.json:/opt/keycloak/data/import/realm.json
     command: "start-dev --import-realm"
-  load_database:
-    network_mode: "host"
-    depends_on:
-      yugabyte:
-        condition: service_healthy
-    restart: on-failure
-    image: postgres:alpine3.18
-    volumes:
-      - ./components/server/tests/common/initial_data.sql:/data/initial_data.sql
-      - ./components/server/src/database/schema.sql:/data/schema.sql
-    command: >
-      sh -c "psql 'postgres://yugabyte@localhost:5433' -c 'DROP DATABASE IF EXISTS test' &&
-             psql 'postgres://yugabyte@localhost:5433' -c 'CREATE DATABASE test' &&
-             psql 'postgres://yugabyte@localhost:5433/test' < /data/schema.sql &&
-             psql 'postgres://yugabyte@localhost:5433/test' < /data/initial_data.sql"
-
-
-

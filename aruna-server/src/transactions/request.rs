@@ -38,6 +38,10 @@ pub enum Requester {
         token_id: u16,
         group_id: Ulid,
     },
+    Unregistered {
+        oidc_realm: String,
+        oidc_subject: String,
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,18 +54,19 @@ pub enum AuthMethod {
 }
 
 impl Requester {
-    pub fn get_id(&self) -> Ulid {
+    pub fn get_id(&self) -> Option<Ulid> {
         match self {
             Self::User {
                 auth_method,
                 user_id,
             } => match auth_method {
-                AuthMethod::Oidc { .. } => *user_id,
-                AuthMethod::Aruna(_) => *user_id,
+                AuthMethod::Oidc { .. } => Some(*user_id),
+                AuthMethod::Aruna(_) => Some(*user_id),
             },
             Self::ServiceAccount {
                 service_account_id, ..
-            } => *service_account_id,
+            } => Some(*service_account_id),
+            Self::Unregistered {..} => None
         }
     }
 }

@@ -4,7 +4,7 @@ use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
 use super::models::{
-    Author, GenericNode, Group, KeyValue, Permission, Realm, Relation, RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass
+    Author, GenericNode, Group, IssuerKey, KeyValue, Permission, Realm, Relation, RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass
 };
 
 fn default_license_tag() -> String {
@@ -254,7 +254,6 @@ pub enum Direction {
     Outgoing,
 }
 
-// TODO: Impl relation requests
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GetRelationsRequest {
     pub node: Ulid,
@@ -300,3 +299,15 @@ pub struct GetGroupsFromRealmRequest {
 pub struct GetGroupsFromRealmResponse {
     pub groups: Vec<Group>,
 }
+
+
+// Issuer and auth requests
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct AddOidcProviderRequest {
+    pub issuer_name: String,
+    pub issuer_endpoint: String,
+    pub audiences: Vec<String>,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct AddOidcProviderResponse {}

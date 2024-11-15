@@ -72,7 +72,7 @@ impl WriteRequest for CreateRealmRequestTx {
         };
 
         let group = self.generated_group.clone();
-        let requester_id = self.requester.get_id();
+        let requester_id = self.requester.get_id().ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
 
         let store = controller.get_store();
         Ok(tokio::task::spawn_blocking(move || {
