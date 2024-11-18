@@ -84,8 +84,6 @@ impl WriteRequest for RegisterUserRequestTx {
             }
         };
 
-        // TODO: Extract OIDC context from Requester -> Add oidc mapping support
-
         let store = controller.get_store();
         Ok(tokio::task::spawn_blocking(move || {
             let mut wtxn = store.write_txn()?;

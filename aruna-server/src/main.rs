@@ -7,7 +7,7 @@ async fn main() {
         .unwrap_or("none".into())
         .add_directive("aruna_server=trace".parse().unwrap())
         .add_directive("tower_http=info".parse().unwrap())
-        .add_directive("synevi_core=trace".parse().unwrap());
+        .add_directive("synevi_core=info".parse().unwrap());
 
     tracing_subscriber::fmt()
         .with_file(true)

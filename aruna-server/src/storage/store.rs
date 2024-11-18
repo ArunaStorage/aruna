@@ -413,8 +413,14 @@ impl Store {
         // Add the node to the graph
         let index = wtxn.get_graph().add_node(variant);
 
+
         // Ensure that the index in graph and milli stays in sync
-        assert_eq!(index.index() as u32, idx);
+        // assert_eq!(index.index() as u32, idx);
+        if index.index() as u32 != idx {
+            let existing: Option<User> = self.get_node::<User>(&wtxn.get_txn(), 0);
+            dbg!(existing);
+            panic!()
+        }
 
         Ok(idx)
     }

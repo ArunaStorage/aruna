@@ -16,7 +16,7 @@ use models::{models::IssuerKey, requests::AddOidcProviderRequest};
 use tokio::{sync::Notify, task::JoinSet};
 use tonic::transport::Server;
 use tracing::info;
-use transactions::controller::Controller;
+use transactions::{auth::AddOidcProviderRequestTx, controller::Controller};
 use ulid::Ulid;
 
 pub mod api;
@@ -112,19 +112,15 @@ pub async fn start_server(
             if first_node {
                 info!("Adding OIDC provider");
                 let audiences = aud.split(';').map(|s| s.to_string()).collect();
-                let store = controller.get_store();
-                let keys = IssuerKey::fetch_jwks(&issuer_endpoint).await?;
-
-                tokio::task::spawn_blocking(move || {
-                    let mut wtxn = store.write_txn()?;
-
-                    store.add_issuer(&mut wtxn, issuer_name, issuer_endpoint, audiences, keys)?;
-
-                    wtxn.commit()?;
-                    Ok::<_, ArunaError>(())
-                })
-                .await
-                .map_err(|e| ArunaError::ServerError(e.to_string()))??;
+                let request_tx = AddOidcProviderRequestTx {
+                    req: AddOidcProviderRequest {
+                        issuer_name,
+                        issuer_endpoint,
+                        audiences,
+                    },
+                    requester: None,
+                };
+                controller.transaction(Ulid::new().0, &request_tx).await?;
             } else {
                 info!("Ignoring OIDC config, because consensus is needed");
             }

@@ -746,9 +746,9 @@ dependencies = [
 
 [[package]]
 name = "axum"
-version = "0.7.7"
+version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "504e3947307ac8326a5437504c517c4b56716c9d98fac0028c2acc7ca47d70ae"
+checksum = "edca88bc138befd0323b20752846e6587272d3b03b0343c8ea28a6f819e6e71f"
 dependencies = [
  "async-trait",
  "axum-core",
@@ -2787,7 +2787,7 @@ dependencies = [
  "http 1.1.0",
  "hyper 1.5.0",
  "hyper-util",
- "rustls 0.23.16",
+ "rustls 0.23.17",
  "rustls-pki-types",
  "tokio",
  "tokio-rustls 0.26.0",
@@ -3265,9 +3265,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.162"
+version = "0.2.164"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18d287de67fe55fd7e1581fe933d965a5a9477b38e949cfa9f8574ef01506398"
+checksum = "433bfe06b8c75da9b2e3fbea6e5329ff87748f0b144ef75306e674c3f6f7c13f"
 
 [[package]]
 name = "libm"
@@ -3582,7 +3582,7 @@ dependencies = [
 [[package]]
 name = "monotime"
 version = "0.1.0"
-source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a7a09ed529ff6eb6567326bda1f90cffe36adf8"
+source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
 dependencies = [
  "bytes",
  "serde",
@@ -4997,9 +4997,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.16"
+version = "0.23.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eee87ff5d9b36712a58574e12e9f0ea80f915a5b0ac518d322b24a465617925e"
+checksum = "7f1a745511c54ba6d4465e8d5dfbd81b45791756de28d4981af70d6dca128f1e"
 dependencies = [
  "log",
  "once_cell",
@@ -5294,9 +5294,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.132"
+version = "1.0.133"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d726bfaff4b320266d395898905d0eba0345aae23b54aee3a737e260fd46db03"
+checksum = "c7fceb2473b9166b2294ef05efcb65a3db80803f0b03ef86a5fc88a2b85ee377"
 dependencies = [
  "indexmap 2.6.0",
  "itoa",
@@ -5708,7 +5708,7 @@ dependencies = [
 [[package]]
 name = "synevi"
 version = "0.1.0"
-source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a7a09ed529ff6eb6567326bda1f90cffe36adf8"
+source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
 dependencies = [
  "monotime",
  "synevi_core",
@@ -5720,7 +5720,7 @@ dependencies = [
 [[package]]
 name = "synevi_core"
 version = "0.1.0"
-source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a7a09ed529ff6eb6567326bda1f90cffe36adf8"
+source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
 dependencies = [
  "ahash",
  "async-channel",
@@ -5748,7 +5748,7 @@ dependencies = [
 [[package]]
 name = "synevi_network"
 version = "0.1.0"
-source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a7a09ed529ff6eb6567326bda1f90cffe36adf8"
+source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
 dependencies = [
  "ahash",
  "async-trait",
@@ -5768,7 +5768,7 @@ dependencies = [
 [[package]]
 name = "synevi_persistence"
 version = "0.1.0"
-source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a7a09ed529ff6eb6567326bda1f90cffe36adf8"
+source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
 dependencies = [
  "ahash",
  "async-channel",
@@ -5794,7 +5794,7 @@ dependencies = [
 [[package]]
 name = "synevi_types"
 version = "0.1.0"
-source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a7a09ed529ff6eb6567326bda1f90cffe36adf8"
+source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
 dependencies = [
  "ahash",
  "async-channel",
@@ -6146,7 +6146,7 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c7bc40d0e5a97695bb96e27995cd3a08538541b0a846f65bba7a359f36700d4"
 dependencies = [
- "rustls 0.23.16",
+ "rustls 0.23.17",
  "rustls-pki-types",
  "tokio",
 ]
@@ -6566,7 +6566,7 @@ dependencies = [
  "flate2",
  "log",
  "once_cell",
- "rustls 0.23.16",
+ "rustls 0.23.17",
  "rustls-pki-types",
  "serde",
  "serde_json",
