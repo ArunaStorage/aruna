@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 pub struct Config {
     pub proxy: Proxy,
     pub persistence: Option<Persistence>,
-    pub frontend: Option<Frontend>,
+    pub frontend: Frontend,
     pub backend: Backend,
     pub rules: Option<Vec<Rule>>,
 }

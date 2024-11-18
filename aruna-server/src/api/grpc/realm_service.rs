@@ -38,12 +38,12 @@ impl RealmService for RealmServiceImpl {
         let token = get_token(request.metadata());
         let controller = self.handler.clone();
 
-         Ok(tonic::Response::new(
-             controller
-                 .request( GetRealmRequest::try_from(request.into_inner())?, token)
-                 .await?
-                 .into(),
-         ))
+        Ok(tonic::Response::new(
+            controller
+                .request(GetRealmRequest::try_from(request.into_inner())?, token)
+                .await?
+                .into(),
+        ))
     }
     async fn add_group(
         &self,

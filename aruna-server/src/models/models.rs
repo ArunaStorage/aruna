@@ -491,7 +491,9 @@ pub struct User {
     pub global_admin: bool,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
 pub struct OidcMapping {
     pub provider: String,
     pub id: String,

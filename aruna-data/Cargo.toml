@@ -30,7 +30,7 @@ pithos_lib = "0.6.0"
 postgres_array = "0.11.1"
 regex = "1.10.5"
 reqsign = "0.16.0"
-s3s = "0.10.0"
+s3s = { git = "https://github.com/Nugine/s3s.git" }
 toml = "0.8.14"
 tower-http = { version = "0.6.1", features = ["cors"] }
 tracing = "0.1.40"
@@ -84,3 +84,4 @@ tonic = { version = "0.12.3", features = ["tls", "tls-roots"] }
 tower = { version = "0.5.1", features = ["retry"] }
 url = "2.5.2"
 petgraph = "0.6.5"
+thiserror = "2.0.0"

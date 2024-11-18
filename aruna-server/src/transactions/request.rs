@@ -41,7 +41,7 @@ pub enum Requester {
     Unregistered {
         oidc_realm: String,
         oidc_subject: String,
-    }
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,7 +66,7 @@ impl Requester {
             Self::ServiceAccount {
                 service_account_id, ..
             } => Some(*service_account_id),
-            Self::Unregistered {..} => None
+            Self::Unregistered { .. } => None,
         }
     }
 }

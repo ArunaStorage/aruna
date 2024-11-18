@@ -413,7 +413,6 @@ impl Store {
         // Add the node to the graph
         let index = wtxn.get_graph().add_node(variant);
 
-
         // Ensure that the index in graph and milli stays in sync
         // assert_eq!(index.index() as u32, idx);
         if index.index() as u32 != idx {
@@ -1012,7 +1011,7 @@ impl Store {
             return Ok(Requester::Unregistered {
                 oidc_subject: oidc_mapping.0,
                 oidc_realm: oidc_mapping.1,
-            })
+            });
         };
 
         let user: User = self

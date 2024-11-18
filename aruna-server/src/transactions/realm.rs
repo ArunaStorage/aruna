@@ -9,7 +9,9 @@ use crate::{
     models::{
         models::{Group, Realm},
         requests::{
-            AddGroupRequest, AddGroupResponse, CreateRealmRequest, CreateRealmResponse, GetGroupsFromRealmRequest, GetGroupsFromRealmResponse, GetRealmRequest, GetRealmResponse
+            AddGroupRequest, AddGroupResponse, CreateRealmRequest, CreateRealmResponse,
+            GetGroupsFromRealmRequest, GetGroupsFromRealmResponse, GetRealmRequest,
+            GetRealmResponse,
         },
     },
     transactions::request::SerializedResponse,
@@ -72,7 +74,10 @@ impl WriteRequest for CreateRealmRequestTx {
         };
 
         let group = self.generated_group.clone();
-        let requester_id = self.requester.get_id().ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
+        let requester_id = self
+            .requester
+            .get_id()
+            .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
 
         let store = controller.get_store();
         Ok(tokio::task::spawn_blocking(move || {
@@ -290,7 +295,12 @@ impl Request for GetGroupsFromRealmRequest {
 
             let mut groups = Vec::new();
             for source in store
-                .get_relations(realm_idx, &[GROUP_PART_OF_REALM], Direction::Incoming, &rtxn)?
+                .get_relations(
+                    realm_idx,
+                    &[GROUP_PART_OF_REALM],
+                    Direction::Incoming,
+                    &rtxn,
+                )?
                 .into_iter()
                 .map(|r| r.from_id)
             {

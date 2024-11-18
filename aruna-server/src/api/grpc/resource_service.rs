@@ -46,7 +46,10 @@ impl ResourceService for ResourceServiceImpl {
 
         Ok(tonic::Response::new(
             controller
-                .request(models::requests::CreateResourceRequest::try_from(request.into_inner())?, token)
+                .request(
+                    models::requests::CreateResourceRequest::try_from(request.into_inner())?,
+                    token,
+                )
                 .await?
                 .into(),
         ))
@@ -61,7 +64,10 @@ impl ResourceService for ResourceServiceImpl {
 
         Ok(tonic::Response::new(
             controller
-                .request(models::requests::GetResourceRequest::try_from(request.into_inner())?, token)
+                .request(
+                    models::requests::GetResourceRequest::try_from(request.into_inner())?,
+                    token,
+                )
                 .await?
                 .into(),
         ))

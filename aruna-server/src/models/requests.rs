@@ -4,7 +4,8 @@ use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
 use super::models::{
-    Author, GenericNode, Group, IssuerKey, KeyValue, Permission, Realm, Relation, RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass
+    Author, GenericNode, Group, IssuerKey, KeyValue, Permission, Realm, Relation, RelationInfo,
+    Resource, ResourceVariant, Token, User, VisibilityClass,
 };
 
 fn default_license_tag() -> String {
@@ -69,12 +70,16 @@ impl Default for Parent {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
 pub struct CreateResourceBatchRequest {
     pub resources: Vec<BatchResource>,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
 pub struct CreateProjectRequest {
     pub name: String,
     #[serde(default)]
@@ -237,7 +242,6 @@ pub struct SearchResponse {
     pub resources: Vec<GenericNode>,
 }
 
-
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct AddUserRequest {
     pub group_id: Ulid,
@@ -258,7 +262,7 @@ pub enum Direction {
 pub struct GetRelationsRequest {
     pub node: Ulid,
     pub direction: Direction, // wrapper type for petgraph::Direction enum
-    pub filter: Vec<u32>, // Filter with Strings for directions or idx for rel idx?
+    pub filter: Vec<u32>,     // Filter with Strings for directions or idx for rel idx?
     pub offset: Option<usize>,
     pub page_size: usize, // Max value 1000? Default 100
 }
@@ -268,7 +272,6 @@ pub struct GetRelationsResponse {
     pub relations: Vec<Relation>,
     pub offset: Option<usize>,
 }
-
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GetRelationInfoRequest {
@@ -299,7 +302,6 @@ pub struct GetGroupsFromRealmRequest {
 pub struct GetGroupsFromRealmResponse {
     pub groups: Vec<Group>,
 }
-
 
 // Issuer and auth requests
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]

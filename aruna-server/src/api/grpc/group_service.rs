@@ -62,7 +62,9 @@ impl GroupService for GroupServiceImpl {
 
         Ok(tonic::Response::new(
             controller
-                .request(GetGroupRequest::try_from(request.into_inner())?, token) .await? .into(),
+                .request(GetGroupRequest::try_from(request.into_inner())?, token)
+                .await?
+                .into(),
         ))
     }
 }
