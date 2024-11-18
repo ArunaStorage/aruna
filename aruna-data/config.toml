@@ -26,7 +26,6 @@ password = "yugabyte"
 schema = './src/database/schema.sql'
 
 [frontend]
-server = "0.0.0.0:1337"
 hostname = "localhost:1337"
 cors_exception = "http://localhost:3000"
 

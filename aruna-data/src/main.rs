@@ -1,26 +1,20 @@
-use anyhow::anyhow;
+use crate::config::Config;
 use anyhow::Result;
 use lazy_static::lazy_static;
+use lmdbstore::LmdbStore;
 use regex::Regex;
+use s3::server::run_server;
+use std::backtrace::Backtrace;
 use std::panic;
-use std::{net::SocketAddr, sync::Arc};
-use tokio::try_join;
-use tonic::transport::Server;
-use tracing::error;
-use tracing::info_span;
+use std::sync::Arc;
 use tracing::trace;
-use tracing::Instrument;
 use tracing_subscriber::EnvFilter;
 
 mod auth;
 mod config;
+mod error;
 mod lmdbstore;
 mod s3;
-mod error;
-
-use crate::config::Config;
-use std::backtrace::Backtrace;
-use std::time::Duration;
 
 lazy_static! {
     static ref CONFIG: Config = {
@@ -53,7 +47,7 @@ async fn main() -> Result<()> {
 
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or("none".into())
-        .add_directive("data_proxy=trace".parse()?);
+        .add_directive("aruna_data=trace".parse()?);
 
     let subscriber = tracing_subscriber::fmt()
         //.with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
@@ -70,7 +64,10 @@ async fn main() -> Result<()> {
 
     tracing::subscriber::set_global_default(subscriber)?;
 
+    let store = Arc::new(LmdbStore {});
+
     trace!("init s3 server");
+    run_server(store).await?;
 
     Ok(())
 }

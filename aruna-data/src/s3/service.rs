@@ -4,12 +4,11 @@ use std::sync::Arc;
 
 pub struct ArunaS3Service {
     storage: Arc<LmdbStore>,
-    config: Arc<Config>,
 }
 
 impl ArunaS3Service {
-    pub fn new(storage: Arc<LmdbStore>, config: Arc<Config>) -> Self {
-        Self { storage, config }
+    pub fn new(storage: Arc<LmdbStore>) -> Self {
+        Self { storage }
     }
 }
 

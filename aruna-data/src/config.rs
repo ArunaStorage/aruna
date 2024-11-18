@@ -166,7 +166,6 @@ impl Persistence {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Frontend {
-    pub server: String,
     pub hostname: String,
     pub cors_exception: Option<String>,
 }

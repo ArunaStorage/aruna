@@ -1,45 +1,57 @@
+use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::server::conn::auto::Builder as ConnBuilder;
+use s3s::{host::MultiDomain, service::S3ServiceBuilder};
 use std::sync::Arc;
-
-use s3s::{host::MultiDomain, service::{S3Service, S3ServiceBuilder}};
 use tokio::net::TcpListener;
+use tracing::info;
 
-use crate::{config::Config, error::ProxyError, lmdbstore::LmdbStore};
+use crate::s3::route::CustomRoute;
+use crate::{error::ProxyError, lmdbstore::LmdbStore};
+use crate::{logerr, CONFIG};
 
 use super::{access::AccessChecker, service::ArunaS3Service};
 
-pub struct Server {
-    service: S3Service,
-    config: Arc<Config>,
-}
+pub async fn run_server(storage: Arc<LmdbStore>) -> Result<(), ProxyError> {
+    let aruna_s3_service = ArunaS3Service::new(storage);
 
-impl Server {
-    pub fn new(storage: Arc<LmdbStore>, config: Arc<Config>) -> Result<Self, ProxyError> {
+    let service = {
+        let mut builder = S3ServiceBuilder::new(aruna_s3_service);
 
-        let aruna_s3_service = ArunaS3Service::new(storage, config.clone());
+        builder.set_access(AccessChecker {});
+        builder.set_host(
+            MultiDomain::new(&[CONFIG.frontend.hostname.clone()]).inspect_err(logerr!())?,
+        );
+        builder.set_route(CustomRoute {});
+        builder.build()
+    };
 
-        let service = {
-            let mut builder = S3ServiceBuilder::new(aruna_s3_service);
+    let listener = TcpListener::bind(("0.0.0.0", 1337))
+        .await
+        .inspect_err(logerr!())?;
 
-            builder.set_access(AccessChecker {});
-            builder.set_host(MultiDomain::new(&[config.frontend.hostname.clone()])?);
-            builder.build()
-        };
+    let local_addr = listener.local_addr()?;
 
-        Ok(Server {
-            service,
-            config,
-        })
-    }
+    let connection = ConnBuilder::new(TokioExecutor::new());
+    let shared = service.into_shared();
+    let server = async move {
+        loop {
+            let (socket, _) = match listener.accept().await {
+                Ok(ok) => ok,
+                Err(err) => {
+                    tracing::error!("error accepting connection: {err}");
+                    continue;
+                }
+            };
+            let service = shared.clone();
+            let conn = connection.clone();
+            tokio::spawn(async move {
+                let _ = conn.serve_connection(TokioIo::new(socket), service).await;
+            });
+        }
+    };
 
+    info!("server is running at http://{local_addr}");
 
-    async fn run(&self) -> Result<(), ProxyError> {
-
-
-        let listener = TcpListener::bind((self.config.frontend.host.as_str(), self.config.port)).await?;
-
-
-
-        self.service.run().await?;
-        Ok(())
-    }
+    server.await; // This will never return
+    Ok(())
 }
