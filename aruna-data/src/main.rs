@@ -15,6 +15,7 @@ mod config;
 mod error;
 mod lmdbstore;
 mod s3;
+mod structs;
 
 lazy_static! {
     static ref CONFIG: Config = {
@@ -64,7 +65,7 @@ async fn main() -> Result<()> {
 
     tracing::subscriber::set_global_default(subscriber)?;
 
-    let store = Arc::new(LmdbStore::new(&CONFIG.lmdb.path)?);
+    let store = Arc::new(LmdbStore::new(&CONFIG.lmdb_path)?);
 
     trace!("init s3 server");
     run_server(store).await?;

@@ -1,6 +1,21 @@
 use bytes::Bytes;
 use http::{Extensions, HeaderMap, Method, StatusCode, Uri};
+use lazy_static::lazy_static;
 use s3s::{route::S3Route, Body, S3Request, S3Response, S3Result};
+
+use crate::CONFIG;
+
+lazy_static! {
+    static ref HOSTNAMEDOTS: usize = {
+        CONFIG
+            .frontend
+            .hostname
+            .chars()
+            .filter(|c| *c == '.')
+            .count()
+            .saturating_sub(1)
+    };
+};
 
 /// Handler for custom routes
 /// This route will handle the BUNDLES api
@@ -16,7 +31,14 @@ impl S3Route for CustomRoute {
         _headers: &HeaderMap,
         _extensions: &mut Extensions,
     ) -> bool {
-        if method == Method::POST && uri.path() == "/custom" {
+        if method == Method::POST
+            && uri.path() == "/custom"
+            && uri
+                .host()
+                .and_then(|e| Some(e.chars().filter(|c| *c == '.').count()))
+                .unwrap_or(0) // No subdomains
+                > *HOSTNAMEDOTS
+        {
             return true;
         }
         false

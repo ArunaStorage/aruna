@@ -1,4 +1,4 @@
-use crate::{config::Config, lmdbstore::LmdbStore};
+use crate::lmdbstore::LmdbStore;
 use s3s::S3;
 use std::sync::Arc;
 

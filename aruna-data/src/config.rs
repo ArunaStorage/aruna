@@ -15,11 +15,7 @@ pub struct Config {
 
 impl Config {
     pub fn validate(&mut self) -> Result<()> {
-        let Config {
-            proxy,
-            backend,
-            ..
-        } = self;
+        let Config { proxy, backend, .. } = self;
 
         proxy.validate()?;
         backend.validate()?;

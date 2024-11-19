@@ -1,5 +1,8 @@
-use base64::write;
-use heed::{types::Str, Database, Env, EnvOpenOptions, Unspecified};
+use crate::structs::ObjectInfo;
+use heed::{
+    types::{SerdeBincode, Str},
+    Database, Env, EnvOpenOptions, Unspecified,
+};
 use ulid::Ulid;
 
 use crate::{error::ProxyError, logerr};
@@ -7,12 +10,14 @@ use crate::{error::ProxyError, logerr};
 pub mod db_names {
     pub const MAIN: &str = "main";
     pub const KEYS: &str = "keys";
+    pub const INFO: &str = "info";
 }
 
 pub struct LmdbStore {
     env: Env,
     main: Database<Unspecified, Unspecified>,
     keys: Database<Str, Ulid>,
+    info: Database<Ulid, SerdeBincode<ObjectInfo>>,
 }
 
 impl LmdbStore {
@@ -33,9 +38,17 @@ impl LmdbStore {
         let keys = env
             .create_database(&mut write_txn, Some(KEYS))
             .inspect_err(logerr!())?;
+        let info = env
+            .create_database(&mut write_txn, Some(INFO))
+            .inspect_err(logerr!())?;
 
         write_txn.commit().inspect_err(logerr!())?;
 
-        Ok(Self { env, main, keys })
+        Ok(Self {
+            env,
+            main,
+            keys,
+            info,
+        })
     }
 }
