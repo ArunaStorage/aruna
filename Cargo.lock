@@ -120,7 +120,7 @@ dependencies = [
 [[package]]
 name = "aruna-rust-api"
 version = "2.0.0"
-source = "git+https://github.com/ArunaStorage/rust-api.git?branch=feat/v3#0d8b2455a637e66dd38fe16c1e2c75b5e90684f0"
+source = "git+https://github.com/ArunaStorage/rust-api.git?branch=feat/v3#003e6ce7816c78e2e0670d6e1e71c885de73db9e"
 dependencies = [
  "prost",
  "prost-types",
@@ -4348,9 +4348,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.40"
+version = "0.38.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99e4ea3e1cdc4b559b8e5650f9c8e5998e3e5c1343b4eaf034565f32318d63c0"
+checksum = "d7f649912bc1495e167a6edee79151c84b1bad49748cb4f1f1167f459f6224f6"
 dependencies = [
  "bitflags 2.6.0",
  "errno",
@@ -4471,7 +4471,7 @@ checksum = "f3cb5ba0dc43242ce17de99c180e96db90b235b8a9fdc9543c96d2209116bd9f"
 [[package]]
 name = "s3s"
 version = "0.11.0-dev"
-source = "git+https://github.com/Nugine/s3s.git#20df9ea05c2157021682ee8e0f810a143975fc4c"
+source = "git+https://github.com/Nugine/s3s.git#5c64b4768c232c21d4ea489f2f7d02f563abcb2f"
 dependencies = [
  "arrayvec",
  "async-trait",
@@ -4544,9 +4544,9 @@ dependencies = [
 
 [[package]]
 name = "schannel"
-version = "0.1.26"
+version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01227be5826fa0690321a2ba6c5cd57a19cf3f6a09e76973b58e61de6ab9d1c1"
+checksum = "1f29ebaa345f945cec9fbbc532eb307f0fdad8161f281b6369539c8d84876b3d"
 dependencies = [
  "windows-sys 0.59.0",
 ]
@@ -5600,9 +5600,9 @@ dependencies = [
 
 [[package]]
 name = "tower-http"
-version = "0.6.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8437150ab6bbc8c5f0f519e3d5ed4aa883a83dd4cdd3d1b21f9482936046cb97"
+checksum = "403fa3b783d4b626a8ad51d766ab03cb6d2dbfc46b1c5d4448395e6628dc9697"
 dependencies = [
  "bitflags 2.6.0",
  "bytes",
