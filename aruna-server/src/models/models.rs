@@ -673,7 +673,8 @@ impl TryFrom<u32> for Permission {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum IssuerType {
-    ARUNA,
+    SERVER,
+    DATAPROXY,
     OIDC,
 }
 
@@ -724,7 +725,7 @@ pub type TokenIdx = u16;
 /// - tid: UUID from the specific token
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ArunaTokenClaims {
-    pub iss: String, // 'aruna' or oidc issuer
+    pub iss: String, // 'aruna', 'data', 'compute' or oidc issuer
     pub sub: String, // User or ServiceAccount ID
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aud: Option<Audience>, // Audience;

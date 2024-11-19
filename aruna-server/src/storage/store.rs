@@ -527,7 +527,7 @@ impl Store {
         &self,
         issuer_name: String,
         key_id: String,
-    ) -> Option<(IssuerType, DecodingKey, Vec<String>)> {
+    ) -> Option<(IssuerType, String, DecodingKey, Vec<String>)> {
         let read_txn = self.read_txn().ok()?;
 
         let issuers = self
@@ -540,7 +540,14 @@ impl Store {
         issuers
             .into_iter()
             .find(|issuer| issuer.key_id == key_id && issuer.issuer_name == issuer_name)
-            .map(|issuer| (issuer.issuer_type, issuer.decoding_key, issuer.audiences))
+            .map(|issuer| {
+                (
+                    issuer.issuer_type,
+                    issuer.issuer_name,
+                    issuer.decoding_key,
+                    issuer.audiences,
+                )
+            })
     }
 
     #[tracing::instrument(level = "trace", skip(self, rtxn))]
@@ -1024,6 +1031,7 @@ impl Store {
                 oidc_realm: oidc_mapping.1,
                 oidc_subject: oidc_mapping.0,
             },
+            impersonated_by: None,
         })
     }
 }

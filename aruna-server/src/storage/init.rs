@@ -49,7 +49,7 @@ pub(super) fn init_issuers(
         key_id: format!("{}", config_into_keys.0),
         issuer_name: "aruna".to_string(),
         issuer_endpoint: None,
-        issuer_type: IssuerType::ARUNA,
+        issuer_type: IssuerType::SERVER,
         decoding_key: config_into_keys.2,
         audiences: vec!["aruna".to_string()],
     };
