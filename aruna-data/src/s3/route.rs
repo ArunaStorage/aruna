@@ -4,7 +4,7 @@ use s3s::{route::S3Route, Body, S3Request, S3Response, S3Result};
 
 /// Handler for custom routes
 /// This route will handle the BUNDLES api
-/// as well as the custom 
+/// as well as the custom
 pub struct CustomRoute {}
 
 #[async_trait::async_trait]

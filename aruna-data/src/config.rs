@@ -1,13 +1,13 @@
 use anyhow::{anyhow, bail, Result};
 use base64::engine::general_purpose;
 use base64::Engine;
-use diesel_ulid::DieselUlid;
 use serde::{Deserialize, Serialize};
+use ulid::Ulid;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub proxy: Proxy,
-    pub persistence: Option<Persistence>,
+    pub lmdb_path: String,
     pub frontend: Frontend,
     pub backend: Backend,
     pub rules: Option<Vec<Rule>>,
@@ -17,15 +17,11 @@ impl Config {
     pub fn validate(&mut self) -> Result<()> {
         let Config {
             proxy,
-            persistence,
             backend,
             ..
         } = self;
 
         proxy.validate()?;
-        if let Some(persistence) = persistence {
-            persistence.validate()?;
-        }
         backend.validate()?;
         Ok(())
     }
@@ -37,13 +33,13 @@ impl Config {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Proxy {
-    pub endpoint_id: DieselUlid,
+    pub endpoint_id: Ulid,
     pub private_key: Option<String>,
     pub public_key: String,
     pub serial: i32,
     pub remote_synced: bool,
     pub enable_ingest: bool,
-    pub admin_ids: Vec<DieselUlid>,
+    pub admin_ids: Vec<Ulid>,
     pub aruna_url: Option<String>,
     pub grpc_server: String,
     pub replication_interval: Option<u64>,
@@ -106,61 +102,6 @@ impl Proxy {
 
     pub fn get_public_key_x25519(&self) -> Result<[u8; 32]> {
         crate::auth::crypto::ed25519_to_x25519_pubkey(&self.public_key)
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Persistence {
-    Postgres {
-        host: String,
-        port: u16,
-        user: String,
-        password: Option<String>,
-        database: String,
-        schema: String,
-    },
-}
-
-impl Persistence {
-    fn validate(&mut self) -> Result<()> {
-        let Persistence::Postgres {
-            host,
-            port,
-            user,
-            password,
-            database,
-            schema,
-        } = self;
-
-        if host.is_empty() {
-            return Err(anyhow::anyhow!("host cannot be empty"));
-        }
-
-        if *port < 1 {
-            return Err(anyhow::anyhow!("port must be at least 1"));
-        }
-
-        if user.is_empty() {
-            return Err(anyhow::anyhow!("user cannot be empty"));
-        }
-
-        if database.is_empty() {
-            return Err(anyhow::anyhow!("database cannot be empty"));
-        }
-
-        if schema.is_empty() {
-            return Err(anyhow::anyhow!("schema cannot be empty"));
-        }
-
-        if password.is_none() {
-            let env_var = dotenvy::var("POSTGRES_PASSWORD").map_err(|e| {
-                tracing::error!(error = ?e, msg = e.to_string());
-                e
-            })?;
-            *password = Some(env_var);
-        }
-        Ok(())
     }
 }
 

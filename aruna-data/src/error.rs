@@ -16,4 +16,6 @@ pub enum ProxyError {
     DomainError(#[from] DomainError),
     #[error("IOError: {0}")]
     IOError(#[from] std::io::Error),
+    #[error("HeedError: {0}")]
+    HeedError(#[from] heed::Error),
 }

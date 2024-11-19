@@ -64,7 +64,7 @@ async fn main() -> Result<()> {
 
     tracing::subscriber::set_global_default(subscriber)?;
 
-    let store = Arc::new(LmdbStore {});
+    let store = Arc::new(LmdbStore::new(&CONFIG.lmdb.path)?);
 
     trace!("init s3 server");
     run_server(store).await?;
