@@ -44,6 +44,7 @@ hyper-util = { version = "0.1.6", features = [
 http-body-util = "0.1.2"
 anyhow = "1.0.86"
 aruna-rust-api = { git = "https://github.com/ArunaStorage/rust-api.git", branch = "feat/v3" }
+tonic = {version = "0.12.3", features =["tls", "tls-roots"] }
 async-channel = "2.3.1"
 async-trait = "0.1.82"
 #aws-config = "1.5.5"

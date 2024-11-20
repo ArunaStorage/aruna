@@ -18,4 +18,10 @@ pub enum ProxyError {
     IOError(#[from] std::io::Error),
     #[error("HeedError: {0}")]
     HeedError(#[from] heed::Error),
+    #[error("Invalid Server URI: {0}")]
+    InvalidUri(#[from] http::uri::InvalidUri),
+    #[error("Tonic connection error: {0}")]
+    TonicError(#[from] tonic::transport::Error),
+    #[error("Invalid Config: {0}")]
+    InvalidConfig(String),
 }

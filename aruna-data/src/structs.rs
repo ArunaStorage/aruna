@@ -8,14 +8,16 @@ use ulid::Ulid;
 pub enum StorageLocation {
     S3 { bucket: String, key: String },
     FileSystem { path: String },
+    Temp { upload_id: String }, // A temporary location for uploads
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum StorageFormat {
     Pithos(Footer),
-    RawEncrypted([u8; 32]),
+    Encrypted([u8; 32]),
     Compressed,
     Raw,
+    Uploading, // Still uploading
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -93,4 +95,13 @@ impl From<CorsRule> for CorsRuleAruna {
             max_age_seconds: c.max_age_seconds,
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct UploadPart {
+    pub object_id: Ulid,
+    //pub upload_id: String,
+    pub part_number: u64,
+    pub raw_size: u64,
+    pub size: u64,
 }

@@ -176,6 +176,7 @@ dependencies = [
  "time",
  "tokio",
  "toml",
+ "tonic",
  "tracing",
  "tracing-subscriber",
  "ulid",
