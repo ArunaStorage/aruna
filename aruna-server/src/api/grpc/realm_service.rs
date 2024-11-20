@@ -1,8 +1,8 @@
 use crate::api::grpc::grpc_helpers::get_token;
 use crate::models::requests::{AddGroupRequest, CreateRealmRequest, GetRealmRequest};
 use crate::transactions::controller::Controller;
-use aruna_rust_api::v3::aruna::api::v3::{self as grpc, GetGroupsFromRealmResponse};
 use aruna_rust_api::v3::aruna::api::v3::realm_service_server::RealmService;
+use aruna_rust_api::v3::aruna::api::v3::{self as grpc, GetGroupsFromRealmResponse};
 use std::sync::Arc;
 
 pub struct RealmServiceImpl {
@@ -70,10 +70,7 @@ impl RealmService for RealmServiceImpl {
     async fn get_groups_from_realm(
         &self,
         request: tonic::Request<grpc::GetRealmRequest>, // TODO: Change to GetGroupsFromRealmRequest
-    ) -> std::result::Result<
-        tonic::Response<grpc::GetGroupsFromRealmResponse>,
-        tonic::Status,
-    >{
+    ) -> std::result::Result<tonic::Response<grpc::GetGroupsFromRealmResponse>, tonic::Status> {
         todo!()
     }
 }

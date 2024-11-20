@@ -252,7 +252,11 @@ impl From<requests::CreateResourceResponse> for grpc::CreateResourceResponse {
 impl From<requests::GetResourcesResponse> for grpc::GetResourcesResponse {
     fn from(value: requests::GetResourcesResponse) -> Self {
         grpc::GetResourcesResponse {
-            resources: value.resources.into_iter().map(models::Resource::into).collect(),
+            resources: value
+                .resources
+                .into_iter()
+                .map(models::Resource::into)
+                .collect(),
         }
     }
 }
@@ -281,7 +285,12 @@ impl TryFrom<grpc::GetResourcesRequest> for requests::GetResourcesRequest {
 
     fn try_from(value: grpc::GetResourcesRequest) -> Result<Self, Self::Error> {
         Ok(Self {
-            ids: value.ids.iter().map(|id| Ulid::from_string(id)).collect::<Result<_, _>>().map_err(|_| InvalidFieldError("id"))?, 
+            ids: value
+                .ids
+                .iter()
+                .map(|id| Ulid::from_string(id))
+                .collect::<Result<_, _>>()
+                .map_err(|_| InvalidFieldError("id"))?,
         })
     }
 }

@@ -705,7 +705,6 @@ impl Request for GetResourcesRequest {
             let mut resources = Vec::new();
 
             for id in &self.ids {
-
                 let idx = store
                     .get_idx_from_ulid(&id, &rtxn)
                     .ok_or_else(|| ArunaError::NotFound(id.to_string()))?;
