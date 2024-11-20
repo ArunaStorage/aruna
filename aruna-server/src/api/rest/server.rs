@@ -31,7 +31,7 @@ impl RestServer {
                 post(api_paths::create_resource_batch),
             )
             .route("/api/v3/resource/project", post(api_paths::create_project))
-            .route("/api/v3/resource", get(api_paths::get_resource))
+            .route("/api/v3/resources", get(api_paths::get_resource))
             .route("/api/v3/realm", post(api_paths::create_realm))
             .route("/api/v3/realm", get(api_paths::get_realm))
             .route("/api/v3/realm/group", post(api_paths::add_group))

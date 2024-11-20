@@ -67,4 +67,11 @@ impl GroupService for GroupServiceImpl {
                 .into(),
         ))
     }
+
+    async fn get_users_from_group(
+        &self,
+        _request: tonic::Request<grpc::GetUsersFromGroupRequest>,
+    ) -> Result<tonic::Response<grpc::GetUsersFromGroupResponse>, tonic::Status> {
+        todo!()
+    }
 }

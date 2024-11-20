@@ -16,7 +16,7 @@ use crate::{
             CreateProjectRequest, CreateProjectResponse, CreateResourceBatchRequest,
             CreateResourceBatchResponse, CreateResourceRequest, CreateResourceResponse, Direction,
             GetRelationInfoRequest, GetRelationInfoResponse, GetRelationsRequest,
-            GetRelationsResponse, GetResourceRequest, GetResourceResponse, Parent,
+            GetRelationsResponse, GetResourcesRequest, GetResourcesResponse, Parent,
         },
     },
     storage::graph::{get_parents, get_related_user_or_groups},
@@ -671,13 +671,18 @@ impl WriteRequest for CreateResourceBatchRequestTx {
     }
 }
 
-impl Request for GetResourceRequest {
-    type Response = GetResourceResponse;
+impl Request for GetResourcesRequest {
+    type Response = GetResourcesResponse;
     fn get_context(&self) -> Context {
-        Context::Permission {
-            min_permission: crate::models::models::Permission::Read,
-            source: self.id,
-        }
+        Context::PermissionBatch(
+            self.ids
+                .iter()
+                .map(|id| BatchPermission {
+                    min_permission: crate::models::models::Permission::Read,
+                    source: *id,
+                })
+                .collect(),
+        )
     }
 
     async fn run_request(
@@ -697,25 +702,30 @@ impl Request for GetResourceRequest {
         let store = controller.get_store();
         let response = tokio::task::spawn_blocking(move || {
             let rtxn = store.read_txn()?;
+            let mut resources = Vec::new();
 
-            let idx = store
-                .get_idx_from_ulid(&self.id, &rtxn)
-                .ok_or_else(|| ArunaError::NotFound(self.id.to_string()))?;
+            for id in &self.ids {
 
-            let resource = store
-                .get_node::<Resource>(&rtxn, idx)
-                .ok_or_else(|| ArunaError::NotFound(self.id.to_string()))?;
+                let idx = store
+                    .get_idx_from_ulid(&id, &rtxn)
+                    .ok_or_else(|| ArunaError::NotFound(id.to_string()))?;
 
-            if public {
-                if !matches!(
-                    resource.visibility,
-                    crate::models::models::VisibilityClass::Public
-                ) {
-                    return Err(ArunaError::Unauthorized);
+                let resource = store
+                    .get_node::<Resource>(&rtxn, idx)
+                    .ok_or_else(|| ArunaError::NotFound(id.to_string()))?;
+
+                if public {
+                    if !matches!(
+                        resource.visibility,
+                        crate::models::models::VisibilityClass::Public
+                    ) {
+                        return Err(ArunaError::Unauthorized);
+                    }
                 }
+                resources.push(resource);
             }
 
-            Ok::<_, ArunaError>(GetResourceResponse { resource })
+            Ok::<_, ArunaError>(GetResourcesResponse { resources })
         })
         .await
         .map_err(|e| ArunaError::ServerError(e.to_string()))??;

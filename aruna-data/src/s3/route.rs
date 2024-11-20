@@ -15,7 +15,7 @@ lazy_static! {
             .count()
             .saturating_sub(1)
     };
-};
+}
 
 /// Handler for custom routes
 /// This route will handle the BUNDLES api

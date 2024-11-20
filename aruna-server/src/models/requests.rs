@@ -122,14 +122,14 @@ pub struct CreateGroupResponse {
 #[derive(
     Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, IntoParams,
 )]
-pub struct GetResourceRequest {
-    pub id: Ulid,
+pub struct GetResourcesRequest {
+    pub ids: Vec<Ulid>,
 }
 
 // Read responses
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
-pub struct GetResourceResponse {
-    pub resource: Resource,
+pub struct GetResourcesResponse {
+    pub resources: Vec<Resource>,
     // pub relations: Vec<Relation>, // TODO: remove and move into its own request
 }
 

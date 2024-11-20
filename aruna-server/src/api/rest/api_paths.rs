@@ -76,12 +76,12 @@ pub async fn create_project(
 /// Get  resource
 #[utoipa::path(
     get,
-    path = "/api/v3/resource",
+    path = "/api/v3/resources",
     params(
-        GetResourceRequest,
+        GetResourcesRequest,
     ),
     responses(
-        (status = 200, body = GetResourceResponse),
+        (status = 200, body = GetResourcesResponse),
         ArunaError,
     ),
     security(
@@ -90,7 +90,7 @@ pub async fn create_project(
 )]
 pub async fn get_resource(
     State(state): State<Arc<Controller>>,
-    Query(request): Query<GetResourceRequest>,
+    Query(request): Query<GetResourcesRequest>,
     header: HeaderMap,
 ) -> impl IntoResponse {
     into_axum_response(state.request(request, extract_token(&header)).await)
