@@ -32,6 +32,7 @@ pub struct Proxy {
     pub endpoint_id: Ulid,
     pub private_key: Option<String>,
     pub public_key: String,
+    pub server_pubkey: String,
     pub serial: i32,
     pub remote_synced: bool,
     pub enable_ingest: bool,

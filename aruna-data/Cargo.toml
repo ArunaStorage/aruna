@@ -64,6 +64,7 @@ rand = "0.8.5"
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = { version = "1.0.120", features = ["raw_value"] }
 sha2 = { version = "0.10.8", features = ["std", "asm", "sha2-asm"] }
+sha3 = { version = "0.10.8", features = ["std", "asm"] }
 time = "0.3.36"
 tokio = { version = "1.38.0", features = ["full"] }
 #tokio-stream = { version = "0.1.15", features = ["net"] }
