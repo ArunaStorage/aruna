@@ -1,6 +1,7 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
 use jsonwebtoken::DecodingKey;
 use obkv::KvReaderU16;
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use std::fmt::Display;
@@ -491,7 +492,9 @@ pub struct User {
     pub global_admin: bool,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
 pub struct OidcMapping {
     pub provider: String,
     pub id: String,
@@ -580,14 +583,6 @@ pub struct Hash {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
-pub struct Endpoint {
-    pub id: Ulid,
-    pub name: String,
-    /// TODO: Add more fields
-    pub description: String,
-}
-
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub enum SyncingStatus {
     Pending,
     Running,
@@ -671,7 +666,8 @@ impl TryFrom<u32> for Permission {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum IssuerType {
-    ARUNA,
+    SERVER,
+    DATAPROXY,
     OIDC,
 }
 
@@ -722,7 +718,7 @@ pub type TokenIdx = u16;
 /// - tid: UUID from the specific token
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ArunaTokenClaims {
-    pub iss: String, // 'aruna' or oidc issuer
+    pub iss: String, // 'aruna', 'data', 'compute' or oidc issuer
     pub sub: String, // User or ServiceAccount ID
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aud: Option<Audience>, // Audience;
@@ -738,4 +734,28 @@ pub struct ArunaTokenClaims {
 pub enum Audience {
     String(String),
     Vec(Vec<String>),
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub enum ComponentType {
+    Server,
+    Data,
+    Compute,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub enum Endpoint {
+    S3(Url),
+    Json(Url),
+    Grpc(Url),
+    Consensus(Url),
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct Component {
+    pub id: Ulid,
+    pub name: String,
+    pub description: String,
+    pub component_type: ComponentType,
+    pub endpoints: Vec<Endpoint>,
 }

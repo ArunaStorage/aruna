@@ -413,7 +413,6 @@ impl Store {
         // Add the node to the graph
         let index = wtxn.get_graph().add_node(variant);
 
-
         // Ensure that the index in graph and milli stays in sync
         // assert_eq!(index.index() as u32, idx);
         if index.index() as u32 != idx {
@@ -528,7 +527,7 @@ impl Store {
         &self,
         issuer_name: String,
         key_id: String,
-    ) -> Option<(IssuerType, DecodingKey, Vec<String>)> {
+    ) -> Option<(IssuerType, String, DecodingKey, Vec<String>)> {
         let read_txn = self.read_txn().ok()?;
 
         let issuers = self
@@ -541,7 +540,14 @@ impl Store {
         issuers
             .into_iter()
             .find(|issuer| issuer.key_id == key_id && issuer.issuer_name == issuer_name)
-            .map(|issuer| (issuer.issuer_type, issuer.decoding_key, issuer.audiences))
+            .map(|issuer| {
+                (
+                    issuer.issuer_type,
+                    issuer.issuer_name,
+                    issuer.decoding_key,
+                    issuer.audiences,
+                )
+            })
     }
 
     #[tracing::instrument(level = "trace", skip(self, rtxn))]
@@ -933,6 +939,17 @@ impl Store {
         Ok(relation_info)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn get_relation_infos(&self, rtxn: &RoTxn) -> Result<Vec<RelationInfo>, ArunaError> {
+        let relation_info = self
+            .relation_infos
+            .iter(&rtxn)
+            .inspect_err(logerr!())?
+            .filter_map(|a| Some(a.ok()?.1))
+            .collect();
+        Ok(relation_info)
+    }
+
     #[tracing::instrument(level = "trace", skip(self, wtxn, keys))]
     pub fn add_issuer(
         &self,
@@ -1012,7 +1029,7 @@ impl Store {
             return Ok(Requester::Unregistered {
                 oidc_subject: oidc_mapping.0,
                 oidc_realm: oidc_mapping.1,
-            })
+            });
         };
 
         let user: User = self
@@ -1025,6 +1042,7 @@ impl Store {
                 oidc_realm: oidc_mapping.1,
                 oidc_subject: oidc_mapping.0,
             },
+            impersonated_by: None,
         })
     }
 }

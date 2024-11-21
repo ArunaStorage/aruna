@@ -4,8 +4,7 @@ pub mod common;
 mod create_tests {
     use crate::common::{init_test, TEST_TOKEN};
     use aruna_rust_api::v3::aruna::api::v3::{
-        CreateGroupRequest, CreateProjectRequest, CreateRealmRequest,
-        CreateResourceRequest, Realm,
+        CreateGroupRequest, CreateProjectRequest, CreateRealmRequest, CreateResourceRequest, Realm,
     };
     use aruna_server::models::requests::{
         BatchResource, CreateResourceBatchRequest, CreateResourceBatchResponse,

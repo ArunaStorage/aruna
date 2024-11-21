@@ -32,16 +32,21 @@ pub enum Requester {
     User {
         user_id: Ulid,
         auth_method: AuthMethod,
+        impersonated_by: Option<Ulid>,
     },
     ServiceAccount {
         service_account_id: Ulid,
         token_id: u16,
         group_id: Ulid,
+        impersonated_by: Option<Ulid>,
     },
     Unregistered {
         oidc_realm: String,
         oidc_subject: String,
-    }
+    },
+    Server {
+        server_id: Ulid,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +64,7 @@ impl Requester {
             Self::User {
                 auth_method,
                 user_id,
+                ..
             } => match auth_method {
                 AuthMethod::Oidc { .. } => Some(*user_id),
                 AuthMethod::Aruna(_) => Some(*user_id),
@@ -66,7 +72,8 @@ impl Requester {
             Self::ServiceAccount {
                 service_account_id, ..
             } => Some(*service_account_id),
-            Self::Unregistered {..} => None
+            Self::Unregistered { .. } => None,
+            Self::Server { server_id } => Some(*server_id),
         }
     }
 }

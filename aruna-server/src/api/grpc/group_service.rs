@@ -62,7 +62,16 @@ impl GroupService for GroupServiceImpl {
 
         Ok(tonic::Response::new(
             controller
-                .request(GetGroupRequest::try_from(request.into_inner())?, token) .await? .into(),
+                .request(GetGroupRequest::try_from(request.into_inner())?, token)
+                .await?
+                .into(),
         ))
+    }
+
+    async fn get_users_from_group(
+        &self,
+        _request: tonic::Request<grpc::GetUsersFromGroupRequest>,
+    ) -> Result<tonic::Response<grpc::GetUsersFromGroupResponse>, tonic::Status> {
+        todo!()
     }
 }

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use super::{
     controller::Controller,
@@ -220,7 +220,7 @@ impl TokenHandler {
         // Decode and deserialize a potential payload to get the claims and issuer
         let unvalidated_claims = deserialize_field::<ArunaTokenClaims>(&mut split)?;
 
-        let (issuer_type, decoding_key, audiences) = self
+        let (issuer_type, issuer_name, decoding_key, audiences) = self
             .store
             .get_issuer_info(
                 unvalidated_claims.iss.to_string(),
@@ -238,7 +238,14 @@ impl TokenHandler {
 
         match issuer_type {
             IssuerType::OIDC => self.validate_oidc_token(&claims),
-            IssuerType::ARUNA => self.extract_token_info(&claims),
+            IssuerType::SERVER => self.extract_token_info(&claims, None),
+            IssuerType::DATAPROXY => self.extract_token_info(
+                &claims,
+                Some(Ulid::from_str(&issuer_name).map_err(|_| {
+                    tracing::error!("Invalid token id provided");
+                    ArunaError::Unauthorized
+                })?),
+            ),
         }
     }
 
@@ -259,7 +266,11 @@ impl TokenHandler {
     }
 
     ///ToDo: Rust Doc
-    fn extract_token_info(&self, subject: &ArunaTokenClaims) -> Result<Requester, ArunaError> {
+    fn extract_token_info(
+        &self,
+        subject: &ArunaTokenClaims,
+        impersonated: Option<Ulid>,
+    ) -> Result<Requester, ArunaError> {
         let user_id = Ulid::from_string(&subject.sub).map_err(|_| {
             tracing::error!("Invalid token id provided");
             ArunaError::Unauthorized
@@ -277,6 +288,7 @@ impl TokenHandler {
                 Ok(Requester::User {
                     user_id,
                     auth_method: AuthMethod::Aruna(token_idx),
+                    impersonated_by: impersonated,
                 })
             }
             1u8 => {
@@ -288,6 +300,7 @@ impl TokenHandler {
                     service_account_id: user_id,
                     token_id: token_idx,
                     group_id,
+                    impersonated_by: impersonated,
                 })
             }
             _ => {

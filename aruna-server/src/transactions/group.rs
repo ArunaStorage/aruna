@@ -71,7 +71,10 @@ impl WriteRequest for CreateGroupRequestTx {
             name: self.req.name.clone(),
             description: self.req.description.clone(),
         };
-        let requester_id = self.requester.get_id().ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
+        let requester_id = self
+            .requester
+            .get_id()
+            .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
 
         let store = controller.get_store();
         Ok(tokio::task::spawn_blocking(move || {
@@ -199,7 +202,10 @@ impl WriteRequest for AddUserRequestTx {
         controller.authorize(&self.requester, &self.req).await?;
 
         let group_id = self.req.group_id;
-        let requester_id = self.requester.get_id().ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
+        let requester_id = self
+            .requester
+            .get_id()
+            .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
         let permission = match self.req.permission {
             crate::models::models::Permission::None => PERMISSION_NONE,
             crate::models::models::Permission::Read => PERMISSION_READ,

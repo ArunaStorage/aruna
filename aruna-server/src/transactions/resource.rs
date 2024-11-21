@@ -15,8 +15,8 @@ use crate::{
         requests::{
             CreateProjectRequest, CreateProjectResponse, CreateResourceBatchRequest,
             CreateResourceBatchResponse, CreateResourceRequest, CreateResourceResponse, Direction,
-            GetRelationInfoRequest, GetRelationInfoResponse, GetRelationsRequest,
-            GetRelationsResponse, GetResourceRequest, GetResourceResponse, Parent,
+            GetRelationInfosRequest, GetRelationInfosResponse, GetRelationsRequest,
+            GetRelationsResponse, GetResourcesRequest, GetResourcesResponse, Parent,
         },
     },
     storage::graph::{get_parents, get_related_user_or_groups},
@@ -671,13 +671,18 @@ impl WriteRequest for CreateResourceBatchRequestTx {
     }
 }
 
-impl Request for GetResourceRequest {
-    type Response = GetResourceResponse;
+impl Request for GetResourcesRequest {
+    type Response = GetResourcesResponse;
     fn get_context(&self) -> Context {
-        Context::Permission {
-            min_permission: crate::models::models::Permission::Read,
-            source: self.id,
-        }
+        Context::PermissionBatch(
+            self.ids
+                .iter()
+                .map(|id| BatchPermission {
+                    min_permission: crate::models::models::Permission::Read,
+                    source: *id,
+                })
+                .collect(),
+        )
     }
 
     async fn run_request(
@@ -697,25 +702,29 @@ impl Request for GetResourceRequest {
         let store = controller.get_store();
         let response = tokio::task::spawn_blocking(move || {
             let rtxn = store.read_txn()?;
+            let mut resources = Vec::new();
 
-            let idx = store
-                .get_idx_from_ulid(&self.id, &rtxn)
-                .ok_or_else(|| ArunaError::NotFound(self.id.to_string()))?;
+            for id in &self.ids {
+                let idx = store
+                    .get_idx_from_ulid(&id, &rtxn)
+                    .ok_or_else(|| ArunaError::NotFound(id.to_string()))?;
 
-            let resource = store
-                .get_node::<Resource>(&rtxn, idx)
-                .ok_or_else(|| ArunaError::NotFound(self.id.to_string()))?;
+                let resource = store
+                    .get_node::<Resource>(&rtxn, idx)
+                    .ok_or_else(|| ArunaError::NotFound(id.to_string()))?;
 
-            if public {
-                if !matches!(
-                    resource.visibility,
-                    crate::models::models::VisibilityClass::Public
-                ) {
-                    return Err(ArunaError::Unauthorized);
+                if public {
+                    if !matches!(
+                        resource.visibility,
+                        crate::models::models::VisibilityClass::Public
+                    ) {
+                        return Err(ArunaError::Unauthorized);
+                    }
                 }
+                resources.push(resource);
             }
 
-            Ok::<_, ArunaError>(GetResourceResponse { resource })
+            Ok::<_, ArunaError>(GetResourcesResponse { resources })
         })
         .await
         .map_err(|e| ArunaError::ServerError(e.to_string()))??;
@@ -798,8 +807,8 @@ impl Request for GetRelationsRequest {
     }
 }
 
-impl Request for GetRelationInfoRequest {
-    type Response = GetRelationInfoResponse;
+impl Request for GetRelationInfosRequest {
+    type Response = GetRelationInfosResponse;
     fn get_context(&self) -> Context {
         Context::Public
     }
@@ -809,21 +818,14 @@ impl Request for GetRelationInfoRequest {
         _requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
-        if let Some(relation_info) = const_relations().get(self.relation_idx as usize).cloned() {
-            Ok(GetRelationInfoResponse { relation_info })
-        } else {
-            let store = controller.get_store();
-            tokio::task::spawn_blocking(move || {
-                let rtxn = store.read_txn()?;
-                let Some(relation_info) = store.get_relation_info(&self.relation_idx, &rtxn)?
-                else {
-                    return Err(ArunaError::NotFound(self.relation_idx.to_string()));
-                };
-                Ok::<_, ArunaError>(GetRelationInfoResponse { relation_info })
-            })
-            .await
-            .map_err(|e| ArunaError::ServerError(e.to_string()))?
-        }
+        let store = controller.get_store();
+        tokio::task::spawn_blocking(move || {
+            let rtxn = store.read_txn()?;
+            let relation_infos = store.get_relation_infos(&rtxn)?;
+            Ok::<_, ArunaError>(GetRelationInfosResponse { relation_infos })
+        })
+        .await
+        .map_err(|e| ArunaError::ServerError(e.to_string()))?
     }
 }
 

@@ -77,7 +77,7 @@ pub fn config_from_env() -> Config {
     }
 }
 
-#[tracing::instrument(level = "trace")]
+#[tracing::instrument(level = "trace", skip(key_config))]
 pub async fn start_server(
     Config {
         database_path,

@@ -76,12 +76,12 @@ pub async fn create_project(
 /// Get  resource
 #[utoipa::path(
     get,
-    path = "/api/v3/resource",
+    path = "/api/v3/resources",
     params(
-        GetResourceRequest,
+        GetResourcesRequest,
     ),
     responses(
-        (status = 200, body = GetResourceResponse),
+        (status = 200, body = GetResourcesResponse),
         ArunaError,
     ),
     security(
@@ -90,7 +90,7 @@ pub async fn create_project(
 )]
 pub async fn get_resource(
     State(state): State<Arc<Controller>>,
-    Query(request): Query<GetResourceRequest>,
+    Query(request): Query<GetResourcesRequest>,
     header: HeaderMap,
 ) -> impl IntoResponse {
     into_axum_response(state.request(request, extract_token(&header)).await)
@@ -272,4 +272,188 @@ pub async fn search(
     header: HeaderMap,
 ) -> impl IntoResponse {
     into_axum_response(state.request(request, extract_token(&header)).await)
+}
+
+/// Get all realms from a user
+#[utoipa::path(
+    get,
+    path = "/api/v3/user/realms",
+    responses(
+        (status = 200, body = GetRealmsFromUserResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn get_user_realms(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    todo!();
+    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+}
+
+/// Get all groups from a user
+#[utoipa::path(
+    get,
+    path = "/api/v3/user/groups",
+    responses(
+        (status = 200, body = GetGroupsFromUserResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn get_user_groups(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    todo!();
+    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+}
+
+/// Get global server stats
+#[utoipa::path(
+    get,
+    path = "/api/v3/stats",
+    responses(
+        (status = 200, body = GetStatsResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn get_stats(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    todo!();
+    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+}
+
+/// Get components of a realm (server, dataproxies, etc)
+#[utoipa::path(
+    get,
+    path = "/api/v3/realm/components",
+    params(
+        GetRealmComponentsRequest,
+    ),
+    responses(
+        (status = 200, body = GetRealmComponentsRequest),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn get_realm_components(
+    State(state): State<Arc<Controller>>,
+    Query(request): Query<GetRealmComponentsRequest>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    todo!();
+    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+}
+
+/// Get relations of a resource
+#[utoipa::path(
+    get,
+    path = "/api/v3/resource/relations",
+    params(
+        GetRelationsRequest,
+    ),
+    responses(
+        (status = 200, body = GetRelationsResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn get_relations(
+    State(state): State<Arc<Controller>>,
+    Query(request): Query<GetRelationsRequest>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&header)).await)
+}
+
+/// Get users from group
+#[utoipa::path(
+    get,
+    path = "/api/v3/group/users",
+    params(
+        GetUsersFromGroupRequest,
+    ),
+    responses(
+        (status = 200, body = GetUsersFromGroupResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn get_group_users(
+    State(state): State<Arc<Controller>>,
+    Query(request): Query<GetUsersFromGroupRequest>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&header)).await)
+}
+
+/// Get groups from realm
+#[utoipa::path(
+    get,
+    path = "/api/v3/realm/groups",
+    params(
+        GetGroupsFromRealmRequest,
+    ),
+    responses(
+        (status = 200, body = GetGroupsFromRealmResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn get_realm_groups(
+    State(state): State<Arc<Controller>>,
+    Query(request): Query<GetGroupsFromRealmRequest>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&header)).await)
+}
+
+/// Get relation info
+#[utoipa::path(
+    get,
+    path = "/api/v3/info/relation",
+    responses(
+        (status = 200, body = GetRelationInfosResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn get_relation_infos(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(
+        state
+            .request(GetRelationInfosRequest {}, extract_token(&header))
+            .await,
+    )
 }

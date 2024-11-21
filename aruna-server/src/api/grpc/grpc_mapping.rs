@@ -249,11 +249,14 @@ impl From<requests::CreateResourceResponse> for grpc::CreateResourceResponse {
     }
 }
 
-impl From<requests::GetResourceResponse> for grpc::GetResourceResponse {
-    fn from(value: requests::GetResourceResponse) -> Self {
-        grpc::GetResourceResponse {
-            resource: Some(value.resource.into()),
-            relations: Vec::new(), // TODO: Remove from API
+impl From<requests::GetResourcesResponse> for grpc::GetResourcesResponse {
+    fn from(value: requests::GetResourcesResponse) -> Self {
+        grpc::GetResourcesResponse {
+            resources: value
+                .resources
+                .into_iter()
+                .map(models::Resource::into)
+                .collect(),
         }
     }
 }
@@ -277,12 +280,17 @@ impl From<models::Hash> for grpc::Hash {
     }
 }
 
-impl TryFrom<grpc::GetResourceRequest> for requests::GetResourceRequest {
+impl TryFrom<grpc::GetResourcesRequest> for requests::GetResourcesRequest {
     type Error = InvalidFieldError;
 
-    fn try_from(value: grpc::GetResourceRequest) -> Result<Self, Self::Error> {
+    fn try_from(value: grpc::GetResourcesRequest) -> Result<Self, Self::Error> {
         Ok(Self {
-            id: Ulid::from_string(&value.id).map_err(|_| InvalidFieldError("id"))?,
+            ids: value
+                .ids
+                .iter()
+                .map(|id| Ulid::from_string(id))
+                .collect::<Result<_, _>>()
+                .map_err(|_| InvalidFieldError("id"))?,
         })
     }
 }
@@ -347,7 +355,6 @@ impl From<requests::GetRealmResponse> for grpc::GetRealmResponse {
     fn from(value: requests::GetRealmResponse) -> Self {
         Self {
             realm: Some(value.realm.into()),
-            group_ids: Vec::new(), // TODO: Remove from api
         }
     }
 }
@@ -366,7 +373,6 @@ impl From<requests::GetGroupResponse> for grpc::GetGroupResponse {
     fn from(value: requests::GetGroupResponse) -> Self {
         Self {
             group: Some(value.group.into()),
-            members: Vec::new(), // TODO: Remove from api
         }
     }
 }
