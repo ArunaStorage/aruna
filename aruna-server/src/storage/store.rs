@@ -115,6 +115,7 @@ pub mod db_names {
     pub const USER: &str = "users";
     pub const READ_GROUP_PERMS: &str = "read_group_perms";
     pub const SINGLE_ENTRY_DB: &str = "single_entry_database";
+    pub const SUBSCRIBERS: &str = "subscribers";
 }
 
 pub mod single_entry_names {
@@ -122,6 +123,7 @@ pub mod single_entry_names {
     pub const SIGNING_KEYS: &str = "signing_keys";
     pub const PUBLIC_RESOURCES: &str = "public_resources";
     pub const SEARCHABLE_USERS: &str = "searchable_users";
+    pub const SUBSCRIBER_CONFIG: &str = "subscriber_config";
 }
 
 #[allow(unused)]
@@ -137,6 +139,7 @@ pub struct Store {
     // ISSUER_KEYS
     // SigningKeys
     // Config?
+    // SubscribersConfig
     single_entry_database: Database<Unspecified, Unspecified>,
 
     // Store it in an increasing list of relations
@@ -150,6 +153,7 @@ pub struct Store {
     // TODO:
     // Database for event_subscriber / status
     // Roaring bitmap for subscriber resources + last acknowledged event
+    subscribers: Database<BEU32, U128<BigEndian>>,
 
     // Database for read permissions of groups (and users)
     read_permissions: Database<BEU32, CboRoaringBitmapCodec>,
@@ -218,6 +222,15 @@ impl Store {
             .create(&mut write_txn)
             .inspect_err(logerr!())?;
 
+        // Special events database allowing for duplicates
+        let subscribers = env
+            .database_options()
+            .types::<BEU32, U128<BigEndian>>()
+            .flags(DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED | DatabaseFlags::INTEGER_KEY)
+            .name(SUBSCRIBERS)
+            .create(&mut write_txn)
+            .inspect_err(logerr!())?;
+
         // INIT relations
         init::init_relations(&mut write_txn, &relation_infos)?;
         // INIT encoding_keys
@@ -242,6 +255,7 @@ impl Store {
             relation_idx,
             relation_infos,
             events,
+            subscribers,
             tokens,
             read_permissions,
             status: RwLock::new(HashMap::default()),
