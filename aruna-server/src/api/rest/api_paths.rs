@@ -228,6 +228,28 @@ pub async fn register_user(
     into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
+
+/// Add user to group
+#[utoipa::path(
+    post,
+    path = "/api/v3/group/user",
+    request_body = AddUserRequest,
+    responses(
+        (status = 200, body = AddUserResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+)]
+pub async fn add_user(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+    Json(request): Json<AddUserRequest>,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&header)).await)
+}
+
 /// Create a token
 #[utoipa::path(
     post,
@@ -291,8 +313,7 @@ pub async fn get_user_realms(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!();
-    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+    into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
 }
 
 /// Get all groups from a user
@@ -312,8 +333,7 @@ pub async fn get_user_groups(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!();
-    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+    into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
 }
 
 /// Get global server stats
@@ -333,8 +353,7 @@ pub async fn get_stats(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!();
-    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+    into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
 }
 
 /// Get components of a realm (server, dataproxies, etc)

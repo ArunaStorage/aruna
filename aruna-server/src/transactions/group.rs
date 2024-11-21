@@ -164,7 +164,6 @@ impl Request for AddUserRequest {
             source: self.group_id,
         }
     }
-
     async fn run_request(
         self,
         requester: Option<Requester>,

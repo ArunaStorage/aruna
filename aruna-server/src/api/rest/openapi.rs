@@ -49,6 +49,8 @@ use utoipa::{
         GetGroupResponse,
         AddGroupRequest,
         AddGroupResponse,
+        AddUserRequest,
+        AddUserResponse,
         RegisterUserRequest,
         RegisterUserResponse,
         CreateTokenRequest,
@@ -86,6 +88,7 @@ use utoipa::{
         VisibilityClass,
         ResourceVariant,
         BatchResource,
+        Permission,
     ))
 )]
 pub struct ArunaApi;

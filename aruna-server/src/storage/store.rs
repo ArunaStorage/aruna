@@ -1045,4 +1045,22 @@ impl Store {
             impersonated_by: None,
         })
     }
+
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn get_realms_for_user(
+        &self,
+        rtxn: &RoTxn<'_>,
+        user: Ulid,
+    ) -> Result<Vec<Realm>, ArunaError> {
+        let graph = self.graph.read().expect("Poisoned lock");
+        let user_idx = self
+            .get_idx_from_ulid(&user, &rtxn)
+            .ok_or_else(|| ArunaError::NotFound("User not found".to_string()))?;
+        let realm_idxs = super::graph::get_realms(&graph, user_idx)?;
+        let mut realms = Vec::new();
+        for realm in realm_idxs {
+            realms.push(self.get_node(&rtxn, realm).expect("Database error"));
+        }
+        Ok(realms)
+    }
 }
