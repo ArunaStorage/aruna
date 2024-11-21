@@ -318,3 +318,24 @@ pub async fn get_user_groups(
     //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
 }
 
+
+/// Get global server stats
+#[utoipa::path(
+    get,
+    path = "/api/v3/stats",
+    responses(
+        (status = 200, body = GetStatsResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn get_stats(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    todo!();
+    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+}
