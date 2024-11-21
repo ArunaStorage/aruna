@@ -274,7 +274,6 @@ pub async fn search(
     into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
-
 /// Get all realms from a user
 #[utoipa::path(
     get,

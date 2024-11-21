@@ -16,7 +16,7 @@ use super::{
     utils::{config_into_keys, SigningInfoCodec},
 };
 
-#[tracing::instrument(level = "trace", skip(write_txn))]
+#[tracing::instrument(level = "trace", skip(write_txn, key_config))]
 pub(super) fn init_encoding_keys(
     mut write_txn: &mut heed::RwTxn,
     key_config: &(u32, String, String),
@@ -35,7 +35,7 @@ pub(super) fn init_encoding_keys(
     Ok(())
 }
 
-#[tracing::instrument(level = "trace", skip(write_txn))]
+#[tracing::instrument(level = "trace", skip(write_txn, key_config))]
 pub(super) fn init_issuers(
     mut write_txn: &mut heed::RwTxn,
     key_config: &(u32, String, String),
