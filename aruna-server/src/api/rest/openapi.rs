@@ -30,6 +30,7 @@ use utoipa::{
         get_group_users,
         get_realm_groups,
         get_relation_infos,
+        get_user,
     ),
     components(schemas(
         CreateResourceBatchRequest,
@@ -70,6 +71,8 @@ use utoipa::{
         GetGroupsFromRealmResponse,
         GetRelationInfosRequest,
         GetRelationInfosResponse,
+        GetUserRequest,
+        GetUserResponse,
         Component,
         Token,
         User,

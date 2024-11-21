@@ -357,3 +357,12 @@ pub struct GetRealmComponentsRequest {
 pub struct GetRealmComponentsResponse {
     pub components: Vec<Component>,
 }
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetUserRequest {}
+
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetUserResponse {
+    pub user: User,
+}

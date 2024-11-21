@@ -457,3 +457,29 @@ pub async fn get_relation_infos(
             .await,
     )
 }
+
+
+
+/// Get relation info
+#[utoipa::path(
+    get,
+    path = "/api/v3/user",
+    responses(
+        (status = 200, body = GetUserResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn get_user(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(
+        state
+            .request(GetUserRequest {}, extract_token(&header))
+            .await,
+    )
+}
