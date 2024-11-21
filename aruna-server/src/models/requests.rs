@@ -4,8 +4,7 @@ use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
 use super::models::{
-    Author, GenericNode, Group, IssuerKey, KeyValue, Permission, Realm, Relation, RelationInfo,
-    Resource, ResourceVariant, Token, User, VisibilityClass,
+    Author, Component, GenericNode, Group, IssuerKey, KeyValue, Permission, Realm, Relation, RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass
 };
 
 fn default_license_tag() -> String {
@@ -313,3 +312,43 @@ pub struct AddOidcProviderRequest {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct AddOidcProviderResponse {}
+
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetRealmsFromUserRequest {}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetRealmsFromUserResponse {
+    pub realms: Vec<Realm>,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetGroupsFromUserRequest {}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetGroupsFromUserResponse {
+    pub groups: Vec<(Group, Permission)>,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetStatsRequest {}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetStatsResponse {
+    pub resources: usize,
+    pub projects: usize,
+    pub users: usize,
+    pub storage: usize, // in bytes
+    pub realms: usize,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetRealmComponentsRequest {
+    pub realm_id: Ulid,
+}
+
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetRealmComponentsResponse {
+    pub components: Vec<Component>,
+}

@@ -38,6 +38,8 @@ impl RestServer {
             .route("/api/v3/group", post(api_paths::create_group))
             .route("/api/v3/group", get(api_paths::get_group))
             .route("/api/v3/user", post(api_paths::register_user))
+            .route("/api/v3/user/realms", get(api_paths::get_user_realms))
+            .route("/api/v3/user/groups", get(api_paths::get_user_groups))
             .route("/api/v3/token", post(api_paths::create_token))
             .route("/api/v3/search", get(api_paths::search))
             .with_state(handler)

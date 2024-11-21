@@ -17,7 +17,7 @@ tonic = { version = "0.12.3", features = ["tls", "tls-roots"] }
 tokio = { version = "1.41.1", features = ["full"] }
 dotenvy = "0.15.7"
 chrono = "0.4.38"
-utoipa = { version = "5.2.0", features = ["chrono", "axum_extras", "ulid"] }
+utoipa = { version = "5.2.0", features = ["chrono", "axum_extras", "ulid", "url"] }
 utoipa-swagger-ui = { version = "8.0.3", features = ["axum"] }
 prost = "0.13.3"
 axum = "0.7.7"
@@ -36,6 +36,7 @@ heed = "0.20.5"
 typetag = "0.2.18"
 obkv = "0.2.2"
 roaring = "0.10.6"
+url = { version = "2.5.3", features = ["serde"] }
 
 [build-dependencies]
 tonic-build = { version = "0.12.3", features = ["prost"] }

@@ -32,7 +32,7 @@ impl S3Route for CustomRoute {
         _extensions: &mut Extensions,
     ) -> bool {
         if method == Method::POST
-            && uri.path() == "/custom"
+            && uri.path().starts_with("/aruna")
             && uri
                 .host()
                 .and_then(|e| Some(e.chars().filter(|c| *c == '.').count()))

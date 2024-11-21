@@ -273,3 +273,48 @@ pub async fn search(
 ) -> impl IntoResponse {
     into_axum_response(state.request(request, extract_token(&header)).await)
 }
+
+
+/// Get all realms from a user
+#[utoipa::path(
+    get,
+    path = "/api/v3/user/realms",
+    responses(
+        (status = 200, body = GetRealmsFromUserResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn get_user_realms(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    todo!();
+    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+}
+
+
+/// Get all groups from a user
+#[utoipa::path(
+    get,
+    path = "/api/v3/user/groups",
+    responses(
+        (status = 200, body = GetGroupsFromUserResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn get_user_groups(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    todo!();
+    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+}
+

@@ -30,6 +30,8 @@ impl S3Access for AccessChecker {
                         "Anonymous base request is not allowed"
                     ));
                 }
+
+                // TODO: Check credentials for aruna requests
             }
             s3s::path::S3Path::Bucket { bucket } => {
                 let exists = self.store.get_object(&bucket);
