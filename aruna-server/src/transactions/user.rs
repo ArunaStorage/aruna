@@ -10,7 +10,8 @@ use crate::{
     models::{
         models::{Token, User},
         requests::{
-            CreateTokenRequest, CreateTokenResponse, GetUserRequest, GetUserResponse, RegisterUserRequest, RegisterUserResponse
+            CreateTokenRequest, CreateTokenResponse, GetUserRequest, GetUserResponse,
+            RegisterUserRequest, RegisterUserResponse,
         },
     },
     transactions::request::SerializedResponse,
@@ -194,7 +195,6 @@ impl WriteRequest for CreateTokenRequestTx {
     }
 }
 
-
 impl Request for GetUserRequest {
     type Response = GetUserResponse;
 
@@ -207,29 +207,33 @@ impl Request for GetUserRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        let requester_ulid = requester
+            .ok_or_else(|| {
+                tracing::error!("Missing requester");
+                ArunaError::Unauthorized
+            })?
+            .get_id()
+            .ok_or_else(|| {
+                tracing::error!("Missing requester id");
+                ArunaError::NotFound("User not reqistered".to_string())
+            })?;
 
-        let requester_ulid = requester.ok_or_else(|| {
-            tracing::error!("Missing requester");
-            ArunaError::Unauthorized
-        })?.get_id().ok_or_else(|| {
-            tracing::error!("Missing requester id");
-            ArunaError::NotFound("User not reqistered".to_string())
-        })?;
-        
         let store = controller.get_store();
         tokio::task::spawn_blocking(move || {
             let rtxn = store.read_txn()?;
 
-            let idx = store.get_idx_from_ulid(&requester_ulid, &rtxn).ok_or_else(|| {
-                ArunaError::NotFound("Requester not found".to_string())
-            })?;
+            let idx = store
+                .get_idx_from_ulid(&requester_ulid, &rtxn)
+                .ok_or_else(|| ArunaError::NotFound("Requester not found".to_string()))?;
 
             Ok::<GetUserResponse, ArunaError>(GetUserResponse {
-                user: store.get_node::<User>(&rtxn, idx).ok_or_else(|| {
-                    ArunaError::NotFound("User not found".to_string())
-                })?,
+                user: store
+                    .get_node::<User>(&rtxn, idx)
+                    .ok_or_else(|| ArunaError::NotFound("User not found".to_string()))?,
             })
-        }).await.map_err(|_e| {
+        })
+        .await
+        .map_err(|_e| {
             tracing::error!("Failed to join task");
             ArunaError::ServerError("".to_string())
         })?
