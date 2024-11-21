@@ -361,7 +361,6 @@ pub struct GetRealmComponentsResponse {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GetUserRequest {}
 
-
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GetUserResponse {
     pub user: User,

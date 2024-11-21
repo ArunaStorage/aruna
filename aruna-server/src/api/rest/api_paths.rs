@@ -353,7 +353,15 @@ pub async fn get_stats(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+    Json(GetStatsResponse {
+        resources: 1023,
+        projects: 5,
+        users: 12,
+        storage: 12312930192,
+        realms: 3,
+    })
+    // todo!();
+    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
 }
 
 /// Get components of a realm (server, dataproxies, etc)
@@ -476,8 +484,6 @@ pub async fn get_relation_infos(
             .await,
     )
 }
-
-
 
 /// Get relation info
 #[utoipa::path(
