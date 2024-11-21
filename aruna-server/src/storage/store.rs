@@ -939,6 +939,17 @@ impl Store {
         Ok(relation_info)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn get_relation_infos(&self, rtxn: &RoTxn) -> Result<Vec<RelationInfo>, ArunaError> {
+        let relation_info = self
+            .relation_infos
+            .iter(&rtxn)
+            .inspect_err(logerr!())?
+            .filter_map(|a| Some(a.ok()?.1))
+            .collect();
+        Ok(relation_info)
+    }
+
     #[tracing::instrument(level = "trace", skip(self, wtxn, keys))]
     pub fn add_issuer(
         &self,

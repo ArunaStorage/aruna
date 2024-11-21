@@ -15,7 +15,7 @@ use crate::{
         requests::{
             CreateProjectRequest, CreateProjectResponse, CreateResourceBatchRequest,
             CreateResourceBatchResponse, CreateResourceRequest, CreateResourceResponse, Direction,
-            GetRelationInfoRequest, GetRelationInfoResponse, GetRelationsRequest,
+            GetRelationInfosRequest, GetRelationInfosResponse, GetRelationsRequest,
             GetRelationsResponse, GetResourcesRequest, GetResourcesResponse, Parent,
         },
     },
@@ -807,8 +807,8 @@ impl Request for GetRelationsRequest {
     }
 }
 
-impl Request for GetRelationInfoRequest {
-    type Response = GetRelationInfoResponse;
+impl Request for GetRelationInfosRequest {
+    type Response = GetRelationInfosResponse;
     fn get_context(&self) -> Context {
         Context::Public
     }
@@ -818,21 +818,14 @@ impl Request for GetRelationInfoRequest {
         _requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
-        if let Some(relation_info) = const_relations().get(self.relation_idx as usize).cloned() {
-            Ok(GetRelationInfoResponse { relation_info })
-        } else {
-            let store = controller.get_store();
-            tokio::task::spawn_blocking(move || {
-                let rtxn = store.read_txn()?;
-                let Some(relation_info) = store.get_relation_info(&self.relation_idx, &rtxn)?
-                else {
-                    return Err(ArunaError::NotFound(self.relation_idx.to_string()));
-                };
-                Ok::<_, ArunaError>(GetRelationInfoResponse { relation_info })
-            })
-            .await
-            .map_err(|e| ArunaError::ServerError(e.to_string()))?
-        }
+        let store = controller.get_store();
+        tokio::task::spawn_blocking(move || {
+            let rtxn = store.read_txn()?;
+            let relation_infos = store.get_relation_infos(&rtxn)?;
+            Ok::<_, ArunaError>(GetRelationInfosResponse { relation_infos })
+        })
+        .await
+        .map_err(|e| ArunaError::ServerError(e.to_string()))?
     }
 }
 

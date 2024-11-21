@@ -6,7 +6,6 @@ use tonic::transport::{Channel, ClientTlsConfig};
 
 use crate::{error::ProxyError, CONFIG};
 
-
 #[derive(Clone)]
 pub struct ServerClient {
     resource_service: ResourceServiceClient<Channel>,

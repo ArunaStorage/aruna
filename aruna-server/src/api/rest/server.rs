@@ -32,17 +32,30 @@ impl RestServer {
             )
             .route("/api/v3/resource/project", post(api_paths::create_project))
             .route("/api/v3/resources", get(api_paths::get_resource))
-            .route("/api/v3/realm", post(api_paths::create_realm))
-            .route("/api/v3/realm", get(api_paths::get_realm))
-            .route("/api/v3/realm/group", post(api_paths::add_group))
-            .route("/api/v3/group", post(api_paths::create_group))
-            .route("/api/v3/group", get(api_paths::get_group))
+            .route(
+                "/api/v3/realm",
+                post(api_paths::create_realm).get(api_paths::get_realm),
+            )
+            .route(
+                "/api/v3/realm/components",
+                get(api_paths::get_realm_components),
+            )
+            .route(
+                "/api/v3/realm/group",
+                post(api_paths::add_group).get(api_paths::get_realm_groups),
+            )
+            .route(
+                "/api/v3/group",
+                post(api_paths::create_group).get(api_paths::get_group),
+            )
+            .route("/api/v3/group/users", get(api_paths::get_group_users))
             .route("/api/v3/user", post(api_paths::register_user))
             .route("/api/v3/user/realms", get(api_paths::get_user_realms))
             .route("/api/v3/user/groups", get(api_paths::get_user_groups))
             .route("/api/v3/token", post(api_paths::create_token))
             .route("/api/v3/search", get(api_paths::search))
             .route("/api/v3/stats", get(api_paths::get_stats))
+            .route("/api/v3/info/relations", get(api_paths::get_relation_infos))
             .with_state(handler)
             .layer(
                 TraceLayer::new_for_http()

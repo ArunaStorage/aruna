@@ -4,7 +4,8 @@ use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
 use super::models::{
-    Author, Component, GenericNode, Group, IssuerKey, KeyValue, Permission, Realm, Relation, RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass
+    Author, Component, GenericNode, Group, IssuerKey, KeyValue, Permission, Realm, Relation,
+    RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass,
 };
 
 fn default_license_tag() -> String {
@@ -257,7 +258,9 @@ pub enum Direction {
     Outgoing,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, IntoParams,
+)]
 pub struct GetRelationsRequest {
     pub node: Ulid,
     pub direction: Direction, // wrapper type for petgraph::Direction enum
@@ -273,16 +276,16 @@ pub struct GetRelationsResponse {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
-pub struct GetRelationInfoRequest {
-    pub relation_idx: u32,
-}
+pub struct GetRelationInfosRequest {}
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
-pub struct GetRelationInfoResponse {
-    pub relation_info: RelationInfo,
+pub struct GetRelationInfosResponse {
+    pub relation_infos: Vec<RelationInfo>,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, IntoParams,
+)]
 pub struct GetUsersFromGroupRequest {
     pub group_id: Ulid,
 }
@@ -292,7 +295,9 @@ pub struct GetUsersFromGroupResponse {
     pub users: Vec<User>,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, IntoParams,
+)]
 pub struct GetGroupsFromRealmRequest {
     pub realm_id: Ulid,
 }
@@ -312,7 +317,6 @@ pub struct AddOidcProviderRequest {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct AddOidcProviderResponse {}
-
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GetRealmsFromUserRequest {}
@@ -342,11 +346,12 @@ pub struct GetStatsResponse {
     pub realms: usize,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, IntoParams,
+)]
 pub struct GetRealmComponentsRequest {
     pub realm_id: Ulid,
 }
-
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GetRealmComponentsResponse {

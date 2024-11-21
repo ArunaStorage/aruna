@@ -1,7 +1,10 @@
 use crate::lmdbstore::LmdbStore;
-use s3s::{dto::{PutObjectInput, PutObjectOutput}, s3_error, S3Request, S3Response, S3Result, S3};
-use tracing::error;
+use s3s::{
+    dto::{PutObjectInput, PutObjectOutput},
+    s3_error, S3Request, S3Response, S3Result, S3,
+};
 use std::sync::Arc;
+use tracing::error;
 
 pub struct ArunaS3Service {
     storage: Arc<LmdbStore>,
@@ -21,7 +24,6 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<PutObjectInput>,
     ) -> S3Result<S3Response<PutObjectOutput>> {
-
         todo!()
         // match req.input.content_length {
         //     Some(0) | None => {
@@ -33,8 +35,6 @@ impl S3 for ArunaS3Service {
         //     }
         //     _ => {}
         // };
-
-
 
         // let impersonating_token =
         //     user_state.sign_impersonating_token(self.cache.auth.read().await.as_ref());

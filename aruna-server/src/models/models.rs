@@ -736,7 +736,6 @@ pub enum Audience {
     Vec(Vec<String>),
 }
 
-
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub enum ComponentType {
     Server,
