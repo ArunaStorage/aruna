@@ -213,7 +213,7 @@ impl Request for GetUserRequest {
             ArunaError::Unauthorized
         })?.get_id().ok_or_else(|| {
             tracing::error!("Missing requester id");
-            ArunaError::Unauthorized
+            ArunaError::NotFound("User not reqistered".to_string())
         })?;
         
         let store = controller.get_store();
