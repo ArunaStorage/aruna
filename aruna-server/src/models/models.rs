@@ -759,3 +759,17 @@ pub struct Component {
     pub component_type: ComponentType,
     pub endpoints: Vec<Endpoint>,
 }
+
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, ToSchema)]
+pub enum SubscriberType {
+    Proxy,
+    User,
+    Resource { cascade: bool },
+}
+
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, ToSchema)]
+pub struct SubscriberConfig {
+    pub id: Ulid,
+    pub target_id: Ulid,
+    pub subscriber_type: SubscriberType,
+}

@@ -3,8 +3,8 @@ use crate::{
     logerr,
     models::models::{
         EdgeType, GenericNode, Group, IssuerKey, IssuerType, Node, NodeVariant, Permission,
-        RawRelation, Realm, Relation, RelationInfo, Resource, ServerState, ServiceAccount, Token,
-        User,
+        RawRelation, Realm, Relation, RelationInfo, Resource, ServerState, ServiceAccount,
+        SubscriberConfig, Token, User,
     },
     storage::{
         graph::load_graph, init, milli_helpers::prepopulate_fields, utils::SigningInfoCodec,
@@ -153,7 +153,7 @@ pub struct Store {
     // TODO:
     // Database for event_subscriber / status
     // Roaring bitmap for subscriber resources + last acknowledged event
-    subscribers: Database<BEU32, U128<BigEndian>>,
+    subscribers: Database<U128<BigEndian>, SerdeBincode<Vec<u128>>>,
 
     // Database for read permissions of groups (and users)
     read_permissions: Database<BEU32, CboRoaringBitmapCodec>,
@@ -222,13 +222,9 @@ impl Store {
             .create(&mut write_txn)
             .inspect_err(logerr!())?;
 
-        // Special events database allowing for duplicates
+        // Database for event subscribers
         let subscribers = env
-            .database_options()
-            .types::<BEU32, U128<BigEndian>>()
-            .flags(DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED | DatabaseFlags::INTEGER_KEY)
-            .name(SUBSCRIBERS)
-            .create(&mut write_txn)
+            .create_database(&mut write_txn, Some(SUBSCRIBERS))
             .inspect_err(logerr!())?;
 
         // INIT relations
@@ -1076,5 +1072,76 @@ impl Store {
             realms.push(self.get_node(&rtxn, realm).expect("Database error"));
         }
         Ok(realms)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn get_subscribers(&self, rtxn: &RoTxn<'_>) -> Result<Vec<SubscriberConfig>, ArunaError> {
+        let db = self
+            .single_entry_database
+            .remap_types::<Str, SerdeBincode<Vec<SubscriberConfig>>>();
+
+        let subscribers = db
+            .get(&rtxn, single_entry_names::SUBSCRIBER_CONFIG)
+            .inspect_err(logerr!())?;
+
+        Ok(subscribers.unwrap_or_default())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, wtxn))]
+    pub fn add_subscriber(
+        &self,
+        wtxn: &mut WriteTxn,
+        subscriber: SubscriberConfig,
+    ) -> Result<(), ArunaError> {
+        let mut wtxn = wtxn.get_txn();
+        let db = self
+            .single_entry_database
+            .remap_types::<Str, SerdeBincode<Vec<SubscriberConfig>>>();
+
+        let mut subscribers = db
+            .get(&wtxn, single_entry_names::SUBSCRIBER_CONFIG)
+            .inspect_err(logerr!())?
+            .unwrap_or_default();
+
+        subscribers.push(subscriber);
+
+        db.put(
+            &mut wtxn,
+            single_entry_names::SUBSCRIBER_CONFIG,
+            &subscribers,
+        )
+        .inspect_err(logerr!())?;
+
+        Ok(())
+    }
+
+    // This can also be used to acknowledge events
+    #[tracing::instrument(level = "trace", skip(self, wtxn))]
+    pub fn get_events_subscriber(
+        &self,
+        wtxn: &mut WriteTxn,
+        subscriber_id: u128,
+        acknowledge_to: Option<u128>,
+    ) -> Result<Vec<u128>, ArunaError> {
+        let mut wtxn = wtxn.get_txn();
+
+        let Some(mut events) = self
+            .subscribers
+            .get(&wtxn, &subscriber_id)
+            .inspect_err(logerr!())?
+        else {
+            return Ok(Vec::new());
+        };
+
+        if let Some(drain_till) = acknowledge_to {
+            if let Some(event) = events.iter().position(|e| *e == drain_till) {
+                events.drain(0..=event);
+                self.subscribers
+                    .put(&mut wtxn, &subscriber_id, &events)
+                    .inspect_err(logerr!())?;
+            };
+        }
+
+        Ok(events)
     }
 }
