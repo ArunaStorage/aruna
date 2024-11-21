@@ -342,7 +342,7 @@ pub struct GetStatsResponse {
     pub realms: usize,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct GetRealmComponentsRequest {
     pub realm_id: Ulid,
 }

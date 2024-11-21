@@ -339,3 +339,29 @@ pub async fn get_stats(
     todo!();
     //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
 }
+
+
+/// Get components of a realm (server, dataproxies, etc)
+#[utoipa::path(
+    get,
+    path = "/api/v3/realm/components",
+    params(
+        GetRealmComponentsRequest,
+    ),
+    responses(
+        (status = 200, body = GetRealmComponentsRequest),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn get_realm_components(
+    State(state): State<Arc<Controller>>,
+    Query(request): Query<GetRealmComponentsRequest>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    todo!();
+    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+}
