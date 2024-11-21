@@ -13,10 +13,11 @@ use crate::{
     models::{
         models::{NodeVariant, Resource},
         requests::{
-            CreateProjectRequest, CreateProjectResponse, CreateResourceBatchRequest,
-            CreateResourceBatchResponse, CreateResourceRequest, CreateResourceResponse, Direction,
-            GetRelationInfoRequest, GetRelationInfoResponse, GetRelationsRequest,
-            GetRelationsResponse, GetResourceRequest, GetResourceResponse, Parent,
+            AddRuleRequest, AddRuleResponse, CreateProjectRequest, CreateProjectResponse,
+            CreateResourceBatchRequest, CreateResourceBatchResponse, CreateResourceRequest,
+            CreateResourceResponse, Direction, GetRelationInfoRequest, GetRelationInfoResponse,
+            GetRelationsRequest, GetRelationsResponse, GetResourceRequest, GetResourceResponse,
+            Parent,
         },
     },
     storage::graph::{get_parents, get_related_user_or_groups},
@@ -827,6 +828,80 @@ impl Request for GetRelationInfoRequest {
     }
 }
 
+impl Request for AddRuleRequest {
+    type Response = AddRuleResponse;
+    fn get_context(&self) -> Context {
+        Context::Permission {
+            min_permission: crate::models::models::Permission::Admin,
+            source: self.project_id,
+        }
+    }
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let request_tx = AddRuleTx {
+            req: self,
+            requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
+        };
+
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response)?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AddRuleTx {
+    req: AddRuleRequest,
+    requester: Requester,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for AddRuleTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, crate::error::ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+        let store = controller.get_store();
+        let project_id = self.req.project_id;
+        Ok(tokio::task::spawn_blocking(move || {
+            // Create project
+
+            let mut wtxn = store.write_txn()?;
+
+            // Get group idx
+            let Some(project_idx) = store.get_idx_from_ulid(&project_id, wtxn.get_txn()) else {
+                return Err(ArunaError::NotFound(project_id.to_string()));
+            };
+
+            // TODO:
+            // - How to associate project with rule?
+            // - How to store compiled rules?
+            todo!();
+
+            // Affected nodes: Group, Realm, Project
+            store.register_event(
+                &mut wtxn,
+                associated_event_id,
+                &[project_idx],
+            )?;
+
+            wtxn.commit()?;
+            // Create admin group, add user to admin group
+            Ok::<_, ArunaError>(bincode::serialize(&AddRuleResponse{})?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
+    }
+}
 //
 // use super::auth::Auth;
 // use super::controller::{Get, Transaction};

@@ -273,3 +273,26 @@ pub async fn search(
 ) -> impl IntoResponse {
     into_axum_response(state.request(request, extract_token(&header)).await)
 }
+
+
+/// Create a rule
+#[utoipa::path(
+    post,
+    path = "/api/v3/rule",
+    request_body = AddRuleRequest, 
+    responses(
+        (status = 200, body = AddRuleResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn add_rule(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+    Json(request): Json<AddRuleRequest>,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&header)).await)
+}

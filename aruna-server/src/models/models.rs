@@ -1,6 +1,7 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
 use jsonwebtoken::DecodingKey;
 use obkv::KvReaderU16;
+use rhai::{CustomType, TypeBuilder};
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use std::fmt::Display;
@@ -504,7 +505,7 @@ pub struct ServiceAccount {
     // TODO: More fields?
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, CustomType)]
 pub struct Resource {
     pub id: Ulid,
     pub name: String,

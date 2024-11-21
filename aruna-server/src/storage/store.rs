@@ -111,10 +111,10 @@ pub mod db_names {
     pub const TOKENS_DB_NAME: &str = "tokens";
     pub const SERVER_INFO_DB_NAME: &str = "server_infos";
     pub const EVENT_DB_NAME: &str = "events";
-    pub const TOKENS: &str = "tokens";
-    pub const USER: &str = "users";
-    pub const READ_GROUP_PERMS: &str = "read_group_perms";
-    pub const SINGLE_ENTRY_DB: &str = "single_entry_database";
+    pub const RULES_DB_NAME: &str = "rules";
+    pub const USER_DB_NAME: &str = "users";
+    pub const READ_GROUP_PERMS_DB_NAME: &str = "read_group_perms";
+    pub const SINGLE_ENTRY_DB_NAME: &str = "single_entry_database";
 }
 
 pub mod single_entry_names {
@@ -159,6 +159,9 @@ pub struct Store {
     // Database for (oidc_user_id, oidc_provider) to UserNodeIdx mappings
     oidc_mappings: Database<SerdeBincode<(String, String)>, BEU32>,
 
+    // Database to persist rules and project mappings
+    rule_db: Database<BEU32, Str>, // TODO: Allow multi_idx
+
     // -------------------
     // Volatile data
     // Component status
@@ -200,13 +203,16 @@ impl Store {
             .create_database(&mut write_txn, Some(TOKENS_DB_NAME))
             .inspect_err(logerr!())?;
         let read_permissions = env
-            .create_database(&mut write_txn, Some(READ_GROUP_PERMS))
+            .create_database(&mut write_txn, Some(READ_GROUP_PERMS_DB_NAME))
             .inspect_err(logerr!())?;
         let single_entry_database = env
-            .create_database(&mut write_txn, Some(SINGLE_ENTRY_DB))
+            .create_database(&mut write_txn, Some(SINGLE_ENTRY_DB_NAME))
             .inspect_err(logerr!())?;
         let oidc_mappings = env
             .create_database(&mut write_txn, Some(OIDC_MAPPING_DB_NAME))
+            .inspect_err(logerr!())?;
+        let rule_db = env
+            .create_database(&mut write_txn, Some(RULES_DB_NAME))
             .inspect_err(logerr!())?;
 
         // Special events database allowing for duplicates
@@ -247,6 +253,7 @@ impl Store {
             status: RwLock::new(HashMap::default()),
             single_entry_database,
             oidc_mappings,
+            rule_db,
             //issuer_decoding_keys,
             //signing_info: key_config,
             graph: RwLock::new(graph),
@@ -412,7 +419,6 @@ impl Store {
 
         // Add the node to the graph
         let index = wtxn.get_graph().add_node(variant);
-
 
         // Ensure that the index in graph and milli stays in sync
         // assert_eq!(index.index() as u32, idx);
@@ -1012,7 +1018,7 @@ impl Store {
             return Ok(Requester::Unregistered {
                 oidc_subject: oidc_mapping.0,
                 oidc_realm: oidc_mapping.1,
-            })
+            });
         };
 
         let user: User = self
@@ -1026,5 +1032,23 @@ impl Store {
                 oidc_subject: oidc_mapping.0,
             },
         })
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, write_txn))]
+    pub fn store_rule(&self, project_idx: u32, rule: String, write_txn: &mut WriteTxn) -> Result<(), ArunaError> {
+        self.rule_db.put(&mut write_txn.get_txn(), &project_idx, &rule)?;
+        Ok(())
+    }
+
+    pub fn get_uncompiled_rules(&self) -> Result<Vec<(u32, String)>, ArunaError> {
+        let read_txn = self.read_txn()?;
+
+        let mut rule_vec = Vec::new();
+        let rules = self.rule_db.iter(&read_txn)?;
+        for entry in rules {
+            let (k, v) = entry?;
+            rule_vec.push((k, v.to_string()));
+        }
+        Ok(rule_vec)
     }
 }

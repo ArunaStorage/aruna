@@ -3,8 +3,10 @@ use super::{
     request::{Request, SerializedResponse, WriteRequest},
 };
 use crate::{error::ArunaError, logerr, storage::store::Store, transactions::request::Requester};
+use ahash::RandomState;
+use rhai::Engine;
 use serde::Serialize;
-use std::fs;
+use std::{collections::HashMap, fs};
 use std::{net::SocketAddr, sync::Arc};
 use synevi::storage::LmdbStore;
 use synevi::Node as SyneviNode;
@@ -19,6 +21,13 @@ type ConsensusNode = RwLock<Option<Arc<SyneviNode<GrpcNetwork, Arc<Controller>, 
 pub struct Controller {
     pub(super) store: Arc<Store>,
     node: ConsensusNode,
+    rule_engine: RuleEngine
+}
+
+struct RuleEngine {
+    rhai_engine: Arc<RwLock<Engine>>,
+    // Compiled rules with project mappings
+    rules: RwLock<HashMap<u32, rhai::AST, RandomState>>,
 }
 
 pub type KeyConfig = (u32, String, String);
@@ -33,12 +42,16 @@ impl Controller {
         init_node: Option<String>,
         key_config: KeyConfig,
     ) -> Result<Arc<Self>, ArunaError> {
+
         let store = Store::new(path.clone(), key_config)?;
 
         let controller = Arc::new(Controller {
             store: Arc::new(store),
             node: RwLock::new(None),
+            rule_engine: todo!(),
         });
+
+        controller.rhai_engine.lock().expect("Poison error").build_type::<crate::models::models::Resource>();
 
         let path = format!("{path}/events");
         fs::create_dir_all(&path)?;
