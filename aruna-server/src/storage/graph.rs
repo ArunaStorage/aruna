@@ -138,6 +138,26 @@ pub fn get_children(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Vec<u32> 
     get_relatives(graph, idx, Outgoing)
 }
 
+pub fn get_project(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Result<u32, ArunaError> {
+    let mut queue = VecDeque::new();
+    queue.push_back(idx.into());
+    while let Some(idx) = queue.pop_front() {
+        // Iterate over all incoming edges
+        for edge in graph.edges_directed(idx, Direction::Incoming) {
+            if edge.weight() == &0 {
+                if graph.node_weight(edge.target()) == Some(&NodeVariant::ResourceProject) {
+                    return Ok(edge.target().as_u32());
+                } else {
+                    queue.push_back(edge.target());
+                }
+            }
+        }
+    }
+    Err(ArunaError::GraphError(
+        "No associated project found".to_string(),
+    ))
+}
+
 /// Perform a breadth-first search for incoming edges to find the highest permission
 /// 1. Start at the resource node with a theoretical maximum permission
 /// 2. Iterate over all incoming edges

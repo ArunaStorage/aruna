@@ -1067,8 +1067,8 @@ impl Store {
         })
     }
     #[tracing::instrument(level = "trace", skip(self, write_txn))]
-    pub fn store_rule(&self, project_idx: u32, rule: String, write_txn: &mut WriteTxn) -> Result<(), ArunaError> {
-        self.rule_db.put(&mut write_txn.get_txn(), &project_idx, &rule)?;
+    pub fn store_rule(&self, project_idx: &u32, rule: &str, write_txn: &mut WriteTxn) -> Result<(), ArunaError> {
+        self.rule_db.put(&mut write_txn.get_txn(), project_idx, rule)?;
         Ok(())
     }
 

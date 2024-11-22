@@ -1,12 +1,10 @@
 use super::{
     auth::TokenHandler,
-    request::{Request, SerializedResponse, WriteRequest},
+    request::{Request, SerializedResponse, WriteRequest}, rule::RuleEngine,
 };
 use crate::{error::ArunaError, logerr, storage::store::Store, transactions::request::Requester};
-use ahash::RandomState;
-use rhai::Engine;
 use serde::Serialize;
-use std::{collections::HashMap, fs};
+use std::fs;
 use std::{net::SocketAddr, sync::Arc};
 use synevi::storage::LmdbStore;
 use synevi::Node as SyneviNode;
@@ -21,13 +19,7 @@ type ConsensusNode = RwLock<Option<Arc<SyneviNode<GrpcNetwork, Arc<Controller>, 
 pub struct Controller {
     pub(super) store: Arc<Store>,
     node: ConsensusNode,
-    rule_engine: RuleEngine
-}
-
-struct RuleEngine {
-    rhai_engine: Arc<RwLock<Engine>>,
-    // Compiled rules with project mappings
-    rules: RwLock<HashMap<u32, rhai::AST, RandomState>>,
+    rule_engine: Arc<RuleEngine>,
 }
 
 pub type KeyConfig = (u32, String, String);
@@ -44,14 +36,13 @@ impl Controller {
     ) -> Result<Arc<Self>, ArunaError> {
 
         let store = Store::new(path.clone(), key_config)?;
+        let rule_engine = RuleEngine::new(&store)?;
 
         let controller = Arc::new(Controller {
             store: Arc::new(store),
             node: RwLock::new(None),
-            rule_engine: todo!(),
+            rule_engine: Arc::new(rule_engine),
         });
-
-        controller.rhai_engine.lock().expect("Poison error").build_type::<crate::models::models::Resource>();
 
         let path = format!("{path}/events");
         fs::create_dir_all(&path)?;
@@ -148,6 +139,10 @@ impl Controller {
 
     pub fn get_token_handler(&self) -> TokenHandler {
         TokenHandler::new(self.store.clone())
+    }
+
+    pub fn get_rule_engine(&self) -> Arc<RuleEngine> {
+        self.rule_engine.clone()
     }
 }
 

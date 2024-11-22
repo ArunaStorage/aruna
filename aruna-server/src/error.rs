@@ -1,5 +1,6 @@
 use axum::http::StatusCode;
 use axum::Json;
+use rhai::EvalAltResult;
 use serde::Serialize;
 use thiserror::Error;
 use utoipa::IntoResponses;
@@ -80,6 +81,9 @@ pub enum ArunaError {
     #[response(status = 500)]
     #[error("Graph error: {0}")]
     GraphError(String),
+    #[response(status = 500)]
+    #[error("Graph error: {0}")]
+    RuleError(String),
 }
 
 impl ArunaError {
@@ -158,5 +162,11 @@ impl From<serde_json::Error> for ArunaError {
             from: "serde_json::Error".to_string(),
             to: e.to_string(),
         }
+    }
+}
+
+impl From<rhai::ParseError> for ArunaError {
+    fn from(e: rhai::ParseError) -> Self {
+        ArunaError::RuleError(e.to_string())
     }
 }

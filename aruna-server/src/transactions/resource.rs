@@ -271,6 +271,8 @@ impl WriteRequest for CreateResourceRequestTx {
         let parent_id = self.req.parent_id;
 
         let store = controller.get_store();
+        let engine = controller.get_rule_engine();
+
         Ok(tokio::task::spawn_blocking(move || {
             // Create resource
 
@@ -867,27 +869,20 @@ impl WriteRequest for AddRuleTx {
     ) -> Result<SerializedResponse, crate::error::ArunaError> {
         controller.authorize(&self.requester, &self.req).await?;
         let store = controller.get_store();
-        let project_id = self.req.project_id;
+        let engine = controller.get_rule_engine();
+        let AddRuleRequest {rule, project_id} = self.req.clone();
         Ok(tokio::task::spawn_blocking(move || {
-            // Create project
-
             let mut wtxn = store.write_txn()?;
 
-            // Get group idx
             let Some(project_idx) = store.get_idx_from_ulid(&project_id, wtxn.get_txn()) else {
                 return Err(ArunaError::NotFound(project_id.to_string()));
             };
-
-            // TODO:
-            // - How to associate project with rule?
-            // - How to store compiled rules?
-            todo!();
-
-            // Affected nodes: Group, Realm, Project
+            store.store_rule(&project_idx, &rule, &mut wtxn)?;
+            engine.add_rule(project_idx, rule)?;
             store.register_event(&mut wtxn, associated_event_id, &[project_idx])?;
 
             wtxn.commit()?;
-            // Create admin group, add user to admin group
+
             Ok::<_, ArunaError>(bincode::serialize(&AddRuleResponse {})?)
         })
         .await
@@ -897,6 +892,7 @@ impl WriteRequest for AddRuleTx {
         })??)
     }
 }
+
 //
 // use super::auth::Auth;
 // use super::controller::{Get, Transaction};
