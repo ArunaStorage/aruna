@@ -6,8 +6,8 @@ use utoipa::{IntoParams, ToSchema};
 use crate::transactions::request::WriteRequest;
 
 use super::models::{
-    Author, Component, GenericNode, Group, KeyValue, Permission, Realm, Relation,
-    RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass,
+    Author, Component, GenericNode, Group, KeyValue, Permission, Realm, Relation, RelationInfo,
+    Resource, ResourceVariant, Token, User, VisibilityClass,
 };
 
 fn default_license_tag() -> String {
@@ -380,9 +380,32 @@ pub struct GetUserResponse {
 #[derive(
     Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, IntoParams,
 )]
-pub struct GetEventsRequest {}
+pub struct GetEventsRequest {
+    pub subscriber_id: Ulid,
+    #[serde(default)]
+    pub acknowledge_from: Option<Ulid>,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GetEventsResponse {
-    pub events: Vec<serde_json::Value>,
+    // EventId, Event
+    pub events: Vec<(Ulid, serde_json::Value)>,
 }
+
+// User ask to access a group
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UserAccessGroupRequest {
+    pub group_id: Ulid,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UserAccessGroupResponse {}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GroupAccessRealmRequest {
+    pub group_id: Ulid,
+    pub realm_id: Ulid,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GroupAccessRealmResponse {}

@@ -303,6 +303,10 @@ pub fn get_realms(
     let mut queue = VecDeque::new();
     queue.push_back(user_idx.into());
     while let Some(idx) = queue.pop_front() {
+        println!("{idx:?}");
+        println!("{group_loop_detection:?}");
+        println!("{realms:?}");
+        println!("{queue:?}");
         // Iterate over all incoming edges
         for edge in graph.edges_directed(idx, Outgoing) {
             match edge.weight() {
@@ -310,14 +314,16 @@ pub fn get_realms(
                 PERMISSION_READ..=PERMISSION_ADMIN
                     if graph.node_weight(edge.target()) == Some(&NodeVariant::Group) =>
                 {
-                    group_loop_detection.push(edge.target().as_u32());
+                    println!("GROUP");
                     // Loop detection
-                    if !group_loop_detection.contains(&edge.source().as_u32()) {
-                        queue.push_back(edge.source());
+                    if !group_loop_detection.contains(&edge.target()) {
+                        group_loop_detection.push(edge.target());
+                        queue.push_back(edge.target());
                     }
                 }
                 // The target is a realm
                 &GROUP_ADMINISTRATES_REALM | &GROUP_PART_OF_REALM => {
+                    println!("REALM");
                     realms.push(edge.target().as_u32());
                 }
                 _ => {}

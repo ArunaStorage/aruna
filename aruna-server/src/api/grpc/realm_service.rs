@@ -1,5 +1,7 @@
 use crate::api::grpc::grpc_helpers::get_token;
-use crate::models::requests::{AddGroupRequest, CreateRealmRequest, GetGroupsFromRealmRequest, GetRealmRequest};
+use crate::models::requests::{
+    AddGroupRequest, CreateRealmRequest, GetGroupsFromRealmRequest, GetRealmRequest,
+};
 use crate::transactions::controller::Controller;
 use aruna_rust_api::v3::aruna::api::v3::realm_service_server::RealmService;
 use aruna_rust_api::v3::aruna::api::v3::{self as grpc};
