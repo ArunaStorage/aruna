@@ -19,7 +19,7 @@ use super::{
     utils::{config_into_keys, SigningInfoCodec},
 };
 
-#[tracing::instrument(level = "trace", skip(write_txn))]
+#[tracing::instrument(level = "trace", skip(write_txn, key_config))]
 pub(super) fn init_encoding_keys(
     mut write_txn: &mut heed::RwTxn,
     key_config: &(u32, String, String),
@@ -38,7 +38,7 @@ pub(super) fn init_encoding_keys(
     Ok(())
 }
 
-#[tracing::instrument(level = "trace", skip(write_txn))]
+#[tracing::instrument(level = "trace", skip(write_txn, key_config))]
 pub(super) fn init_issuers(
     mut write_txn: &mut heed::RwTxn,
     key_config: &(u32, String, String),
@@ -52,7 +52,7 @@ pub(super) fn init_issuers(
         key_id: format!("{}", config_into_keys.0),
         issuer_name: "aruna".to_string(),
         issuer_endpoint: None,
-        issuer_type: IssuerType::ARUNA,
+        issuer_type: IssuerType::SERVER,
         decoding_key: config_into_keys.2,
         audiences: vec!["aruna".to_string()],
     };

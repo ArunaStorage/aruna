@@ -16,3 +16,16 @@ Separate Provenance graph ?
 Workflow A  ---- created by wf -------v 
 Input A     ---------input-------> Result A
 Input B     ---------input------------^
+
+
+
+### Requests needed
+
+- Realm Status
+- Quotas
+
+
+- Notifications & GRP Notifications
+- Request access to grp / Request access to realm
+- AddUserToGrp / AddGrpToRealm
+- FilterByRealm Universe

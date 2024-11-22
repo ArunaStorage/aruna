@@ -31,20 +31,20 @@ impl S3Auth for AuthProvider {
         Ok(secret)
     }
 
-    #[tracing::instrument(level = "trace", skip(self, cx))]
-    async fn check_access(&self, cx: &mut S3AuthContext<'_>) -> S3Result<()> {
-        debug!(path = ?cx.s3_path());
+    // #[tracing::instrument(level = "trace", skip(self, cx))]
+    // async fn check_access(&self, cx: &mut S3AuthContext<'_>) -> S3Result<()> {
+    //     debug!(path = ?cx.s3_path());
 
-        match self.cache.auth.read().await.as_ref() {
-            Some(auth) => {
-                let result = auth
-                    .check_access(cx.credentials(), cx.method(), cx.s3_path(), cx.headers())
-                    .await?;
+    //     match self.cache.auth.read().await.as_ref() {
+    //         Some(auth) => {
+    //             let result = auth
+    //                 .check_access(cx.credentials(), cx.method(), cx.s3_path(), cx.headers())
+    //                 .await?;
 
-                cx.extensions_mut().insert(result);
-                Ok(())
-            }
-            None => Ok(()),
-        }
-    }
+    //             cx.extensions_mut().insert(result);
+    //             Ok(())
+    //         }
+    //         None => Ok(()),
+    //     }
+    // }
 }

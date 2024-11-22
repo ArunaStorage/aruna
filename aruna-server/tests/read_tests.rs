@@ -5,10 +5,12 @@ mod read_tests {
 
     use crate::common::{init_test, SECOND_TOKEN, TEST_TOKEN};
     use aruna_rust_api::v3::aruna::api::v3::{
-        AddGroupRequest, CreateProjectRequest, CreateRealmRequest, GetRealmRequest, Realm
+        AddGroupRequest, CreateProjectRequest, CreateRealmRequest, GetRealmRequest, Realm,
     };
     use aruna_server::models::requests::{
-        BatchResource, CreateGroupRequest, CreateGroupResponse, CreateProjectResponse, CreateResourceBatchRequest, CreateResourceBatchResponse, SearchResponse, CreateProjectRequest as ModelsCreateProject,
+        BatchResource, CreateGroupRequest, CreateGroupResponse,
+        CreateProjectRequest as ModelsCreateProject, CreateProjectResponse,
+        CreateResourceBatchRequest, CreateResourceBatchResponse, SearchResponse,
     };
     use ulid::Ulid;
     pub const OFFSET: u16 = 100;
@@ -342,13 +344,13 @@ mod read_tests {
         assert!(response.resources.iter().all(|r| {
             match r {
                 aruna_server::models::models::GenericNode::Resource(n) => n.name.contains("U1"),
-                _ => false
+                _ => false,
             }
         }));
         assert!(response.resources.iter().all(|r| {
             match r {
                 aruna_server::models::models::GenericNode::Resource(n) => !n.name.contains("U2"),
-                _ => false
+                _ => false,
             }
         }));
 
@@ -367,13 +369,13 @@ mod read_tests {
         assert!(response.resources.iter().all(|r| {
             match r {
                 aruna_server::models::models::GenericNode::Resource(n) => !n.name.contains("U1"),
-                _ => false
+                _ => false,
             }
         }));
         assert!(response.resources.iter().all(|r| {
             match r {
                 aruna_server::models::models::GenericNode::Resource(n) => n.name.contains("U2"),
-                _ => false
+                _ => false,
             }
         }))
     }
