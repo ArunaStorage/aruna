@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod controller;
+pub mod events;
 pub mod group;
 pub mod realm;
 pub mod request;

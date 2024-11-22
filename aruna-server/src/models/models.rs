@@ -740,7 +740,9 @@ pub enum Audience {
     Vec(Vec<String>),
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
 #[repr(u8)]
 pub enum ComponentType {
     Server,
@@ -806,15 +808,9 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Component {
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, ToSchema)]
-pub enum SubscriberType {
-    Proxy,
-    User,
-    Resource { cascade: bool },
-}
-
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, ToSchema)]
-pub struct SubscriberConfig {
+pub struct Subscriber {
     pub id: Ulid,
-    pub target_id: Ulid,
-    pub subscriber_type: SubscriberType,
+    pub owner: Ulid,
+    pub target_idx: u32,
+    pub cascade: bool,
 }
