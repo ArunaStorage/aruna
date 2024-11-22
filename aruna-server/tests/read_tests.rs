@@ -8,9 +8,7 @@ mod read_tests {
         AddGroupRequest, CreateProjectRequest, CreateRealmRequest, GetRealmRequest, Realm,
     };
     use aruna_server::models::requests::{
-        BatchResource, CreateGroupRequest, CreateGroupResponse,
-        CreateProjectRequest as ModelsCreateProject, CreateProjectResponse,
-        CreateResourceBatchRequest, CreateResourceBatchResponse, SearchResponse,
+        BatchResource, CreateGroupRequest, CreateGroupResponse, CreateProjectRequest as ModelsCreateProject, CreateProjectResponse, CreateResourceBatchRequest, CreateResourceBatchResponse, GetRealmsFromUserRequest, GetRealmsFromUserResponse, SearchResponse
     };
     use ulid::Ulid;
     pub const OFFSET: u16 = 100;
@@ -378,5 +376,42 @@ mod read_tests {
                 _ => false,
             }
         }))
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_user_realms() {
+        let mut clients = init_test(OFFSET).await;
+
+        let mut ids = Vec::new();
+        for i in 0..5 {
+            let response = clients
+                .realm_client
+                .create_realm(CreateRealmRequest {
+                    tag: format!("test_user_realm{i}"),
+                    name: format!("TestUserRealm{i}"),
+                    description: String::new(),
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            ids.push(Ulid::from_string(&response.realm.unwrap().id).unwrap());
+        }
+
+        let client = reqwest::Client::new();
+        let url = format!("{}/api/v3/user/realm", clients.rest_endpoint);
+
+        let response: GetRealmsFromUserResponse = client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+        for realm in response.realms {
+            assert!(ids.contains(&realm.id))
+        }
     }
 }
