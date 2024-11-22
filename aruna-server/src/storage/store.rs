@@ -2,9 +2,9 @@ use crate::{
     error::ArunaError,
     logerr,
     models::models::{
-        EdgeType, GenericNode, Group, IssuerKey, IssuerType, Node, NodeVariant, Permission,
-        RawRelation, Realm, Relation, RelationInfo, Resource, ServerState, ServiceAccount, Token,
-        User,
+        Component, EdgeType, GenericNode, Group, IssuerKey, IssuerType, Node, NodeVariant,
+        Permission, RawRelation, Realm, Relation, RelationInfo, Resource, ServerState,
+        ServiceAccount, Token, User,
     },
     storage::{
         graph::load_graph, init, milli_helpers::prepopulate_fields, utils::SigningInfoCodec,
@@ -781,6 +781,9 @@ impl Store {
                         NodeVariant::Realm => {
                             GenericNode::Realm(Realm::try_from(&obkv).inspect_err(logerr!())?)
                         }
+                        NodeVariant::Component => GenericNode::Component(
+                            Component::try_from(&obkv).inspect_err(logerr!())?,
+                        ),
                     })
                 })
                 .collect::<Result<Vec<_>, ArunaError>>()?,

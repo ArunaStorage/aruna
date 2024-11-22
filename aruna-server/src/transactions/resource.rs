@@ -3,10 +3,7 @@ use super::{
     request::{Request, Requester, SerializedResponse},
 };
 use crate::{
-    constants::{
-        const_relations,
-        relation_types::{self},
-    },
+    constants::relation_types::{self},
     context::{BatchPermission, Context},
     error::ArunaError,
     logerr,
