@@ -544,3 +544,47 @@ pub async fn get_events(
     //         .await,
     // )
 }
+
+/// Request group join realm
+#[utoipa::path(
+    post,
+    path = "/api/v3/realm/access",
+    request_body = GroupAccessRealmRequest,
+    responses(
+        (status = 200, body = GroupAccessRealmResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+)]
+pub async fn request_group_access_realm(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+    Json(request): Json<GroupAccessRealmRequest>,
+) -> impl IntoResponse {
+    todo!();
+    // into_axum_response(state.request(request, extract_token(&header)).await)
+}
+
+/// Request user join group 
+#[utoipa::path(
+    post,
+    path = "/api/v3/group/join",
+    request_body = UserAccessGroupRequest,
+    responses(
+        (status = 200, body = UserAccessGroupResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+)]
+pub async fn request_user_access_group(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+    Json(request): Json<UserAccessGroupRequest>,
+) -> impl IntoResponse {
+    todo!()
+    // into_axum_response(state.request(request, extract_token(&header)).await)
+}

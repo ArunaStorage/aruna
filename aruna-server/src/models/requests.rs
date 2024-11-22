@@ -377,3 +377,22 @@ pub struct GetEventsRequest {}
 pub struct GetEventsResponse {
     pub events: Vec<serde_json::Value>,
 }
+
+// User ask to access a group
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UserAccessGroupRequest {
+    pub group_id: Ulid,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UserAccessGroupResponse {}
+
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GroupAccessRealmRequest {
+    pub group_id: Ulid,
+    pub realm_id: Ulid,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GroupAccessRealmResponse {}

@@ -1119,7 +1119,7 @@ impl Store {
         &self,
         wtxn: &mut WriteTxn,
         event_id: u128,
-        target_ids: Vec<u128>,
+        target_idxs: &[u32], // The target indexes that the event is related to
     ) -> Result<(), ArunaError> {
         let mut wtxn = wtxn.get_txn();
 
@@ -1131,7 +1131,7 @@ impl Store {
             .inspect_err(logerr!())?
             .unwrap_or_default();
 
-        all_subscribers.into_iter().filter(|s| target_ids.contains(&s.target_id.0)).try_for_each(|s| {
+        all_subscribers.into_iter().filter(|s| target_idxs.contains(&s.target_idx)).try_for_each(|s| {
             let mut subscribers = self
                 .subscribers
                 .get(&wtxn, &s.id.0)

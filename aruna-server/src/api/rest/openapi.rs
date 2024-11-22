@@ -31,6 +31,9 @@ use utoipa::{
         get_realm_groups,
         get_relation_infos,
         get_user,
+        request_group_access_realm,
+        request_user_access_group,
+        get_events
     ),
     components(schemas(
         CreateResourceBatchRequest,
@@ -89,6 +92,12 @@ use utoipa::{
         ResourceVariant,
         BatchResource,
         Permission,
+        GetEventsRequest,
+        GetEventsResponse,
+        GroupAccessRealmRequest,
+        GroupAccessRealmResponse,
+        UserAccessGroupRequest,
+        UserAccessGroupResponse
     ))
 )]
 pub struct ArunaApi;

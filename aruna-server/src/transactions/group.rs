@@ -98,6 +98,8 @@ impl WriteRequest for CreateGroupRequestTx {
             // Affected nodes: User and Group
             store.register_event(&mut wtxn, associated_event_id, &[user_idx, group_idx])?;
 
+            store.add_event_to_subscribers(&mut wtxn, associated_event_id, &[user_idx])?;
+
             wtxn.commit()?;
             // Create admin group, add user to admin group
             Ok::<_, ArunaError>(bincode::serialize(&CreateGroupResponse { group })?)
@@ -230,6 +232,7 @@ impl WriteRequest for AddUserRequestTx {
 
             // Affected nodes: User and Group
             store.register_event(&mut wtxn, associated_event_id, &[user_idx, group_idx])?;
+            store.add_event_to_subscribers(&mut wtxn, associated_event_id, &[user_idx])?;
 
             wtxn.commit()?;
             Ok::<_, ArunaError>(bincode::serialize(&AddUserResponse {})?)

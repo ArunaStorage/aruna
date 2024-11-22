@@ -763,7 +763,7 @@ pub struct Component {
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, ToSchema)]
 pub struct Subscriber {
     pub id: Ulid,
-    pub target_id: Ulid,
     pub owner: Ulid,
+    pub target_idx: u32,
     pub cascade: bool,
 }
