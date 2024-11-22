@@ -2,9 +2,7 @@ use crate::{
     error::ArunaError,
     logerr,
     models::models::{
-        EdgeType, GenericNode, Group, IssuerKey, IssuerType, Node, NodeVariant, Permission,
-        RawRelation, Realm, Relation, RelationInfo, Resource, ServerState, ServiceAccount,
-        SubscriberConfig, Token, User,
+        EdgeType, GenericNode, Group, IssuerKey, IssuerType, Node, NodeVariant, Permission, RawRelation, Realm, Relation, RelationInfo, Resource, ServerState, ServiceAccount, Subscriber, Token, User
     },
     storage::{
         graph::load_graph, init, milli_helpers::prepopulate_fields, utils::SigningInfoCodec,
@@ -1075,10 +1073,10 @@ impl Store {
     }
 
     #[tracing::instrument(level = "trace", skip(self, rtxn))]
-    pub fn get_subscribers(&self, rtxn: &RoTxn<'_>) -> Result<Vec<SubscriberConfig>, ArunaError> {
+    pub fn get_subscribers(&self, rtxn: &RoTxn<'_>) -> Result<Vec<Subscriber>, ArunaError> {
         let db = self
             .single_entry_database
-            .remap_types::<Str, SerdeBincode<Vec<SubscriberConfig>>>();
+            .remap_types::<Str, SerdeBincode<Vec<Subscriber>>>();
 
         let subscribers = db
             .get(&rtxn, single_entry_names::SUBSCRIBER_CONFIG)
@@ -1091,12 +1089,12 @@ impl Store {
     pub fn add_subscriber(
         &self,
         wtxn: &mut WriteTxn,
-        subscriber: SubscriberConfig,
+        subscriber: Subscriber,
     ) -> Result<(), ArunaError> {
         let mut wtxn = wtxn.get_txn();
         let db = self
             .single_entry_database
-            .remap_types::<Str, SerdeBincode<Vec<SubscriberConfig>>>();
+            .remap_types::<Str, SerdeBincode<Vec<Subscriber>>>();
 
         let mut subscribers = db
             .get(&wtxn, single_entry_names::SUBSCRIBER_CONFIG)
@@ -1111,6 +1109,40 @@ impl Store {
             &subscribers,
         )
         .inspect_err(logerr!())?;
+
+        Ok(())
+    }
+
+    // Adds the event to all subscribers that are interested in the target_ids
+    #[tracing::instrument(level = "trace", skip(self, wtxn))]
+    pub fn add_event_to_subscribers(
+        &self,
+        wtxn: &mut WriteTxn,
+        event_id: u128,
+        target_ids: Vec<u128>,
+    ) -> Result<(), ArunaError> {
+        let mut wtxn = wtxn.get_txn();
+
+        let subscribers_db = self
+            .single_entry_database
+            .remap_types::<Str, SerdeBincode<Vec<Subscriber>>>();
+        let all_subscribers = subscribers_db
+            .get(&wtxn, single_entry_names::SUBSCRIBER_CONFIG)
+            .inspect_err(logerr!())?
+            .unwrap_or_default();
+
+        all_subscribers.into_iter().filter(|s| target_ids.contains(&s.target_id.0)).try_for_each(|s| {
+            let mut subscribers = self
+                .subscribers
+                .get(&wtxn, &s.id.0)
+                .inspect_err(logerr!())?
+                .unwrap_or_default();
+            subscribers.push(event_id);
+            self.subscribers
+                .put(&mut wtxn, &s.id.0, &subscribers)
+                .inspect_err(logerr!())?;
+            Ok::<_, ArunaError>(())
+        })?;
 
         Ok(())
     }

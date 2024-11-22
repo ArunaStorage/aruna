@@ -761,15 +761,9 @@ pub struct Component {
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, ToSchema)]
-pub enum SubscriberType {
-    Proxy,
-    User,
-    Resource { cascade: bool },
-}
-
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, ToSchema)]
-pub struct SubscriberConfig {
+pub struct Subscriber {
     pub id: Ulid,
     pub target_id: Ulid,
-    pub subscriber_type: SubscriberType,
+    pub owner: Ulid,
+    pub cascade: bool,
 }

@@ -228,7 +228,6 @@ pub async fn register_user(
     into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
-
 /// Add user to group
 #[utoipa::path(
     post,
@@ -313,7 +312,11 @@ pub async fn get_user_realms(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+    into_axum_response(
+        state
+            .request(GetRealmsFromUserRequest {}, extract_token(&header))
+            .await,
+    )
 }
 
 /// Get all groups from a user
@@ -333,7 +336,11 @@ pub async fn get_user_groups(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+    into_axum_response(
+        state
+            .request(GetRealmsFromUserRequest {}, extract_token(&header))
+            .await,
+    )
 }
 
 /// Get global server stats
@@ -509,7 +516,6 @@ pub async fn get_user(
     )
 }
 
-
 /// Get events information
 #[utoipa::path(
     get,
@@ -531,7 +537,6 @@ pub async fn get_events(
 
     header: HeaderMap,
 ) -> impl IntoResponse {
-
     todo!();
     // into_axum_response(
     //     state
