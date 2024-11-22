@@ -1084,6 +1084,13 @@ impl Store {
         Ok(rule_vec)
     }
 
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn get_project(&self, resource_idx: &u32) -> Result<u32, ArunaError> {
+        let graph = self.graph.read().expect("Poison error");
+        let project = super::graph::get_project(&graph, *resource_idx)?;
+        Ok(project)
+    }
+
     #[tracing::instrument(level = "trace", skip(self, rtxn))]
     pub fn get_realms_for_user(
         &self,

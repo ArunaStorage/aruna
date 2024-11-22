@@ -8,7 +8,7 @@ use crate::{
     error::ArunaError,
     logerr,
     models::{
-        models::{NodeVariant, Resource},
+        models::{NodeVariant, RawRelation, Relation, Resource},
         requests::{
             AddRuleRequest, AddRuleResponse, CreateProjectRequest, CreateProjectResponse,
             CreateResourceBatchRequest, CreateResourceBatchResponse, CreateResourceRequest,
@@ -327,6 +327,20 @@ impl WriteRequest for CreateResourceRequestTx {
 
             // Create resource
             let resource_idx = store.create_node(&mut wtxn, &resource)?;
+
+            if engine.eval_rule(
+                &store,
+                wtxn.get_txn(),
+                resource_idx,
+                resource.clone(),
+                vec![Relation {
+                    from_id: resource.id,
+                    to_id: parent_id,
+                    relation_type: "PartOf".to_string()
+                }],
+            )? {
+                return Err(ArunaError::Unauthorized);
+            };
 
             // Add relation parent --HAS_PART--> resource
             store.create_relation(
@@ -870,7 +884,7 @@ impl WriteRequest for AddRuleTx {
         controller.authorize(&self.requester, &self.req).await?;
         let store = controller.get_store();
         let engine = controller.get_rule_engine();
-        let AddRuleRequest {rule, project_id} = self.req.clone();
+        let AddRuleRequest { rule, project_id } = self.req.clone();
         Ok(tokio::task::spawn_blocking(move || {
             let mut wtxn = store.write_txn()?;
 

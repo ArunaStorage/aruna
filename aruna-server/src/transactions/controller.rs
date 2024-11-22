@@ -1,8 +1,12 @@
 use super::{
     auth::TokenHandler,
-    request::{Request, SerializedResponse, WriteRequest}, rule::RuleEngine,
+    request::{Request, SerializedResponse, WriteRequest},
+    rule::RuleEngine,
 };
-use crate::{error::ArunaError, logerr, storage::store::Store, transactions::request::Requester};
+use crate::{
+    error::ArunaError, logerr, models::models::RawRelation, storage::store::Store,
+    transactions::request::Requester,
+};
 use serde::Serialize;
 use std::fs;
 use std::{net::SocketAddr, sync::Arc};
@@ -34,14 +38,13 @@ impl Controller {
         init_node: Option<String>,
         key_config: KeyConfig,
     ) -> Result<Arc<Self>, ArunaError> {
-
-        let store = Store::new(path.clone(), key_config)?;
-        let rule_engine = RuleEngine::new(&store)?;
+        let store = Arc::new(Store::new(path.clone(), key_config)?);
+        let rule_engine = Arc::new(RuleEngine::new(store.clone())?);
 
         let controller = Arc::new(Controller {
-            store: Arc::new(store),
+            store,
             node: RwLock::new(None),
-            rule_engine: Arc::new(rule_engine),
+            rule_engine,
         });
 
         let path = format!("{path}/events");
