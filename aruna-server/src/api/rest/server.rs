@@ -64,8 +64,14 @@ impl RestServer {
             .route("/api/v3/info/relations", get(api_paths::get_relation_infos))
             .route("/api/v3/resource/relations", get(api_paths::get_relations))
             .route("/api/v3/events", get(api_paths::get_events))
-            .route("/api/v3/realm/join", post(api_paths::request_group_access_realm))
-            .route("/api/v3/group/join", post(api_paths::request_user_access_group))
+            .route(
+                "/api/v3/realm/join",
+                post(api_paths::request_group_access_realm),
+            )
+            .route(
+                "/api/v3/group/join",
+                post(api_paths::request_user_access_group),
+            )
             .with_state(handler)
             .layer(
                 TraceLayer::new_for_http()

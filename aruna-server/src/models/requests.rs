@@ -6,8 +6,8 @@ use utoipa::{IntoParams, ToSchema};
 use crate::transactions::request::WriteRequest;
 
 use super::models::{
-    Author, Component, GenericNode, Group, KeyValue, Permission, Realm, Relation,
-    RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass,
+    Author, Component, GenericNode, Group, KeyValue, Permission, Realm, Relation, RelationInfo,
+    Resource, ResourceVariant, Token, User, VisibilityClass,
 };
 
 fn default_license_tag() -> String {
@@ -386,7 +386,6 @@ pub struct UserAccessGroupRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct UserAccessGroupResponse {}
-
 
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GroupAccessRealmRequest {

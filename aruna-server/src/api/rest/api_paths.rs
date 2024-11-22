@@ -567,7 +567,7 @@ pub async fn request_group_access_realm(
     // into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
-/// Request user join group 
+/// Request user join group
 #[utoipa::path(
     post,
     path = "/api/v3/group/join",

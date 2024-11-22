@@ -4,7 +4,7 @@ use crate::{
     models::models::{
         Component, EdgeType, GenericNode, Group, IssuerKey, IssuerType, Node, NodeVariant,
         Permission, RawRelation, Realm, Relation, RelationInfo, Resource, ServerState,
-        ServiceAccount, SubscriberConfig, Token, User,
+        ServiceAccount, Subscriber, Token, User,
     },
     storage::{
         graph::load_graph, init, milli_helpers::prepopulate_fields, utils::SigningInfoCodec,
@@ -1136,18 +1136,21 @@ impl Store {
             .inspect_err(logerr!())?
             .unwrap_or_default();
 
-        all_subscribers.into_iter().filter(|s| target_idxs.contains(&s.target_idx)).try_for_each(|s| {
-            let mut subscribers = self
-                .subscribers
-                .get(&wtxn, &s.id.0)
-                .inspect_err(logerr!())?
-                .unwrap_or_default();
-            subscribers.push(event_id);
-            self.subscribers
-                .put(&mut wtxn, &s.id.0, &subscribers)
-                .inspect_err(logerr!())?;
-            Ok::<_, ArunaError>(())
-        })?;
+        all_subscribers
+            .into_iter()
+            .filter(|s| target_idxs.contains(&s.target_idx))
+            .try_for_each(|s| {
+                let mut subscribers = self
+                    .subscribers
+                    .get(&wtxn, &s.id.0)
+                    .inspect_err(logerr!())?
+                    .unwrap_or_default();
+                subscribers.push(event_id);
+                self.subscribers
+                    .put(&mut wtxn, &s.id.0, &subscribers)
+                    .inspect_err(logerr!())?;
+                Ok::<_, ArunaError>(())
+            })?;
 
         Ok(())
     }
