@@ -371,11 +371,16 @@ pub struct GetUserResponse {
 #[derive(
     Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, IntoParams,
 )]
-pub struct GetEventsRequest {}
+pub struct GetEventsRequest {
+    pub subscriber_id: Ulid,
+    #[serde(default)]
+    pub acknowledge_from: Option<Ulid>,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GetEventsResponse {
-    pub events: Vec<serde_json::Value>,
+    // EventId, Event
+    pub events: Vec<(Ulid, serde_json::Value)>,
 }
 
 // User ask to access a group

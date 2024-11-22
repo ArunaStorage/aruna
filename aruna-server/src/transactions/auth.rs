@@ -70,6 +70,35 @@ impl Controller {
                     ))
                 }
             }
+            Context::SubscriberOwnerOf(subscriber_id) => {
+                let store = self.get_store();
+                let user_id = user
+                    .get_id()
+                    .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
+                tokio::task::spawn_blocking(move || {
+                    let txn = store.read_txn()?;
+                    let result = store.get_subscribers(&txn)?;
+
+                    let Some(subscriber) = result
+                        .iter()
+                        .find(|subscriber| subscriber.id == subscriber_id)
+                    else {
+                        return Err(ArunaError::Forbidden("No owner found".to_string()));
+                    };
+                    if subscriber.owner != user_id {
+                        Err(ArunaError::Forbidden("Not owner".to_string()))
+                    } else {
+                        Ok(())
+                    }
+                })
+                .await
+                .map_err(|_| {
+                    tracing::error!("Error joining thread");
+                    ArunaError::Unauthorized
+                })??;
+                Ok(())
+            }
+
             Context::GlobalAdmin => Err(ArunaError::Forbidden(String::new())), // TODO: Impl global
             // admins
             Context::Permission {

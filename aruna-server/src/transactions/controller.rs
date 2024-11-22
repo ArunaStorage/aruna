@@ -18,7 +18,7 @@ type ConsensusNode = RwLock<Option<Arc<SyneviNode<GrpcNetwork, Arc<Controller>, 
 
 pub struct Controller {
     pub(super) store: Arc<Store>,
-    node: ConsensusNode,
+    pub(super) node: ConsensusNode,
 }
 
 pub type KeyConfig = (u32, String, String);

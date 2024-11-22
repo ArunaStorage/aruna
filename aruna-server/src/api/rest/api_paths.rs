@@ -534,15 +534,14 @@ pub async fn get_user(
 )]
 pub async fn get_events(
     State(state): State<Arc<Controller>>,
-
+    Query(request): Query<GetEventsRequest>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!();
-    // into_axum_response(
-    //     state
-    //         .request(GetEventsRequest {}, extract_token(&header))
-    //         .await,
-    // )
+    into_axum_response(
+         state
+             .request(request, extract_token(&header))
+             .await,
+    )
 }
 
 /// Request group join realm
