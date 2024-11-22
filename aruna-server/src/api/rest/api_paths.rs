@@ -357,9 +357,12 @@ pub async fn get_user_groups(
     ),
 )]
 pub async fn get_stats(
-    State(state): State<Arc<Controller>>,
-    header: HeaderMap,
+    State(_state): State<Arc<Controller>>,
+    _header: HeaderMap,
 ) -> impl IntoResponse {
+    // TODO: Remove dummy data and impl stats collection
+    // todo!();
+    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
     Json(GetStatsResponse {
         resources: 1023,
         projects: 5,
@@ -367,8 +370,6 @@ pub async fn get_stats(
         storage: 12312930192,
         realms: 3,
     })
-    // todo!();
-    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
 }
 
 /// Get components of a realm (server, dataproxies, etc)
@@ -392,8 +393,7 @@ pub async fn get_realm_components(
     Query(request): Query<GetRealmComponentsRequest>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!();
-    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+    into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
 /// Get relations of a resource

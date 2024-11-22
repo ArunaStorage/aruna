@@ -64,6 +64,7 @@ pub enum GenericNode {
     ServiceAccount(ServiceAccount),
     Group(Group),
     Realm(Realm),
+    Component(Component),
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
@@ -76,6 +77,7 @@ pub enum NodeVariant {
     ServiceAccount = 4,
     Group = 5,
     Realm = 6,
+    Component = 7,
 }
 
 impl TryFrom<u8> for NodeVariant {
@@ -90,6 +92,7 @@ impl TryFrom<u8> for NodeVariant {
             4 => NodeVariant::ServiceAccount,
             5 => NodeVariant::Group,
             6 => NodeVariant::Realm,
+            7 => NodeVariant::Component,
             _ => {
                 return Err(ArunaError::ConversionError {
                     from: format!("{}u8", value),
@@ -120,6 +123,7 @@ impl TryFrom<serde_json::Number> for NodeVariant {
                     4 => NodeVariant::ServiceAccount,
                     5 => NodeVariant::Group,
                     6 => NodeVariant::Realm,
+                    7 => NodeVariant::Component,
                     _ => {
                         return Err(ArunaError::ConversionError {
                             from: format!("{}u64", v),
@@ -736,9 +740,11 @@ pub enum Audience {
     Vec(Vec<String>),
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
+#[repr(u8)]
 pub enum ComponentType {
     Server,
+    #[default]
     Data,
     Compute,
 }
@@ -758,6 +764,45 @@ pub struct Component {
     pub description: String,
     pub component_type: ComponentType,
     pub endpoints: Vec<Endpoint>,
+}
+
+impl Node for Component {
+    fn get_id(&self) -> Ulid {
+        self.id
+    }
+    fn get_variant(&self) -> NodeVariant {
+        NodeVariant::Component
+    }
+}
+
+impl TryFrom<&Component> for serde_json::Map<String, Value> {
+    type Error = ArunaError;
+    fn try_from(u: &Component) -> Result<Self, Self::Error> {
+        into_serde_json_map(u, NodeVariant::Component)
+    }
+}
+
+// Implement TryFrom for User
+impl<'a> TryFrom<&KvReaderU16<'a>> for Component {
+    type Error = ParseError;
+
+    fn try_from(obkv: &KvReaderU16<'a>) -> Result<Self, Self::Error> {
+        let mut obkv = FieldIterator::new(obkv);
+        // Get the required id
+        let id: Ulid = obkv.get_required_field(0)?;
+        // Get and double check the variant
+        let variant: u8 = obkv.get_required_field(1)?;
+        if variant != NodeVariant::User as u8 {
+            return Err(ParseError(format!("Invalid variant for User: {}", variant)));
+        }
+        Ok(Component {
+            id,
+            name: obkv.get_field(2)?,
+            description: obkv.get_field(3)?,
+            component_type: obkv.get_field(23)?,
+            endpoints: obkv.get_field(24)?,
+        })
+    }
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, ToSchema)]

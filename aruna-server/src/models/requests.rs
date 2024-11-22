@@ -6,7 +6,7 @@ use utoipa::{IntoParams, ToSchema};
 use crate::transactions::request::WriteRequest;
 
 use super::models::{
-    Author, Component, GenericNode, Group, IssuerKey, KeyValue, Permission, Realm, Relation,
+    Author, Component, GenericNode, Group, KeyValue, Permission, Realm, Relation,
     RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass,
 };
 

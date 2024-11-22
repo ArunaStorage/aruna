@@ -98,7 +98,15 @@ pub const FIELDS: &[Field] = &[
     Field {
         name: "tag",
         index: 22,
-    }, // 22 String - Tag or Title of a resource        | Realm / Resource
+    }, // 22 String - Tag or Title of a resource       | Realm / Resource
+    Field {
+        name: "component_type",
+        index: 23,
+    }, // 22 Int - Component variant                   | Component
+    Field {
+        name: "endpoints",
+        index: 24,
+    }, // 22 String - Endpoint variant of a component   | Component
 ];
 
 pub mod relation_types {
@@ -113,7 +121,7 @@ pub mod relation_types {
     pub const OWNED_BY_USER: u32 = 8u32;
     pub const GROUP_PART_OF_REALM: u32 = 9u32;
     pub const GROUP_ADMINISTRATES_REALM: u32 = 10u32;
-    pub const REALM_USES_ENDPOINT: u32 = 11u32;
+    pub const REALM_USES_COMPONENT: u32 = 11u32;
     pub const PROJECT_PART_OF_REALM: u32 = 12u32;
 }
 
@@ -195,11 +203,11 @@ pub fn const_relations() -> [RelationInfo; 13] {
             backward_type: "RealmAdministratedBy".to_string(),
             internal: true,
         },
-        // Realm -> Endpoint
+        // Realm -> Component
         RelationInfo {
             idx: 11,
-            forward_type: "RealmUsesEndpoint".to_string(),
-            backward_type: "EndpointUsedByRealm".to_string(),
+            forward_type: "RealmUsesComponents".to_string(),
+            backward_type: "ComponentUsedByRealm".to_string(),
             internal: true,
         },
         // Realm -> Project
