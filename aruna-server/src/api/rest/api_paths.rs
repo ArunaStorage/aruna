@@ -508,3 +508,34 @@ pub async fn get_user(
             .await,
     )
 }
+
+
+/// Get events information
+#[utoipa::path(
+    get,
+    path = "/api/v3/events",
+    params(
+        GetEventsRequest,
+    ),
+    responses(
+        (status = 200, body = GetEventsResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn get_events(
+    State(state): State<Arc<Controller>>,
+
+    header: HeaderMap,
+) -> impl IntoResponse {
+
+    todo!();
+    // into_axum_response(
+    //     state
+    //         .request(GetEventsRequest {}, extract_token(&header))
+    //         .await,
+    // )
+}

@@ -766,7 +766,6 @@ pub struct Component {
     pub endpoints: Vec<Endpoint>,
 }
 
-
 impl Node for Component {
     fn get_id(&self) -> Ulid {
         self.id
@@ -804,4 +803,18 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Component {
             endpoints: obkv.get_field(24)?,
         })
     }
+}
+
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, ToSchema)]
+pub enum SubscriberType {
+    Proxy,
+    User,
+    Resource { cascade: bool },
+}
+
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, ToSchema)]
+pub struct SubscriberConfig {
+    pub id: Ulid,
+    pub target_id: Ulid,
+    pub subscriber_type: SubscriberType,
 }

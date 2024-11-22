@@ -120,7 +120,7 @@ dependencies = [
 [[package]]
 name = "aruna-rust-api"
 version = "2.0.0"
-source = "git+https://github.com/ArunaStorage/rust-api.git?branch=feat/v3#43f1311a605349d9a40db6705d55b0fa50dce749"
+source = "git+https://github.com/arunaengine/rust-api.git?branch=feat/v3#43f1311a605349d9a40db6705d55b0fa50dce749"
 dependencies = [
  "prost",
  "prost-types",
@@ -373,9 +373,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-s3"
-version = "1.61.0"
+version = "1.62.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e531658a0397d22365dfe26c3e1c0c8448bf6a3a2d8a098ded802f2b1261615"
+checksum = "83d3a2854c7490b4c63d2b0e8c3976d628c80afa3045d078a715b2edb2ee4e0a"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -1119,6 +1119,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "core-foundation"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b55271e5c8c478ad3f38ad24ef34923091e0548492a266d19b3c0b4d82574c63"
+dependencies = [
+ "core-foundation-sys",
+ "libc",
+]
+
+[[package]]
 name = "core-foundation-sys"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1743,7 +1753,7 @@ dependencies = [
 [[package]]
 name = "filter-parser"
 version = "1.11.0"
-source = "git+https://github.com/ArunaStorage/meilisearch.git#acdc4866884a561070fe53cb0e5f84e97315cb43"
+source = "git+https://github.com/arunaengine/meilisearch.git#fbdfb600514d4652f26f64859d519be698c53171"
 dependencies = [
  "nom",
  "nom_locate",
@@ -1769,7 +1779,7 @@ dependencies = [
 [[package]]
 name = "flatten-serde-json"
 version = "1.11.0"
-source = "git+https://github.com/ArunaStorage/meilisearch.git#acdc4866884a561070fe53cb0e5f84e97315cb43"
+source = "git+https://github.com/arunaengine/meilisearch.git#fbdfb600514d4652f26f64859d519be698c53171"
 dependencies = [
  "serde_json",
 ]
@@ -2831,7 +2841,7 @@ dependencies = [
 [[package]]
 name = "json-depth-checker"
 version = "1.11.0"
-source = "git+https://github.com/ArunaStorage/meilisearch.git#acdc4866884a561070fe53cb0e5f84e97315cb43"
+source = "git+https://github.com/arunaengine/meilisearch.git#fbdfb600514d4652f26f64859d519be698c53171"
 dependencies = [
  "serde_json",
 ]
@@ -3078,7 +3088,7 @@ dependencies = [
 [[package]]
 name = "milli"
 version = "1.11.0"
-source = "git+https://github.com/ArunaStorage/meilisearch.git#acdc4866884a561070fe53cb0e5f84e97315cb43"
+source = "git+https://github.com/arunaengine/meilisearch.git#fbdfb600514d4652f26f64859d519be698c53171"
 dependencies = [
  "arroy",
  "bimap",
@@ -3203,7 +3213,7 @@ dependencies = [
 [[package]]
 name = "monotime"
 version = "0.1.0"
-source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
+source = "git+https://github.com/arunaengine/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
 dependencies = [
  "bytes",
  "serde",
@@ -3229,7 +3239,7 @@ dependencies = [
  "openssl-probe",
  "openssl-sys",
  "schannel",
- "security-framework",
+ "security-framework 2.11.1",
  "security-framework-sys",
  "tempfile",
 ]
@@ -3861,9 +3871,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.91"
+version = "1.0.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "307e3004becf10f5a6e0d59d20f3cd28231b0e0827a96cd3e0ce6d14bc1e4bb3"
+checksum = "37d3544b3f2748c54e147655edb5025752e2303145b5aefb3c3ea2c78b973bb0"
 dependencies = [
  "unicode-ident",
 ]
@@ -4398,20 +4408,19 @@ dependencies = [
  "openssl-probe",
  "rustls-pemfile 1.0.4",
  "schannel",
- "security-framework",
+ "security-framework 2.11.1",
 ]
 
 [[package]]
 name = "rustls-native-certs"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcaf18a4f2be7326cd874a5fa579fae794320a0f388d365dca7e480e55f83f8a"
+checksum = "7fcff2dd52b58a8d98a70243663a0d234c4e2b79235637849d15913394a247d3"
 dependencies = [
  "openssl-probe",
- "rustls-pemfile 2.2.0",
  "rustls-pki-types",
  "schannel",
- "security-framework",
+ "security-framework 3.0.1",
 ]
 
 [[package]]
@@ -4603,7 +4612,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "897b2245f0b511c87893af39b033e5ca9cce68824c4d7e7630b5a1d339658d02"
 dependencies = [
  "bitflags 2.6.0",
- "core-foundation",
+ "core-foundation 0.9.4",
+ "core-foundation-sys",
+ "libc",
+ "security-framework-sys",
+]
+
+[[package]]
+name = "security-framework"
+version = "3.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1415a607e92bec364ea2cf9264646dcce0f91e6d65281bd6f2819cca3bf39c8"
+dependencies = [
+ "bitflags 2.6.0",
+ "core-foundation 0.10.0",
  "core-foundation-sys",
  "libc",
  "security-framework-sys",
@@ -5053,7 +5075,7 @@ dependencies = [
 [[package]]
 name = "synevi"
 version = "0.1.0"
-source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
+source = "git+https://github.com/arunaengine/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
 dependencies = [
  "monotime",
  "synevi_core",
@@ -5065,7 +5087,7 @@ dependencies = [
 [[package]]
 name = "synevi_core"
 version = "0.1.0"
-source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
+source = "git+https://github.com/arunaengine/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
 dependencies = [
  "ahash",
  "async-channel",
@@ -5093,7 +5115,7 @@ dependencies = [
 [[package]]
 name = "synevi_network"
 version = "0.1.0"
-source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
+source = "git+https://github.com/arunaengine/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
 dependencies = [
  "ahash",
  "async-trait",
@@ -5113,7 +5135,7 @@ dependencies = [
 [[package]]
 name = "synevi_persistence"
 version = "0.1.0"
-source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
+source = "git+https://github.com/arunaengine/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
 dependencies = [
  "ahash",
  "async-channel",
@@ -5139,7 +5161,7 @@ dependencies = [
 [[package]]
 name = "synevi_types"
 version = "0.1.0"
-source = "git+https://github.com/ArunaStorage/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
+source = "git+https://github.com/arunaengine/synevi.git?branch=feat/refactor_wait_handler#1a46b330cdb1c2129e76f0a5659e0c02997181b7"
 dependencies = [
  "ahash",
  "async-channel",
@@ -5192,7 +5214,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c879d448e9d986b661742763247d3693ed13609438cf3d006f51f5368a5ba6b"
 dependencies = [
  "bitflags 2.6.0",
- "core-foundation",
+ "core-foundation 0.9.4",
  "system-configuration-sys",
 ]
 
@@ -5539,7 +5561,7 @@ dependencies = [
  "percent-encoding",
  "pin-project",
  "prost",
- "rustls-native-certs 0.8.0",
+ "rustls-native-certs 0.8.1",
  "rustls-pemfile 2.2.0",
  "socket2",
  "tokio",
@@ -5929,7 +5951,7 @@ dependencies = [
  "serde_json",
  "url",
  "utoipa",
- "zip 2.2.0",
+ "zip 2.2.1",
 ]
 
 [[package]]
@@ -6079,9 +6101,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
-version = "0.26.6"
+version = "0.26.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "841c67bff177718f1d4dfefde8d8f0e78f9b6589319ba88312f567fc5841a958"
+checksum = "5d642ff16b7e79272ae451b7322067cdc17cadf68c23264be9d94a32319efe7e"
 dependencies = [
  "rustls-pki-types",
 ]
@@ -6463,9 +6485,9 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "2.2.0"
+version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc5e4288ea4057ae23afc69a4472434a87a2495cafce6632fd1c4ec9f5cf3494"
+checksum = "99d52293fc86ea7cf13971b3bb81eb21683636e7ae24c729cdaf1b7c4157a352"
 dependencies = [
  "arbitrary",
  "crc32fast",
@@ -6474,7 +6496,7 @@ dependencies = [
  "flate2",
  "indexmap 2.6.0",
  "memchr",
- "thiserror 1.0.69",
+ "thiserror 2.0.3",
  "zopfli",
 ]
 

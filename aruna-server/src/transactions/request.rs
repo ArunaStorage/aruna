@@ -25,6 +25,13 @@ pub trait WriteRequest: Send {
         associated_event_id: u128,
         controller: &Controller,
     ) -> Result<SerializedResponse, ArunaError>;
+
+    fn as_json_value(&self) -> Result<serde_json::Value, ArunaError>
+    where
+        Self: Sized,
+    {
+        Ok(serde_json::to_value(self as &dyn WriteRequest)?)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

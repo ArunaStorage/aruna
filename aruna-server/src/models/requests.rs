@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
+use crate::transactions::request::WriteRequest;
+
 use super::models::{
     Author, Component, GenericNode, Group, KeyValue, Permission, Realm, Relation,
     RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass,
@@ -364,4 +366,14 @@ pub struct GetUserRequest {}
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GetUserResponse {
     pub user: User,
+}
+
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, IntoParams,
+)]
+pub struct GetEventsRequest {}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetEventsResponse {
+    pub events: Vec<serde_json::Value>,
 }
