@@ -133,9 +133,27 @@ pub fn get_parents(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Vec<u32> {
     get_relatives(graph, idx, Incoming)
 }
 
-#[allow(unused)]
 pub fn get_children(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Vec<u32> {
     get_relatives(graph, idx, Outgoing)
+}
+
+pub fn is_part_of(graph: &Graph<NodeVariant, EdgeType>, root_idx: u32, part_of_idx: u32) -> bool {
+    let mut queue = VecDeque::new();
+    queue.push_back(root_idx);
+    while let Some(idx) = queue.pop_front() {
+        if idx == part_of_idx {
+            return true;
+        } else {
+            for child in get_relatives(graph, idx, Outgoing) {
+                if idx == part_of_idx {
+                    return true;
+                } else {
+                    queue.push_back(child)
+                }
+            }
+        }
+    }
+    false
 }
 
 pub fn get_project(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Result<u32, ArunaError> {

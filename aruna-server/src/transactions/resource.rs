@@ -271,6 +271,7 @@ impl WriteRequest for CreateResourceRequestTx {
         let parent_id = self.req.parent_id;
 
         let store = controller.get_store();
+        let store_clone = store.clone();
         let engine = controller.get_rule_engine();
 
         Ok(tokio::task::spawn_blocking(move || {
@@ -329,7 +330,7 @@ impl WriteRequest for CreateResourceRequestTx {
             let resource_idx = store.create_node(&mut wtxn, &resource)?;
 
             if engine.eval_rule(
-                &store,
+                store_clone,
                 wtxn.get_txn(),
                 resource_idx,
                 resource.clone(),

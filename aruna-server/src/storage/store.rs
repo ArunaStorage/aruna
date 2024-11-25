@@ -1216,4 +1216,14 @@ impl Store {
 
         Ok(events)
     }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn is_part_of_project(
+        &self,
+        project_idx: u32,
+        resource_id: u32,
+    ) -> bool {
+        let graph = self.graph.read().expect("Poison error");
+        super::graph::is_part_of(&graph, project_idx, resource_id)
+    }
 }
