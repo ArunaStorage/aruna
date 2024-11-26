@@ -9,7 +9,7 @@ use crate::{
     error::ArunaError,
     logerr,
     models::{
-        models::{Group, NodeVariant, Permission, Token, User},
+        models::{Group, NodeVariant, Permission, Subscriber, Token, User},
         requests::{
             CreateTokenRequest, CreateTokenResponse, GetGroupsFromUserRequest,
             GetGroupsFromUserResponse, GetRealmsFromUserRequest, GetRealmsFromUserResponse,
@@ -95,8 +95,19 @@ impl WriteRequest for RegisterUserRequestTx {
             let user_idx = store.create_node(&mut wtxn, &user)?;
             store.add_oidc_mapping(&mut wtxn, user_idx, oidc_mapping)?;
 
-            // Affected nodes: Group, Realm, Project
+            store.add_subscriber(
+                &mut wtxn,
+                Subscriber {
+                    id: user.id,
+                    owner: user.id,
+                    target_idx: user_idx,
+                    cascade: false,
+                },
+            )?;
+
+            // Affected nodes: User
             store.register_event(&mut wtxn, event_id, &[user_idx])?;
+            store.add_event_to_subscribers(&mut wtxn, event_id, &[user_idx])?;
 
             wtxn.commit()?;
             // Create admin group, add user to admin group
