@@ -27,7 +27,11 @@ use milli::{
     SearchContext, TermsMatchingStrategy, TimeBudget, BEU32, BEU64,
 };
 use obkv::KvReader;
-use petgraph::{visit::EdgeRef, Direction, Graph};
+use petgraph::{
+    graph::{EdgeIndex, NodeIndex},
+    visit::EdgeRef,
+    Direction, Graph,
+};
 use roaring::RoaringBitmap;
 use serde_json::Value;
 use std::{
@@ -47,7 +51,9 @@ pub struct WriteTxn<'a> {
     relation_idx: &'a AtomicU64,
     relations: &'a Database<BEU64, SerdeBincode<RawRelation>>,
     documents: &'a Database<BEU32, ObkvCodec>,
-    tracker: u16,
+    nodes: Vec<NodeIndex>,
+    added_edges: Vec<EdgeIndex>,
+    removed_edges: Vec<(NodeIndex, NodeIndex, EdgeType)>,
 }
 
 impl<'a> WriteTxn<'a> {
@@ -55,9 +61,22 @@ impl<'a> WriteTxn<'a> {
         self.txn.as_mut().expect("Transaction already committed")
     }
 
-    pub fn get_graph(&mut self) -> &mut RwLockWriteGuard<'a, Graph<NodeVariant, EdgeType>> {
-        self.tracker += 1;
-        &mut self.graph_lock
+    pub fn add_node(&mut self, node: NodeVariant) -> NodeIndex {
+        let idx = self.graph_lock.add_node(node);
+        self.nodes.push(idx);
+        idx
+    }
+
+    pub fn add_edge(&mut self, source: NodeIndex, target: NodeIndex, edge_type: EdgeType) {
+        let idx = self.graph_lock.add_edge(source, target, edge_type);
+        self.added_edges.push(idx);
+    }
+
+    pub fn remove_edge(&mut self, index: EdgeIndex) -> Option<u32> {
+        let (from, to) = self.graph_lock.edge_endpoints(index)?;
+        let weight = self.graph_lock.remove_edge(index)?;
+        self.removed_edges.push((from, to, weight));
+        Some(weight)
     }
 
     // This is a read-only function that allows for the graph to be accessed
@@ -75,28 +94,14 @@ impl<'a> WriteTxn<'a> {
 
 impl<'a> Drop for WriteTxn<'a> {
     fn drop(&mut self) {
-        if self.txn.is_some() && self.tracker != 0 {
-            // Recovering graph state
-            tracing::error!("Transaction dropped without commit -> Recovering graph state");
-            // Abort the transaction
-            self.txn
-                .take()
-                .expect("Transaction already committed")
-                .abort();
-
-            // Reset the graph
-            let write_txn = self
-                .milli_index
-                .write_txn()
-                .expect("Failed to create write transaction");
-
-            *self.graph_lock = load_graph(
-                &write_txn,
-                self.relation_idx,
-                self.relations,
-                self.documents,
-            )
-            .expect("Failed to load graph");
+        for idx in self.added_edges.drain(..) {
+            self.graph_lock.remove_edge(idx);
+        }
+        for idx in self.nodes.drain(..) {
+            self.graph_lock.remove_node(idx);
+        }
+        for (from, to, weight) in self.removed_edges.drain(..) {
+            self.graph_lock.add_edge(from, to, weight);
         }
     }
 }
@@ -281,7 +286,9 @@ impl Store {
             relation_idx: &self.relation_idx,
             relations: &self.relations,
             documents: &self.milli_index.documents,
-            tracker: 0,
+            nodes: Vec::new(),
+            added_edges: Vec::new(),
+            removed_edges: Vec::new(),
         })
     }
 
@@ -335,8 +342,7 @@ impl Store {
             )
             .inspect_err(logerr!())?;
 
-        wtxn.get_graph()
-            .add_edge(source.into(), target.into(), edge_type);
+        wtxn.add_edge(source.into(), target.into(), edge_type);
 
         Ok(())
     }
@@ -421,7 +427,7 @@ impl Store {
             .ok_or_else(|| ArunaError::DatabaseError("Missing idx".to_string()))?;
 
         // Add the node to the graph
-        let index = wtxn.get_graph().add_node(variant);
+        let index = wtxn.add_node(variant);
 
         // Ensure that the index in graph and milli stays in sync
         // assert_eq!(index.index() as u32, idx);
@@ -491,7 +497,7 @@ impl Store {
                 .ok_or_else(|| ArunaError::DatabaseError("Missing idx".to_string()))?;
 
             // Add the node to the graph
-            let index = wtxn.get_graph().add_node(variant);
+            let index = wtxn.add_node(variant);
 
             // Ensure that the index in graph and milli stays in sync
             assert_eq!(index.index() as u32, idx);

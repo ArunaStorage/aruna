@@ -537,11 +537,7 @@ pub async fn get_events(
     Query(request): Query<GetEventsRequest>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    into_axum_response(
-         state
-             .request(request, extract_token(&header))
-             .await,
-    )
+    into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
 /// Request group join realm
