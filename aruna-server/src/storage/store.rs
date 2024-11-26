@@ -1096,14 +1096,18 @@ impl Store {
         Ok(rule_vec)
     }
 
-    #[tracing::instrument(level = "trace", skip(self, wtxn))]
-    pub fn get_project(&self, wtxn: &mut WriteTxn, resource_id: Ulid) -> Result<u32, ArunaError> {
-        let Some(idx) = self.get_idx_from_ulid(&resource_id, &wtxn.get_txn()) else {
+    #[tracing::instrument(level = "trace", skip(self, rtxn, graph))]
+    pub fn get_project(
+        &self,
+        graph: &Graph<NodeVariant, EdgeType>,
+        rtxn: &RoTxn,
+        resource_id: Ulid,
+    ) -> Result<u32, ArunaError> {
+        let Some(idx) = self.get_idx_from_ulid(&resource_id, &rtxn) else {
             return Err(ArunaError::NotFound(format!(
                 "Project for {resource_id} not found"
             )));
         };
-        let graph = wtxn.get_ro_graph();
         let project = super::graph::get_project(&graph, idx)?;
         Ok(project)
     }

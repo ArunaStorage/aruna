@@ -3,16 +3,18 @@ use crate::{
     error::ArunaError,
     logerr,
     models::{
-        models::{Permission, Relation, Resource},
+        models::{EdgeType, NodeVariant, Permission, Relation, Resource},
         requests::Direction,
     },
     storage::store::{Store, WriteTxn},
 };
 use ahash::RandomState;
+use heed::RoTxn;
+use petgraph::Graph;
 use rhai::{Engine, NativeCallContext, Scope, AST};
 use std::{
     collections::HashMap,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
 };
 use ulid::Ulid;
 
@@ -64,15 +66,17 @@ impl RuleEngine {
     pub fn eval_rule(
         &self,
         store: Arc<Store>,
-        write_txn: &mut WriteTxn,
+        graph: &Graph<NodeVariant, EdgeType>,
+        wtxn: Arc<Mutex<WriteTxn>>,
         requester: Requester,
         id: Ulid
     ) -> Result<bool, ArunaError> {
-        let project = store.get_project(write_txn, id)?;
+        let project = store.get_project(graph, &wtxn.lock().unwrap().get_txn(), id)?;
         if let Some(rule) = self.rules.read().expect("Poison error").get(&project) {
             let store_clone = store.clone();
             let mut engine = self.rhai_engine.write().expect("Poison error");
             let requester_clone = requester.clone();
+            let rtxn = wtxn.clone();
             engine.register_fn(
                 "get_resource",
                 move |ctx: NativeCallContext, id: Ulid| -> Option<Resource> {
@@ -85,7 +89,7 @@ impl RuleEngine {
                     if !has_permission {
                         return None;
                     }
-                    let rtxn = store_clone.read_txn().ok()?;
+                    let rtxn = rtxn.lock().unwrap().get_txn();
                     let idx = store_clone.get_idx_from_ulid(&id, &rtxn)?;
                     if !store_clone.is_part_of_project(project, idx) {
                         return None;
