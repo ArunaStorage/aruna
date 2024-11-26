@@ -1,6 +1,5 @@
 use axum::http::StatusCode;
 use axum::Json;
-use rhai::EvalAltResult;
 use serde::Serialize;
 use thiserror::Error;
 use utoipa::IntoResponses;

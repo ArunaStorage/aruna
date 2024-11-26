@@ -12,7 +12,7 @@ use aruna_rust_api::v3::aruna::api::v3::{
     resource_service_server::ResourceServiceServer, user_service_server::UserServiceServer,
 };
 use error::ArunaError;
-use models::{models::IssuerKey, requests::AddOidcProviderRequest};
+use models::requests::AddOidcProviderRequest;
 use tokio::{sync::Notify, task::JoinSet};
 use tonic::transport::Server;
 use tracing::info;

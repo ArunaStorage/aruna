@@ -3,8 +3,6 @@ use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
-use crate::transactions::request::WriteRequest;
-
 use super::models::{
     Author, Component, GenericNode, Group, KeyValue, Permission, Realm, Relation, RelationInfo,
     Resource, ResourceVariant, Token, User, VisibilityClass,

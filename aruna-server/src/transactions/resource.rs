@@ -8,7 +8,7 @@ use crate::{
     error::ArunaError,
     logerr,
     models::{
-        models::{NodeVariant, RawRelation, Relation, Resource},
+        models::{NodeVariant, Relation, Resource},
         requests::{
             AddRuleRequest, AddRuleResponse, CreateProjectRequest, CreateProjectResponse,
             CreateResourceBatchRequest, CreateResourceBatchResponse, CreateResourceRequest,
@@ -269,9 +269,9 @@ impl WriteRequest for CreateResourceRequestTx {
         };
 
         let parent_id = self.req.parent_id;
+        let requester = self.requester.clone();
 
         let store = controller.get_store();
-        let store_clone = store.clone();
         let engine = controller.get_rule_engine();
 
         Ok(tokio::task::spawn_blocking(move || {
@@ -326,24 +326,24 @@ impl WriteRequest for CreateResourceRequestTx {
                 }
             }
 
-            // Create resource
-            let resource_idx = store.create_node(&mut wtxn, &resource)?;
-
             if engine.eval_rule(
-                store_clone,
-                wtxn.get_txn(),
-                resource_idx,
+                store.clone(),
+                &wtxn,
+                parent_idx,
+                requester,
                 resource.clone(),
                 vec![Relation {
                     from_id: resource.id,
                     to_id: parent_id,
-                    relation_type: "PartOf".to_string()
+                    relation_type: "PartOf".to_string(),
                 }],
             )? {
                 return Err(ArunaError::Unauthorized);
             };
 
-            // Add relation parent --HAS_PART--> resource
+            // Create resource
+            let resource_idx = store.create_node(&mut wtxn, &resource)?;
+
             store.create_relation(
                 &mut wtxn,
                 parent_idx,
@@ -447,7 +447,8 @@ impl CreateResourceBatchRequestTx {
         &self,
     ) -> Result<
         (
-            HashMap<Ulid, Vec<Resource>, RandomState>, // Only for checking existing parents
+            HashMap<Ulid, Vec<Resource>, RandomState>, // For checking existing parents
+            HashMap<u32, Vec<Resource>, RandomState>,  // For checking new parents
             Vec<(Ulid, Resource)>,                     // Includes all resources with their parents
         ),
         ArunaError,
@@ -459,7 +460,6 @@ impl CreateResourceBatchRequestTx {
             }
         })?;
 
-        //let mut resources = Vec::new();
         let mut existing: HashMap<Ulid, Vec<Resource>, RandomState> = HashMap::default();
         let mut new: HashMap<u32, Vec<Resource>, RandomState> = HashMap::default();
         let mut all = Vec::new();
@@ -561,7 +561,7 @@ impl CreateResourceBatchRequestTx {
                 error: "New parent does not connect to existing resource".to_string(),
             });
         }
-        Ok((existing, all))
+        Ok((existing, new, all))
     }
 }
 
@@ -578,16 +578,19 @@ impl WriteRequest for CreateResourceBatchRequestTx {
         controller.authorize(&self.requester, &self.req).await?;
 
         //let transaction = self.clone();
-        let (parents_to_check, resources) = self.parse_resources()?;
+        let (existing_parents_to_check, new_parents_to_check, resources) =
+            self.parse_resources()?;
 
         let store = controller.get_store();
+        let engine = controller.get_rule_engine();
+
         Ok(tokio::task::spawn_blocking(move || {
             // Create resource
 
             let mut wtxn = store.write_txn()?;
 
             // Check naming conflicts and if existing parents exist
-            for (parent_id, subresources) in parents_to_check.into_iter() {
+            for (parent_id, subresources) in existing_parents_to_check.into_iter() {
                 let Some(parent_idx) = store.get_idx_from_ulid(&parent_id, wtxn.get_txn()) else {
                     return Err(ArunaError::NotFound(parent_id.to_string()));
                 };
@@ -635,7 +638,45 @@ impl WriteRequest for CreateResourceBatchRequestTx {
                             });
                         }
                     }
+
+                    // TODO: Not sure if this is the right spot to evaluate rules,
+                    // maybe this can be skipped depending on evaluation order of provided resources
+                    if engine.eval_rule(
+                        store.clone(),
+                        &wtxn,
+                        parent_idx,
+                        resource.clone(),
+                        vec![Relation {
+                            from_id: parent_id,
+                            to_id: resource.id,
+                            relation_type: "PartOf".to_string(),
+                        }],
+                    )? {
+                        return Err(ArunaError::Unauthorized);
+                    }
                 }
+            }
+
+            for (parent_id, resource) in &new_parents_to_check {
+                todo!();
+                // let Some(parent_idx) = store.get_idx_from_ulid(&parent_id, wtxn.get_txn()) else {
+                //     return Err(ArunaError::NotFound(parent_id.to_string()));
+                // };
+                // // TODO: Not sure if this is the right spot to evaluate rules,
+                // // maybe this can be skipped depending on evaluation order of provided resources
+                // if engine.eval_rule(
+                //     store.clone(),
+                //     &wtxn,
+                //     parent_idx,
+                //     resource.clone(),
+                //     vec![Relation {
+                //         from_id: *parent_id,
+                //         to_id: resource.id,
+                //         relation_type: "PartOf".to_string(),
+                //     }],
+                // )? {
+                //     return Err(ArunaError::Unauthorized);
+                // }
             }
 
             let resource_idx =

@@ -3,21 +3,22 @@ use crate::{
     error::ArunaError,
     logerr,
     models::{
-        models::{Relation, Resource},
+        models::{Permission, Relation, Resource},
         requests::Direction,
     },
-    storage::store::Store,
+    storage::store::{Store, WriteTxn},
 };
 use ahash::RandomState;
-use heed::RoTxn;
-use rhai::{Engine, Scope, AST};
+use rhai::{Engine, NativeCallContext, Scope, AST};
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
 };
 use ulid::Ulid;
 
-pub(crate) struct RuleEngine {
+use super::request::Requester;
+
+pub struct RuleEngine {
     rhai_engine: RwLock<Engine>,
     // Compiled rules with project mappings
     rules: RwLock<HashMap<u32, rhai::AST, RandomState>>,
@@ -39,6 +40,20 @@ impl RuleEngine {
                 ))
             })
             .collect::<Result<HashMap<u32, AST, RandomState>, ArunaError>>()?;
+        let store_clone = store.clone();
+        engine.register_fn(
+            "authorize",
+            move |requester: Requester, min_perm: Permission, source: Ulid| -> bool {
+                let Some(user_id) = requester.get_id() else {
+                    return false;
+                };
+                let source = source.clone();
+                let Ok(perm) = store_clone.get_permissions(&source, &user_id) else {
+                    return false;
+                };
+                perm >= min_perm
+            },
+        );
 
         Ok(Self {
             rhai_engine: RwLock::new(engine),
@@ -49,29 +64,50 @@ impl RuleEngine {
     pub fn eval_rule(
         &self,
         store: Arc<Store>,
-        _read_txn: &RoTxn,
-        resource_idx: u32,
-        resource: Resource,
-        new_relations: Vec<Relation>,
+        write_txn: &mut WriteTxn,
+        requester: Requester,
+        id: Ulid
     ) -> Result<bool, ArunaError> {
-        let project = store.get_project(&resource_idx)?;
+        let project = store.get_project(write_txn, id)?;
         if let Some(rule) = self.rules.read().expect("Poison error").get(&project) {
             let store_clone = store.clone();
             let mut engine = self.rhai_engine.write().expect("Poison error");
-            engine.register_fn("get_resource", move |id: Ulid| -> Option<Resource> {
-                let rtxn = store_clone.read_txn().ok()?;
-                let idx = store_clone.get_idx_from_ulid(&id, &rtxn)?;
-                if !store_clone.is_part_of_project(project, idx) {
-                    return None;
-                }
+            let requester_clone = requester.clone();
+            engine.register_fn(
+                "get_resource",
+                move |ctx: NativeCallContext, id: Ulid| -> Option<Resource> {
+                    let requester_clone = requester_clone.clone();
+                    let Ok(has_permission): Result<bool, _> =
+                        ctx.call_native_fn("authorize", (requester_clone, Permission::Read, id))
+                    else {
+                        return None;
+                    };
+                    if !has_permission {
+                        return None;
+                    }
+                    let rtxn = store_clone.read_txn().ok()?;
+                    let idx = store_clone.get_idx_from_ulid(&id, &rtxn)?;
+                    if !store_clone.is_part_of_project(project, idx) {
+                        return None;
+                    }
 
-                store_clone.get_node(&rtxn, idx)
-            });
+                    store_clone.get_node(&rtxn, idx)
+                },
+            );
 
             let store_clone = store.clone();
             engine.register_fn(
                 "get_existing_relations",
-                move |id: Ulid, direction: Direction| -> Result<Vec<Relation>, ArunaError> {
+                move |ctx: NativeCallContext, id: Ulid, direction: Direction| -> Result<Vec<Relation>, ArunaError> {
+                    let requester_clone = requester.clone();
+                    let Ok(has_permission): Result<bool, _> =
+                        ctx.call_native_fn("authorize", (requester_clone, Permission::Read, id))
+                    else {
+                        return Ok(vec![]);
+                    };
+                    if !has_permission {
+                        return Ok(vec![]);
+                    }
                     let rtxn = store_clone.read_txn()?;
                     let Some(idx) = store_clone.get_idx_from_ulid(&id, &rtxn) else {
                         return Ok(vec![]);
@@ -94,8 +130,6 @@ impl RuleEngine {
                 },
             );
             let mut scope = Scope::new();
-            scope.push("resource", resource);
-            scope.push("new_relations", new_relations);
             self.rhai_engine
                 .read()
                 .expect("Poison error")

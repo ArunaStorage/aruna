@@ -4,7 +4,7 @@ use super::{
     rule::RuleEngine,
 };
 use crate::{
-    error::ArunaError, logerr, models::models::RawRelation, storage::store::Store,
+    error::ArunaError, logerr, storage::store::Store,
     transactions::request::Requester,
 };
 use serde::Serialize;

@@ -1067,8 +1067,14 @@ impl Store {
         })
     }
     #[tracing::instrument(level = "trace", skip(self, write_txn))]
-    pub fn store_rule(&self, project_idx: &u32, rule: &str, write_txn: &mut WriteTxn) -> Result<(), ArunaError> {
-        self.rule_db.put(&mut write_txn.get_txn(), project_idx, rule)?;
+    pub fn store_rule(
+        &self,
+        project_idx: &u32,
+        rule: &str,
+        write_txn: &mut WriteTxn,
+    ) -> Result<(), ArunaError> {
+        self.rule_db
+            .put(&mut write_txn.get_txn(), project_idx, rule)?;
         Ok(())
     }
 
@@ -1084,10 +1090,15 @@ impl Store {
         Ok(rule_vec)
     }
 
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_project(&self, resource_idx: &u32) -> Result<u32, ArunaError> {
-        let graph = self.graph.read().expect("Poison error");
-        let project = super::graph::get_project(&graph, *resource_idx)?;
+    #[tracing::instrument(level = "trace", skip(self, wtxn))]
+    pub fn get_project(&self, wtxn: &mut WriteTxn, resource_id: Ulid) -> Result<u32, ArunaError> {
+        let Some(idx) = self.get_idx_from_ulid(&resource_id, &wtxn.get_txn()) else {
+            return Err(ArunaError::NotFound(format!(
+                "Project for {resource_id} not found"
+            )));
+        };
+        let graph = wtxn.get_ro_graph();
+        let project = super::graph::get_project(&graph, idx)?;
         Ok(project)
     }
 
@@ -1218,11 +1229,7 @@ impl Store {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn is_part_of_project(
-        &self,
-        project_idx: u32,
-        resource_id: u32,
-    ) -> bool {
+    pub fn is_part_of_project(&self, project_idx: u32, resource_id: u32) -> bool {
         let graph = self.graph.read().expect("Poison error");
         super::graph::is_part_of(&graph, project_idx, resource_id)
     }

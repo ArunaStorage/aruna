@@ -1,6 +1,3 @@
-use std::{collections::HashMap, sync::RwLock};
-
-use ahash::RandomState;
 use heed::{
     types::{SerdeBincode, Str},
     Database, Unspecified,

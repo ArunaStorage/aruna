@@ -160,13 +160,17 @@ pub fn get_project(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Result<u32
     let mut queue = VecDeque::new();
     queue.push_back(idx.into());
     while let Some(idx) = queue.pop_front() {
-        // Iterate over all incoming edges
-        for edge in graph.edges_directed(idx, Direction::Incoming) {
-            if edge.weight() == &0 {
-                if graph.node_weight(edge.target()) == Some(&NodeVariant::ResourceProject) {
-                    return Ok(edge.target().as_u32());
-                } else {
-                    queue.push_back(edge.target());
+        if graph.node_weight(idx) == Some(&NodeVariant::ResourceProject) {
+            return Ok(idx.as_u32());
+        } else {
+            // Iterate over all incoming edges
+            for edge in graph.edges_directed(idx, Direction::Incoming) {
+                if edge.weight() == &0 {
+                    if graph.node_weight(edge.source()) == Some(&NodeVariant::ResourceProject) {
+                        return Ok(edge.source().as_u32());
+                    } else {
+                        queue.push_back(edge.source());
+                    }
                 }
             }
         }
