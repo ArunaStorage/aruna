@@ -246,7 +246,14 @@ impl WriteRequest for CreateRelationVariantTx {
         Ok(tokio::task::spawn_blocking(move || {
             let mut wtxn = store.write_txn()?;
 
-            let idx = store.get_relation_infos(&wtxn.get_txn())?.len() as u32;
+            let idx = store
+                .get_relation_infos(&wtxn.get_txn())?
+                .iter()
+                .map(|i| i.idx)
+                .max()
+                // This should never happen if the database is loaded
+                .expect("Relation infos is empty!")
+                + 1;
             let info = RelationInfo {
                 idx,
                 forward_type,
@@ -256,7 +263,7 @@ impl WriteRequest for CreateRelationVariantTx {
             store.create_relation_variant(&mut wtxn, info)?;
 
             wtxn.commit()?;
-            Ok::<_, ArunaError>(bincode::serialize(&CreateRelationVariantResponse {idx})?)
+            Ok::<_, ArunaError>(bincode::serialize(&CreateRelationVariantResponse { idx })?)
         })
         .await
         .map_err(|_e| {
