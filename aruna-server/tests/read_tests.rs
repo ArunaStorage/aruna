@@ -32,6 +32,7 @@ mod read_tests {
             .into_inner();
 
         let id = response.realm.unwrap().id;
+        let group_id = response.admin_group_id;
 
         let request = GetRealmRequest { id };
 
@@ -47,6 +48,21 @@ mod read_tests {
         assert_eq!(&realm.name, &create_request.name);
         assert_eq!(&realm.tag, &create_request.tag);
         assert_eq!(&realm.description, &create_request.description);
+
+        let client = reqwest::Client::new();
+        let url = format!("{}/api/v3/user/groups", clients.rest_endpoint);
+
+        let response: GetGroupsFromUserResponse = client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+        assert!(response.groups.iter().any(|(g, p) | g.id == Ulid::from_string(&group_id).unwrap() && p == &Permission::Admin))
     }
 
     #[tokio::test(flavor = "multi_thread")]
