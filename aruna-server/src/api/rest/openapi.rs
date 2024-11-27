@@ -35,7 +35,8 @@ use utoipa::{
         request_user_access_group,
         get_events,
         create_relation,
-        create_relation_variant
+        create_relation_variant,
+        create_component,
     ),
     components(schemas(
         CreateResourceBatchRequest,
@@ -84,6 +85,8 @@ use utoipa::{
         GetRelationInfosResponse,
         GetUserRequest,
         GetUserResponse,
+        CreateComponentRequest,
+        CreateComponentResponse,
         Component,
         Token,
         User,

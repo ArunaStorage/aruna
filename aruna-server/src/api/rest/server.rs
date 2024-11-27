@@ -40,6 +40,7 @@ impl RestServer {
                 "/api/v3/realm/components",
                 get(api_paths::get_realm_components),
             )
+            .route("/api/v3/components", post(api_paths::create_component))
             .route(
                 "/api/v3/realm/group",
                 post(api_paths::add_group).get(api_paths::get_realm_groups),

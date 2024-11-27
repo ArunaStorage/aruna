@@ -821,11 +821,7 @@ impl WriteRequest for UpdateResourceTx {
             }
 
             // Affected nodes: Group, Realm, Project
-            store.register_event(
-                &mut wtxn,
-                associated_event_id,
-                &[resource_idx],
-            )?;
+            store.register_event(&mut wtxn, associated_event_id, &[resource_idx])?;
 
             wtxn.commit()?;
             // Create admin group, add user to admin group

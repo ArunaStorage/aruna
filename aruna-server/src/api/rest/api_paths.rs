@@ -73,7 +73,6 @@ pub async fn create_project(
     into_axum_response(state.request(request, extract_token(&headers)).await)
 }
 
-
 /// Create a new relation
 #[utoipa::path(
     post,
@@ -94,7 +93,6 @@ pub async fn create_relation(
 ) -> impl IntoResponse {
     into_axum_response(state.request(request, extract_token(&headers)).await)
 }
-
 
 /// Create a new relation variant
 #[utoipa::path(
@@ -623,6 +621,28 @@ pub async fn request_user_access_group(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
     Json(request): Json<UserAccessGroupRequest>,
+) -> impl IntoResponse {
+    todo!()
+    // into_axum_response(state.request(request, extract_token(&header)).await)
+}
+
+/// Create a new component
+#[utoipa::path(
+    post,
+    path = "/api/v3/components",
+    request_body = CreateComponentRequest,
+    responses(
+        (status = 200, body = CreateComponentResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+)]
+pub async fn create_component(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+    Json(request): Json<CreateComponentRequest>,
 ) -> impl IntoResponse {
     todo!()
     // into_axum_response(state.request(request, extract_token(&header)).await)

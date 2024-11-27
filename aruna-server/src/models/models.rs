@@ -766,6 +766,7 @@ pub struct Component {
     pub description: String,
     pub component_type: ComponentType,
     pub endpoints: Vec<Endpoint>,
+    pub public: bool,
 }
 
 impl Node for Component {
@@ -803,6 +804,7 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Component {
             description: obkv.get_field(3)?,
             component_type: obkv.get_field(23)?,
             endpoints: obkv.get_field(24)?,
+            public: obkv.get_field(25)?,
         })
     }
 }
