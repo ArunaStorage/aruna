@@ -380,7 +380,7 @@ pub struct GetEventsRequest {
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GetEventsResponse {
     // EventId, Event
-    pub events: Vec<(Ulid, serde_json::Value)>,
+    pub events: Vec<serde_json::Map<String, serde_json::Value>>,
 }
 
 // User ask to access a group

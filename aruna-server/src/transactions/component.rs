@@ -18,7 +18,7 @@ use ulid::Ulid;
 impl Request for CreateComponentRequest {
     type Response = CreateComponentResponse;
     fn get_context(&self) -> Context {
-        Context::GlobalAdmin
+        Context::UserOnly
     }
 
     async fn run_request(
@@ -86,9 +86,15 @@ impl WriteRequest for CreateComponentRequestTx {
             store.create_relation(&mut wtxn, idx, requester_idx, relation_types::OWNED_BY_USER)?;
 
             // Add a listener if the component is a proxy
+            store.add_read_permission_universe(&mut wtxn, requester_idx, &[idx])?;
+            if component.public {
+                store.add_public_resources_universe(&mut wtxn, &[idx])?;
+            }
 
             // Affected nodes: Realm and Group
+            store.add_event_to_subscribers(&mut wtxn, associated_event_id, &[requester_idx])?;
             store.register_event(&mut wtxn, associated_event_id, &[requester_idx])?;
+
 
             wtxn.commit()?;
             // Create admin group, add user to admin group

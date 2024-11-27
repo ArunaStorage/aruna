@@ -164,7 +164,7 @@ pub struct Store {
     // Roaring bitmap for subscriber resources + last acknowledged event
     subscribers: Database<U128<BigEndian>, SerdeBincode<Vec<u128>>>,
 
-    // Database for read permissions of groups (and users)
+    // Database for read permissions of groups, users and realms
     read_permissions: Database<BEU32, CboRoaringBitmapCodec>,
 
     // Database for tokens with user_idx as key and a list of tokens as value
@@ -880,14 +880,14 @@ impl Store {
     pub fn add_read_permission_universe(
         &self,
         rtxn: &mut WriteTxn,
-        group: u32,
+        target: u32, // Group, User or Realm
         universe: &[u32],
     ) -> Result<(), ArunaError> {
         let mut universe = RoaringBitmap::from_iter(universe.iter().copied());
 
         let existing = self
             .read_permissions
-            .get(&rtxn.get_txn(), &group)
+            .get(&rtxn.get_txn(), &target)
             .inspect_err(logerr!())?
             .unwrap_or_default();
 
@@ -895,7 +895,7 @@ impl Store {
         universe |= existing;
 
         self.read_permissions
-            .put(rtxn.get_txn(), &group, &universe)
+            .put(rtxn.get_txn(), &target, &universe)
             .inspect_err(logerr!())?;
         Ok(())
     }

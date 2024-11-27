@@ -795,8 +795,8 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Component {
         let id: Ulid = obkv.get_required_field(0)?;
         // Get and double check the variant
         let variant: u8 = obkv.get_required_field(1)?;
-        if variant != NodeVariant::User as u8 {
-            return Err(ParseError(format!("Invalid variant for User: {}", variant)));
+        if variant != NodeVariant::Component as u8 {
+            return Err(ParseError(format!("Invalid variant for Component: {}", variant)));
         }
         Ok(Component {
             id,

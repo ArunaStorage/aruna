@@ -644,6 +644,5 @@ pub async fn create_component(
     header: HeaderMap,
     Json(request): Json<CreateComponentRequest>,
 ) -> impl IntoResponse {
-    todo!()
-    // into_axum_response(state.request(request, extract_token(&header)).await)
+    into_axum_response(state.request(request, extract_token(&header)).await)
 }

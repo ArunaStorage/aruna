@@ -40,8 +40,9 @@ impl Request for SearchRequest {
                                 .ok_or_else(|| {
                                     ArunaError::NotFound("Requester not found".to_string())
                                 })?;
-                        let groups = store.get_realm_and_groups(user_idx)?;
-                        let mut universe = store.get_read_permission_universe(&rtxn, &groups)?;
+                        let mut permission_targets = store.get_realm_and_groups(user_idx)?;
+                        permission_targets.push(user_idx);
+                        let mut universe = store.get_read_permission_universe(&rtxn, &permission_targets)?;
                         universe |= store.get_public_universe(&rtxn)?;
                         universe
                     }
