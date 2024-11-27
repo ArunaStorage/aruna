@@ -553,7 +553,7 @@ pub struct Relation {
 pub type Source = u32;
 pub type Target = u32;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct RawRelation {
     pub source: Source,
     pub target: Target,

@@ -3,16 +3,14 @@ mod common;
 #[cfg(test)]
 mod read_tests {
 
-    use crate::common::{init_test, REGULAR_TOKEN, ADMIN_TOKEN};
+    use crate::common::{init_test, ADMIN_TOKEN, REGULAR_TOKEN};
     use aruna_rust_api::v3::aruna::api::v3::{
-        AddGroupRequest, CreateProjectRequest, CreateRealmRequest, GetRealmRequest, Realm,
+        AddGroupRequest, CreateGroupRequest, CreateGroupResponse, CreateProjectRequest,
+        CreateRealmRequest, GetRealmRequest, Realm,
     };
-    use aruna_server::models::requests::{
-        BatchResource, CreateGroupRequest, CreateGroupResponse,
-        CreateProjectRequest as ModelsCreateProject, CreateProjectResponse,
-        CreateResourceBatchRequest, CreateResourceBatchResponse, GetRealmsFromUserRequest,
-        GetRealmsFromUserResponse, SearchResponse,
-    };
+    use aruna_server::models::{models::Permission, requests::{ CreateGroupRequest as ModelsCreateGroupRequest, CreateGroupResponse as ModelsCreateGroupResponse,
+        BatchResource, CreateProjectRequest as ModelsCreateProject, CreateProjectResponse, CreateResourceBatchRequest, CreateResourceBatchResponse, GetGroupsFromUserResponse, GetRealmsFromUserResponse, SearchResponse
+    }};
     use ulid::Ulid;
     pub const OFFSET: u16 = 100;
 
@@ -236,12 +234,12 @@ mod read_tests {
 
         // 5.Create resources for user 2
         // 5.1. Create group
-        let request = CreateGroupRequest {
+        let request = ModelsCreateGroupRequest {
             name: "SecondGroup".to_string(),
             description: String::new(),
         };
         let url = format!("{}/api/v3/group", clients.rest_endpoint);
-        let response: CreateGroupResponse = client
+        let response: ModelsCreateGroupResponse = client
             .post(url)
             .header("Authorization", format!("Bearer {}", REGULAR_TOKEN))
             .json(&request)
@@ -415,6 +413,43 @@ mod read_tests {
 
         for realm in response.realms {
             assert!(ids.contains(&realm.id))
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_user_groups() {
+        let mut clients = init_test(OFFSET).await;
+
+        let mut ids = Vec::new();
+        for i in 0..5 {
+            let response = clients
+                .group_client
+                .create_group(CreateGroupRequest {
+                    name: format!("TestUserRealm{i}"),
+                    description: String::new(),
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            ids.push(Ulid::from_string(&response.group.unwrap().id).unwrap());
+        }
+
+        let client = reqwest::Client::new();
+        let url = format!("{}/api/v3/user/groups", clients.rest_endpoint);
+
+        let response: GetGroupsFromUserResponse = client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+        for (group, permission) in response.groups {
+            assert!(ids.contains(&group.id));
+            assert_eq!(permission, Permission::Admin);
         }
     }
 }

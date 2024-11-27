@@ -434,15 +434,17 @@ pub struct UpdateResourceRequest {
     #[serde(default)]
     pub description: String,
     #[serde(default)]
-    pub labels: Vec<KeyValue>,
-    #[serde(default)]
-    pub identifiers: Vec<String>,
-    #[serde(default)]
     pub visibility: VisibilityClass,
-    #[serde(default)]
-    pub authors: Vec<Author>,
     #[serde(default = "default_license_tag")]
     pub license_tag: String,
+
+    // TODO:
+    // #[serde(default)]
+    // pub labels: Vec<KeyValue>,
+    // #[serde(default)]
+    // pub identifiers: Vec<String>,
+    // #[serde(default)]
+    // pub authors: Vec<Author>,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]

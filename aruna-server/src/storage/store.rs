@@ -316,10 +316,7 @@ impl Store {
             .inspect_err(logerr!())
             .ok()
             .flatten()?;
-        // 0u16 is the primary key
-        Some(Ulid::from_bytes(
-            response.get(0u16)?.try_into().inspect_err(logerr!()).ok()?,
-        ))
+        serde_json::from_slice::<Ulid>(response.get(0u16)?).ok()
     }
 
     #[tracing::instrument(level = "trace", skip(self, wtxn))]

@@ -752,6 +752,7 @@ impl Request for UpdateResourceRequest {
             updated_at: Utc::now().timestamp(),
         };
 
+        return Err(ArunaError::NotFound("Request unimplemented".to_string()));
         let response = controller.transaction(Ulid::new().0, &request_tx).await?;
 
         Ok(bincode::deserialize(&response)?)
@@ -786,6 +787,7 @@ impl WriteRequest for UpdateResourceTx {
         let request = self.req.clone();
 
         let store = controller.get_store();
+
         Ok(tokio::task::spawn_blocking(move || {
             let mut wtxn = store.write_txn()?;
 
