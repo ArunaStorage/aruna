@@ -30,6 +30,12 @@ use utoipa::{
         get_group_users,
         get_realm_groups,
         get_relation_infos,
+        get_user,
+        request_group_access_realm,
+        request_user_access_group,
+        get_events,
+        create_relation,
+        create_relation_variant
     ),
     components(schemas(
         CreateResourceBatchRequest,
@@ -48,10 +54,16 @@ use utoipa::{
         GetGroupResponse,
         AddGroupRequest,
         AddGroupResponse,
+        AddUserRequest,
+        AddUserResponse,
         RegisterUserRequest,
         RegisterUserResponse,
         CreateTokenRequest,
         CreateTokenResponse,
+        CreateRelationRequest,
+        CreateRelationResponse,
+        CreateRelationVariantRequest,
+        CreateRelationVariantResponse,
         SearchRequest,
         SearchResponse,
         GetRealmsFromUserRequest,
@@ -70,6 +82,8 @@ use utoipa::{
         GetGroupsFromRealmResponse,
         GetRelationInfosRequest,
         GetRelationInfosResponse,
+        GetUserRequest,
+        GetUserResponse,
         Component,
         Token,
         User,
@@ -83,6 +97,13 @@ use utoipa::{
         VisibilityClass,
         ResourceVariant,
         BatchResource,
+        Permission,
+        GetEventsRequest,
+        GetEventsResponse,
+        GroupAccessRealmRequest,
+        GroupAccessRealmResponse,
+        UserAccessGroupRequest,
+        UserAccessGroupResponse
     ))
 )]
 pub struct ArunaApi;

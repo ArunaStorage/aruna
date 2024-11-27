@@ -271,3 +271,38 @@ pub fn get_realm_and_groups(
     }
     Ok(indizes)
 }
+
+#[tracing::instrument(level = "trace", skip(graph))]
+pub fn get_realms(
+    graph: &Graph<NodeVariant, EdgeType>,
+    user_idx: u32,
+) -> Result<Vec<u32>, ArunaError> {
+    use crate::constants::relation_types::*;
+    let mut realms = vec![];
+    let mut group_loop_detection = vec![];
+    let mut queue = VecDeque::new();
+    queue.push_back(user_idx.into());
+    while let Some(idx) = queue.pop_front() {
+        // Iterate over all incoming edges
+        for edge in graph.edges_directed(idx, Outgoing) {
+            match edge.weight() {
+                // The target is a group (but may have child groups)
+                PERMISSION_READ..=PERMISSION_ADMIN
+                    if graph.node_weight(edge.target()) == Some(&NodeVariant::Group) =>
+                {
+                    // Loop detection
+                    if !group_loop_detection.contains(&edge.target()) {
+                        group_loop_detection.push(edge.target());
+                        queue.push_back(edge.target());
+                    }
+                }
+                // The target is a realm
+                &GROUP_ADMINISTRATES_REALM | &GROUP_PART_OF_REALM => {
+                    realms.push(edge.target().as_u32());
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(realms)
+}

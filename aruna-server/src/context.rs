@@ -6,6 +6,7 @@ pub enum Context {
     NotRegistered,
     UserOnly,
     GlobalAdmin,
+    SubscriberOwnerOf(Ulid),
     Permission {
         min_permission: Permission,
         // Source for finding a path to the user

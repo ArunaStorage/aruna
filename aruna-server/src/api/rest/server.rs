@@ -48,14 +48,37 @@ impl RestServer {
                 "/api/v3/group",
                 post(api_paths::create_group).get(api_paths::get_group),
             )
-            .route("/api/v3/group/users", get(api_paths::get_group_users))
-            .route("/api/v3/user", post(api_paths::register_user))
+            .route(
+                "/api/v3/group/users",
+                get(api_paths::get_group_users).post(api_paths::add_user),
+            )
+            .route(
+                "/api/v3/user",
+                post(api_paths::register_user).get(api_paths::get_user),
+            )
             .route("/api/v3/user/realms", get(api_paths::get_user_realms))
             .route("/api/v3/user/groups", get(api_paths::get_user_groups))
             .route("/api/v3/token", post(api_paths::create_token))
             .route("/api/v3/search", get(api_paths::search))
             .route("/api/v3/stats", get(api_paths::get_stats))
             .route("/api/v3/info/relations", get(api_paths::get_relation_infos))
+            .route(
+                "/api/v3/resource/relations",
+                get(api_paths::get_relations).post(api_paths::create_relation),
+            )
+            .route(
+                "/api/v3/relations",
+                post(api_paths::create_relation_variant),
+            )
+            .route("/api/v3/events", get(api_paths::get_events))
+            .route(
+                "/api/v3/realm/join",
+                post(api_paths::request_group_access_realm),
+            )
+            .route(
+                "/api/v3/group/join",
+                post(api_paths::request_user_access_group),
+            )
             .with_state(handler)
             .layer(
                 TraceLayer::new_for_http()

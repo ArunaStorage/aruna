@@ -18,9 +18,93 @@ use tonic::transport::Channel;
 use tracing_subscriber::EnvFilter;
 use ulid::Ulid;
 
-pub const TEST_TOKEN: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSIsImtpZCI6IjEifQ.eyJpc3MiOiJhcnVuYSIsInN1YiI6IjAxSkJHVDFUWVY4UVo3WkZaS1hQNERRS05OIiwiYXVkIjoiYXJ1bmEiLCJleHAiOjE3MzU2MzIyODQsImluZm8iOlswLDBdfQ.lCvp27T537Ygm8bCt3TPl7hLwaLObHqNkFwet-J19-QoT_YmbO7tJ9O_aWNXT1KLnmbxq8WJUlvROecxXf0UDA";
+// USERS
+//
+// ADMIN:
+//  {
+//      "id":"01JDPGX26PDFD4Y3771K28MPN5",
+//      "first_name":"aruna",
+//      "last_name":"admin",
+//      "email":"admin@test.com",
+//      "identifiers":"",
+//      "global_admin":false
+//  }
+// {
+//    "token": {
+//      "id": 0,
+//      "user_id": "01JDPGX26PDFD4Y3771K28MPN5",
+//      "name": "TESTTOKEN",
+//      "expires_at": "2050-11-27T10:04:08.438Z",
+//      "constraints": null
+//    },
+//    "secret": "eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSIsImtpZCI6IjEifQ.eyJpc3MiOiJhcnVuYSIsInN1YiI6IjAxSkRQR1gyNlBERkQ0WTM3NzFLMjhNUE41IiwiYXVkIjoiYXJ1bmEiLCJleHAiOjI1NTMxNTYyNDgsImluZm8iOlswLDBdfQ.BWU1NZntUcQn0LY0qQRL9ixS_m3vqz4JWlmG_IzxN_y1SrQdmgg8G7SNbwK4wYs8bCbi8Et35cCH-tngEmT9DA"
+//  }
+pub const ADMIN_TOKEN: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSIsImtpZCI6IjEifQ.eyJpc3MiOiJhcnVuYSIsInN1YiI6IjAxSkRQR1gyNlBERkQ0WTM3NzFLMjhNUE41IiwiYXVkIjoiYXJ1bmEiLCJleHAiOjI1NTMxNTYyNDgsImluZm8iOlswLDBdfQ.BWU1NZntUcQn0LY0qQRL9ixS_m3vqz4JWlmG_IzxN_y1SrQdmgg8G7SNbwK4wYs8bCbi8Et35cCH-tngEmT9DA";
 
-pub const SECOND_TOKEN: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSIsImtpZCI6IjEifQ.eyJpc3MiOiJhcnVuYSIsInN1YiI6IjAxSkNHNFpNNzVZOU1QWE5QTkpGOUpZUU1ZIiwiYXVkIjoiYXJ1bmEiLCJleHAiOjE3NjI5NDk5MjIsImluZm8iOlswLDBdfQ.30c6OjYb-eaBGajrlIj05zxnN83sP3NYAR3yFB_blJa8ZahbQxFFJXD05mlQ6M7d0mnQojWcoVPq-L7eViesCA";
+// REGULAR
+// {
+//      "id":"01JDPGYPQ2G3MDS0ZH20FQNNM4",
+//      "first_name":"regular",
+//      "last_name":"user",
+//      "email":"regular@test.com",
+//      "identifiers":"",
+//      "global_admin":false
+//  }
+// {
+//   "token": {
+//     "id": 0,
+//     "user_id": "01JDPGYPQ2G3MDS0ZH20FQNNM4",
+//     "name": "TESTTOKEN",
+//     "expires_at": "2050-11-27T10:07:15.417Z",
+//     "constraints": null
+//   },
+//   "secret": "eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSIsImtpZCI6IjEifQ.eyJpc3MiOiJhcnVuYSIsInN1YiI6IjAxSkRQR1lQUTJHM01EUzBaSDIwRlFOTk00IiwiYXVkIjoiYXJ1bmEiLCJleHAiOjI1NTMxNTY0MzUsImluZm8iOlswLDBdfQ._eaf52a_Lnxnh3yVu2aWRKkU8XZ4fwRomlXI_rnx-5xh9rHS6sdXIEVh22NyXNnCza7qomC5tUsKqTkBH2QfCQ"
+// }
+pub const REGULAR_TOKEN: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSIsImtpZCI6IjEifQ.eyJpc3MiOiJhcnVuYSIsInN1YiI6IjAxSkRQR1lQUTJHM01EUzBaSDIwRlFOTk00IiwiYXVkIjoiYXJ1bmEiLCJleHAiOjI1NTMxNTY0MzUsImluZm8iOlswLDBdfQ._eaf52a_Lnxnh3yVu2aWRKkU8XZ4fwRomlXI_rnx-5xh9rHS6sdXIEVh22NyXNnCza7qomC5tUsKqTkBH2QfCQ";
+
+// REGULAR2
+// {
+//      "id":"01JDPH096816PAXTQRBTZHXJE0",
+//      "first_name":"regular2",
+//      "last_name":"user",
+//      "email":"regular2@test.com",
+//      "identifiers":"",
+//      "global_admin":false
+//  }
+//{
+//   "token": {
+//     "id": 1,
+//     "user_id": "01JDPH096816PAXTQRBTZHXJE0",
+//     "name": "TESTTOKEN",
+//     "expires_at": "2050-11-27T10:08:37.559Z",
+//     "constraints": null
+//   },
+//   "secret": "eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSIsImtpZCI6IjEifQ.eyJpc3MiOiJhcnVuYSIsInN1YiI6IjAxSkRQSDA5NjgxNlBBWFRRUkJUWkhYSkUwIiwiYXVkIjoiYXJ1bmEiLCJleHAiOjI1NTMxNTY1MTcsImluZm8iOlswLDFdfQ.vts4apGmkGyl4amQ_CJXyufb6lgChOFZRJ8DqXym4IOEJR3Lf4Shd0ViPVsEm9JJtakas0SFbP1feGmfXj3OBw"
+// }
+pub const REGULAR2_TOKEN: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSIsImtpZCI6IjEifQ.eyJpc3MiOiJhcnVuYSIsInN1YiI6IjAxSkRQSDA5NjgxNlBBWFRRUkJUWkhYSkUwIiwiYXVkIjoiYXJ1bmEiLCJleHAiOjI1NTMxNTY1MTcsImluZm8iOlswLDFdfQ.vts4apGmkGyl4amQ_CJXyufb6lgChOFZRJ8DqXym4IOEJR3Lf4Shd0ViPVsEm9JJtakas0SFbP1feGmfXj3OBw";
+
+// WEBTEST
+//
+// {
+//      "id":"01JDPH1QAJQRAMKNGTF5YC09CC",
+//      "first_name":"webtest",
+//      "last_name":"user",
+//      "email":"webtest@test.com",
+//      "identifiers":"",
+//      "global_admin":false
+//  }
+//{
+//  "token": {
+//    "id": 0,
+//    "user_id": "01JDPH1QAJQRAMKNGTF5YC09CC",
+//    "name": "TESTTOKEN",
+//    "expires_at": "2050-11-27T10:10:27.550Z",
+//    "constraints": null
+//  },
+//  "secret": "eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSIsImtpZCI6IjEifQ.eyJpc3MiOiJhcnVuYSIsInN1YiI6IjAxSkRQSDFRQUpRUkFNS05HVEY1WUMwOUNDIiwiYXVkIjoiYXJ1bmEiLCJleHAiOjI1NTMxNTY2MjcsImluZm8iOlswLDBdfQ.xDDlapkpV2XJNQ8eBuyp-CbJpOlfmXyRk7mM3i7cB0gNdpUUOVOMLyW5sv4vp3pTUgswBNorbVLFbLeRPgNkDg"
+//}
+pub const WEBTEST_TOKEN: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSIsImtpZCI6IjEifQ.eyJpc3MiOiJhcnVuYSIsInN1YiI6IjAxSkRQSDFRQUpRUkFNS05HVEY1WUMwOUNDIiwiYXVkIjoiYXJ1bmEiLCJleHAiOjI1NTMxNTY2MjcsImluZm8iOlswLDBdfQ.xDDlapkpV2XJNQ8eBuyp-CbJpOlfmXyRk7mM3i7cB0gNdpUUOVOMLyW5sv4vp3pTUgswBNorbVLFbLeRPgNkDg";
+
 
 pub static SUBSCRIBERS: AtomicU16 = AtomicU16::new(0);
 static INIT_TRACING: Once = Once::new();
@@ -61,7 +145,7 @@ pub async fn init_test(offset: u16) -> Clients {
     let (grpc_port, rest_port, notify) = init_testing_server(offset).await;
     notify.notified().await;
     // Create connection to the Aruna instance via gRPC
-    let api_token = TEST_TOKEN;
+    let api_token = ADMIN_TOKEN;
     let endpoint = Channel::from_shared(format!("http://0.0.0.0:{grpc_port}")).unwrap();
 
     let mut retries = MAX_RETRIES;

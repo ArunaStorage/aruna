@@ -73,6 +73,50 @@ pub async fn create_project(
     into_axum_response(state.request(request, extract_token(&headers)).await)
 }
 
+
+/// Create a new relation
+#[utoipa::path(
+    post,
+    path = "/api/v3/resource/relation",
+    request_body = CreateRelationRequest,
+    responses(
+        (status = 200, body = CreateRelationResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+)]
+pub async fn create_relation(
+    State(state): State<Arc<Controller>>,
+    headers: HeaderMap,
+    Json(request): Json<CreateResourceRequest>,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&headers)).await)
+}
+
+
+/// Create a new relation variant
+#[utoipa::path(
+    post,
+    path = "/api/v3/relation",
+    request_body = CreateRelationVariantRequest,
+    responses(
+        (status = 200, body = CreateRelationVariantResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+)]
+pub async fn create_relation_variant(
+    State(state): State<Arc<Controller>>,
+    headers: HeaderMap,
+    Json(request): Json<CreateResourceRequest>,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&headers)).await)
+}
+
 /// Get  resource
 #[utoipa::path(
     get,
@@ -228,6 +272,27 @@ pub async fn register_user(
     into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
+/// Add user to group
+#[utoipa::path(
+    post,
+    path = "/api/v3/group/user",
+    request_body = AddUserRequest,
+    responses(
+        (status = 200, body = AddUserResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+)]
+pub async fn add_user(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+    Json(request): Json<AddUserRequest>,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&header)).await)
+}
+
 /// Create a token
 #[utoipa::path(
     post,
@@ -291,8 +356,11 @@ pub async fn get_user_realms(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!();
-    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+    into_axum_response(
+        state
+            .request(GetRealmsFromUserRequest {}, extract_token(&header))
+            .await,
+    )
 }
 
 /// Get all groups from a user
@@ -312,8 +380,11 @@ pub async fn get_user_groups(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!();
-    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+    into_axum_response(
+        state
+            .request(GetGroupsFromUserRequest {}, extract_token(&header))
+            .await,
+    )
 }
 
 /// Get global server stats
@@ -330,11 +401,19 @@ pub async fn get_user_groups(
     ),
 )]
 pub async fn get_stats(
-    State(state): State<Arc<Controller>>,
-    header: HeaderMap,
+    State(_state): State<Arc<Controller>>,
+    _header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!();
+    // TODO: Remove dummy data and impl stats collection
+    // todo!();
     //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+    Json(GetStatsResponse {
+        resources: 1023,
+        projects: 5,
+        users: 12,
+        storage: 12312930192,
+        realms: 3,
+    })
 }
 
 /// Get components of a realm (server, dataproxies, etc)
@@ -358,8 +437,7 @@ pub async fn get_realm_components(
     Query(request): Query<GetRealmComponentsRequest>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!();
-    //into_axum_response(state.request(GetRealmsFromUserRequest{}, extract_token(&header)).await)
+    into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
 /// Get relations of a resource
@@ -456,4 +534,96 @@ pub async fn get_relation_infos(
             .request(GetRelationInfosRequest {}, extract_token(&header))
             .await,
     )
+}
+
+/// Get relation info
+#[utoipa::path(
+    get,
+    path = "/api/v3/user",
+    responses(
+        (status = 200, body = GetUserResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn get_user(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(
+        state
+            .request(GetUserRequest {}, extract_token(&header))
+            .await,
+    )
+}
+
+/// Get events information
+#[utoipa::path(
+    get,
+    path = "/api/v3/events",
+    params(
+        GetEventsRequest,
+    ),
+    responses(
+        (status = 200, body = GetEventsResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+)]
+pub async fn get_events(
+    State(state): State<Arc<Controller>>,
+    Query(request): Query<GetEventsRequest>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&header)).await)
+}
+
+/// Request group join realm
+#[utoipa::path(
+    post,
+    path = "/api/v3/realm/access",
+    request_body = GroupAccessRealmRequest,
+    responses(
+        (status = 200, body = GroupAccessRealmResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+)]
+pub async fn request_group_access_realm(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+    Json(request): Json<GroupAccessRealmRequest>,
+) -> impl IntoResponse {
+    todo!();
+    // into_axum_response(state.request(request, extract_token(&header)).await)
+}
+
+/// Request user join group
+#[utoipa::path(
+    post,
+    path = "/api/v3/group/join",
+    request_body = UserAccessGroupRequest,
+    responses(
+        (status = 200, body = UserAccessGroupResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+)]
+pub async fn request_user_access_group(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+    Json(request): Json<UserAccessGroupRequest>,
+) -> impl IntoResponse {
+    todo!()
+    // into_axum_response(state.request(request, extract_token(&header)).await)
 }

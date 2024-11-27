@@ -4,13 +4,16 @@ use super::{
     request::{Request, Requester, WriteRequest},
 };
 use crate::{
+    constants::relation_types::{PERMISSION_ADMIN, PERMISSION_NONE},
     context::Context,
     error::ArunaError,
     logerr,
     models::{
-        models::{Token, User},
+        models::{Group, NodeVariant, Permission, Subscriber, Token, User},
         requests::{
-            CreateTokenRequest, CreateTokenResponse, RegisterUserRequest, RegisterUserResponse,
+            CreateTokenRequest, CreateTokenResponse, GetGroupsFromUserRequest,
+            GetGroupsFromUserResponse, GetRealmsFromUserRequest, GetRealmsFromUserResponse,
+            GetUserRequest, GetUserResponse, RegisterUserRequest, RegisterUserResponse,
         },
     },
     transactions::request::SerializedResponse,
@@ -92,8 +95,19 @@ impl WriteRequest for RegisterUserRequestTx {
             let user_idx = store.create_node(&mut wtxn, &user)?;
             store.add_oidc_mapping(&mut wtxn, user_idx, oidc_mapping)?;
 
-            // Affected nodes: Group, Realm, Project
+            store.add_subscriber(
+                &mut wtxn,
+                Subscriber {
+                    id: user.id,
+                    owner: user.id,
+                    target_idx: user_idx,
+                    cascade: false,
+                },
+            )?;
+
+            // Affected nodes: User
             store.register_event(&mut wtxn, event_id, &[user_idx])?;
+            store.add_event_to_subscribers(&mut wtxn, event_id, &[user_idx])?;
 
             wtxn.commit()?;
             // Create admin group, add user to admin group
@@ -191,5 +205,159 @@ impl WriteRequest for CreateTokenRequestTx {
             tracing::error!("Failed to join task");
             ArunaError::ServerError("".to_string())
         })??)
+    }
+}
+
+impl Request for GetUserRequest {
+    type Response = GetUserResponse;
+
+    fn get_context<'a>(&'a self) -> Context {
+        Context::NotRegistered
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let requester_ulid = requester
+            .ok_or_else(|| {
+                tracing::error!("Missing requester");
+                ArunaError::Unauthorized
+            })?
+            .get_id()
+            .ok_or_else(|| {
+                tracing::error!("Missing requester id");
+                ArunaError::NotFound("User not reqistered".to_string())
+            })?;
+
+        let store = controller.get_store();
+        tokio::task::spawn_blocking(move || {
+            let rtxn = store.read_txn()?;
+
+            let idx = store
+                .get_idx_from_ulid(&requester_ulid, &rtxn)
+                .ok_or_else(|| ArunaError::NotFound("Requester not found".to_string()))?;
+
+            Ok::<GetUserResponse, ArunaError>(GetUserResponse {
+                user: store
+                    .get_node::<User>(&rtxn, idx)
+                    .ok_or_else(|| ArunaError::NotFound("User not found".to_string()))?,
+            })
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })?
+    }
+}
+
+impl Request for GetGroupsFromUserRequest {
+    type Response = GetGroupsFromUserResponse;
+
+    fn get_context<'a>(&'a self) -> Context {
+        Context::UserOnly
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let requester = if let Some(requester) = requester {
+            requester.get_id().ok_or_else(|| ArunaError::Unauthorized)?
+        } else {
+            return Err(ArunaError::Unauthorized);
+        };
+
+        let store = controller.get_store();
+        tokio::task::spawn_blocking(move || {
+            // TODO: Optimize!
+            let mut groups = Vec::new();
+            let filter = (PERMISSION_NONE..=PERMISSION_ADMIN).collect::<Vec<u32>>();
+
+            let rtxn = store.read_txn()?;
+            let user_idx = store
+                .get_idx_from_ulid(&requester, &rtxn)
+                .ok_or_else(|| ArunaError::NotFound("Requester not found".to_string()))?;
+
+            let relations =
+                store.get_relations(user_idx, &filter, petgraph::Direction::Outgoing, &rtxn)?;
+            for relation in &relations {
+                let target = relation.from_id;
+
+                let node_idx = store
+                    .get_idx_from_ulid(&target, &rtxn)
+                    .ok_or_else(|| ArunaError::NotFound("Requester not found".to_string()))?;
+                let raw_node = store
+                    .get_raw_node(&rtxn, node_idx)
+                    .expect("Idx exist but no node in documents -> corrupted database");
+
+                let variant: NodeVariant = serde_json::from_slice::<u8>(
+                    raw_node
+                        .get(1)
+                        .expect("Missing variant -> corrupted database"),
+                )
+                .inspect_err(logerr!())?
+                .try_into()
+                .inspect_err(logerr!())?;
+                if matches!(variant, NodeVariant::Group) {
+                    let group = Group::try_from(&raw_node)?;
+
+                    let perm = match relation.relation_type.as_str() {
+                        "PermissionNone" => Permission::None,
+                        "PermissionAppend" => Permission::Append,
+                        "PermissionRead" => Permission::Read,
+                        "PermissionWrite" => Permission::Write,
+                        "PermissionAdmin" => Permission::Admin,
+                        _ => {
+                            // Should not happen, because filter is set for all permission
+                            // relations
+                            continue;
+                        }
+                    };
+                    groups.push((group, perm));
+                }
+            }
+            Ok::<GetGroupsFromUserResponse, ArunaError>(GetGroupsFromUserResponse { groups })
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })?
+    }
+}
+
+impl Request for GetRealmsFromUserRequest {
+    type Response = GetRealmsFromUserResponse;
+
+    fn get_context<'a>(&'a self) -> Context {
+        Context::UserOnly
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let requester = if let Some(requester) = requester {
+            requester.get_id().ok_or_else(|| ArunaError::Unauthorized)?
+        } else {
+            return Err(ArunaError::Unauthorized);
+        };
+
+        let store = controller.get_store();
+        tokio::task::spawn_blocking(move || {
+            let read_txn = store.read_txn()?;
+            let realms = store.get_realms_for_user(&read_txn, requester)?;
+            Ok::<GetRealmsFromUserResponse, ArunaError>(GetRealmsFromUserResponse { realms })
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })?
     }
 }

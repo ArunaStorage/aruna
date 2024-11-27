@@ -3,9 +3,11 @@ use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
+use crate::transactions::request::WriteRequest;
+
 use super::models::{
-    Author, Component, GenericNode, Group, IssuerKey, KeyValue, Permission, Realm, Relation,
-    RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass,
+    Author, Component, GenericNode, Group, KeyValue, Permission, Realm, Relation, RelationInfo,
+    Resource, ResourceVariant, Token, User, VisibilityClass,
 };
 
 fn default_license_tag() -> String {
@@ -356,4 +358,96 @@ pub struct GetRealmComponentsRequest {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GetRealmComponentsResponse {
     pub components: Vec<Component>,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetUserRequest {}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetUserResponse {
+    pub user: User,
+}
+
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, IntoParams,
+)]
+pub struct GetEventsRequest {
+    pub subscriber_id: Ulid,
+    #[serde(default)]
+    pub acknowledge_from: Option<Ulid>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetEventsResponse {
+    // EventId, Event
+    pub events: Vec<(Ulid, serde_json::Value)>,
+}
+
+// User ask to access a group
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UserAccessGroupRequest {
+    pub group_id: Ulid,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UserAccessGroupResponse {}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GroupAccessRealmRequest {
+    pub group_id: Ulid,
+    pub realm_id: Ulid,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GroupAccessRealmResponse {}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateRelationRequest {
+    pub source: Ulid,
+    pub target: Ulid,
+    pub variant: u32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateRelationResponse {}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateRelationVariantRequest {
+    pub forward_type: String,
+    pub backward_type: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateRelationVariantResponse {
+    pub idx: u32,
+}
+
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
+pub struct UpdateResourceRequest {
+    pub id: Ulid,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub visibility: VisibilityClass,
+    #[serde(default = "default_license_tag")]
+    pub license_tag: String,
+
+    // TODO:
+    // #[serde(default)]
+    // pub labels: Vec<KeyValue>,
+    // #[serde(default)]
+    // pub identifiers: Vec<String>,
+    // #[serde(default)]
+    // pub authors: Vec<Author>,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UpdateResourceResponse {
+    pub resource: Resource,
 }

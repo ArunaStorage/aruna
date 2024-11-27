@@ -6,7 +6,10 @@ use ulid::Ulid;
 
 use crate::{
     error::ArunaError,
-    models::{models, requests},
+    models::{
+        models,
+        requests::{self},
+    },
 };
 use aruna_rust_api::v3::aruna::api::v3::{self as grpc, ResourceStatus};
 
@@ -429,5 +432,107 @@ impl TryFrom<grpc::Permission> for models::Permission {
             grpc::Permission::Write => models::Permission::Write,
             grpc::Permission::Admin => models::Permission::Admin,
         })
+    }
+}
+
+impl TryFrom<grpc::GetGroupsFromRealmRequest> for requests::GetGroupsFromRealmRequest {
+    type Error = InvalidFieldError;
+
+    fn try_from(value: grpc::GetGroupsFromRealmRequest) -> Result<Self, Self::Error> {
+        Ok(Self {
+            realm_id: Ulid::from_string(&value.realm_id)
+                .map_err(|_| InvalidFieldError("realm_id"))?,
+        })
+    }
+}
+
+impl From<requests::GetGroupsFromRealmResponse> for grpc::GetGroupsFromRealmResponse {
+    fn from(value: requests::GetGroupsFromRealmResponse) -> Self {
+        Self {
+            groups: value.groups.into_iter().map(|g| g.into()).collect(),
+        }
+    }
+}
+
+impl TryFrom<grpc::CreateResourceBatchRequest> for requests::CreateResourceBatchRequest {
+    type Error = InvalidFieldError;
+
+    fn try_from(value: grpc::CreateResourceBatchRequest) -> Result<Self, Self::Error> {
+        Ok(Self {
+            resources: value
+                .resources
+                .into_iter()
+                .map(
+                    |res| -> Result<requests::BatchResource, InvalidFieldError> {
+                        Ok(requests::BatchResource {
+                            name: res.name,
+                            parent: match res.parent.ok_or_else(|| InvalidFieldError("parent"))? {
+                                parent => match parent {
+                                    grpc::batch_resource::Parent::ParentId(id) => {
+                                        requests::Parent::ID(
+                                            Ulid::from_string(&id)
+                                                .map_err(|_| InvalidFieldError("parent_id"))?,
+                                        )
+                                    }
+                                    grpc::batch_resource::Parent::ParentIndex(idx) => {
+                                        requests::Parent::Idx(idx)
+                                    }
+                                },
+                            },
+                            title: res.title,
+                            description: res.description,
+                            variant: res.variant.try_into()?,
+                            labels: res.labels.into_iter().map(|kv| kv.into()).collect(),
+                            identifiers: res.identifiers,
+                            visibility: res.visibility.try_into()?,
+                            authors: res
+                                .authors
+                                .into_iter()
+                                .map(|a| -> Result<models::Author, InvalidFieldError> {
+                                    a.try_into().map_err(|_| InvalidFieldError("authors"))
+                                })
+                                .collect::<Result<Vec<models::Author>, InvalidFieldError>>()?,
+                            license_tag: res.license_tag,
+                        })
+                    },
+                )
+                .collect::<Result<Vec<requests::BatchResource>, InvalidFieldError>>()?,
+        })
+    }
+}
+
+impl From<requests::CreateResourceBatchResponse> for grpc::CreateResourceBatchResponse {
+    fn from(value: requests::CreateResourceBatchResponse) -> Self {
+        Self {
+            resources: value.resources.into_iter().map(|r| r.into()).collect(),
+        }
+    }
+}
+
+impl TryFrom<grpc::GetRelationsRequest> for requests::GetRelationsRequest {
+    type Error = InvalidFieldError;
+
+    fn try_from(value: grpc::GetRelationsRequest) -> Result<Self, Self::Error> {
+        Ok(Self {
+            node: Ulid::from_string(&value.resource_id)
+                .map_err(|_| InvalidFieldError("resource_id"))?,
+            direction: if value.incoming {
+                requests::Direction::Incoming
+            } else {
+                requests::Direction::Outgoing
+            },
+            filter: value.filter,
+            offset: Some(value.offset as usize),
+            page_size: value.page_size as usize,
+        })
+    }
+}
+
+impl From<requests::GetRelationsResponse> for grpc::GetRelationsResponse {
+    fn from(value: requests::GetRelationsResponse) -> Self {
+        Self {
+            relations: value.relations.into_iter().map(|r| r.into()).collect(),
+            offset: value.offset.map(|v| v as u64),
+        }
     }
 }

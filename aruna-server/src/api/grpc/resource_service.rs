@@ -79,14 +79,36 @@ impl ResourceService for ResourceServiceImpl {
         &self,
         request: tonic::Request<CreateResourceBatchRequest>,
     ) -> std::result::Result<tonic::Response<CreateResourceBatchResponse>, tonic::Status> {
-        todo!()
+        let token = get_token(request.metadata());
+        let controller = self.handler.clone();
+
+        Ok(tonic::Response::new(
+            controller
+                .request(
+                    models::requests::CreateResourceBatchRequest::try_from(request.into_inner())?,
+                    token,
+                )
+                .await?
+                .into(),
+        ))
     }
 
     async fn get_relations(
         &self,
         request: tonic::Request<GetRelationsRequest>,
     ) -> std::result::Result<tonic::Response<GetRelationsResponse>, tonic::Status> {
-        todo!()
+        let token = get_token(request.metadata());
+        let controller = self.handler.clone();
+
+        Ok(tonic::Response::new(
+            controller
+                .request(
+                    models::requests::GetRelationsRequest::try_from(request.into_inner())?,
+                    token,
+                )
+                .await?
+                .into(),
+        ))
     }
     async fn register_data(
         &self,

@@ -3,20 +3,19 @@ use super::{
     request::{Request, Requester, SerializedResponse},
 };
 use crate::{
-    constants::{
-        const_relations,
-        relation_types::{self},
-    },
+    constants::relation_types::{self},
     context::{BatchPermission, Context},
     error::ArunaError,
     logerr,
     models::{
         models::{NodeVariant, Resource},
         requests::{
-            CreateProjectRequest, CreateProjectResponse, CreateResourceBatchRequest,
-            CreateResourceBatchResponse, CreateResourceRequest, CreateResourceResponse, Direction,
-            GetRelationInfosRequest, GetRelationInfosResponse, GetRelationsRequest,
-            GetRelationsResponse, GetResourcesRequest, GetResourcesResponse, Parent,
+            CreateProjectRequest, CreateProjectResponse, CreateRelationRequest,
+            CreateRelationResponse, CreateResourceBatchRequest, CreateResourceBatchResponse,
+            CreateResourceRequest, CreateResourceResponse, Direction, GetRelationInfosRequest,
+            GetRelationInfosResponse, GetRelationsRequest, GetRelationsResponse,
+            GetResourcesRequest, GetResourcesResponse, Parent, UpdateResourceRequest,
+            UpdateResourceResponse,
         },
     },
     storage::graph::{get_parents, get_related_user_or_groups},
@@ -733,12 +732,12 @@ impl Request for GetResourcesRequest {
     }
 }
 
-impl Request for GetRelationsRequest {
-    type Response = GetRelationsResponse;
+impl Request for UpdateResourceRequest {
+    type Response = UpdateResourceResponse;
     fn get_context(&self) -> Context {
         Context::Permission {
-            min_permission: crate::models::models::Permission::Read,
-            source: self.node,
+            min_permission: crate::models::models::Permission::Write,
+            source: self.id,
         }
     }
 
@@ -747,85 +746,98 @@ impl Request for GetRelationsRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
-        let public = if let Some(requester) = requester {
-            controller.authorize(&requester, &self).await?;
-            false
-        } else {
-            true
+        let request_tx = UpdateResourceTx {
+            req: self,
+            requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
+            updated_at: Utc::now().timestamp(),
         };
 
-        let store = controller.get_store();
-        let response = tokio::task::spawn_blocking(move || {
-            let rtxn = store.read_txn()?;
+        return Err(ArunaError::NotFound("Request unimplemented".to_string()));
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
 
-            let idx = store
-                .get_idx_from_ulid(&self.node, &rtxn)
-                .ok_or_else(|| ArunaError::NotFound(self.node.to_string()))?;
-
-            // Check if resource is public
-            let resource = store
-                .get_node::<Resource>(&rtxn, idx)
-                .ok_or_else(|| ArunaError::NotFound(self.node.to_string()))?;
-            if public {
-                if !matches!(
-                    resource.visibility,
-                    crate::models::models::VisibilityClass::Public
-                ) {
-                    return Err(ArunaError::Unauthorized);
-                }
-            }
-
-            let direction = match self.direction {
-                Direction::Incoming => petgraph::Direction::Incoming,
-                Direction::Outgoing => petgraph::Direction::Outgoing,
-            };
-            let offset = self.offset.unwrap_or_default();
-            let relations = store.get_relations(idx, &self.filter, direction, &rtxn)?;
-            let new_offset = if relations.len() < offset + self.page_size {
-                None
-            } else {
-                Some(offset + self.page_size)
-            };
-
-            let relations = match relations.get(offset..offset + self.page_size) {
-                Some(relations) => relations.to_vec(),
-                None => match relations.get(offset..) {
-                    Some(relations) => relations.to_vec(),
-                    None => relations,
-                },
-            };
-
-            Ok::<_, ArunaError>(GetRelationsResponse {
-                relations,
-                offset: new_offset,
-            })
-        })
-        .await
-        .map_err(|e| ArunaError::ServerError(e.to_string()))??;
-
-        Ok(response)
+        Ok(bincode::deserialize(&response)?)
     }
 }
 
-impl Request for GetRelationInfosRequest {
-    type Response = GetRelationInfosResponse;
-    fn get_context(&self) -> Context {
-        Context::Public
-    }
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateResourceTx {
+    req: UpdateResourceRequest,
+    requester: Requester,
+    updated_at: i64,
+}
 
-    async fn run_request(
-        self,
-        _requester: Option<Requester>,
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for UpdateResourceTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
         controller: &Controller,
-    ) -> Result<Self::Response, ArunaError> {
+    ) -> Result<SerializedResponse, crate::error::ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+
+        let time = DateTime::from_timestamp_millis(self.updated_at).ok_or_else(|| {
+            ArunaError::ConversionError {
+                from: "i64".to_string(),
+                to: "Chrono::DateTime".to_string(),
+            }
+        })?;
+
+        let resource_id = self.req.id;
+        let request = self.req.clone();
+
         let store = controller.get_store();
-        tokio::task::spawn_blocking(move || {
-            let rtxn = store.read_txn()?;
-            let relation_infos = store.get_relation_infos(&rtxn)?;
-            Ok::<_, ArunaError>(GetRelationInfosResponse { relation_infos })
+
+        Ok(tokio::task::spawn_blocking(move || {
+            let mut wtxn = store.write_txn()?;
+
+            // Get resource idx
+            let Some(resource_idx) = store.get_idx_from_ulid(&resource_id, wtxn.get_txn()) else {
+                return Err(ArunaError::NotFound(resource_id.to_string()));
+            };
+
+            let Some(old_resource): Option<Resource> =
+                store.get_node(&wtxn.get_txn(), resource_idx)
+            else {
+                return Err(ArunaError::NotFound(format!(
+                    "Resource with id {resource_id} not found"
+                )));
+            };
+
+            if !request.name.is_empty() && request.name != old_resource.name {
+                // Check that name is unique
+                if !store
+                    .filtered_universe(
+                        Some(&format!("name='{}' AND variant=0", request.name)),
+                        wtxn.get_txn(),
+                    )?
+                    .is_empty()
+                {
+                    return Err(ArunaError::ConflictParameter {
+                        name: "name".to_string(),
+                        error: "Resource with this name already exists".to_string(),
+                    });
+                }
+            }
+
+            // Affected nodes: Group, Realm, Project
+            store.register_event(
+                &mut wtxn,
+                associated_event_id,
+                &[resource_idx],
+            )?;
+
+            wtxn.commit()?;
+            // Create admin group, add user to admin group
+            Ok::<_, ArunaError>(bincode::serialize(&UpdateResourceResponse {
+                resource: todo!(),
+            })?)
         })
         .await
-        .map_err(|e| ArunaError::ServerError(e.to_string()))?
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
     }
 }
 

@@ -3,15 +3,15 @@ use super::{
     request::{Request, Requester, WriteRequest},
 };
 use crate::{
-    constants::relation_types::{self, GROUP_PART_OF_REALM},
+    constants::relation_types::{self, GROUP_PART_OF_REALM, REALM_USES_COMPONENT},
     context::Context,
     error::ArunaError,
     models::{
-        models::{Group, Realm},
+        models::{Component, Group, Realm},
         requests::{
             AddGroupRequest, AddGroupResponse, CreateRealmRequest, CreateRealmResponse,
-            GetGroupsFromRealmRequest, GetGroupsFromRealmResponse, GetRealmRequest,
-            GetRealmResponse,
+            GetGroupsFromRealmRequest, GetGroupsFromRealmResponse, GetRealmComponentsRequest,
+            GetRealmComponentsResponse, GetRealmRequest, GetRealmResponse,
         },
     },
     transactions::request::SerializedResponse,
@@ -325,6 +325,56 @@ impl Request for GetGroupsFromRealmRequest {
         })??;
 
         Ok(response)
+    }
+}
+
+impl Request for GetRealmComponentsRequest {
+    type Response = GetRealmComponentsResponse;
+    fn get_context(&self) -> Context {
+        Context::Public
+    }
+
+    async fn run_request(
+        self,
+        _requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let store = controller.get_store();
+        let realm_id = self.realm_id;
+        tokio::task::spawn_blocking(move || {
+            let read_txn = store.read_txn()?;
+            let Some(realm_idx) = store.get_idx_from_ulid(&realm_id, &read_txn) else {
+                return Err(ArunaError::NotFound("Realm not found".to_string()));
+            };
+            let component_relations = store.get_relations(
+                realm_idx,
+                &[REALM_USES_COMPONENT],
+                Direction::Outgoing,
+                &read_txn,
+            )?;
+
+            let mut components = Vec::new();
+            for component in component_relations {
+                let Some(component_idx) = store.get_idx_from_ulid(&component.to_id, &read_txn)
+                else {
+                    tracing::error!("Database error");
+                    return Err(ArunaError::DatabaseError(
+                        "Idx not matched by database".to_string(),
+                    ));
+                };
+                let component = store
+                    .get_node::<Component>(&read_txn, component_idx)
+                    .expect("Database error: Store/Graph idx mismatch");
+                components.push(component);
+            }
+
+            Ok::<GetRealmComponentsResponse, ArunaError>(GetRealmComponentsResponse { components })
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })?
     }
 }
 
