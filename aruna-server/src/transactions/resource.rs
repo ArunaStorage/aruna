@@ -14,7 +14,8 @@ use crate::{
             CreateRelationResponse, CreateResourceBatchRequest, CreateResourceBatchResponse,
             CreateResourceRequest, CreateResourceResponse, Direction, GetRelationInfosRequest,
             GetRelationInfosResponse, GetRelationsRequest, GetRelationsResponse,
-            GetResourcesRequest, GetResourcesResponse, Parent,
+            GetResourcesRequest, GetResourcesResponse, Parent, UpdateResourceRequest,
+            UpdateResourceResponse,
         },
     },
     storage::graph::{get_parents, get_related_user_or_groups},
@@ -728,6 +729,113 @@ impl Request for GetResourcesRequest {
         .map_err(|e| ArunaError::ServerError(e.to_string()))??;
 
         Ok(response)
+    }
+}
+
+impl Request for UpdateResourceRequest {
+    type Response = UpdateResourceResponse;
+    fn get_context(&self) -> Context {
+        Context::Permission {
+            min_permission: crate::models::models::Permission::Write,
+            source: self.id,
+        }
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let request_tx = UpdateResourceTx {
+            req: self,
+            requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
+            updated_at: Utc::now().timestamp(),
+        };
+
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response)?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateResourceTx {
+    req: UpdateResourceRequest,
+    requester: Requester,
+    updated_at: i64,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for UpdateResourceTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, crate::error::ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+
+        let time = DateTime::from_timestamp_millis(self.updated_at).ok_or_else(|| {
+            ArunaError::ConversionError {
+                from: "i64".to_string(),
+                to: "Chrono::DateTime".to_string(),
+            }
+        })?;
+
+        let resource_id = self.req.id;
+        let request = self.req.clone();
+
+        let store = controller.get_store();
+        Ok(tokio::task::spawn_blocking(move || {
+            let mut wtxn = store.write_txn()?;
+
+            // Get resource idx
+            let Some(resource_idx) = store.get_idx_from_ulid(&resource_id, wtxn.get_txn()) else {
+                return Err(ArunaError::NotFound(resource_id.to_string()));
+            };
+
+            let Some(old_resource): Option<Resource> =
+                store.get_node(&wtxn.get_txn(), resource_idx)
+            else {
+                return Err(ArunaError::NotFound(format!(
+                    "Resource with id {resource_id} not found"
+                )));
+            };
+
+            if !request.name.is_empty() && request.name != old_resource.name {
+                // Check that name is unique
+                if !store
+                    .filtered_universe(
+                        Some(&format!("name='{}' AND variant=0", request.name)),
+                        wtxn.get_txn(),
+                    )?
+                    .is_empty()
+                {
+                    return Err(ArunaError::ConflictParameter {
+                        name: "name".to_string(),
+                        error: "Resource with this name already exists".to_string(),
+                    });
+                }
+            }
+
+            // Affected nodes: Group, Realm, Project
+            store.register_event(
+                &mut wtxn,
+                associated_event_id,
+                &[resource_idx],
+            )?;
+
+            wtxn.commit()?;
+            // Create admin group, add user to admin group
+            Ok::<_, ArunaError>(bincode::serialize(&UpdateResourceResponse {
+                resource: todo!(),
+            })?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
     }
 }
 

@@ -382,7 +382,7 @@ pub async fn get_user_groups(
 ) -> impl IntoResponse {
     into_axum_response(
         state
-            .request(GetRealmsFromUserRequest {}, extract_token(&header))
+            .request(GetGroupsFromUserRequest {}, extract_token(&header))
             .await,
     )
 }

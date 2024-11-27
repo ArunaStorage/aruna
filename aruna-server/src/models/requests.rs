@@ -411,7 +411,6 @@ pub struct CreateRelationRequest {
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct CreateRelationResponse {}
 
-
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct CreateRelationVariantRequest {
     pub forward_type: String,
@@ -421,4 +420,32 @@ pub struct CreateRelationVariantRequest {
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct CreateRelationVariantResponse {
     pub idx: u32,
+}
+
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
+pub struct UpdateResourceRequest {
+    pub id: Ulid,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub labels: Vec<KeyValue>,
+    #[serde(default)]
+    pub identifiers: Vec<String>,
+    #[serde(default)]
+    pub visibility: VisibilityClass,
+    #[serde(default)]
+    pub authors: Vec<Author>,
+    #[serde(default = "default_license_tag")]
+    pub license_tag: String,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UpdateResourceResponse {
+    pub resource: Resource,
 }
