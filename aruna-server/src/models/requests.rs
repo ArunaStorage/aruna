@@ -400,3 +400,25 @@ pub struct GroupAccessRealmRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GroupAccessRealmResponse {}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateRelationRequest {
+    pub source: Ulid,
+    pub target: Ulid,
+    pub variant: u32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateRelationResponse {}
+
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateRelationVariantRequest {
+    pub forward_type: String,
+    pub backward_type: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateRelationVariantResponse {
+    pub idx: u32,
+}

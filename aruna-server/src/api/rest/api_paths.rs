@@ -73,6 +73,50 @@ pub async fn create_project(
     into_axum_response(state.request(request, extract_token(&headers)).await)
 }
 
+
+/// Create a new relation
+#[utoipa::path(
+    post,
+    path = "/api/v3/resource/relation",
+    request_body = CreateRelationRequest,
+    responses(
+        (status = 200, body = CreateRelationResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+)]
+pub async fn create_relation(
+    State(state): State<Arc<Controller>>,
+    headers: HeaderMap,
+    Json(request): Json<CreateResourceRequest>,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&headers)).await)
+}
+
+
+/// Create a new relation variant
+#[utoipa::path(
+    post,
+    path = "/api/v3/relation",
+    request_body = CreateRelationVariantRequest,
+    responses(
+        (status = 200, body = CreateRelationVariantResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+)]
+pub async fn create_relation_variant(
+    State(state): State<Arc<Controller>>,
+    headers: HeaderMap,
+    Json(request): Json<CreateResourceRequest>,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&headers)).await)
+}
+
 /// Get  resource
 #[utoipa::path(
     get,

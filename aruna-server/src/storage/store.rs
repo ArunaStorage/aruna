@@ -1190,4 +1190,22 @@ impl Store {
 
         Ok(events)
     }
+
+    #[tracing::instrument(level = "trace", skip(self, wtxn))]
+    pub fn create_relation_variant(
+        &self,
+        wtxn: &mut WriteTxn,
+        info: RelationInfo,
+    ) -> Result<(), ArunaError> {
+
+        self.relation_infos
+            .put(
+                wtxn.get_txn(),
+                &info.idx,
+                &info
+            )
+            .inspect_err(logerr!())?;
+
+        Ok(())
+    }
 }
