@@ -3,7 +3,7 @@ mod common;
 #[cfg(test)]
 mod read_tests {
 
-    use crate::common::{init_test, SECOND_TOKEN, TEST_TOKEN};
+    use crate::common::{init_test, REGULAR_TOKEN, ADMIN_TOKEN};
     use aruna_rust_api::v3::aruna::api::v3::{
         AddGroupRequest, CreateProjectRequest, CreateRealmRequest, GetRealmRequest, Realm,
     };
@@ -125,7 +125,7 @@ mod read_tests {
 
         let _response: CreateResourceBatchResponse = client
             .post(url)
-            .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
             .json(&request)
             .send()
             .await
@@ -149,7 +149,7 @@ mod read_tests {
 
         let response: SearchResponse = client
             .get(url)
-            .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
             .query(&[("query", "TestObject")])
             .send()
             .await
@@ -225,7 +225,7 @@ mod read_tests {
         let url = format!("{}/api/v3/resource/batch", clients.rest_endpoint);
         let _batch_response1: CreateResourceBatchResponse = client
             .post(url)
-            .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
             .json(&request)
             .send()
             .await
@@ -243,7 +243,7 @@ mod read_tests {
         let url = format!("{}/api/v3/group", clients.rest_endpoint);
         let response: CreateGroupResponse = client
             .post(url)
-            .header("Authorization", format!("Bearer {}", SECOND_TOKEN))
+            .header("Authorization", format!("Bearer {}", REGULAR_TOKEN))
             .json(&request)
             .send()
             .await
@@ -275,7 +275,7 @@ mod read_tests {
         let url = format!("{}/api/v3/resource/project", clients.rest_endpoint);
         let response: CreateProjectResponse = client
             .post(url)
-            .header("Authorization", format!("Bearer {}", SECOND_TOKEN))
+            .header("Authorization", format!("Bearer {}", REGULAR_TOKEN))
             .json(&request)
             .send()
             .await
@@ -306,7 +306,7 @@ mod read_tests {
         let url = format!("{}/api/v3/resource/batch", clients.rest_endpoint);
         let _batch_response2: CreateResourceBatchResponse = client
             .post(url)
-            .header("Authorization", format!("Bearer {}", SECOND_TOKEN))
+            .header("Authorization", format!("Bearer {}", REGULAR_TOKEN))
             .json(&request)
             .send()
             .await
@@ -333,7 +333,7 @@ mod read_tests {
 
         let response: SearchResponse = client
             .get(url)
-            .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
             .query(&[("query", "PRIVATE")])
             .send()
             .await
@@ -358,7 +358,7 @@ mod read_tests {
         let url = format!("{}/api/v3/search", clients.rest_endpoint);
         let response: SearchResponse = client
             .get(url)
-            .header("Authorization", format!("Bearer {}", SECOND_TOKEN))
+            .header("Authorization", format!("Bearer {}", REGULAR_TOKEN))
             .query(&[("query", "PRIVATE")])
             .send()
             .await
@@ -401,11 +401,11 @@ mod read_tests {
         }
 
         let client = reqwest::Client::new();
-        let url = format!("{}/api/v3/user/realm", clients.rest_endpoint);
+        let url = format!("{}/api/v3/user/realms", clients.rest_endpoint);
 
         let response: GetRealmsFromUserResponse = client
             .get(url)
-            .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
             .send()
             .await
             .unwrap()

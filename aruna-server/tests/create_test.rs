@@ -2,7 +2,7 @@ pub mod common;
 
 #[cfg(test)]
 mod create_tests {
-    use crate::common::{init_test, TEST_TOKEN};
+    use crate::common::{init_test, ADMIN_TOKEN};
     use aruna_rust_api::v3::aruna::api::v3::{
         CreateGroupRequest, CreateProjectRequest, CreateRealmRequest, CreateResourceRequest, Realm,
     };
@@ -232,7 +232,7 @@ mod create_tests {
 
         let response: CreateResourceBatchResponse = client
             .post(url)
-            .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
             .json(&request)
             .send()
             .await
@@ -266,7 +266,7 @@ mod create_tests {
 
         assert!(client
             .post(url)
-            .header("Authorization", format!("Bearer {}", TEST_TOKEN))
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
             .json(&request)
             .send()
             .await

@@ -54,6 +54,7 @@ pub struct WriteTxn<'a> {
     nodes: Vec<NodeIndex>,
     added_edges: Vec<EdgeIndex>,
     removed_edges: Vec<(NodeIndex, NodeIndex, EdgeType)>,
+    committed: bool,
 }
 
 impl<'a> WriteTxn<'a> {
@@ -88,20 +89,23 @@ impl<'a> WriteTxn<'a> {
     pub fn commit(mut self) -> Result<(), ArunaError> {
         let txn = self.txn.take().expect("Transaction already committed");
         txn.commit().inspect_err(logerr!())?;
+        self.committed = true;
         Ok(())
     }
 }
 
 impl<'a> Drop for WriteTxn<'a> {
     fn drop(&mut self) {
-        for idx in self.added_edges.drain(..) {
-            self.graph_lock.remove_edge(idx);
-        }
-        for idx in self.nodes.drain(..) {
-            self.graph_lock.remove_node(idx);
-        }
-        for (from, to, weight) in self.removed_edges.drain(..) {
-            self.graph_lock.add_edge(from, to, weight);
+        if !self.committed {
+            for idx in self.added_edges.drain(..) {
+                self.graph_lock.remove_edge(idx);
+            }
+            for idx in self.nodes.drain(..) {
+                self.graph_lock.remove_node(idx);
+            }
+            for (from, to, weight) in self.removed_edges.drain(..) {
+                self.graph_lock.add_edge(from, to, weight);
+            }
         }
     }
 }
@@ -289,6 +293,7 @@ impl Store {
             nodes: Vec::new(),
             added_edges: Vec::new(),
             removed_edges: Vec::new(),
+            committed: false,
         })
     }
 
@@ -430,12 +435,7 @@ impl Store {
         let index = wtxn.add_node(variant);
 
         // Ensure that the index in graph and milli stays in sync
-        // assert_eq!(index.index() as u32, idx);
-        if index.index() as u32 != idx {
-            let existing: Option<User> = self.get_node::<User>(&wtxn.get_txn(), 0);
-            dbg!(existing);
-            panic!()
-        }
+        assert_eq!(index.index() as u32, idx);
 
         Ok(idx)
     }
@@ -1197,13 +1197,8 @@ impl Store {
         wtxn: &mut WriteTxn,
         info: RelationInfo,
     ) -> Result<(), ArunaError> {
-
         self.relation_infos
-            .put(
-                wtxn.get_txn(),
-                &info.idx,
-                &info
-            )
+            .put(wtxn.get_txn(), &info.idx, &info)
             .inspect_err(logerr!())?;
 
         Ok(())
