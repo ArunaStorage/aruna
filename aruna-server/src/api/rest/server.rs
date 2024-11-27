@@ -66,6 +66,10 @@ impl RestServer {
                 "/api/v3/resource/relations",
                 get(api_paths::get_relations).post(api_paths::create_relation),
             )
+            .route(
+                "/api/v3/relations",
+                post(api_paths::create_relation_variant),
+            )
             .route("/api/v3/events", get(api_paths::get_events))
             .route(
                 "/api/v3/realm/join",

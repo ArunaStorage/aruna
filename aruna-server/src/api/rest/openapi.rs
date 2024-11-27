@@ -34,7 +34,8 @@ use utoipa::{
         request_group_access_realm,
         request_user_access_group,
         get_events,
-        create_relation
+        create_relation,
+        create_relation_variant
     ),
     components(schemas(
         CreateResourceBatchRequest,
@@ -61,6 +62,8 @@ use utoipa::{
         CreateTokenResponse,
         CreateRelationRequest,
         CreateRelationResponse,
+        CreateRelationVariantRequest,
+        CreateRelationVariantResponse,
         SearchRequest,
         SearchResponse,
         GetRealmsFromUserRequest,
