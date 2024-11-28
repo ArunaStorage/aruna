@@ -58,6 +58,7 @@ impl TryFrom<u8> for ResourceVariant {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "type")]
 pub enum GenericNode {
     Resource(Resource),
     User(User),
