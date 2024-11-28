@@ -512,7 +512,6 @@ pub async fn get_realm_components(
     )
 }
 
-
 /// Add a component to a realm (dataproxies, etc)
 #[utoipa::path(
     patch,
@@ -539,7 +538,10 @@ pub async fn add_component_to_realm(
     into_axum_response(
         state
             .request(
-                AddComponentToRealmRequest { realm_id: id, component_id },
+                AddComponentToRealmRequest {
+                    realm_id: id,
+                    component_id,
+                },
                 extract_token(&header),
             )
             .await,
@@ -784,7 +786,6 @@ pub async fn create_component(
     into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
-
 /// Register data for an object
 #[utoipa::path(
     post,
@@ -811,4 +812,3 @@ pub async fn register_data(
     request.object_id = id;
     into_axum_response(state.request(request, extract_token(&header)).await)
 }
-

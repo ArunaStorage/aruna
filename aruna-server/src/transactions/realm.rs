@@ -3,12 +3,22 @@ use super::{
     request::{Request, Requester, WriteRequest},
 };
 use crate::{
-    constants::relation_types::{self, DEFAULT, GROUP_PART_OF_REALM, OWNED_BY_USER, REALM_USES_COMPONENT}, context::Context, error::ArunaError, models::{
+    constants::relation_types::{
+        self, DEFAULT, GROUP_PART_OF_REALM, OWNED_BY_USER, REALM_USES_COMPONENT,
+    },
+    context::Context,
+    error::ArunaError,
+    models::{
         models::{Component, Group, NodeVariant, Realm},
         requests::{
-            AddComponentToRealmRequest, AddComponentToRealmResponse, AddGroupRequest, AddGroupResponse, CreateRealmRequest, CreateRealmResponse, GetGroupsFromRealmRequest, GetGroupsFromRealmResponse, GetRealmComponentsRequest, GetRealmComponentsResponse, GetRealmRequest, GetRealmResponse
+            AddComponentToRealmRequest, AddComponentToRealmResponse, AddGroupRequest,
+            AddGroupResponse, CreateRealmRequest, CreateRealmResponse, GetGroupsFromRealmRequest,
+            GetGroupsFromRealmResponse, GetRealmComponentsRequest, GetRealmComponentsResponse,
+            GetRealmRequest, GetRealmResponse,
         },
-    }, storage::graph::{get_relations, has_relation}, transactions::request::SerializedResponse
+    },
+    storage::graph::{get_relations, has_relation},
+    transactions::request::SerializedResponse,
 };
 use petgraph::Direction::{self, Outgoing};
 use serde::{Deserialize, Serialize};
@@ -372,7 +382,6 @@ impl Request for GetRealmComponentsRequest {
     }
 }
 
-
 impl Request for AddComponentToRealmRequest {
     type Response = AddComponentToRealmResponse;
     fn get_context(&self) -> Context {
@@ -445,7 +454,14 @@ impl WriteRequest for AddComponentToRealmRequestTx {
                 .get_node::<Component>(wtxn.get_txn(), component_idx)
                 .ok_or_else(|| ArunaError::NotFound(component_id.to_string()))?;
 
-            if !component.public && !has_relation(wtxn.get_ro_graph(), component_idx, user_idx, &[OWNED_BY_USER]) {
+            if !component.public
+                && !has_relation(
+                    wtxn.get_ro_graph(),
+                    component_idx,
+                    user_idx,
+                    &[OWNED_BY_USER],
+                )
+            {
                 error!("User does not own component");
                 return Err(ArunaError::Unauthorized);
             };
@@ -458,11 +474,15 @@ impl WriteRequest for AddComponentToRealmRequestTx {
                 relation_types::REALM_USES_COMPONENT,
             )?;
 
-            if !get_relations(wtxn.get_ro_graph(), realm_idx, &[DEFAULT], Outgoing).iter().any(|r| {
-                wtxn.get_ro_graph().node_weight(r.target.into()) == Some(&NodeVariant::Component)
-            }) {
+            if !get_relations(wtxn.get_ro_graph(), realm_idx, &[DEFAULT], Outgoing)
+                .iter()
+                .any(|r| {
+                    wtxn.get_ro_graph().node_weight(r.target.into())
+                        == Some(&NodeVariant::Component)
+                })
+            {
                 store.create_relation(&mut wtxn, realm_idx, component_idx, DEFAULT)?;
-                // TODO: Update all projects + resources to 
+                // TODO: Update all projects + resources to
             }
 
             store.add_read_permission_universe(&mut wtxn, realm_idx, &[component_idx])?;

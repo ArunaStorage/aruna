@@ -1247,15 +1247,13 @@ impl Store {
         Ok(())
     }
 
-
     #[tracing::instrument(level = "trace", skip(self, wtxn))]
     pub fn update_node_field<'a>(
         &'a self,
         wtxn: &mut WriteTxn<'a>,
         node_id: Ulid,
         json_object: serde_json::Map<String, serde_json::Value>,
-    ) -> Result<(), ArunaError>
-    {
+    ) -> Result<(), ArunaError> {
         let indexer_config = IndexerConfig::default();
         let mut documents_config = IndexDocumentsConfig::default();
         documents_config.update_method = IndexDocumentsMethod::UpdateDocuments;

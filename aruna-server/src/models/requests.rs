@@ -4,8 +4,8 @@ use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
 use super::models::{
-    Hash, Author, Component, ComponentType, Endpoint, GenericNode, Group, KeyValue, Permission, Realm,
-    Relation, RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass,
+    Author, Component, ComponentType, Endpoint, GenericNode, Group, Hash, KeyValue, Permission,
+    Realm, Relation, RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass,
 };
 
 fn default_license_tag() -> String {

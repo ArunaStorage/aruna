@@ -218,7 +218,6 @@ pub fn const_relations() -> [RelationInfo; 14] {
             backward_type: "RealmHasProject".to_string(),
             internal: true,
         },
-
         // Default relation
         RelationInfo {
             idx: 13,

@@ -10,7 +10,12 @@ use crate::{
     models::{
         models::{DataLocation, NodeVariant, Resource, ResourceVariant, SyncingStatus},
         requests::{
-            CreateProjectRequest, CreateProjectResponse, CreateRelationRequest, CreateRelationResponse, CreateResourceBatchRequest, CreateResourceBatchResponse, CreateResourceRequest, CreateResourceResponse, Direction, GetRelationInfosRequest, GetRelationInfosResponse, GetRelationsRequest, GetRelationsResponse, GetResourcesRequest, GetResourcesResponse, Parent, RegisterDataRequest, RegisterDataResponse, UpdateResourceRequest, UpdateResourceResponse
+            CreateProjectRequest, CreateProjectResponse, CreateRelationRequest,
+            CreateRelationResponse, CreateResourceBatchRequest, CreateResourceBatchResponse,
+            CreateResourceRequest, CreateResourceResponse, Direction, GetRelationInfosRequest,
+            GetRelationInfosResponse, GetRelationsRequest, GetRelationsResponse,
+            GetResourcesRequest, GetResourcesResponse, Parent, RegisterDataRequest,
+            RegisterDataResponse, UpdateResourceRequest, UpdateResourceResponse,
         },
     },
     storage::graph::{get_parent, get_related_user_or_groups, get_relations, has_relation},
@@ -142,32 +147,24 @@ impl WriteRequest for CreateProjectRequestTx {
                     });
                 }
 
-                let status = requester
-                    .get_impersonator()
-                    .map(|impersonator| {
-                        if impersonator == data_endpoint {
-                            SyncingStatus::Finished
-                        } else {
-                            SyncingStatus::Pending
-                        }
-                    })
-                    .unwrap_or(SyncingStatus::Pending);
-
                 project.location = vec![DataLocation {
                     endpoint_id: data_endpoint,
-                    status,
+                    status: SyncingStatus::Finished,
                 }];
 
                 Some(data_endpoint_idx)
             } else {
-                get_relations(wtxn.get_ro_graph(), realm_idx, &[DEFAULT], Outgoing).iter().find_map(
-                    |r| if wtxn.get_ro_graph().node_weight(r.target.into()) == Some(&NodeVariant::Component) {
-                        Some(r.target)
-                    } else {
-                        None
-                    }
-
-                )
+                get_relations(wtxn.get_ro_graph(), realm_idx, &[DEFAULT], Outgoing)
+                    .iter()
+                    .find_map(|r| {
+                        if wtxn.get_ro_graph().node_weight(r.target.into())
+                            == Some(&NodeVariant::Component)
+                        {
+                            Some(r.target)
+                        } else {
+                            None
+                        }
+                    })
             };
 
             // Check that name is unique
@@ -304,7 +301,7 @@ impl WriteRequest for CreateResourceRequestTx {
             }
         })?;
 
-        let resource = Resource {
+        let mut resource = Resource {
             id: self.resource_id,
             name: self.req.name.clone(),
             description: self.req.description.clone(),
@@ -338,28 +335,26 @@ impl WriteRequest for CreateResourceRequestTx {
             };
 
             // Make sure that the parent is a folder or project
-            let raw_parent_node = store
-                .get_raw_node(wtxn.get_txn(), parent_idx)
+            let parent_node = store
+                .get_node::<Resource>(wtxn.get_txn(), parent_idx)
                 .expect("Idx exist but no node in documents -> corrupted database");
 
-            let variant: NodeVariant = serde_json::from_slice::<u8>(
-                raw_parent_node
-                    .get(1)
-                    .expect("Missing variant -> corrupted database"),
-            )
-            .inspect_err(logerr!())?
-            .try_into()
-            .inspect_err(logerr!())?;
-
             if !matches!(
-                variant,
-                NodeVariant::ResourceProject | NodeVariant::ResourceFolder
+                parent_node.variant,
+                ResourceVariant::Project | ResourceVariant::Folder
             ) {
                 return Err(ArunaError::InvalidParameter {
                     name: "parent_id".to_string(),
                     error: "Wrong parent, must be folder or project".to_string(),
                 });
             }
+
+            let parent_endpoints = parent_node.location.clone();
+            let affected = parent_endpoints
+                .iter()
+                .filter_map(|l| store.get_idx_from_ulid(&l.endpoint_id, wtxn.get_txn()))
+                .collect::<Vec<_>>();
+            resource.location = parent_endpoints;
 
             // Check for unique name 1. Get all resources with the same name
             // 0 Project, 1 Folder, 2 Object -> < 3
@@ -409,7 +404,7 @@ impl WriteRequest for CreateResourceRequestTx {
             };
 
             // Affected nodes: Group, Project
-            wtxn.commit(associated_event_id, &[parent_idx, resource_idx], &[])?;
+            wtxn.commit(associated_event_id, &[parent_idx, resource_idx], &affected)?;
             Ok::<_, ArunaError>(bincode::serialize(&CreateResourceResponse { resource })?)
         })
         .await
@@ -480,129 +475,6 @@ pub struct CreateResourceBatchRequestTx {
     created_at: i64,
 }
 
-impl CreateResourceBatchRequestTx {
-    fn parse_resources(
-        &self,
-    ) -> Result<
-        (
-            HashMap<Ulid, Vec<Resource>, RandomState>, // Only for checking existing parents
-            Vec<(Ulid, Resource)>,                     // Includes all resources with their parents
-        ),
-        ArunaError,
-    > {
-        let time = DateTime::from_timestamp_millis(self.created_at).ok_or_else(|| {
-            ArunaError::ConversionError {
-                from: "i64".to_string(),
-                to: "Chrono::DateTime".to_string(),
-            }
-        })?;
-
-        //let mut resources = Vec::new();
-        let mut existing: HashMap<Ulid, Vec<Resource>, RandomState> = HashMap::default();
-        let mut new: HashMap<u32, Vec<Resource>, RandomState> = HashMap::default();
-        let mut all = Vec::new();
-
-        for (idx, id) in self.resource_ids.iter().enumerate() {
-            let res = self.req.resources.get(idx).cloned().ok_or_else(|| {
-                ArunaError::DeserializeError(
-                    "No entry for id found in CreateResourceBatchRequest".to_string(),
-                )
-            })?;
-
-            let resource = Resource {
-                id: *id,
-                name: res.name.clone(),
-                description: res.description,
-                title: res.title,
-                revision: 0,
-                variant: res.variant,
-                labels: res.labels,
-                identifiers: res.identifiers,
-                content_len: 0,
-                count: 0,
-                visibility: res.visibility,
-                created_at: time,
-                last_modified: time,
-                authors: res.authors,
-                license_tag: res.license_tag,
-                locked: false,
-                location: vec![], // TODO: Locations and DataProxies
-                hashes: vec![],
-            };
-            match res.parent {
-                Parent::ID(parent_id) => {
-                    let entry = existing.entry(parent_id).or_default();
-                    if entry.iter().find(|r| &r.name == &res.name).is_some() {
-                        return Err(ArunaError::ConflictParameter {
-                            name: "name".to_string(),
-                            error: "Name is not unique in parent resource".to_string(),
-                        });
-                    } else {
-                        entry.push(resource.clone());
-                        all.push((parent_id, resource));
-                    }
-                }
-                Parent::Idx(parent_idx) => {
-                    let entry = new.entry(parent_idx).or_default();
-                    if entry.iter().find(|r| r.name == res.name).is_some() {
-                        return Err(ArunaError::ConflictParameter {
-                            name: "name".to_string(),
-                            error: "Name is not unique in parent resource".to_string(),
-                        });
-                    } else {
-                        let parent_id =
-                            self.resource_ids.get(parent_idx as usize).ok_or_else(|| {
-                                ArunaError::InvalidParameter {
-                                    name: "parent".to_string(),
-                                    error: "Parent not found in idx".to_string(),
-                                }
-                            })?;
-                        entry.push(resource.clone());
-                        all.push((*parent_id, resource));
-                    }
-                }
-            }
-        }
-
-        let mut to_check: Vec<u32> = new.keys().cloned().collect();
-        to_check.sort();
-        let mut checked: Vec<u32> = Vec::new();
-        for new_parent in &to_check {
-            let entry = self
-                .req
-                .resources
-                .get(*new_parent as usize)
-                .ok_or_else(|| ArunaError::InvalidParameter {
-                    name: "parent".to_string(),
-                    error: "Parent not found in resources".to_string(),
-                })?;
-            match entry.parent {
-                Parent::ID(_) => {
-                    checked.push(*new_parent);
-                }
-                Parent::Idx(idx) => {
-                    if checked.contains(&idx) {
-                        checked.push(*new_parent);
-                    } else {
-                        return Err(ArunaError::InvalidParameter {
-                            name: "parent".to_string(),
-                            error: "Parents not linked".to_string(),
-                        });
-                    }
-                }
-            }
-        }
-        if to_check.len() != checked.len() {
-            dbg!(&to_check);
-            return Err(ArunaError::InvalidParameter {
-                name: "parent".to_string(),
-                error: "New parent does not connect to existing resource".to_string(),
-            });
-        }
-        Ok((existing, all))
-    }
-}
-
 #[typetag::serde]
 #[async_trait::async_trait]
 impl WriteRequest for CreateResourceBatchRequestTx {
@@ -616,7 +488,15 @@ impl WriteRequest for CreateResourceBatchRequestTx {
         controller.authorize(&self.requester, &self.req).await?;
 
         //let transaction = self.clone();
-        let (parents_to_check, resources) = self.parse_resources()?;
+        //let (parents_to_check, resources) = self.parse_resources()?;
+        let request = self.req.clone();
+        let ids = self.resource_ids.clone();
+        let time = DateTime::from_timestamp_millis(self.created_at).ok_or_else(|| {
+            ArunaError::ConversionError {
+                from: "i64".to_string(),
+                to: "Chrono::DateTime".to_string(),
+            }
+        })?;
 
         let store = controller.get_store();
         Ok(tokio::task::spawn_blocking(move || {
@@ -624,63 +504,122 @@ impl WriteRequest for CreateResourceBatchRequestTx {
 
             let mut wtxn = store.write_txn()?;
 
-            // Check naming conflicts and if existing parents exist
-            for (parent_id, subresources) in parents_to_check.into_iter() {
-                let Some(parent_idx) = store.get_idx_from_ulid(&parent_id, wtxn.get_txn()) else {
-                    return Err(ArunaError::NotFound(parent_id.to_string()));
+            let mut to_create: Vec<(Resource, Ulid)> = vec![];
+            let mut existing_names = HashMap::<u32, String, RandomState>::default();
+            let mut affected_endpoints = vec![];
+
+            for (index, batch_resource) in request.resources.iter().enumerate() {
+                let mut resource = Resource {
+                    id: ids.get(index).ok_or_else(|| {
+                        error!("Id not found: {}", index);
+                        ArunaError::DeserializeError("Id not found".to_string())
+                    })?.clone(),
+                    name: batch_resource.name.clone(),
+                    description: batch_resource.description.clone(),
+                    title: batch_resource.title.clone(),
+                    revision: 0,
+                    variant: batch_resource.variant.clone(),
+                    labels: batch_resource.labels.clone(),
+                    identifiers: batch_resource.identifiers.clone(),
+                    content_len: 0,
+                    count: 0,
+                    visibility: batch_resource.visibility.clone(),
+                    created_at: time,
+                    last_modified: time,
+                    authors: batch_resource.authors.clone(),
+                    license_tag: batch_resource.license_tag.clone(),
+                    locked: false,
+                    location: vec![], // TODO: Locations and DataProxies
+                    hashes: vec![],
                 };
+                let parent_id = match batch_resource.parent {
+                    Parent::ID(ulid) => {
+                        let parent_existing_idx = store
+                            .get_idx_from_ulid(&ulid, wtxn.get_txn())
+                            .ok_or_else(|| {
+                                error!("Parent not found: {}", ulid);
+                                ArunaError::NotFound(ulid.to_string())
+                            })?;
 
-                // Make sure that the parent is a folder or project
-                let raw_parent_node = store
-                    .get_raw_node(wtxn.get_txn(), parent_idx)
-                    .expect("Idx exist but no node in documents -> corrupted database");
+                        let parent_node = store
+                            .get_node::<Resource>(wtxn.get_txn(), parent_existing_idx)
+                            .expect("Idx exist but no node in documents -> corrupted database");
 
-                let variant: NodeVariant = serde_json::from_slice::<u8>(
-                    raw_parent_node
-                        .get(1)
-                        .expect("Missing variant -> corrupted database"),
-                )
-                .inspect_err(logerr!())?
-                .try_into()
-                .inspect_err(logerr!())?;
+                        if !matches!(
+                            parent_node.variant,
+                            ResourceVariant::Project | ResourceVariant::Folder
+                        ) {
+                            return Err(ArunaError::InvalidParameter {
+                                name: "parent_id".to_string(),
+                                error: "Wrong parent, must be folder or project".to_string(),
+                            });
+                        }
 
-                if !matches!(
-                    variant,
-                    NodeVariant::ResourceProject | NodeVariant::ResourceFolder
-                ) {
-                    return Err(ArunaError::InvalidParameter {
-                        name: "parent_id".to_string(),
-                        error: "Wrong parent, must be folder or project".to_string(),
-                    });
-                }
+                        let parent_endpoints = parent_node.location.clone();
+                        affected_endpoints.extend(parent_endpoints
+                            .iter()
+                            .filter_map(|l| store.get_idx_from_ulid(&l.endpoint_id, wtxn.get_txn())));
+                        resource.location = parent_endpoints;
 
-                for resource in &subresources {
-                    // Check for unique name 1. Get all resources with the same name
-                    // 0 Project, 1 Folder, 2 Object -> < 3
-                    let universe = store.filtered_universe(
-                        Some(&format!("name='{}' AND variant < 3", resource.name)),
-                        wtxn.get_txn(),
-                    )?;
+                        // Check for unique name 1. Get all resources with the same name
+                        // 0 Project, 1 Folder, 2 Object -> < 3
+                        let universe = store.filtered_universe(
+                            Some(&format!("name='{}' AND variant < 3", resource.name)),
+                            wtxn.get_txn(),
+                        )?;
 
-                    // 2. Check if any of the resources in the universe have the same parent as a parent
-                    for idx in universe {
-                        // We need to use this because we have a lock on the store
-                        if get_parent(wtxn.get_ro_graph(), idx) == Some(parent_idx) {
+                        // 2. Check if any of the resources in the universe have the same parent as a parent
+                        for idx in universe {
+                            // We need to use this because we have a lock on the store
+                            if get_parent(wtxn.get_ro_graph(), idx) == Some(parent_existing_idx) {
+                                return Err(ArunaError::ConflictParameter {
+                                    name: "name".to_string(),
+                                    error:
+                                        "Resource with this name already exists in this hierarchy"
+                                            .to_string(),
+                                });
+                            }
+                        }
+                        ulid
+                    }
+                    Parent::Idx(index) => {
+                        let parent: &Resource = &to_create.get(index as usize).ok_or_else(|| {
+                            error!("Parent not found: {}", index);
+                            ArunaError::NotFound(index.to_string())
+                        })?.0;
+
+                        if !matches!(
+                            parent.variant,
+                            ResourceVariant::Project | ResourceVariant::Folder
+                        ) {
+                            return Err(ArunaError::InvalidParameter {
+                                name: "parent_id".to_string(),
+                                error: "Wrong parent, must be folder or project".to_string(),
+                            });
+                        }
+
+                        let parent_endpoints = parent.location.clone();
+                        resource.location = parent_endpoints;
+
+                        if existing_names.insert(index, resource.name.clone()).is_some() {
                             return Err(ArunaError::ConflictParameter {
                                 name: "name".to_string(),
                                 error: "Resource with this name already exists in this hierarchy"
                                     .to_string(),
                             });
                         }
-                    }
-                }
+                        parent.id
+                    },
+                };
+
+                to_create.push((resource, parent_id));
             }
 
-            let resource_idx =
-                store.create_nodes_batch(&mut wtxn, resources.iter().map(|(_, r)| r).collect())?;
+            let resource_idx = store
+                .create_nodes_batch(&mut wtxn, to_create.iter().map(|e| &e.0).collect())?;
 
             let mut affected = vec![];
-            for (parent_id, resource) in &resources {
+            for (resource, parent_id) in &to_create {
                 let Some(parent_idx) = store.get_idx_from_ulid(&parent_id, wtxn.get_txn()) else {
                     return Err(ArunaError::NotFound(parent_id.to_string()));
                 };
@@ -711,7 +650,7 @@ impl WriteRequest for CreateResourceBatchRequestTx {
             // Affected nodes: Group, Project
             wtxn.commit(associated_event_id, &affected, &[])?;
             Ok::<_, ArunaError>(bincode::serialize(&CreateResourceBatchResponse {
-                resources: resources.into_iter().map(|(_, r)| r).collect(),
+                resources: to_create.into_iter().map(|(r, _)| r).collect(),
             })?)
         })
         .await
@@ -871,7 +810,7 @@ impl WriteRequest for UpdateResourceTx {
                     });
                 }
             }
-            let mut map =  serde_json::Map::new();
+            let mut map = serde_json::Map::new();
             map.insert("name".to_string(), request.name.into());
 
             store.update_node_field(&mut wtxn, resource_id, map)?;
@@ -882,9 +821,7 @@ impl WriteRequest for UpdateResourceTx {
 
             wtxn.commit(associated_event_id, &[resource_idx], &[])?;
             // Create admin group, add user to admin group
-            Ok::<_, ArunaError>(bincode::serialize(&UpdateResourceResponse {
-                resource,
-            })?)
+            Ok::<_, ArunaError>(bincode::serialize(&UpdateResourceResponse { resource })?)
         })
         .await
         .map_err(|_e| {
@@ -893,7 +830,6 @@ impl WriteRequest for UpdateResourceTx {
         })??)
     }
 }
-
 
 impl Request for RegisterDataRequest {
     type Response = RegisterDataResponse;
@@ -958,8 +894,7 @@ impl WriteRequest for RegisterDataRequestTx {
                 return Err(ArunaError::NotFound(object_id.to_string()));
             };
 
-            let Some(resource): Option<Resource> =
-                store.get_node(&wtxn.get_txn(), resource_idx)
+            let Some(resource): Option<Resource> = store.get_node(&wtxn.get_txn(), resource_idx)
             else {
                 return Err(ArunaError::NotFound(format!(
                     "Resource with id {object_id} not found"
