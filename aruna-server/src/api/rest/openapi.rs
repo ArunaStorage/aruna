@@ -1,5 +1,5 @@
 use super::api_paths::*;
-use crate::transactions::controller::Controller;
+use crate::{models::models::Permission, transactions::controller::Controller};
 use std::sync::Arc;
 use utoipa::{
     openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
@@ -11,6 +11,7 @@ use utoipa_axum::routes;
 #[derive(OpenApi)]
 #[openapi(
     modifiers(&SecurityAddon),
+    components(schemas(Permission))
 )]
 pub struct ArunaApi;
 

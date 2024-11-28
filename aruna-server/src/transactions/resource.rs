@@ -8,14 +8,9 @@ use crate::{
     error::ArunaError,
     logerr,
     models::{
-        models::{DataLocation, NodeVariant, Resource, SyncingStatus},
+        models::{DataLocation, NodeVariant, Resource, ResourceVariant, SyncingStatus},
         requests::{
-            CreateProjectRequest, CreateProjectResponse, CreateRelationRequest,
-            CreateRelationResponse, CreateResourceBatchRequest, CreateResourceBatchResponse,
-            CreateResourceRequest, CreateResourceResponse, Direction, GetRelationInfosRequest,
-            GetRelationInfosResponse, GetRelationsRequest, GetRelationsResponse,
-            GetResourcesRequest, GetResourcesResponse, Parent, UpdateResourceRequest,
-            UpdateResourceResponse,
+            CreateProjectRequest, CreateProjectResponse, CreateRelationRequest, CreateRelationResponse, CreateResourceBatchRequest, CreateResourceBatchResponse, CreateResourceRequest, CreateResourceResponse, Direction, GetRelationInfosRequest, GetRelationInfosResponse, GetRelationsRequest, GetRelationsResponse, GetResourcesRequest, GetResourcesResponse, Parent, RegisterDataRequest, RegisterDataResponse, UpdateResourceRequest, UpdateResourceResponse
         },
     },
     storage::graph::{get_parent, get_related_user_or_groups, has_relation},
@@ -868,6 +863,102 @@ impl WriteRequest for UpdateResourceTx {
                     });
                 }
             }
+
+            // Affected nodes: Group, Realm, Project
+            wtxn.commit(associated_event_id, &[resource_idx], &[])?;
+            // Create admin group, add user to admin group
+            Ok::<_, ArunaError>(bincode::serialize(&UpdateResourceResponse {
+                resource: todo!(),
+            })?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
+    }
+}
+
+
+impl Request for RegisterDataRequest {
+    type Response = RegisterDataResponse;
+    fn get_context(&self) -> Context {
+        Context::Permission {
+            min_permission: crate::models::models::Permission::Write,
+            source: self.object_id,
+        }
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let request_tx = RegisterDataRequestTx {
+            req: self,
+            requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
+            updated_at: Utc::now().timestamp_millis(),
+        };
+
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response)?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RegisterDataRequestTx {
+    req: RegisterDataRequest,
+    requester: Requester,
+    updated_at: i64,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for RegisterDataRequestTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, crate::error::ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+
+        let time = DateTime::from_timestamp_millis(self.updated_at).ok_or_else(|| {
+            ArunaError::ConversionError {
+                from: "i64".to_string(),
+                to: "Chrono::DateTime".to_string(),
+            }
+        })?;
+
+        let object_id = self.req.object_id;
+        let request = self.req.clone();
+
+        let store = controller.get_store();
+
+        Ok(tokio::task::spawn_blocking(move || {
+            let mut wtxn = store.write_txn()?;
+
+            // Get resource idx
+            let Some(resource_idx) = store.get_idx_from_ulid(&object_id, wtxn.get_txn()) else {
+                return Err(ArunaError::NotFound(object_id.to_string()));
+            };
+
+            let Some(resource): Option<Resource> =
+                store.get_node(&wtxn.get_txn(), resource_idx)
+            else {
+                return Err(ArunaError::NotFound(format!(
+                    "Resource with id {object_id} not found"
+                )));
+            };
+
+            if resource.variant != ResourceVariant::Object {
+                return Err(ArunaError::InvalidParameter {
+                    name: "object_id".to_string(),
+                    error: "Resource is not an object".to_string(),
+                });
+            }
+
+
 
             // Affected nodes: Group, Realm, Project
             wtxn.commit(associated_event_id, &[resource_idx], &[])?;

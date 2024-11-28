@@ -783,3 +783,32 @@ pub async fn create_component(
 ) -> impl IntoResponse {
     into_axum_response(state.request(request, extract_token(&header)).await)
 }
+
+
+/// Register data for an object
+#[utoipa::path(
+    post,
+    path = "/resources/{id}/data",
+    params(
+        ("id" = Ulid, Path, description = "Resource ID (Must be object)"),
+    ),
+    request_body = RegisterDataRequest,
+    responses(
+        (status = 200, body = RegisterDataResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+    tag = RESOURCES,
+)]
+pub async fn register_data(
+    Path(id): Path<Ulid>,
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+    Json(mut request): Json<RegisterDataRequest>,
+) -> impl IntoResponse {
+    request.object_id = id;
+    into_axum_response(state.request(request, extract_token(&header)).await)
+}
+

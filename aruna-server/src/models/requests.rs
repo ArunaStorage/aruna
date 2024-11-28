@@ -3,10 +3,8 @@ use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
-use crate::transactions::request::WriteRequest;
-
 use super::models::{
-    Author, Component, ComponentType, Endpoint, GenericNode, Group, KeyValue, Permission, Realm,
+    Hash, Author, Component, ComponentType, Endpoint, GenericNode, Group, KeyValue, Permission, Realm,
     Relation, RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass,
 };
 
@@ -476,3 +474,14 @@ pub struct AddComponentToRealmRequest {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct AddComponentToRealmResponse {}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct RegisterDataRequest {
+    #[serde(default)]
+    pub object_id: Ulid,
+    pub component_id: Ulid,
+    pub hashes: Vec<Hash>,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct RegisterDataResponse {}
