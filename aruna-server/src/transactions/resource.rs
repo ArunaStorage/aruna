@@ -46,7 +46,7 @@ impl Request for CreateProjectRequest {
             req: self,
             project_id: Ulid::new(),
             requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
-            created_at: Utc::now().timestamp(),
+            created_at: Utc::now().timestamp_millis(),
         };
 
         let response = controller.transaction(Ulid::new().0, &request_tx).await?;
@@ -210,7 +210,7 @@ impl Request for CreateResourceRequest {
             requester: requester
                 .ok_or_else(|| ArunaError::Unauthorized)
                 .inspect_err(logerr!())?,
-            created_at: Utc::now().timestamp(),
+            created_at: Utc::now().timestamp_millis(),
         };
 
         let response = controller.transaction(Ulid::new().0, &request_tx).await?;
@@ -405,7 +405,7 @@ impl Request for CreateResourceBatchRequest {
             requester: requester
                 .ok_or_else(|| ArunaError::Unauthorized)
                 .inspect_err(logerr!())?,
-            created_at: Utc::now().timestamp(),
+            created_at: Utc::now().timestamp_millis(),
         };
 
         let response = controller.transaction(Ulid::new().0, &request_tx).await?;
@@ -743,7 +743,7 @@ impl Request for UpdateResourceRequest {
         let request_tx = UpdateResourceTx {
             req: self,
             requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
-            updated_at: Utc::now().timestamp(),
+            updated_at: Utc::now().timestamp_millis(),
         };
 
         return Err(ArunaError::NotFound("Request unimplemented".to_string()));
