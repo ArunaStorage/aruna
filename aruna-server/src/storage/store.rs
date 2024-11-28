@@ -389,6 +389,7 @@ impl Store {
         for<'b> &'b T: TryInto<serde_json::Map<String, Value>, Error = ArunaError>,
     {
         let indexer_config = IndexerConfig::default();
+        
         let builder = IndexDocuments::new(
             wtxn.get_txn(),
             &self.milli_index,

@@ -22,15 +22,14 @@ impl RestServer {
         let listener = tokio::net::TcpListener::bind(socket_address).await.unwrap();
 
         let (router, api) = OpenApiRouter::with_openapi(ArunaApi::openapi())
-        .nest("/api/v3/", openapi::router(handler))
+        .nest("/api/v3", openapi::router(handler))
         .split_for_parts();
 
         let swagger = SwaggerUi::new("/swagger-ui")
         .url("/api-docs/openapi.json", api);
 
-        let app = Router::new()
+        let app = router
             .merge(swagger)
-            .merge(router)
             .layer(
                 TraceLayer::new_for_http()
                     .on_response(())

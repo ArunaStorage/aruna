@@ -27,7 +27,7 @@ mod tags {
 /// Create a new resource
 #[utoipa::path(
     post,
-    path = "resources",
+    path = "/resources",
     request_body = CreateResourceRequest,
     responses(
         (status = 200, body = CreateResourceResponse),
@@ -49,7 +49,7 @@ pub async fn create_resource(
 /// Create a new resource
 #[utoipa::path(
     post,
-    path = "resources/batch",
+    path = "/resources/batch",
     request_body = CreateResourceBatchRequest,
     responses(
         (status = 200, body = CreateResourceResponse),
@@ -71,7 +71,7 @@ pub async fn create_resource_batch(
 /// Create a new resource
 #[utoipa::path(
     post,
-    path = "resources/projects",
+    path = "/resources/projects",
     request_body = CreateProjectRequest,
     responses(
         (status = 200, body = CreateProjectResponse),
@@ -93,7 +93,7 @@ pub async fn create_project(
 /// Create a new relation
 #[utoipa::path(
     post,
-    path = "resources/relations",
+    path = "/resources/relations",
     request_body = CreateRelationRequest,
     responses(
         (status = 200, body = CreateRelationResponse),
@@ -115,7 +115,7 @@ pub async fn create_relation(
 /// Create a new relation variant
 #[utoipa::path(
     post,
-    path = "global/relation_variant",
+    path = "/global/relation_variant",
     request_body = CreateRelationVariantRequest,
     responses(
         (status = 200, body = CreateRelationVariantResponse),
@@ -137,7 +137,7 @@ pub async fn create_relation_variant(
 /// Get resources
 #[utoipa::path(
     get,
-    path = "resources",
+    path = "/resources",
     params(
         GetResourcesRequest,
     ),
@@ -161,7 +161,7 @@ pub async fn get_resource(
 /// Create a new realm
 #[utoipa::path(
     post,
-    path = "realms",
+    path = "/realms",
     request_body = CreateRealmRequest,
     responses(
         (status = 200, body = CreateRealmResponse),
@@ -183,7 +183,7 @@ pub async fn create_realm(
 /// Get realm
 #[utoipa::path(
     get,
-    path = "realms/{id}",
+    path = "/realms/{id}",
     params(
         ("id" = Ulid, Path, description = "Realm ID"),
     ),
@@ -207,7 +207,7 @@ pub async fn get_realm(
 /// Add group to realm
 #[utoipa::path(
     patch,
-    path = "realms/{realm_id}/groups/{group_id}",
+    path = "/realms/{realm_id}/groups/{group_id}",
     params(
         ("realm_id" = Ulid, Path, description = "Realm ID"),
         ("group_id" = Ulid, Path, description = "Group ID"),
@@ -233,7 +233,7 @@ pub async fn add_group(
 /// Create a new  
 #[utoipa::path(
     post,
-    path = "groups",
+    path = "/groups",
     request_body = CreateGroupRequest,
     responses(
         (status = 200, body = CreateGroupResponse),
@@ -255,7 +255,7 @@ pub async fn create_group(
 /// Get group by id
 #[utoipa::path(
     get,
-    path = "group/{id}",
+    path = "/groups/{id}",
     params(
         ("id" = Ulid, Path, description = "Realm ID"),
     ),
@@ -280,7 +280,7 @@ pub async fn get_group(
 /// Register a new user
 #[utoipa::path(
     post,
-    path = "users",
+    path = "/users",
     request_body = RegisterUserRequest,
     responses(
         (status = 200, body = RegisterUserResponse),
@@ -303,7 +303,7 @@ pub async fn register_user(
 /// Add user to group
 #[utoipa::path(
     patch,
-    path = "groups/{group_id}/user/{user_id}",
+    path = "/groups/{group_id}/user/{user_id}",
     params(
         ("group_id" = Ulid, Path, description = "Group ID"),
         ("user_id" = Ulid, Path, description = "User ID"),
@@ -330,7 +330,7 @@ pub async fn add_user(
 /// Create a token
 #[utoipa::path(
     post,
-    path = "users/tokens",
+    path = "/users/tokens",
     request_body = CreateTokenRequest,
     responses(
         (status = 200, body = CreateTokenResponse),
@@ -353,7 +353,7 @@ pub async fn create_token(
 /// Search for resources
 #[utoipa::path(
     get,
-    path = "info/search",
+    path = "/info/search",
     params(
         SearchRequest,
     ),
@@ -378,7 +378,7 @@ pub async fn search(
 /// Get all realms from the current user
 #[utoipa::path(
     get,
-    path = "users/realms",
+    path = "/users/realms",
     responses(
         (status = 200, body = GetRealmsFromUserResponse),
         ArunaError,
@@ -403,7 +403,7 @@ pub async fn get_user_realms(
 /// Get all groups from the current user
 #[utoipa::path(
     get,
-    path = "users/groups",
+    path = "/users/groups",
     responses(
         (status = 200, body = GetGroupsFromUserResponse),
         ArunaError,
@@ -428,7 +428,7 @@ pub async fn get_user_groups(
 /// Get global server stats
 #[utoipa::path(
     get,
-    path = "info/stats",
+    path = "/info/stats",
     responses(
         (status = 200, body = GetStatsResponse),
         ArunaError,
@@ -458,7 +458,7 @@ pub async fn get_stats(
 /// Get components of a realm (server, dataproxies, etc)
 #[utoipa::path(
     get,
-    path = "realms/{id}/components",
+    path = "/realms/{id}/components",
     params(
         ("id" = Ulid, Path, description = "Realm ID"),
     ),
@@ -483,7 +483,7 @@ pub async fn get_realm_components(
 /// Get relations of a resource
 #[utoipa::path(
     get,
-    path = "resources/{id}/relations",
+    path = "/resources/{id}/relations",
     params(
         ("id" = Ulid, Path, description = "Resource ID"),
     ),
@@ -508,7 +508,7 @@ pub async fn get_relations(
 /// Get users from group
 #[utoipa::path(
     get,
-    path = "groups/{id}/users",
+    path = "/groups/{id}/users",
     params(
         ("id" = Ulid, Path, description = "Group ID"),
     ),
@@ -533,7 +533,7 @@ pub async fn get_group_users(
 /// Get groups from realm
 #[utoipa::path(
     get,
-    path = "realms/{id}/groups",
+    path = "/realms/{id}/groups",
     params(
         ("id" = Ulid, Path, description = "Realm ID"),
     ),
@@ -558,7 +558,7 @@ pub async fn get_realm_groups(
 /// Get relation info
 #[utoipa::path(
     get,
-    path = "global/relations",
+    path = "/global/relations",
     responses(
         (status = 200, body = GetRelationInfosResponse),
         ArunaError,
@@ -583,7 +583,7 @@ pub async fn get_relation_infos(
 /// Get current user 
 #[utoipa::path(
     get,
-    path = "users",
+    path = "/users",
     responses(
         (status = 200, body = GetUserResponse),
         ArunaError,
@@ -608,7 +608,7 @@ pub async fn get_user(
 /// Get events information
 #[utoipa::path(
     get,
-    path = "info/events",
+    path = "/info/events",
     params(
         GetEventsRequest,
     ),
@@ -633,7 +633,7 @@ pub async fn get_events(
 /// Request group join realm
 #[utoipa::path(
     post,
-    path = "realms/{id}/access",
+    path = "/realms/{id}/access",
     params(
         ("id" = Ulid, Path, description = "Realm ID"),
         ("group_id" = Ulid, Query, description = "Group ID"),
@@ -660,7 +660,7 @@ pub async fn request_group_access_realm(
 /// Request user join group
 #[utoipa::path(
     post,
-    path = "groups/{id}/join",
+    path = "/groups/{id}/join",
     params(
         ("id" = Ulid, Path, description = "Group ID"),
     ),
@@ -685,7 +685,7 @@ pub async fn request_user_access_group(
 /// Create a new component
 #[utoipa::path(
     post,
-    path = "global/components",
+    path = "/global/components",
     request_body = CreateComponentRequest,
     responses(
         (status = 200, body = CreateComponentResponse),
