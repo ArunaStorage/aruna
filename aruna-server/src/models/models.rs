@@ -596,7 +596,7 @@ pub enum SyncingStatus {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct DataLocation {
-    pub endpoint_id: String,
+    pub endpoint_id: Ulid,
     pub status: SyncingStatus,
 }
 

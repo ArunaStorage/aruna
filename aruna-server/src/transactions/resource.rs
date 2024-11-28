@@ -8,7 +8,7 @@ use crate::{
     error::ArunaError,
     logerr,
     models::{
-        models::{NodeVariant, Resource},
+        models::{DataLocation, NodeVariant, Resource, SyncingStatus},
         requests::{
             CreateProjectRequest, CreateProjectResponse, CreateRelationRequest,
             CreateRelationResponse, CreateResourceBatchRequest, CreateResourceBatchResponse,
@@ -18,14 +18,14 @@ use crate::{
             UpdateResourceResponse,
         },
     },
-    storage::graph::{get_parent, get_related_user_or_groups},
+    storage::graph::{get_parent, get_related_user_or_groups, has_relation},
     transactions::request::WriteRequest,
 };
 use ahash::RandomState;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::info;
+use tracing::{error, info};
 use ulid::Ulid;
 
 impl Request for CreateProjectRequest {
@@ -80,7 +80,7 @@ impl WriteRequest for CreateProjectRequestTx {
             }
         })?;
 
-        let project = Resource {
+        let mut project = Resource {
             id: self.project_id,
             name: self.req.name.clone(),
             description: self.req.description.clone(),
@@ -104,6 +104,10 @@ impl WriteRequest for CreateProjectRequestTx {
         let group_id = self.req.group_id;
         let realm_id = self.req.realm_id;
 
+        let endpoint = self.req.data_endpoint.clone();
+
+        let requester = self.requester.clone();
+
         let store = controller.get_store();
         Ok(tokio::task::spawn_blocking(move || {
             // Create project
@@ -116,8 +120,45 @@ impl WriteRequest for CreateProjectRequestTx {
             };
             // Get the realm
             let Some(realm_idx) = store.get_idx_from_ulid(&realm_id, wtxn.get_txn()) else {
+                error!("Realm not found: {}", realm_id);
                 return Err(ArunaError::NotFound(group_id.to_string()));
             };
+
+            // Validate that the data endpoint is part of the realm
+            if let Some(data_endpoint) = endpoint {
+                let Some(data_endpoint_idx) = store.get_idx_from_ulid(&data_endpoint, wtxn.get_txn()) else {
+                    error!("Data endpoint not found: {}", data_endpoint);
+                    return Err(ArunaError::NotFound(data_endpoint.to_string()));
+                };
+
+                if !has_relation(
+                    wtxn.get_ro_graph(),
+                    realm_idx,
+                    data_endpoint_idx,
+                    relation_types::REALM_USES_COMPONENT,
+                ) {
+                    error!("Realm does not use this data endpoint");
+                    return Err(ArunaError::InvalidParameter {
+                        name: "data_endpoint".to_string(),
+                        error: "Realm does not use this data endpoint".to_string(),
+                    });
+                }
+
+                let status = requester.get_impersonator().map(|impersonator| 
+                    if impersonator == data_endpoint {
+                        SyncingStatus::Finished
+                    } else {
+                        SyncingStatus::Pending
+                    }
+                ).unwrap_or(SyncingStatus::Pending);
+
+                project.location = vec![DataLocation{
+                    endpoint_id: data_endpoint,
+                    status,
+                }];
+
+            }
+
 
             // Check that name is unique
             if !store

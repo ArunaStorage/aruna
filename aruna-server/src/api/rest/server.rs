@@ -1,11 +1,6 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use crate::{error::ArunaError, transactions::controller::Controller};
-use axum::{
-    response::Redirect,
-    routing::{get, post},
-    Router,
-};
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;

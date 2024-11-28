@@ -214,6 +214,18 @@ pub fn check_node_variant(
     graph.node_weight(idx.into()) == Some(variant)
 }
 
+pub fn has_relation(
+    graph: &Graph<NodeVariant, EdgeType>,
+    source_idx: u32,
+    target_idx: u32,
+    edge_type: EdgeType,
+) -> bool {
+    let source_idx = source_idx.into();
+    let target_idx = target_idx.into();
+    graph.edges_connecting(source_idx, target_idx)
+        .any(|e| e.weight() == &edge_type)
+}
+
 #[tracing::instrument(level = "trace", skip(graph))]
 pub fn get_related_user_or_groups(
     graph: &Graph<NodeVariant, EdgeType>,

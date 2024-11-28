@@ -101,6 +101,8 @@ pub struct CreateProjectRequest {
     pub group_id: Ulid,
     pub realm_id: Ulid,
     // TODO: Default endpoints?
+    #[serde(default)]
+    pub data_endpoint: Option<Ulid>,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]

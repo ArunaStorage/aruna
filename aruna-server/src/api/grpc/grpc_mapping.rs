@@ -240,6 +240,7 @@ impl TryFrom<grpc::CreateProjectRequest> for requests::CreateProjectRequest {
                 .map_err(|_| InvalidFieldError("group_id"))?,
             realm_id: Ulid::from_string(&value.realm_id)
                 .map_err(|_| InvalidFieldError("realm_id"))?,
+            data_endpoint: None, // TODO: value.data_endpoint,
         })
     }
 }
