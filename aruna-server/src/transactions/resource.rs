@@ -958,14 +958,10 @@ impl WriteRequest for RegisterDataRequestTx {
                 });
             }
 
-
-
             // Affected nodes: Group, Realm, Project
             wtxn.commit(associated_event_id, &[resource_idx], &[])?;
             // Create admin group, add user to admin group
-            Ok::<_, ArunaError>(bincode::serialize(&UpdateResourceResponse {
-                resource: todo!(),
-            })?)
+            Ok::<_, ArunaError>(bincode::serialize(&RegisterDataResponse {})?)
         })
         .await
         .map_err(|_e| {
