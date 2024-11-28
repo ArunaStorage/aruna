@@ -6,8 +6,8 @@ use utoipa::{IntoParams, ToSchema};
 use crate::transactions::request::WriteRequest;
 
 use super::models::{
-    Author, Component, GenericNode, Group, KeyValue, Permission, Realm, Relation, RelationInfo,
-    Resource, ResourceVariant, Token, User, VisibilityClass,
+    Author, Component, ComponentType, Endpoint, GenericNode, Group, KeyValue, Permission, Realm,
+    Relation, RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass,
 };
 
 fn default_license_tag() -> String {
@@ -380,7 +380,7 @@ pub struct GetEventsRequest {
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GetEventsResponse {
     // EventId, Event
-    pub events: Vec<(Ulid, serde_json::Value)>,
+    pub events: Vec<serde_json::Map<String, serde_json::Value>>,
 }
 
 // User ask to access a group
@@ -437,7 +437,6 @@ pub struct UpdateResourceRequest {
     pub visibility: VisibilityClass,
     #[serde(default = "default_license_tag")]
     pub license_tag: String,
-
     // TODO:
     // #[serde(default)]
     // pub labels: Vec<KeyValue>,
@@ -451,3 +450,27 @@ pub struct UpdateResourceRequest {
 pub struct UpdateResourceResponse {
     pub resource: Resource,
 }
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateComponentRequest {
+    pub name: String,
+    pub description: String,
+    pub component_type: ComponentType,
+    pub endpoints: Vec<Endpoint>,
+    pub pubkey: String,
+    pub public: bool,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateComponentResponse {
+    pub component: Component,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct AddComponentToRealmRequest {
+    pub realm_id: Ulid,
+    pub component_id: Ulid,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct AddComponentToRealmResponse {}

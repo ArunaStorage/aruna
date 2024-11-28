@@ -107,7 +107,6 @@ pub const REGULAR2_TOKEN: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSIsImtpZCI6Ij
 #[allow(unused)]
 pub const WEBTEST_TOKEN: &str = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSIsImtpZCI6IjEifQ.eyJpc3MiOiJhcnVuYSIsInN1YiI6IjAxSkRQSDFRQUpRUkFNS05HVEY1WUMwOUNDIiwiYXVkIjoiYXJ1bmEiLCJleHAiOjI1NTMxNTY2MjcsImluZm8iOlswLDBdfQ.xDDlapkpV2XJNQ8eBuyp-CbJpOlfmXyRk7mM3i7cB0gNdpUUOVOMLyW5sv4vp3pTUgswBNorbVLFbLeRPgNkDg";
 
-
 pub static SUBSCRIBERS: AtomicU16 = AtomicU16::new(0);
 static INIT_TRACING: Once = Once::new();
 const MAX_RETRIES: u8 = 50;

@@ -3,7 +3,7 @@ use super::{
     request::{Request, SerializedResponse, WriteRequest},
 };
 use crate::{error::ArunaError, logerr, storage::store::Store, transactions::request::Requester};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::{net::SocketAddr, sync::Arc};
 use synevi::storage::LmdbStore;
@@ -147,7 +147,7 @@ impl synevi::Executor for Controller {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArunaTransaction(pub Vec<u8>);
 
 impl Transaction for ArunaTransaction {

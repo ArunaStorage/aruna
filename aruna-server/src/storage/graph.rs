@@ -8,6 +8,7 @@ use crate::{
 use heed::{types::SerdeBincode, Database, RoTxn};
 use milli::{ObkvCodec, BEU32, BEU64};
 use petgraph::{
+    graph::NodeIndex,
     visit::EdgeRef,
     Direction::{self, Incoming, Outgoing},
     Graph,
@@ -129,8 +130,10 @@ pub fn get_relatives(
         .collect()
 }
 
-pub fn get_parents(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Vec<u32> {
-    get_relatives(graph, idx, Incoming)
+pub fn get_parent(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Option<u32> {
+    let parents = get_relatives(graph, idx, Incoming);
+    assert!(parents.len() <= 1);
+    parents.first().copied()
 }
 
 #[allow(unused)]
@@ -305,4 +308,48 @@ pub fn get_realms(
         }
     }
     Ok(realms)
+}
+
+#[tracing::instrument(level = "trace", skip(graph))]
+pub fn get_subtree(
+    graph: &Graph<NodeVariant, EdgeType>,
+    node_idx: u32,
+) -> Result<Vec<u32>, ArunaError> {
+    let mut subtree = vec![];
+
+    let mut current_node_variant = graph.node_weight(node_idx.into()).ok_or_else(|| {
+        error!("Node with idx {node_idx} not found");
+        ArunaError::NotFound(format!("Node with idx {node_idx} not found"))
+    })?;
+
+    let mut current_node_id: NodeIndex = node_idx.into();
+
+    loop {
+        match current_node_variant {
+            NodeVariant::ResourceProject => {
+                subtree.push(current_node_id.index() as u32);
+                break;
+            }
+            NodeVariant::ResourceFolder | NodeVariant::ResourceObject => {
+                subtree.push(current_node_id.index() as u32);
+                let Some(parent) = get_parent(graph, node_idx) else {
+                    error!("Parent not found for {node_idx}");
+                    return Err(ArunaError::NotFound(format!(
+                        "Parent not found for {node_idx}"
+                    )));
+                };
+                current_node_id = parent.into();
+                current_node_variant = graph.node_weight(current_node_id).ok_or_else(|| {
+                    error!("Node with idx {:?} not found", current_node_id);
+                    ArunaError::NotFound(format!("Node with idx {:?} not found", current_node_id))
+                })?;
+            }
+            _ => {
+                subtree.push(current_node_id.index() as u32);
+                break;
+            }
+        }
+    }
+
+    Ok(subtree)
 }

@@ -766,6 +766,7 @@ pub struct Component {
     pub description: String,
     pub component_type: ComponentType,
     pub endpoints: Vec<Endpoint>,
+    pub public: bool,
 }
 
 impl Node for Component {
@@ -794,8 +795,11 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Component {
         let id: Ulid = obkv.get_required_field(0)?;
         // Get and double check the variant
         let variant: u8 = obkv.get_required_field(1)?;
-        if variant != NodeVariant::User as u8 {
-            return Err(ParseError(format!("Invalid variant for User: {}", variant)));
+        if variant != NodeVariant::Component as u8 {
+            return Err(ParseError(format!(
+                "Invalid variant for Component: {}",
+                variant
+            )));
         }
         Ok(Component {
             id,
@@ -803,6 +807,7 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Component {
             description: obkv.get_field(3)?,
             component_type: obkv.get_field(23)?,
             endpoints: obkv.get_field(24)?,
+            public: obkv.get_field(25)?,
         })
     }
 }

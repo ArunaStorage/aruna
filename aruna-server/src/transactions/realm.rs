@@ -127,13 +127,8 @@ impl WriteRequest for CreateRealmRequestTx {
             )?;
 
             // Affected nodes: User, Realm and Group
-            store.register_event(
-                &mut wtxn,
-                associated_event_id,
-                &[user_idx, realm_idx, group_idx],
-            )?;
 
-            wtxn.commit()?;
+            wtxn.commit(associated_event_id, &[user_idx, realm_idx, group_idx], &[])?;
             // Create admin group, add user to admin group
             Ok::<_, ArunaError>(bincode::serialize(&CreateRealmResponse {
                 realm,
@@ -213,9 +208,8 @@ impl WriteRequest for AddGroupRequestTx {
             )?;
 
             // Affected nodes: Realm and Group
-            store.register_event(&mut wtxn, associated_event_id, &[realm_idx, group_idx])?;
+            wtxn.commit(associated_event_id, &[realm_idx, group_idx], &[])?;
 
-            wtxn.commit()?;
             // Create admin group, add user to admin group
             Ok::<_, ArunaError>(bincode::serialize(&AddGroupResponse {})?)
         })

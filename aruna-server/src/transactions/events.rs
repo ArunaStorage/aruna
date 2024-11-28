@@ -24,7 +24,7 @@ impl Request for GetEventsRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         let store = controller.store.clone();
-        let Some(node) = controller.node.blocking_read().clone() else {
+        let Some(node) = controller.node.read().await.clone() else {
             return Err(ArunaError::ServerError("Node not set".to_string()));
         };
 
@@ -49,8 +49,15 @@ impl Request for GetEventsRequest {
                     ArunaError::NotFound("Event not found".to_string())
                 })?;
 
-                let dyn_event: Box<dyn WriteRequest> = bincode::deserialize(&event.transaction)
-                    .map_err(|e| {
+                let id = event.id;
+
+                let event = node.decode_event(event)?.ok_or_else(|| {
+                    error!("Event not found");
+                    ArunaError::NotFound("Event not found".to_string())
+                })?;
+
+                let dyn_event: Box<dyn WriteRequest> =
+                    bincode::deserialize(&event.0).map_err(|e| {
                         error!("Error deserializing event: {:?}", e);
                         ArunaError::ServerError("Error deserializing event".to_string())
                     })?;
@@ -59,7 +66,10 @@ impl Request for GetEventsRequest {
                     error!("Error serializing event: {:?}", e);
                     ArunaError::ServerError("Error serializing event".to_string())
                 })?;
-                events.push((Ulid::from(event.id), json_event))
+
+                let mut value = serde_json::Map::new();
+                value.insert(Ulid::from(id).to_string(), json_event);
+                events.push(value);
             }
 
             Ok::<_, ArunaError>(GetEventsResponse { events })
