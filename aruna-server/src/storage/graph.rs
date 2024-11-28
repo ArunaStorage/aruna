@@ -222,7 +222,8 @@ pub fn has_relation(
 ) -> bool {
     let source_idx = source_idx.into();
     let target_idx = target_idx.into();
-    graph.edges_connecting(source_idx, target_idx)
+    graph
+        .edges_connecting(source_idx, target_idx)
         .any(|e| e.weight() == &edge_type)
 }
 

@@ -125,8 +125,10 @@ impl WriteRequest for CreateProjectRequestTx {
             };
 
             // Validate that the data endpoint is part of the realm
-            if let Some(data_endpoint) = endpoint {
-                let Some(data_endpoint_idx) = store.get_idx_from_ulid(&data_endpoint, wtxn.get_txn()) else {
+            let endpont_id = if let Some(data_endpoint) = endpoint {
+                let Some(data_endpoint_idx) =
+                    store.get_idx_from_ulid(&data_endpoint, wtxn.get_txn())
+                else {
                     error!("Data endpoint not found: {}", data_endpoint);
                     return Err(ArunaError::NotFound(data_endpoint.to_string()));
                 };
@@ -144,21 +146,26 @@ impl WriteRequest for CreateProjectRequestTx {
                     });
                 }
 
-                let status = requester.get_impersonator().map(|impersonator| 
-                    if impersonator == data_endpoint {
-                        SyncingStatus::Finished
-                    } else {
-                        SyncingStatus::Pending
-                    }
-                ).unwrap_or(SyncingStatus::Pending);
+                let status = requester
+                    .get_impersonator()
+                    .map(|impersonator| {
+                        if impersonator == data_endpoint {
+                            SyncingStatus::Finished
+                        } else {
+                            SyncingStatus::Pending
+                        }
+                    })
+                    .unwrap_or(SyncingStatus::Pending);
 
-                project.location = vec![DataLocation{
+                project.location = vec![DataLocation {
                     endpoint_id: data_endpoint,
                     status,
                 }];
 
-            }
-
+                Some(data_endpoint_idx)
+            } else {
+                None
+            };
 
             // Check that name is unique
             if !store
@@ -204,11 +211,18 @@ impl WriteRequest for CreateProjectRequestTx {
                 }
             };
 
+            // Notify the endpoint if user wants to add a data endpoint
+            let additional_affected = if let Some(endpoint_idx) = endpont_id {
+                vec![endpoint_idx]
+            } else {
+                vec![]
+            };
+
             // Affected nodes: Group, Realm, Project
             wtxn.commit(
                 associated_event_id,
                 &[realm_idx, group_idx, project_idx],
-                &[],
+                &additional_affected,
             )?;
             // Create admin group, add user to admin group
             Ok::<_, ArunaError>(bincode::serialize(&CreateProjectResponse {

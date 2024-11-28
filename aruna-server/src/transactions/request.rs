@@ -86,8 +86,12 @@ impl Requester {
 
     pub fn get_impersonator(&self) -> Option<Ulid> {
         match self {
-            Self::User { impersonated_by, .. } => *impersonated_by,
-            Self::ServiceAccount { impersonated_by, .. } => *impersonated_by,
+            Self::User {
+                impersonated_by, ..
+            } => *impersonated_by,
+            Self::ServiceAccount {
+                impersonated_by, ..
+            } => *impersonated_by,
             _ => None,
         }
     }
