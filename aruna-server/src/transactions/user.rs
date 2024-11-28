@@ -285,7 +285,7 @@ impl Request for GetGroupsFromUserRequest {
             let relations =
                 store.get_relations(user_idx, &filter, petgraph::Direction::Outgoing, &rtxn)?;
             for relation in &relations {
-                let target = relation.from_id;
+                let target = relation.to_id;
 
                 let node_idx = store
                     .get_idx_from_ulid(&target, &rtxn)
