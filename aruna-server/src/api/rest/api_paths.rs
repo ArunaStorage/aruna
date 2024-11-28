@@ -207,9 +207,9 @@ pub async fn get_realm(
 /// Add group to realm
 #[utoipa::path(
     patch,
-    path = "/realms/{realm_id}/groups/{group_id}",
+    path = "/realms/{id}/groups/{group_id}",
     params(
-        ("realm_id" = Ulid, Path, description = "Realm ID"),
+        ("id" = Ulid, Path, description = "Realm ID"),
         ("group_id" = Ulid, Path, description = "Group ID"),
     ),
     request_body = AddGroupRequest,
