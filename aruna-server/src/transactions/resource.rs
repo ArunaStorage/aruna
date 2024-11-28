@@ -863,12 +863,19 @@ impl WriteRequest for UpdateResourceTx {
                     });
                 }
             }
+            let mut map =  serde_json::Map::new();
+            map.insert("name".to_string(), request.name.into());
+
+            store.update_node_field(&mut wtxn, resource_id, map)?;
 
             // Affected nodes: Group, Realm, Project
+
+            let resource = store.get_node(wtxn.get_txn(), resource_idx).unwrap();
+
             wtxn.commit(associated_event_id, &[resource_idx], &[])?;
             // Create admin group, add user to admin group
             Ok::<_, ArunaError>(bincode::serialize(&UpdateResourceResponse {
-                resource: todo!(),
+                resource,
             })?)
         })
         .await
