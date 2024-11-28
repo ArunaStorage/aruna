@@ -3,14 +3,14 @@ use super::{
     request::{Request, Requester, WriteRequest},
 };
 use crate::{
-    constants::relation_types::{self, GROUP_PART_OF_REALM, OWNED_BY_USER, REALM_USES_COMPONENT}, context::Context, error::ArunaError, models::{
-        models::{Component, Group, Realm},
+    constants::relation_types::{self, DEFAULT, GROUP_PART_OF_REALM, OWNED_BY_USER, REALM_USES_COMPONENT}, context::Context, error::ArunaError, models::{
+        models::{Component, Group, NodeVariant, Realm},
         requests::{
             AddComponentToRealmRequest, AddComponentToRealmResponse, AddGroupRequest, AddGroupResponse, CreateRealmRequest, CreateRealmResponse, GetGroupsFromRealmRequest, GetGroupsFromRealmResponse, GetRealmComponentsRequest, GetRealmComponentsResponse, GetRealmRequest, GetRealmResponse
         },
-    }, storage::graph::has_relation, transactions::request::SerializedResponse
+    }, storage::graph::{get_relations, has_relation}, transactions::request::SerializedResponse
 };
-use petgraph::Direction;
+use petgraph::Direction::{self, Outgoing};
 use serde::{Deserialize, Serialize};
 use tracing::error;
 use ulid::Ulid;
@@ -457,6 +457,13 @@ impl WriteRequest for AddComponentToRealmRequestTx {
                 component_idx,
                 relation_types::REALM_USES_COMPONENT,
             )?;
+
+            if !get_relations(wtxn.get_ro_graph(), realm_idx, &[DEFAULT], Outgoing).iter().any(|r| {
+                wtxn.get_ro_graph().node_weight(r.target.into()) == Some(&NodeVariant::Component)
+            }) {
+                store.create_relation(&mut wtxn, realm_idx, component_idx, DEFAULT)?;
+                // TODO: Update all projects + resources to 
+            }
 
             store.add_read_permission_universe(&mut wtxn, realm_idx, &[component_idx])?;
 

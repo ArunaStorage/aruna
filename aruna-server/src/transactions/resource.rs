@@ -3,7 +3,7 @@ use super::{
     request::{Request, Requester, SerializedResponse},
 };
 use crate::{
-    constants::relation_types::{self},
+    constants::relation_types::{self, DEFAULT},
     context::{BatchPermission, Context},
     error::ArunaError,
     logerr,
@@ -13,11 +13,12 @@ use crate::{
             CreateProjectRequest, CreateProjectResponse, CreateRelationRequest, CreateRelationResponse, CreateResourceBatchRequest, CreateResourceBatchResponse, CreateResourceRequest, CreateResourceResponse, Direction, GetRelationInfosRequest, GetRelationInfosResponse, GetRelationsRequest, GetRelationsResponse, GetResourcesRequest, GetResourcesResponse, Parent, RegisterDataRequest, RegisterDataResponse, UpdateResourceRequest, UpdateResourceResponse
         },
     },
-    storage::graph::{get_parent, get_related_user_or_groups, has_relation},
+    storage::graph::{get_parent, get_related_user_or_groups, get_relations, has_relation},
     transactions::request::WriteRequest,
 };
 use ahash::RandomState;
 use chrono::{DateTime, Utc};
+use petgraph::Direction::Outgoing;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{error, info};
@@ -159,7 +160,14 @@ impl WriteRequest for CreateProjectRequestTx {
 
                 Some(data_endpoint_idx)
             } else {
-                None
+                get_relations(wtxn.get_ro_graph(), realm_idx, &[DEFAULT], Outgoing).iter().find_map(
+                    |r| if wtxn.get_ro_graph().node_weight(r.target.into()) == Some(&NodeVariant::Component) {
+                        Some(r.target)
+                    } else {
+                        None
+                    }
+
+                )
             };
 
             // Check that name is unique
