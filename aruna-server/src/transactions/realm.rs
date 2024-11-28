@@ -3,21 +3,16 @@ use super::{
     request::{Request, Requester, WriteRequest},
 };
 use crate::{
-    constants::relation_types::{self, GROUP_PART_OF_REALM, REALM_USES_COMPONENT},
-    context::Context,
-    error::ArunaError,
-    models::{
+    constants::relation_types::{self, GROUP_PART_OF_REALM, OWNED_BY_USER, REALM_USES_COMPONENT}, context::Context, error::ArunaError, models::{
         models::{Component, Group, Realm},
         requests::{
-            AddGroupRequest, AddGroupResponse, CreateRealmRequest, CreateRealmResponse,
-            GetGroupsFromRealmRequest, GetGroupsFromRealmResponse, GetRealmComponentsRequest,
-            GetRealmComponentsResponse, GetRealmRequest, GetRealmResponse,
+            AddComponentToRealmRequest, AddComponentToRealmResponse, AddGroupRequest, AddGroupResponse, CreateRealmRequest, CreateRealmResponse, GetGroupsFromRealmRequest, GetGroupsFromRealmResponse, GetRealmComponentsRequest, GetRealmComponentsResponse, GetRealmRequest, GetRealmResponse
         },
-    },
-    transactions::request::SerializedResponse,
+    }, storage::graph::has_relation, transactions::request::SerializedResponse
 };
 use petgraph::Direction;
 use serde::{Deserialize, Serialize};
+use tracing::error;
 use ulid::Ulid;
 
 impl Request for CreateRealmRequest {
@@ -126,6 +121,9 @@ impl WriteRequest for CreateRealmRequestTx {
                 relation_types::GROUP_ADMINISTRATES_REALM,
             )?;
 
+            store.add_read_permission_universe(&mut wtxn, group_idx, &[realm_idx, group_idx])?;
+            store.add_read_permission_universe(&mut wtxn, realm_idx, &[realm_idx, group_idx])?;
+
             // Affected nodes: User, Realm and Group
 
             wtxn.commit(associated_event_id, &[user_idx, realm_idx, group_idx], &[])?;
@@ -206,6 +204,8 @@ impl WriteRequest for AddGroupRequestTx {
                 realm_idx,
                 relation_types::GROUP_PART_OF_REALM,
             )?;
+
+            store.add_read_permission_universe(&mut wtxn, realm_idx, &[group_idx])?;
 
             // Affected nodes: Realm and Group
             wtxn.commit(associated_event_id, &[realm_idx, group_idx], &[])?;
@@ -372,171 +372,103 @@ impl Request for GetRealmComponentsRequest {
     }
 }
 
-//     async fn add_group(
-//         &self,
-//         token: Option<String>,
-//         request: models::AddGroupRequest,
-//     ) -> Result<models::AddGroupResponse, ArunaError> {
-//         let transaction_id = u128::from_be_bytes(Ulid::new().to_bytes());
 
-//         let requester = self
-//             .authorize_token(token, &request)
-//             .await?
-//             .ok_or_else(|| {
-//                 tracing::error!("Requester not found");
-//                 ArunaError::Unauthorized
-//             })?;
+impl Request for AddComponentToRealmRequest {
+    type Response = AddComponentToRealmResponse;
+    fn get_context(&self) -> Context {
+        Context::Permission {
+            min_permission: crate::models::models::Permission::Admin,
+            source: self.realm_id,
+        }
+    }
 
-//         let TransactionOk::AddGroupResponse(response) = self
-//             .transaction(
-//                 transaction_id,
-//                 ArunaTransaction {
-//                     request: Requests::AddGroupRequest(request),
-//                     metadata: Metadata { requester },
-//                     generated_fields: None,
-//                 },
-//             )
-//             .await?
-//         else {
-//             tracing::error!("Unexpected response: Not AddGroupResponse");
-//             return Err(ArunaError::TransactionFailure(
-//                 "Unexpected response: Not AddGroupResponse".to_string(),
-//             ));
-//         };
-//         Ok(response)
-//     }
-// }
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let request_tx = AddComponentToRealmRequestTx {
+            req: self,
+            requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
+        };
 
-// pub trait ReadRealmHandler: Auth + Get {
-//     async fn get_realm(
-//         &self,
-//         token: Option<String>,
-//         request: models::GetRealmRequest,
-//     ) -> Result<models::GetRealmResponse, ArunaError> {
-//         let _ = self.authorize_token(token, &request).await?;
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
 
-//         let id = request.id;
-//         let Some(models::NodeVariantValue::Realm(realm)) = self.get(id).await? else {
-//             tracing::error!("Realm not found");
-//             return Err(ArunaError::NotFound(id.to_string()));
-//         };
-//         let groups = self
-//             .get_incoming_relations(
-//                 models::NodeVariantId::Realm(id),
-//                 vec![GROUP_PART_OF_REALM, GROUP_ADMINISTRATES_REALM],
-//             )
-//             .await
-//             .into_iter()
-//             .map(|rel| *rel.source.get_ref())
-//             .collect();
+        Ok(bincode::deserialize(&response)?)
+    }
+}
 
-//         Ok(models::GetRealmResponse { realm, groups })
-//     }
-// }
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AddComponentToRealmRequestTx {
+    req: AddComponentToRealmRequest,
+    requester: Requester,
+}
 
-// impl ReadRealmHandler for Controller {}
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for AddComponentToRealmRequestTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, crate::error::ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
 
-// impl WriteRealmRequestHandler for Controller {}
+        let component_id = self.req.component_id;
+        let realm_id = self.req.realm_id;
+        let requester_id = self.requester.get_id().ok_or_else(|| {
+            error!("Requester not found");
+            ArunaError::Unauthorized
+        })?;
+        let store = controller.get_store();
+        Ok(tokio::task::spawn_blocking(move || {
+            // Create realm, add user to realm
 
-// pub trait WriteRealmExecuteHandler: Get + Auth {
-//     async fn create_realm(
-//         &self,
-//         request: models::CreateRealmRequest,
-//         metadata: Metadata,
-//         fields: Option<Vec<Fields>>,
-//     ) -> Result<TransactionOk, ArunaError>;
-//     async fn add_group(
-//         &self,
-//         request: models::AddGroupRequest,
-//         metadata: Metadata,
-//         fields: Option<Vec<Fields>>,
-//     ) -> Result<TransactionOk, ArunaError>;
-// }
+            let mut wtxn = store.write_txn()?;
 
-// impl WriteRealmExecuteHandler for Controller {
-//     async fn create_realm(
-//         &self,
-//         request: models::CreateRealmRequest,
-//         metadata: Metadata,
-//         fields: Option<Vec<Fields>>,
-//     ) -> Result<TransactionOk, ArunaError> {
-//         let Requester::User { user_id, .. } = metadata.requester else {
-//             tracing::error!("User not found");
-//             return Err(ArunaError::TransactionFailure("User not found".to_string()));
-//         };
-//         self.authorize(&metadata.requester, &request).await?;
+            let Some(component_idx) = store.get_idx_from_ulid(&component_id, wtxn.get_txn()) else {
+                error!("Component not found");
+                return Err(ArunaError::NotFound(component_id.to_string()));
+            };
 
-//         let realm_id = get_realm_field(&fields)?;
-//         let group_id = get_group_field(&fields)?;
+            let Some(user_idx) = store.get_idx_from_ulid(&requester_id, wtxn.get_txn()) else {
+                error!("Component not found");
+                return Err(ArunaError::NotFound(component_id.to_string()));
+            };
 
-//         let realm = models::Realm {
-//             id: realm_id,
-//             tag: request.tag.clone(),
-//             name: request.name,
-//             description: request.description,
-//         };
-//         let admin_group = models::Group {
-//             id: group_id,
-//             name: format!("{}-admin-group", request.tag),
-//             description: String::new(),
-//         };
+            let Some(realm_idx) = store.get_idx_from_ulid(&realm_id, wtxn.get_txn()) else {
+                error!("Realm not found");
+                return Err(ArunaError::NotFound(realm_id.to_string()));
+            };
 
-//         let mut lock = self.store.write().await;
-//         let env = lock.view_store.get_env();
+            let component = store
+                .get_node::<Component>(wtxn.get_txn(), component_idx)
+                .ok_or_else(|| ArunaError::NotFound(component_id.to_string()))?;
 
-//         // Add nodes
-//         lock.view_store
-//             .add_node(models::NodeVariantValue::Realm(realm.clone()))?;
-//         lock.view_store
-//             .add_node(models::NodeVariantValue::Group(admin_group))?;
-//         lock.graph.add_node(models::NodeVariantId::Group(group_id));
-//         lock.graph.add_node(models::NodeVariantId::Realm(realm_id));
+            if !component.public && !has_relation(wtxn.get_ro_graph(), component_idx, user_idx, OWNED_BY_USER) {
+                error!("User does not own component");
+                return Err(ArunaError::Unauthorized);
+            };
 
-//         // Add relations
-//         lock.graph
-//             .add_relation(
-//                 models::NodeVariantId::User(user_id),
-//                 models::NodeVariantId::Group(group_id),
-//                 PERMISSION_ADMIN,
-//                 env.clone(),
-//             )
-//             .await?;
-//         lock.graph
-//             .add_relation(
-//                 models::NodeVariantId::Group(group_id),
-//                 models::NodeVariantId::Realm(realm_id),
-//                 GROUP_ADMINISTRATES_REALM,
-//                 env,
-//             )
-//             .await?;
+            // Add relation group --GROUP_PART_OF_REALM--> realm
+            store.create_relation(
+                &mut wtxn,
+                realm_idx,
+                component_idx,
+                relation_types::REALM_USES_COMPONENT,
+            )?;
 
-//         Ok(TransactionOk::CreateRealmResponse(
-//             models::CreateRealmResponse {
-//                 realm,
-//                 admin_group_id: group_id,
-//             },
-//         ))
-//     }
+            store.add_read_permission_universe(&mut wtxn, realm_idx, &[component_idx])?;
 
-//     async fn add_group(
-//         &self,
-//         request: models::AddGroupRequest,
-//         metadata: Metadata,
-//         _fields: Option<Vec<Fields>>,
-//     ) -> Result<TransactionOk, ArunaError> {
-//         self.authorize(&metadata.requester, &request).await?;
+            // Affected nodes: Realm and Group
+            wtxn.commit(associated_event_id, &[realm_idx, component_idx], &[])?;
 
-//         let mut lock = self.store.write().await;
-//         let env = lock.view_store.get_env();
-//         lock.graph
-//             .add_relation(
-//                 models::NodeVariantId::Group(request.group_id),
-//                 models::NodeVariantId::Realm(request.realm_id),
-//                 GROUP_PART_OF_REALM,
-//                 env.clone(),
-//             )
-//             .await?;
-
-//         Ok(TransactionOk::AddGroupResponse(models::AddGroupResponse {}))
-//     }
-// }
+            Ok::<_, ArunaError>(bincode::serialize(&AddComponentToRealmResponse {})?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
+    }
+}

@@ -512,6 +512,40 @@ pub async fn get_realm_components(
     )
 }
 
+
+/// Add a component to a realm (dataproxies, etc)
+#[utoipa::path(
+    patch,
+    path = "/realms/{id}/components/{component_id}",
+    params(
+        ("id" = Ulid, Path, description = "Realm ID"),
+        ("component_id" = Ulid, Path, description = "Component ID"),
+    ),
+    responses(
+        (status = 200, body = AddComponentToRealmResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+    tag = REALMS,
+)]
+pub async fn add_component_to_realm(
+    Path((id, component_id)): Path<(Ulid, Ulid)>,
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(
+        state
+            .request(
+                AddComponentToRealmRequest { realm_id: id, component_id },
+                extract_token(&header),
+            )
+            .await,
+    )
+}
+
 /// Get relations of a resource
 #[utoipa::path(
     get,

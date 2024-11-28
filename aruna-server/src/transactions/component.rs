@@ -82,7 +82,6 @@ impl WriteRequest for CreateComponentRequestTx {
 
             let idx = store.create_node(&mut wtxn, &component)?;
 
-            // Add relation realm --USES COMPONENT--> component
             store.create_relation(&mut wtxn, idx, requester_idx, relation_types::OWNED_BY_USER)?;
 
             // Add a listener if the component is a proxy

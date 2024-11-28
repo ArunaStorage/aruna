@@ -8,7 +8,7 @@ use crate::{
     error::ArunaError,
     logerr,
     models::{
-        models::{NodeVariant, Resource},
+        models::{DataLocation, NodeVariant, Resource, SyncingStatus},
         requests::{
             CreateProjectRequest, CreateProjectResponse, CreateRelationRequest,
             CreateRelationResponse, CreateResourceBatchRequest, CreateResourceBatchResponse,
@@ -18,14 +18,14 @@ use crate::{
             UpdateResourceResponse,
         },
     },
-    storage::graph::{get_parent, get_related_user_or_groups},
+    storage::graph::{get_parent, get_related_user_or_groups, has_relation},
     transactions::request::WriteRequest,
 };
 use ahash::RandomState;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::info;
+use tracing::{error, info};
 use ulid::Ulid;
 
 impl Request for CreateProjectRequest {
@@ -80,7 +80,7 @@ impl WriteRequest for CreateProjectRequestTx {
             }
         })?;
 
-        let project = Resource {
+        let mut project = Resource {
             id: self.project_id,
             name: self.req.name.clone(),
             description: self.req.description.clone(),
@@ -104,6 +104,10 @@ impl WriteRequest for CreateProjectRequestTx {
         let group_id = self.req.group_id;
         let realm_id = self.req.realm_id;
 
+        let endpoint = self.req.data_endpoint.clone();
+
+        let requester = self.requester.clone();
+
         let store = controller.get_store();
         Ok(tokio::task::spawn_blocking(move || {
             // Create project
@@ -116,7 +120,51 @@ impl WriteRequest for CreateProjectRequestTx {
             };
             // Get the realm
             let Some(realm_idx) = store.get_idx_from_ulid(&realm_id, wtxn.get_txn()) else {
+                error!("Realm not found: {}", realm_id);
                 return Err(ArunaError::NotFound(group_id.to_string()));
+            };
+
+            // Validate that the data endpoint is part of the realm
+            let endpont_id = if let Some(data_endpoint) = endpoint {
+                let Some(data_endpoint_idx) =
+                    store.get_idx_from_ulid(&data_endpoint, wtxn.get_txn())
+                else {
+                    error!("Data endpoint not found: {}", data_endpoint);
+                    return Err(ArunaError::NotFound(data_endpoint.to_string()));
+                };
+
+                if !has_relation(
+                    wtxn.get_ro_graph(),
+                    realm_idx,
+                    data_endpoint_idx,
+                    relation_types::REALM_USES_COMPONENT,
+                ) {
+                    error!("Realm does not use this data endpoint");
+                    return Err(ArunaError::InvalidParameter {
+                        name: "data_endpoint".to_string(),
+                        error: "Realm does not use this data endpoint".to_string(),
+                    });
+                }
+
+                let status = requester
+                    .get_impersonator()
+                    .map(|impersonator| {
+                        if impersonator == data_endpoint {
+                            SyncingStatus::Finished
+                        } else {
+                            SyncingStatus::Pending
+                        }
+                    })
+                    .unwrap_or(SyncingStatus::Pending);
+
+                project.location = vec![DataLocation {
+                    endpoint_id: data_endpoint,
+                    status,
+                }];
+
+                Some(data_endpoint_idx)
+            } else {
+                None
             };
 
             // Check that name is unique
@@ -163,11 +211,18 @@ impl WriteRequest for CreateProjectRequestTx {
                 }
             };
 
+            // Notify the endpoint if user wants to add a data endpoint
+            let additional_affected = if let Some(endpoint_idx) = endpont_id {
+                vec![endpoint_idx]
+            } else {
+                vec![]
+            };
+
             // Affected nodes: Group, Realm, Project
             wtxn.commit(
                 associated_event_id,
                 &[realm_idx, group_idx, project_idx],
-                &[],
+                &additional_affected,
             )?;
             // Create admin group, add user to admin group
             Ok::<_, ArunaError>(bincode::serialize(&CreateProjectResponse {
@@ -835,263 +890,3 @@ impl WriteRequest for UpdateResourceTx {
         })??)
     }
 }
-
-//
-// use super::auth::Auth;
-// use super::controller::{Get, Transaction};
-// use super::transaction::{ArunaTransaction, Fields, Metadata, Requests, TransactionOk};
-// use super::utils::{get_created_at_field, get_resource_field};
-// use crate::error::ArunaError;
-// use crate::models::{self, HAS_PART, OWNS_PROJECT};
-// use crate::requests::controller::Controller;
-// use ulid::Ulid;
-
-// Trait auth
-// Trait <Get>
-// Trait <Transaction>
-
-// pub trait ReadResourceHandler: Auth + Get {
-//     async fn get_resource(
-//         &self,
-//         token: Option<String>,
-//         request: models::GetResourceRequest,
-//     ) -> Result<models::GetResourceResponse, ArunaError> {
-//         let _ = self.authorize_token(token, &request).await?;
-
-//         let id = request.id;
-//         let Some(models::NodeVariantValue::Resource(resource)) = self.get(id).await? else {
-//             tracing::error!("Resource not found: {}", id);
-//             return Err(ArunaError::NotFound(id.to_string()));
-//         };
-
-//         Ok(models::GetResourceResponse {
-//             resource,
-//             relations: vec![], // TODO: Add get_relations to Get trait
-//         })
-//     }
-// }
-
-// pub trait WriteResourceRequestHandler: Transaction + Auth + Get {
-//     async fn create_resource(
-//         &self,
-//         token: Option<String>,
-//         request: models::CreateResourceRequest,
-//     ) -> Result<models::CreateResourceResponse, ArunaError> {
-//         let transaction_id = u128::from_be_bytes(Ulid::new().to_bytes());
-//         let resource_id = Ulid::new();
-//         let created_at = chrono::Utc::now().timestamp();
-
-//         // TODO: Auth
-
-//         let requester = self
-//             .authorize_token(token, &request)
-//             .await?
-//             .ok_or_else(|| {
-//                 tracing::error!("Requester not found");
-//                 ArunaError::Unauthorized
-//             })?;
-
-//         let TransactionOk::CreateResourceResponse(response) = self
-//             .transaction(
-//                 transaction_id,
-//                 ArunaTransaction {
-//                     request: Requests::CreateResourceRequest(request),
-//                     metadata: Metadata { requester },
-//                     generated_fields: Some(vec![
-//                         Fields::ResourceId(resource_id),
-//                         Fields::CreatedAt(created_at),
-//                     ]),
-//                 },
-//             )
-//             .await?
-//         else {
-//             tracing::error!("Unexpected response: Not CreateResourceResponse");
-//             return Err(ArunaError::TransactionFailure(
-//                 "Unexpected response: Not CreateResourceResponse".to_string(),
-//             ));
-//         };
-//         Ok(response)
-//     }
-
-//     async fn create_project(
-//         &self,
-//         token: Option<String>,
-//         request: models::CreateProjectRequest,
-//     ) -> Result<models::CreateProjectResponse, ArunaError> {
-//         let transaction_id = u128::from_be_bytes(Ulid::new().to_bytes());
-//         let resource_id = Ulid::new();
-//         let created_at = chrono::Utc::now().timestamp();
-
-//         // TODO: Auth
-
-//         let requester = self
-//             .authorize_token(token, &request)
-//             .await?
-//             .ok_or_else(|| {
-//                 tracing::error!("Requester not found");
-//                 ArunaError::Unauthorized
-//             })?;
-
-//         let TransactionOk::CreateProjectResponse(response) = self
-//             .transaction(
-//                 transaction_id,
-//                 ArunaTransaction {
-//                     request: Requests::CreateProjectRequest(request),
-//                     metadata: Metadata { requester },
-//                     generated_fields: Some(vec![
-//                         Fields::ResourceId(resource_id),
-//                         Fields::CreatedAt(created_at),
-//                     ]),
-//                 },
-//             )
-//             .await?
-//         else {
-//             tracing::error!("Unexpected response: Not CreateProjectResponse");
-//             return Err(ArunaError::TransactionFailure(
-//                 "Unexpected response: Not CreateProjectResponse".to_string(),
-//             ));
-//         };
-//         Ok(response)
-//     }
-// }
-
-// impl ReadResourceHandler for Controller {}
-
-// impl WriteResourceRequestHandler for Controller {}
-
-// pub trait WriteResourceExecuteHandler: Auth + Get {
-//     async fn create_resource(
-//         &self,
-//         request: models::CreateResourceRequest,
-//         metadata: Metadata,
-//         fields: Option<Vec<Fields>>,
-//     ) -> Result<TransactionOk, ArunaError>;
-//     async fn create_project(
-//         &self,
-//         request: models::CreateProjectRequest,
-//         metadata: Metadata,
-//         fields: Option<Vec<Fields>>,
-//     ) -> Result<TransactionOk, ArunaError>;
-// }
-
-// impl WriteResourceExecuteHandler for Controller {
-//     async fn create_resource(
-//         &self,
-//         request: models::CreateResourceRequest,
-//         metadata: Metadata,
-//         fields: Option<Vec<Fields>>,
-//     ) -> Result<TransactionOk, ArunaError> {
-//         self.authorize(&metadata.requester, &request).await?;
-
-//         let resource_id = get_resource_field(&fields)?;
-//         let created_at = get_created_at_field(&fields)?;
-
-//         let status = match request.variant {
-//             models::ResourceVariant::Folder => models::ResourceStatus::StatusAvailable,
-//             models::ResourceVariant::Object => models::ResourceStatus::StatusInitializing,
-//             _ => {
-//                 tracing::error!("Unexpected resource type");
-//                 return Err(ArunaError::TransactionFailure(
-//                     "Unexpected resource type".to_string(),
-//                 ));
-//             }
-//         };
-//         let resource = models::Resource {
-//             id: resource_id,
-//             name: request.name,
-//             title: request.title,
-//             description: request.description,
-//             revision: 0,
-//             variant: request.variant,
-//             labels: request.labels,
-//             hook_status: Vec::new(),
-//             identifiers: request.identifiers,
-//             content_len: 0,
-//             count: 0,
-//             visibility: request.visibility,
-//             created_at,
-//             last_modified: created_at,
-//             authors: request.authors,
-//             status,
-//             locked: false,
-//             license_tag: request.license_tag,
-//             endpoint_status: Vec::new(),
-//             hashes: Vec::new(),
-//         };
-
-//         let mut lock = self.store.write().await;
-//         let env = lock.view_store.get_env();
-//         lock.view_store
-//             .add_node(models::NodeVariantValue::Resource(resource.clone()))?;
-//         // TODO: Create Admin group and set user as admin for this group
-//         lock.graph
-//             .add_node(models::NodeVariantId::Resource(resource_id));
-//         lock.graph
-//             .add_relation(
-//                 models::NodeVariantId::Resource(request.parent_id),
-//                 models::NodeVariantId::Resource(resource_id),
-//                 HAS_PART,
-//                 env,
-//             )
-//             .await?;
-
-//         Ok(TransactionOk::CreateResourceResponse(
-//             models::CreateResourceResponse { resource },
-//         ))
-//     }
-
-//     async fn create_project(
-//         &self,
-//         request: models::CreateProjectRequest,
-//         metadata: Metadata,
-//         fields: Option<Vec<Fields>>,
-//     ) -> Result<TransactionOk, ArunaError> {
-//         self.authorize(&metadata.requester, &request).await?;
-
-//         let resource_id = get_resource_field(&fields)?;
-//         let created_at = get_created_at_field(&fields)?;
-
-//         let resource = models::Resource {
-//             id: resource_id,
-//             name: request.name,
-//             title: request.title,
-//             description: request.description,
-//             revision: 0,
-//             variant: models::ResourceVariant::Project,
-//             labels: request.labels,
-//             hook_status: Vec::new(),
-//             identifiers: request.identifiers,
-//             content_len: 0,
-//             count: 0,
-//             visibility: request.visibility,
-//             created_at,
-//             last_modified: created_at,
-//             authors: request.authors,
-//             status: models::ResourceStatus::StatusAvailable,
-//             locked: false,
-//             license_tag: request.license_tag,
-//             endpoint_status: Vec::new(),
-//             hashes: Vec::new(),
-//         };
-
-//         let mut lock = self.store.write().await;
-//         let env = lock.view_store.get_env();
-//         lock.view_store
-//             .add_node(models::NodeVariantValue::Resource(resource.clone()))?;
-//         // TODO: Create Admin group and set user as admin for this group
-//         lock.graph
-//             .add_node(models::NodeVariantId::Resource(resource_id));
-//         lock.graph
-//             .add_relation(
-//                 models::NodeVariantId::Group(request.group_id),
-//                 models::NodeVariantId::Resource(resource_id),
-//                 OWNS_PROJECT,
-//                 env,
-//             )
-//             .await?;
-
-//         Ok(TransactionOk::CreateProjectResponse(
-//             models::CreateProjectResponse { resource },
-//         ))
-//     }
-// }

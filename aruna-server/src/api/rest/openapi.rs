@@ -60,5 +60,6 @@ pub fn router(store: Arc<Controller>) -> OpenApiRouter {
         .routes(routes!(create_relation_variant))
         .routes(routes!(create_component))
         .routes(routes!(add_user))
+        .routes(routes!(add_component_to_realm))
         .with_state(store)
 }

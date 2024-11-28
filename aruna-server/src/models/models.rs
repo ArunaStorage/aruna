@@ -58,6 +58,7 @@ impl TryFrom<u8> for ResourceVariant {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "type")]
 pub enum GenericNode {
     Resource(Resource),
     User(User),
@@ -596,7 +597,7 @@ pub enum SyncingStatus {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct DataLocation {
-    pub endpoint_id: String,
+    pub endpoint_id: Ulid,
     pub status: SyncingStatus,
 }
 
