@@ -18,7 +18,7 @@ use crate::{
             UpdateResourceResponse,
         },
     },
-    storage::graph::{get_parents, get_related_user_or_groups},
+    storage::graph::{get_parent, get_related_user_or_groups},
     transactions::request::WriteRequest,
 };
 use ahash::RandomState;
@@ -164,13 +164,11 @@ impl WriteRequest for CreateProjectRequestTx {
             };
 
             // Affected nodes: Group, Realm, Project
-            store.register_event(
-                &mut wtxn,
+            wtxn.commit(
                 associated_event_id,
                 &[realm_idx, group_idx, project_idx],
+                &[],
             )?;
-
-            wtxn.commit()?;
             // Create admin group, add user to admin group
             Ok::<_, ArunaError>(bincode::serialize(&CreateProjectResponse {
                 resource: project,
@@ -315,7 +313,7 @@ impl WriteRequest for CreateResourceRequestTx {
             // 2. Check if any of the resources in the universe have the same parent as a parent
             for idx in universe {
                 // We need to use this because we have a lock on the store
-                if get_parents(wtxn.get_ro_graph(), idx).contains(&parent_idx) {
+                if get_parent(wtxn.get_ro_graph(), idx) == Some(parent_idx) {
                     return Err(ArunaError::ConflictParameter {
                         name: "name".to_string(),
                         error: "Resource with this name already exists in this hierarchy"
@@ -353,9 +351,7 @@ impl WriteRequest for CreateResourceRequestTx {
             };
 
             // Affected nodes: Group, Project
-            store.register_event(&mut wtxn, associated_event_id, &[parent_idx, resource_idx])?;
-
-            wtxn.commit()?;
+            wtxn.commit(associated_event_id, &[parent_idx, resource_idx], &[])?;
             Ok::<_, ArunaError>(bincode::serialize(&CreateResourceResponse { resource })?)
         })
         .await
@@ -611,7 +607,7 @@ impl WriteRequest for CreateResourceBatchRequestTx {
                     // 2. Check if any of the resources in the universe have the same parent as a parent
                     for idx in universe {
                         // We need to use this because we have a lock on the store
-                        if get_parents(wtxn.get_ro_graph(), idx).contains(&parent_idx) {
+                        if get_parent(wtxn.get_ro_graph(), idx) == Some(parent_idx) {
                             return Err(ArunaError::ConflictParameter {
                                 name: "name".to_string(),
                                 error: "Resource with this name already exists in this hierarchy"
@@ -655,9 +651,7 @@ impl WriteRequest for CreateResourceBatchRequestTx {
             }
 
             // Affected nodes: Group, Project
-            store.register_event(&mut wtxn, associated_event_id, &affected)?;
-
-            wtxn.commit()?;
+            wtxn.commit(associated_event_id, &affected, &[])?;
             Ok::<_, ArunaError>(bincode::serialize(&CreateResourceBatchResponse {
                 resources: resources.into_iter().map(|(_, r)| r).collect(),
             })?)
@@ -821,9 +815,7 @@ impl WriteRequest for UpdateResourceTx {
             }
 
             // Affected nodes: Group, Realm, Project
-            store.register_event(&mut wtxn, associated_event_id, &[resource_idx])?;
-
-            wtxn.commit()?;
+            wtxn.commit(associated_event_id, &[resource_idx], &[])?;
             // Create admin group, add user to admin group
             Ok::<_, ArunaError>(bincode::serialize(&UpdateResourceResponse {
                 resource: todo!(),

@@ -405,7 +405,7 @@ pub struct AddOidcProviderRequestTx {
 impl WriteRequest for AddOidcProviderRequestTx {
     async fn execute(
         &self,
-        _associated_event_id: u128,
+        associated_event_id: u128,
         controller: &Controller,
     ) -> Result<SerializedResponse, crate::error::ArunaError> {
         if let Some(requester) = &self.requester {
@@ -422,8 +422,9 @@ impl WriteRequest for AddOidcProviderRequestTx {
             let mut wtxn = store.write_txn()?;
 
             store.add_issuer(&mut wtxn, issuer_name, issuer_endpoint, audiences, keys)?;
+
             // TODO: Register event?
-            wtxn.commit()?;
+            wtxn.commit(associated_event_id, &[], &[])?;
 
             Ok::<_, ArunaError>(bincode::serialize(&AddOidcProviderResponse {})?)
         })

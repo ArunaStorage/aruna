@@ -61,7 +61,7 @@ impl WriteRequest for RegisterUserRequestTx {
     #[tracing::instrument(level = "trace", skip(self, controller))]
     async fn execute(
         &self,
-        event_id: u128,
+        associated_event_id: u128,
         controller: &Controller,
     ) -> Result<SerializedResponse, crate::error::ArunaError> {
         tracing::trace!("Executing RegisterUserRequestTx");
@@ -106,10 +106,8 @@ impl WriteRequest for RegisterUserRequestTx {
             )?;
 
             // Affected nodes: User
-            store.register_event(&mut wtxn, event_id, &[user_idx])?;
-            store.add_event_to_subscribers(&mut wtxn, event_id, &[user_idx])?;
+            wtxn.commit(associated_event_id, &[user_idx], &[])?;
 
-            wtxn.commit()?;
             // Create admin group, add user to admin group
             Ok::<_, ArunaError>(bincode::serialize(&RegisterUserResponse { user })?)
         })
@@ -160,7 +158,7 @@ pub struct CreateTokenRequestTx {
 impl WriteRequest for CreateTokenRequestTx {
     async fn execute(
         &self,
-        event_id: u128,
+        associated_event_id: u128,
         controller: &Controller,
     ) -> Result<SerializedResponse, crate::error::ArunaError> {
         controller.authorize(&self.requester, &self.req).await?;
@@ -183,11 +181,19 @@ impl WriteRequest for CreateTokenRequestTx {
         Ok(tokio::task::spawn_blocking(move || {
             let mut wtxn = store.write_txn()?;
 
-            // Create user
-            let token = store.add_token(wtxn.get_txn(), event_id, &token.user_id.clone(), token)?;
+            // Create token
+            let user_idx = store
+                .get_idx_from_ulid(&user_id, wtxn.get_txn())
+                .ok_or_else(|| ArunaError::NotFound("User not found".to_string()))?;
+            let token = store.add_token(
+                wtxn.get_txn(),
+                associated_event_id,
+                &token.user_id.clone(),
+                token,
+            )?;
             // Add event to user
 
-            wtxn.commit()?;
+            wtxn.commit(associated_event_id, &[user_idx], &[])?;
 
             let secret = TokenHandler::sign_user_token(
                 &store,

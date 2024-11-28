@@ -91,12 +91,8 @@ impl WriteRequest for CreateComponentRequestTx {
                 store.add_public_resources_universe(&mut wtxn, &[idx])?;
             }
 
-            // Affected nodes: Realm and Group
-            store.add_event_to_subscribers(&mut wtxn, associated_event_id, &[requester_idx])?;
-            store.register_event(&mut wtxn, associated_event_id, &[requester_idx])?;
+            wtxn.commit(associated_event_id, &[requester_idx], &[])?;
 
-            wtxn.commit()?;
-            // Create admin group, add user to admin group
             Ok::<_, ArunaError>(bincode::serialize(&CreateComponentResponse { component })?)
         })
         .await

@@ -11,7 +11,7 @@ use crate::{
     },
     transactions::{controller::KeyConfig, request::Requester},
 };
-use ahash::RandomState;
+use ahash::{HashSet, RandomState};
 use chrono::NaiveDateTime;
 use heed::{
     byteorder::BigEndian,
@@ -42,7 +42,7 @@ use std::{
 };
 use ulid::Ulid;
 
-use super::graph::{get_permissions, get_realm_and_groups, IndexHelper};
+use super::graph::{get_permissions, get_realm_and_groups, get_subtree, IndexHelper};
 
 pub struct WriteTxn<'a> {
     milli_index: &'a Index,
@@ -51,6 +51,9 @@ pub struct WriteTxn<'a> {
     relation_idx: &'a AtomicU64,
     relations: &'a Database<BEU64, SerdeBincode<RawRelation>>,
     documents: &'a Database<BEU32, ObkvCodec>,
+    events: &'a Database<BEU32, U128<BigEndian>>,
+    subscribers: &'a Database<U128<BigEndian>, SerdeBincode<Vec<u128>>>,
+    single_entry_database: &'a Database<Unspecified, Unspecified>,
     nodes: Vec<NodeIndex>,
     added_edges: Vec<EdgeIndex>,
     removed_edges: Vec<(NodeIndex, NodeIndex, EdgeType)>,
@@ -86,7 +89,47 @@ impl<'a> WriteTxn<'a> {
         &self.graph_lock
     }
 
-    pub fn commit(mut self) -> Result<(), ArunaError> {
+    pub fn commit(
+        mut self,
+        event_id: u128,
+        targets: &[u32],
+        additional_affected: &[u32],
+    ) -> Result<(), ArunaError> {
+        let mut txn = self.txn.take().expect("Transaction already committed");
+
+        let mut affected = HashSet::from_iter(targets.iter().cloned());
+        affected.extend(additional_affected.iter().cloned());
+        for target in targets {
+            self.events
+                .put(&mut txn, target, &event_id)
+                .inspect_err(logerr!())?;
+            affected.extend(get_subtree(&self.graph_lock, *target)?);
+        }
+
+        let db = self
+            .single_entry_database
+            .remap_types::<Str, SerdeBincode<Vec<Subscriber>>>();
+
+        let subscribers = db
+            .get(&txn, single_entry_names::SUBSCRIBER_CONFIG)
+            .inspect_err(logerr!())?;
+
+        if let Some(subscribers) = subscribers {
+            for subscriber in subscribers {
+                if affected.contains(&subscriber.target_idx) {
+                    let mut subscriber_events = self
+                        .subscribers
+                        .get(&txn, &subscriber.id.0)
+                        .inspect_err(logerr!())?
+                        .unwrap_or_default();
+                    subscriber_events.push(event_id);
+                    self.subscribers
+                        .put(&mut txn, &subscriber.id.0, &subscriber_events)
+                        .inspect_err(logerr!())?;
+                }
+            }
+        }
+
         let txn = self.txn.take().expect("Transaction already committed");
         txn.commit().inspect_err(logerr!())?;
         self.committed = true;
@@ -290,6 +333,9 @@ impl Store {
             relation_idx: &self.relation_idx,
             relations: &self.relations,
             documents: &self.milli_index.documents,
+            events: &self.events,
+            subscribers: &self.subscribers,
+            single_entry_database: &self.single_entry_database,
             nodes: Vec::new(),
             added_edges: Vec::new(),
             removed_edges: Vec::new(),
@@ -389,7 +435,7 @@ impl Store {
         for<'b> &'b T: TryInto<serde_json::Map<String, Value>, Error = ArunaError>,
     {
         let indexer_config = IndexerConfig::default();
-        
+
         let builder = IndexDocuments::new(
             wtxn.get_txn(),
             &self.milli_index,
@@ -1123,41 +1169,41 @@ impl Store {
     }
 
     // Adds the event to all subscribers that are interested in the target_ids
-    #[tracing::instrument(level = "trace", skip(self, wtxn))]
-    pub fn add_event_to_subscribers(
-        &self,
-        wtxn: &mut WriteTxn,
-        event_id: u128,
-        target_idxs: &[u32], // The target indexes that the event is related to
-    ) -> Result<(), ArunaError> {
-        let mut wtxn = wtxn.get_txn();
+    // #[tracing::instrument(level = "trace", skip(self, wtxn))]
+    // pub fn add_event_to_subscribers(
+    //     &self,
+    //     wtxn: &mut WriteTxn,
+    //     event_id: u128,
+    //     target_idxs: &[u32], // The target indexes that the event is related to
+    // ) -> Result<(), ArunaError> {
+    //     let mut wtxn = wtxn.get_txn();
 
-        let subscribers_db = self
-            .single_entry_database
-            .remap_types::<Str, SerdeBincode<Vec<Subscriber>>>();
-        let all_subscribers = subscribers_db
-            .get(&wtxn, single_entry_names::SUBSCRIBER_CONFIG)
-            .inspect_err(logerr!())?
-            .unwrap_or_default();
+    //     let subscribers_db = self
+    //         .single_entry_database
+    //         .remap_types::<Str, SerdeBincode<Vec<Subscriber>>>();
+    //     let all_subscribers = subscribers_db
+    //         .get(&wtxn, single_entry_names::SUBSCRIBER_CONFIG)
+    //         .inspect_err(logerr!())?
+    //         .unwrap_or_default();
 
-        all_subscribers
-            .into_iter()
-            .filter(|s| target_idxs.contains(&s.target_idx))
-            .try_for_each(|s| {
-                let mut subscribers = self
-                    .subscribers
-                    .get(&wtxn, &s.id.0)
-                    .inspect_err(logerr!())?
-                    .unwrap_or_default();
-                subscribers.push(event_id);
-                self.subscribers
-                    .put(&mut wtxn, &s.id.0, &subscribers)
-                    .inspect_err(logerr!())?;
-                Ok::<_, ArunaError>(())
-            })?;
+    //     all_subscribers
+    //         .into_iter()
+    //         .filter(|s| target_idxs.contains(&s.target_idx))
+    //         .try_for_each(|s| {
+    //             let mut subscribers = self
+    //                 .subscribers
+    //                 .get(&wtxn, &s.id.0)
+    //                 .inspect_err(logerr!())?
+    //                 .unwrap_or_default();
+    //             subscribers.push(event_id);
+    //             self.subscribers
+    //                 .put(&mut wtxn, &s.id.0, &subscribers)
+    //                 .inspect_err(logerr!())?;
+    //             Ok::<_, ArunaError>(())
+    //         })?;
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     // This can also be used to acknowledge events
     #[tracing::instrument(level = "trace", skip(self, wtxn))]

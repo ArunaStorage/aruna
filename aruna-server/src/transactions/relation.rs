@@ -189,9 +189,8 @@ impl WriteRequest for CreateRelationTx {
                 }
             }
             store.create_relation(&mut wtxn, source_idx, target_idx, variant)?;
-            store.register_event(&mut wtxn, associated_event_id, &[source_idx, target_idx])?;
 
-            wtxn.commit()?;
+            wtxn.commit(associated_event_id, &[source_idx, target_idx], &[])?;
 
             Ok::<_, ArunaError>(bincode::serialize(&CreateRelationResponse {})?)
         })
@@ -234,7 +233,7 @@ pub struct CreateRelationVariantTx {
 impl WriteRequest for CreateRelationVariantTx {
     async fn execute(
         &self,
-        _associated_event_id: u128,
+        associated_event_id: u128,
         controller: &Controller,
     ) -> Result<SerializedResponse, crate::error::ArunaError> {
         controller.authorize(&self.requester, &self.req).await?;
@@ -262,7 +261,7 @@ impl WriteRequest for CreateRelationVariantTx {
             };
             store.create_relation_variant(&mut wtxn, info)?;
 
-            wtxn.commit()?;
+            wtxn.commit(associated_event_id, &[], &[])?;
             Ok::<_, ArunaError>(bincode::serialize(&CreateRelationVariantResponse { idx })?)
         })
         .await

@@ -8,12 +8,11 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use std::sync::Arc;
 use tags::{GLOBAL, GROUPS, INFO, REALMS, RESOURCES, USERS};
 use ulid::Ulid;
-use std::sync::Arc;
 
 use super::utils::{extract_token, into_axum_response};
-
 
 mod tags {
     pub const RESOURCES: &str = "resources";
@@ -201,7 +200,11 @@ pub async fn get_realm(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(GetRealmRequest{id}, extract_token(&header)).await)
+    into_axum_response(
+        state
+            .request(GetRealmRequest { id }, extract_token(&header))
+            .await,
+    )
 }
 
 /// Add group to realm
@@ -227,7 +230,14 @@ pub async fn add_group(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(AddGroupRequest{realm_id, group_id}, extract_token(&header)).await)
+    into_axum_response(
+        state
+            .request(
+                AddGroupRequest { realm_id, group_id },
+                extract_token(&header),
+            )
+            .await,
+    )
 }
 
 /// Create a new  
@@ -274,7 +284,11 @@ pub async fn get_group(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(GetGroupRequest{id}, extract_token(&header)).await)
+    into_axum_response(
+        state
+            .request(GetGroupRequest { id }, extract_token(&header))
+            .await,
+    )
 }
 
 /// Register a new user
@@ -324,7 +338,18 @@ pub async fn add_user(
     Query(permission): Query<Permission>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(AddUserRequest{group_id, user_id, permission}, extract_token(&header)).await)
+    into_axum_response(
+        state
+            .request(
+                AddUserRequest {
+                    group_id,
+                    user_id,
+                    permission,
+                },
+                extract_token(&header),
+            )
+            .await,
+    )
 }
 
 /// Create a token
@@ -477,7 +502,14 @@ pub async fn get_realm_components(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(GetRealmComponentsRequest{realm_id: id}, extract_token(&header)).await)
+    into_axum_response(
+        state
+            .request(
+                GetRealmComponentsRequest { realm_id: id },
+                extract_token(&header),
+            )
+            .await,
+    )
 }
 
 /// Get relations of a resource
@@ -527,7 +559,14 @@ pub async fn get_group_users(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(GetUsersFromGroupRequest{group_id}, extract_token(&header)).await)
+    into_axum_response(
+        state
+            .request(
+                GetUsersFromGroupRequest { group_id },
+                extract_token(&header),
+            )
+            .await,
+    )
 }
 
 /// Get groups from realm
@@ -552,7 +591,14 @@ pub async fn get_realm_groups(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(GetGroupsFromRealmRequest{realm_id}, extract_token(&header)).await)
+    into_axum_response(
+        state
+            .request(
+                GetGroupsFromRealmRequest { realm_id },
+                extract_token(&header),
+            )
+            .await,
+    )
 }
 
 /// Get relation info
@@ -580,7 +626,7 @@ pub async fn get_relation_infos(
     )
 }
 
-/// Get current user 
+/// Get current user
 #[utoipa::path(
     get,
     path = "/users",

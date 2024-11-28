@@ -69,7 +69,10 @@ mod read_tests {
             .await
             .unwrap();
 
-        assert!(response.groups.iter().any(|(g, p) | g.id == Ulid::from_string(&group_id).unwrap() && p == &Permission::Admin))
+        assert!(response
+            .groups
+            .iter()
+            .any(|(g, p)| g.id == Ulid::from_string(&group_id).unwrap() && p == &Permission::Admin))
     }
 
     #[tokio::test(flavor = "multi_thread")]
