@@ -8,6 +8,7 @@ mod create_tests {
     };
     use aruna_server::models::requests::{
         BatchResource, CreateResourceBatchRequest, CreateResourceBatchResponse,
+        UpdateResourceRequest,
     };
     use ulid::Ulid;
     pub const OFFSET: u16 = 0;
@@ -164,6 +165,12 @@ mod create_tests {
             .unwrap();
 
         assert_eq!(request.name, resource.name);
+
+        let request = UpdateResourceRequest {
+            id: Ulid::from_string(&resource.id).unwrap(),
+            name: "NewName".to_string(),
+            ..Default::default()
+        };
     }
 
     #[tokio::test(flavor = "multi_thread")]

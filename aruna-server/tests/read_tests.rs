@@ -5,7 +5,7 @@ mod read_tests {
 
     use crate::common::{init_test, ADMIN_TOKEN, REGULAR_TOKEN};
     use aruna_rust_api::v3::aruna::api::v3::{
-        AddGroupRequest, CreateGroupRequest, CreateGroupResponse, CreateProjectRequest,
+        AddGroupRequest, CreateGroupRequest, CreateProjectRequest,
         CreateRealmRequest, GetRealmRequest, Realm,
     };
     use aruna_server::models::{models::Permission, requests::{ CreateGroupRequest as ModelsCreateGroupRequest, CreateGroupResponse as ModelsCreateGroupResponse,

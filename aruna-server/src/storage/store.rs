@@ -22,7 +22,7 @@ use jsonwebtoken::{DecodingKey, EncodingKey};
 use milli::{
     documents::{DocumentsBatchBuilder, DocumentsBatchReader},
     execute_search, filtered_universe,
-    update::{IndexDocuments, IndexDocumentsConfig, IndexerConfig},
+    update::{IndexDocuments, IndexDocumentsConfig, IndexDocumentsMethod, IndexerConfig},
     CboRoaringBitmapCodec, DefaultSearchLogger, Filter, GeoSortStrategy, Index, ObkvCodec,
     SearchContext, TermsMatchingStrategy, TimeBudget, BEU32, BEU64,
 };
@@ -1197,6 +1197,50 @@ impl Store {
         self.relation_infos
             .put(wtxn.get_txn(), &info.idx, &info)
             .inspect_err(logerr!())?;
+
+        Ok(())
+    }
+
+
+    #[tracing::instrument(level = "trace", skip(self, wtxn))]
+    pub fn update_node_field<'a>(
+        &'a self,
+        wtxn: &mut WriteTxn<'a>,
+        node_id: Ulid,
+        json_object: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<(), ArunaError>
+    {
+        let indexer_config = IndexerConfig::default();
+        let mut documents_config = IndexDocumentsConfig::default();
+        documents_config.update_method = IndexDocumentsMethod::UpdateDocuments;
+        let builder = IndexDocuments::new(
+            wtxn.get_txn(),
+            &self.milli_index,
+            &indexer_config,
+            IndexDocumentsConfig::default(),
+            |_| (),
+            || false,
+        )?;
+
+        // Create a document batch
+        let mut documents_batch = DocumentsBatchBuilder::new(Vec::new());
+        // Add the json object to the batch
+        documents_batch.append_json_object(&json_object)?;
+        // Create a reader for the batch
+        let reader = DocumentsBatchReader::from_reader(Cursor::new(documents_batch.into_inner()?))
+            .map_err(|_| {
+                tracing::error!(?node_id, "Unable to index document");
+                ArunaError::DatabaseError("Unable to index document".to_string())
+            })?;
+        // Add the batch to the reader
+        let (builder, error) = builder.add_documents(reader)?;
+        error.map_err(|e| {
+            tracing::error!(?node_id, ?e, "Error adding document");
+            ArunaError::DatabaseError("Error adding document".to_string())
+        })?;
+
+        // Execute the indexing
+        builder.execute()?;
 
         Ok(())
     }
