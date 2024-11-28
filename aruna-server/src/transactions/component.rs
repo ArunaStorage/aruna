@@ -95,7 +95,6 @@ impl WriteRequest for CreateComponentRequestTx {
             store.add_event_to_subscribers(&mut wtxn, associated_event_id, &[requester_idx])?;
             store.register_event(&mut wtxn, associated_event_id, &[requester_idx])?;
 
-
             wtxn.commit()?;
             // Create admin group, add user to admin group
             Ok::<_, ArunaError>(bincode::serialize(&CreateComponentResponse { component })?)

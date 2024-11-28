@@ -465,3 +465,12 @@ pub struct CreateComponentRequest {
 pub struct CreateComponentResponse {
     pub component: Component,
 }
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct AddComponentToRealmRequest {
+    pub realm_id: Ulid,
+    pub component_id: Ulid,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct AddComponentToRealmResponse {}

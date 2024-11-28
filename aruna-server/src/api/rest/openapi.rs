@@ -1,10 +1,15 @@
+use std::sync::Arc;
+
 use super::api_paths::*;
 use crate::models::models::*;
 use crate::models::requests::*;
+use crate::transactions::controller::Controller;
 use utoipa::{
     openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
     Modify, OpenApi,
 };
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -125,4 +130,38 @@ impl Modify for SecurityAddon {
             )
         }
     }
+}
+
+pub fn router(store: Arc<Controller>) -> OpenApiRouter {
+    OpenApiRouter::new()
+        .routes(routes!(
+            create_resource,
+            create_resource_batch,
+            create_project,
+            get_resource,
+            create_realm,
+            get_realm,
+            create_group,
+            get_group,
+            add_group,
+            register_user,
+            create_token,
+            search,
+            get_user_realms,
+            get_user_groups,
+            get_stats,
+            get_realm_components,
+            get_relations,
+            get_group_users,
+            get_realm_groups,
+            get_relation_infos,
+            get_user,
+            request_group_access_realm,
+            request_user_access_group,
+            get_events,
+            create_relation,
+            create_relation_variant,
+            create_component
+        ))
+        .with_state(store)
 }

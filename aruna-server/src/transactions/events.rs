@@ -56,8 +56,8 @@ impl Request for GetEventsRequest {
                     ArunaError::NotFound("Event not found".to_string())
                 })?;
 
-                let dyn_event: Box<dyn WriteRequest> = bincode::deserialize(&event.0)
-                    .map_err(|e| {
+                let dyn_event: Box<dyn WriteRequest> =
+                    bincode::deserialize(&event.0).map_err(|e| {
                         error!("Error deserializing event: {:?}", e);
                         ArunaError::ServerError("Error deserializing event".to_string())
                     })?;
