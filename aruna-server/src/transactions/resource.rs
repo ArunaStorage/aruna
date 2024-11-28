@@ -10,12 +10,10 @@ use crate::{
     models::{
         models::{DataLocation, NodeVariant, Resource, SyncingStatus},
         requests::{
-            CreateProjectRequest, CreateProjectResponse, CreateRelationRequest,
-            CreateRelationResponse, CreateResourceBatchRequest, CreateResourceBatchResponse,
-            CreateResourceRequest, CreateResourceResponse, Direction, GetRelationInfosRequest,
-            GetRelationInfosResponse, GetRelationsRequest, GetRelationsResponse,
-            GetResourcesRequest, GetResourcesResponse, Parent, UpdateResourceRequest,
-            UpdateResourceResponse,
+            CreateProjectRequest, CreateProjectResponse, CreateResourceBatchRequest,
+            CreateResourceBatchResponse, CreateResourceRequest, CreateResourceResponse,
+            GetResourcesRequest, GetResourcesResponse, Parent, UpdateResourceNameRequest,
+            UpdateResourceNameResponse,
         },
     },
     storage::graph::{get_parent, get_related_user_or_groups, has_relation},
@@ -781,8 +779,8 @@ impl Request for GetResourcesRequest {
     }
 }
 
-impl Request for UpdateResourceRequest {
-    type Response = UpdateResourceResponse;
+impl Request for UpdateResourceNameRequest {
+    type Response = UpdateResourceNameResponse;
     fn get_context(&self) -> Context {
         Context::Permission {
             min_permission: crate::models::models::Permission::Write,
@@ -801,7 +799,6 @@ impl Request for UpdateResourceRequest {
             updated_at: Utc::now().timestamp_millis(),
         };
 
-        return Err(ArunaError::NotFound("Request unimplemented".to_string()));
         let response = controller.transaction(Ulid::new().0, &request_tx).await?;
 
         Ok(bincode::deserialize(&response)?)
@@ -810,7 +807,7 @@ impl Request for UpdateResourceRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateResourceTx {
-    req: UpdateResourceRequest,
+    req: UpdateResourceNameRequest,
     requester: Requester,
     updated_at: i64,
 }
@@ -868,8 +865,10 @@ impl WriteRequest for UpdateResourceTx {
                     });
                 }
             }
-            let mut map =  serde_json::Map::new();
+            let mut map = serde_json::Map::new();
+            map.insert("id".to_string(), serde_json::to_value(resource_id)?);
             map.insert("name".to_string(), request.name.into());
+            map.insert("last_modified".to_string(), serde_json::to_value(time)?);
 
             store.update_node_field(&mut wtxn, resource_id, map)?;
 
@@ -879,9 +878,7 @@ impl WriteRequest for UpdateResourceTx {
 
             wtxn.commit(associated_event_id, &[resource_idx], &[])?;
             // Create admin group, add user to admin group
-            Ok::<_, ArunaError>(bincode::serialize(&UpdateResourceResponse {
-                resource,
-            })?)
+            Ok::<_, ArunaError>(bincode::serialize(&UpdateResourceNameResponse { resource })?)
         })
         .await
         .map_err(|_e| {
@@ -890,3 +887,4 @@ impl WriteRequest for UpdateResourceTx {
         })??)
     }
 }
+

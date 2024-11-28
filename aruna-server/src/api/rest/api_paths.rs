@@ -45,6 +45,29 @@ pub async fn create_resource(
     into_axum_response(state.request(request, extract_token(&headers)).await)
 }
 
+
+/// Create a new resource
+#[utoipa::path(
+    post,
+    path = "/resources/name",
+    request_body = UpdateResourceNameRequest,
+    responses(
+        (status = 200, body = UpdateResourceNameResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+    tag = RESOURCES,
+)]
+pub async fn update_resource_name(
+    State(state): State<Arc<Controller>>,
+    headers: HeaderMap,
+    Json(request): Json<UpdateResourceNameRequest>,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&headers)).await)
+}
+
 /// Create a new resource
 #[utoipa::path(
     post,

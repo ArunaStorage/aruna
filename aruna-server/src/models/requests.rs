@@ -427,31 +427,32 @@ pub struct CreateRelationVariantResponse {
 #[derive(
     Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
 )]
-pub struct UpdateResourceRequest {
+pub struct UpdateResourceNameRequest {
     pub id: Ulid,
-    #[serde(default)]
     pub name: String,
-    #[serde(default)]
-    pub title: String,
-    #[serde(default)]
-    pub description: String,
-    #[serde(default)]
-    pub visibility: VisibilityClass,
-    #[serde(default = "default_license_tag")]
-    pub license_tag: String,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UpdateResourceNameResponse {
+    pub resource: Resource,
+}
+
+
     // TODO:
+    //#[serde(default)]
+    //pub title: String,
+    //#[serde(default)]
+    //pub description: String,
+    //#[serde(default)]
+    //pub visibility: VisibilityClass,
+    //#[serde(default = "default_license_tag")]
+    //pub license_tag: String,
     // #[serde(default)]
     // pub labels: Vec<KeyValue>,
     // #[serde(default)]
     // pub identifiers: Vec<String>,
     // #[serde(default)]
     // pub authors: Vec<Author>,
-}
-
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
-pub struct UpdateResourceResponse {
-    pub resource: Resource,
-}
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct CreateComponentRequest {

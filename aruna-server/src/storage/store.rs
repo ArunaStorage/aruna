@@ -1263,7 +1263,7 @@ impl Store {
             wtxn.get_txn(),
             &self.milli_index,
             &indexer_config,
-            IndexDocumentsConfig::default(),
+            documents_config,
             |_| (),
             || false,
         )?;
