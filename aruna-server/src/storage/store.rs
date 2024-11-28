@@ -130,7 +130,6 @@ impl<'a> WriteTxn<'a> {
             }
         }
 
-        let txn = self.txn.take().expect("Transaction already committed");
         txn.commit().inspect_err(logerr!())?;
         self.committed = true;
         Ok(())
