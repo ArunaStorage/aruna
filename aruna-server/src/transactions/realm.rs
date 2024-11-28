@@ -445,7 +445,7 @@ impl WriteRequest for AddComponentToRealmRequestTx {
                 .get_node::<Component>(wtxn.get_txn(), component_idx)
                 .ok_or_else(|| ArunaError::NotFound(component_id.to_string()))?;
 
-            if !component.public && !has_relation(wtxn.get_ro_graph(), component_idx, user_idx, OWNED_BY_USER) {
+            if !component.public && !has_relation(wtxn.get_ro_graph(), component_idx, user_idx, &[OWNED_BY_USER]) {
                 error!("User does not own component");
                 return Err(ArunaError::Unauthorized);
             };

@@ -132,7 +132,7 @@ impl WriteRequest for CreateProjectRequestTx {
                     wtxn.get_ro_graph(),
                     realm_idx,
                     data_endpoint_idx,
-                    relation_types::REALM_USES_COMPONENT,
+                    &[relation_types::REALM_USES_COMPONENT],
                 ) {
                     error!("Realm does not use this data endpoint");
                     return Err(ArunaError::InvalidParameter {
