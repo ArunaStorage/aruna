@@ -57,7 +57,7 @@ mod read_tests {
         assert_eq!(&realm.description, &create_request.description);
 
         let client = reqwest::Client::new();
-        let url = format!("{}/api/v3/user/groups", clients.rest_endpoint);
+        let url = format!("{}/api/v3/users/groups", clients.rest_endpoint);
 
         let response: GetGroupsFromUserResponse = client
             .get(url)
@@ -122,6 +122,7 @@ mod read_tests {
                 resources.push(BatchResource {
                     name: format!("TestObjectNo{i}"),
                     parent: aruna_server::models::requests::Parent::ID(parent_id),
+                    variant: aruna_server::models::models::ResourceVariant::Folder,
                     ..Default::default()
                 });
             } else {
@@ -130,6 +131,7 @@ mod read_tests {
                         name: format!("TestObjectNo{i}"),
                         parent: aruna_server::models::requests::Parent::Idx(i - 1),
                         visibility: aruna_server::models::models::VisibilityClass::Public,
+                        variant: aruna_server::models::models::ResourceVariant::Folder,
                         ..Default::default()
                     });
                 } else {
@@ -137,6 +139,7 @@ mod read_tests {
                         name: format!("TestObjectNo{i}"),
                         parent: aruna_server::models::requests::Parent::Idx(i - 1),
                         visibility: aruna_server::models::models::VisibilityClass::Private,
+                        variant: aruna_server::models::models::ResourceVariant::Folder,
                         ..Default::default()
                     });
                 }
@@ -145,7 +148,7 @@ mod read_tests {
         let request = CreateResourceBatchRequest { resources };
 
         let client = reqwest::Client::new();
-        let url = format!("{}/api/v3/resource/batch", clients.rest_endpoint);
+        let url = format!("{}/api/v3/resources/batch", clients.rest_endpoint);
 
         let _response: CreateResourceBatchResponse = client
             .post(url)
@@ -158,7 +161,7 @@ mod read_tests {
             .await
             .unwrap();
 
-        let url = format!("{}/api/v3/search", clients.rest_endpoint);
+        let url = format!("{}/api/v3/info/search", clients.rest_endpoint);
 
         let response: SearchResponse = client
             .get(url.clone())
@@ -246,7 +249,7 @@ mod read_tests {
             });
         }
         let request = CreateResourceBatchRequest { resources };
-        let url = format!("{}/api/v3/resource/batch", clients.rest_endpoint);
+        let url = format!("{}/api/v3/resources/batch", clients.rest_endpoint);
         let _batch_response1: CreateResourceBatchResponse = client
             .post(url)
             .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
@@ -264,7 +267,7 @@ mod read_tests {
             name: "SecondGroup".to_string(),
             description: String::new(),
         };
-        let url = format!("{}/api/v3/group", clients.rest_endpoint);
+        let url = format!("{}/api/v3/groups", clients.rest_endpoint);
         let response: ModelsCreateGroupResponse = client
             .post(url)
             .header("Authorization", format!("Bearer {}", REGULAR_TOKEN))
@@ -296,7 +299,7 @@ mod read_tests {
             visibility: aruna_server::models::models::VisibilityClass::Public,
             ..Default::default()
         };
-        let url = format!("{}/api/v3/resource/project", clients.rest_endpoint);
+        let url = format!("{}/api/v3/resources/projects", clients.rest_endpoint);
         let response: CreateProjectResponse = client
             .post(url)
             .header("Authorization", format!("Bearer {}", REGULAR_TOKEN))
@@ -315,6 +318,7 @@ mod read_tests {
                 name: format!("PUBLIC_TEST_U2_{i}"),
                 parent: aruna_server::models::requests::Parent::ID(response.resource.id),
                 visibility: aruna_server::models::models::VisibilityClass::Public,
+                variant: aruna_server::models::models::ResourceVariant::Folder,
                 ..Default::default()
             });
         }
@@ -323,11 +327,12 @@ mod read_tests {
                 name: format!("PRIVATE_TEST_U2_{i}"),
                 parent: aruna_server::models::requests::Parent::ID(response.resource.id),
                 visibility: aruna_server::models::models::VisibilityClass::Private,
+                variant: aruna_server::models::models::ResourceVariant::Folder,
                 ..Default::default()
             });
         }
         let request = CreateResourceBatchRequest { resources };
-        let url = format!("{}/api/v3/resource/batch", clients.rest_endpoint);
+        let url = format!("{}/api/v3/resources/batch", clients.rest_endpoint);
         let _batch_response2: CreateResourceBatchResponse = client
             .post(url)
             .header("Authorization", format!("Bearer {}", REGULAR_TOKEN))
@@ -342,7 +347,7 @@ mod read_tests {
         //
         // Test search
         //
-        let url = format!("{}/api/v3/search", clients.rest_endpoint);
+        let url = format!("{}/api/v3/info/search", clients.rest_endpoint);
 
         let response: SearchResponse = client
             .get(url.clone())
@@ -379,7 +384,7 @@ mod read_tests {
             }
         }));
 
-        let url = format!("{}/api/v3/search", clients.rest_endpoint);
+        let url = format!("{}/api/v3/info/search", clients.rest_endpoint);
         let response: SearchResponse = client
             .get(url)
             .header("Authorization", format!("Bearer {}", REGULAR_TOKEN))
@@ -425,7 +430,7 @@ mod read_tests {
         }
 
         let client = reqwest::Client::new();
-        let url = format!("{}/api/v3/user/realms", clients.rest_endpoint);
+        let url = format!("{}/api/v3/users/realms", clients.rest_endpoint);
 
         let response: GetRealmsFromUserResponse = client
             .get(url)
@@ -461,7 +466,7 @@ mod read_tests {
         }
 
         let client = reqwest::Client::new();
-        let url = format!("{}/api/v3/user/groups", clients.rest_endpoint);
+        let url = format!("{}/api/v3/users/groups", clients.rest_endpoint);
 
         let response: GetGroupsFromUserResponse = client
             .get(url)
@@ -550,7 +555,5 @@ mod read_tests {
             "{}/api/v3/resources/{parent_id}/relations",
             clients.rest_endpoint
         );
-
-        todo!()
     }
 }

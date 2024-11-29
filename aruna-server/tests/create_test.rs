@@ -238,12 +238,14 @@ mod create_tests {
                 resources.push(BatchResource {
                     name: format!("TestObjectNo{i}"),
                     parent: aruna_server::models::requests::Parent::ID(parent_id),
+                    variant: aruna_server::models::models::ResourceVariant::Folder,
                     ..Default::default()
                 });
             } else {
                 resources.push(BatchResource {
                     name: format!("TestObjectNo{i}"),
                     parent: aruna_server::models::requests::Parent::Idx(i - 1),
+                    variant: aruna_server::models::models::ResourceVariant::Folder,
                     ..Default::default()
                 });
             }
@@ -274,12 +276,14 @@ mod create_tests {
                 resources.push(BatchResource {
                     name: format!("Test2ObjectNo{i}"),
                     parent: aruna_server::models::requests::Parent::ID(parent_id),
+                    variant: aruna_server::models::models::ResourceVariant::Folder,
                     ..Default::default()
                 });
             } else {
                 resources.push(BatchResource {
                     name: format!("Test2ObjectNo{i}"),
                     parent: aruna_server::models::requests::Parent::Idx(i + 1),
+                    variant: aruna_server::models::models::ResourceVariant::Folder,
                     ..Default::default()
                 });
             }
