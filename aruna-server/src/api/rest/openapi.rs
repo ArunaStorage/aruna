@@ -34,6 +34,7 @@ pub fn router(store: Arc<Controller>) -> OpenApiRouter {
     OpenApiRouter::new()
         .routes(routes!(create_resource))
         .routes(routes!(update_resource_name))
+        .routes(routes!(update_resource_title))
         .routes(routes!(create_resource_batch))
         .routes(routes!(create_project))
         .routes(routes!(get_resource))

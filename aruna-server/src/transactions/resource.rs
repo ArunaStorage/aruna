@@ -10,18 +10,19 @@ use crate::{
     models::{
         models::{DataLocation, NodeVariant, Resource, SyncingStatus},
         requests::{
-            CreateProjectRequest, CreateProjectResponse, CreateResourceBatchRequest,
-            CreateResourceBatchResponse, CreateResourceRequest, CreateResourceResponse,
-            GetResourcesRequest, GetResourcesResponse, Parent, UpdateResourceNameRequest,
-            UpdateResourceNameResponse,
+            CreateProjectRequest, CreateProjectResponse, CreateResourceBatchRequest, CreateResourceBatchResponse, CreateResourceRequest, CreateResourceResponse, GetInner, GetResourcesRequest, GetResourcesResponse, Parent, ResourceUpdateRequests, ResourceUpdateResponses, UpdateResourceAuthorsResponse, UpdateResourceDescriptionResponse, UpdateResourceIdentifiersResponse, UpdateResourceLabelsResponse, UpdateResourceLicenseResponse, UpdateResourceNameResponse, UpdateResourceTitleResponse, UpdateResourceVisibilityResponse
         },
     },
-    storage::graph::{get_parent, get_related_user_or_groups, has_relation},
+    storage::{
+        graph::{get_parent, get_related_user_or_groups, has_relation},
+        store::{Store, WriteTxn},
+    },
     transactions::request::WriteRequest,
 };
 use ahash::RandomState;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use tracing::{error, info};
 use ulid::Ulid;
@@ -779,12 +780,12 @@ impl Request for GetResourcesRequest {
     }
 }
 
-impl Request for UpdateResourceNameRequest {
-    type Response = UpdateResourceNameResponse;
+impl Request for ResourceUpdateRequests {
+    type Response = ResourceUpdateResponses;
     fn get_context(&self) -> Context {
         Context::Permission {
             min_permission: crate::models::models::Permission::Write,
-            source: self.id,
+            source: self.get_id(),
         }
     }
 
@@ -798,7 +799,6 @@ impl Request for UpdateResourceNameRequest {
             requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
             updated_at: Utc::now().timestamp_millis(),
         };
-
         let response = controller.transaction(Ulid::new().0, &request_tx).await?;
 
         Ok(bincode::deserialize(&response)?)
@@ -807,7 +807,7 @@ impl Request for UpdateResourceNameRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateResourceTx {
-    req: UpdateResourceNameRequest,
+    req: ResourceUpdateRequests,
     requester: Requester,
     updated_at: i64,
 }
@@ -829,7 +829,7 @@ impl WriteRequest for UpdateResourceTx {
             }
         })?;
 
-        let resource_id = self.req.id;
+        let resource_id = self.req.get_id();
         let request = self.req.clone();
 
         let store = controller.get_store();
@@ -850,6 +850,66 @@ impl WriteRequest for UpdateResourceTx {
                 )));
             };
 
+            let map =
+                parse_update_fields(&store, &mut wtxn, old_resource, resource_id, time, request.clone())?;
+
+            store.update_node_field(&mut wtxn, resource_id, map)?;
+
+            // Affected nodes: Group, Realm, Project
+            let resource = store.get_node(wtxn.get_txn(), resource_idx).unwrap();
+            println!("{resource:?}");
+            let response = match request {
+                ResourceUpdateRequests::Name(_) => {
+                    ResourceUpdateResponses::Name(UpdateResourceNameResponse { resource })
+                }
+                ResourceUpdateRequests::Title(_) => {
+                    ResourceUpdateResponses::Title(UpdateResourceTitleResponse { resource })
+                }
+                ResourceUpdateRequests::Description(_) => {
+                    ResourceUpdateResponses::Description(UpdateResourceDescriptionResponse{ resource })
+                }
+                ResourceUpdateRequests::Visibility(_) => {
+                    ResourceUpdateResponses::Visibility(UpdateResourceVisibilityResponse { resource })
+                }
+                ResourceUpdateRequests::License(_) => {
+                    ResourceUpdateResponses::License(UpdateResourceLicenseResponse { resource })
+                }
+                ResourceUpdateRequests::Labels(_) => {
+                    ResourceUpdateResponses::Labels(UpdateResourceLabelsResponse { resource })
+                }
+                ResourceUpdateRequests::Identifiers(_) => {
+                    ResourceUpdateResponses::Identifiers(UpdateResourceIdentifiersResponse { resource })
+                }
+                ResourceUpdateRequests::Authors(_) => {
+                    ResourceUpdateResponses::Authors(UpdateResourceAuthorsResponse { resource })
+                }
+            };
+
+            wtxn.commit(associated_event_id, &[resource_idx], &[])?;
+            // Create admin group, add user to admin group
+            Ok::<_, ArunaError>(bincode::serialize(&response)?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
+    }
+}
+
+fn parse_update_fields(
+    store: &Store,
+    wtxn: &mut WriteTxn,
+    old_resource: Resource,
+    resource_id: Ulid,
+    time: DateTime<Utc>,
+    request: ResourceUpdateRequests,
+) -> Result<serde_json::Map<String, Value>, ArunaError> {
+    let mut map = serde_json::Map::new();
+    map.insert("id".to_string(), serde_json::to_value(resource_id)?);
+    map.insert("last_modified".to_string(), serde_json::to_value(time)?);
+    match request {
+        ResourceUpdateRequests::Name(request) => {
             if !request.name.is_empty() && request.name != old_resource.name {
                 // Check that name is unique
                 if !store
@@ -865,26 +925,102 @@ impl WriteRequest for UpdateResourceTx {
                     });
                 }
             }
-            let mut map = serde_json::Map::new();
-            map.insert("id".to_string(), serde_json::to_value(resource_id)?);
             map.insert("name".to_string(), request.name.into());
-            map.insert("last_modified".to_string(), serde_json::to_value(time)?);
-
-            store.update_node_field(&mut wtxn, resource_id, map)?;
-
-            // Affected nodes: Group, Realm, Project
-
-            let resource = store.get_node(wtxn.get_txn(), resource_idx).unwrap();
-
-            wtxn.commit(associated_event_id, &[resource_idx], &[])?;
-            // Create admin group, add user to admin group
-            Ok::<_, ArunaError>(bincode::serialize(&UpdateResourceNameResponse { resource })?)
-        })
-        .await
-        .map_err(|_e| {
-            tracing::error!("Failed to join task");
-            ArunaError::ServerError("".to_string())
-        })??)
-    }
+        }
+        ResourceUpdateRequests::Title(request) => {
+            map.insert("tag".to_string(), request.title.into());
+        }
+        ResourceUpdateRequests::Description(request) => {
+            map.insert("description".to_string(), request.description.into());
+        }
+        ResourceUpdateRequests::Visibility(request) => {
+            if old_resource.visibility > request.visibility {
+                return Err(ArunaError::ConflictParameter {
+                    name: "visibility".to_string(),
+                    error: "Cannot restrict visibiliyt".to_string(),
+                });
+            }
+            let value = match request.visibility {
+                crate::models::models::VisibilityClass::Public => "Public",
+                crate::models::models::VisibilityClass::PublicMetadata => "PublicMetadata",
+                crate::models::models::VisibilityClass::Private => "Private",
+            };
+            map.insert("visibility".to_string(), value.into());
+        }
+        ResourceUpdateRequests::License(request) => {
+            map.insert("license_tag".to_string(), request.license_tag.into());
+        }
+        ResourceUpdateRequests::Labels(request) => {
+            let mut labels = old_resource.labels;
+            if !request.labels_to_remove.is_empty() {
+                labels = labels
+                    .into_iter()
+                    .filter(|kv| !request.labels_to_remove.contains(kv))
+                    .collect();
+            }
+            if !request.labels_to_add.is_empty() {
+                labels.extend(request.labels_to_add);
+            }
+            map.insert(
+                "labels".to_string(),
+                serde_json::Value::Array(
+                    labels
+                        .iter()
+                        .map(|kv| {
+                            serde_json::to_value(kv)
+                                .map_err(|e| ArunaError::DeserializeError(e.to_string()))
+                        })
+                        .collect::<Result<Vec<Value>, ArunaError>>()?,
+                ),
+            );
+        }
+        ResourceUpdateRequests::Identifiers(request) => {
+            let mut ids = old_resource.identifiers;
+            if !request.ids_to_remove.is_empty() {
+                ids = ids
+                    .into_iter()
+                    .filter(|id| !request.ids_to_remove.contains(id))
+                    .collect();
+            }
+            if !request.ids_to_add.is_empty() {
+                ids.extend(request.ids_to_add);
+            }
+            map.insert(
+                "identifiers".to_string(),
+                serde_json::Value::Array(
+                    ids.iter()
+                        .map(|id| {
+                            serde_json::to_value(id)
+                                .map_err(|e| ArunaError::DeserializeError(e.to_string()))
+                        })
+                        .collect::<Result<Vec<Value>, ArunaError>>()?,
+                ),
+            );
+        }
+        ResourceUpdateRequests::Authors(request) => {
+            let mut authors = old_resource.authors;
+            if !request.authors_to_remove.is_empty() {
+                authors = authors
+                    .into_iter()
+                    .filter(|a| !request.authors_to_remove.contains(a))
+                    .collect();
+            }
+            if !request.authors_to_add.is_empty() {
+                authors.extend(request.authors_to_add);
+            }
+            map.insert(
+                "authors".to_string(),
+                serde_json::Value::Array(
+                    authors
+                        .iter()
+                        .map(|a| {
+                            serde_json::to_value(a)
+                                .map_err(|e| ArunaError::DeserializeError(e.to_string()))
+                        })
+                        .collect::<Result<Vec<Value>, ArunaError>>()?,
+                ),
+            );
+        }
+    };
+    Ok(map)
 }
-
