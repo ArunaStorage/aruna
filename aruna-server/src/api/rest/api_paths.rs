@@ -81,7 +81,7 @@ pub async fn update_resource_name(
     }
 }
 
-/// Update resource name
+/// Update resource title
 #[utoipa::path(
     post,
     path = "/resources/title",
@@ -116,6 +116,224 @@ pub async fn update_resource_title(
         Err(e) => e.into_axum_tuple().into_response(),
     }
 }
+
+
+/// Update resource description
+#[utoipa::path(
+    post,
+    path = "/resources/description",
+    request_body = UpdateResourceDescriptionRequest,
+    responses(
+        (status = 200, body = UpdateResourceDescriptionResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+    tag = RESOURCES,
+)]
+pub async fn update_resource_description(
+    State(state): State<Arc<Controller>>,
+    headers: HeaderMap,
+    Json(request): Json<UpdateResourceDescriptionRequest>,
+) -> impl IntoResponse {
+    match state
+        .request(
+            ResourceUpdateRequests::Description(request),
+            extract_token(&headers),
+        )
+        .await
+    {
+        Ok(ResourceUpdateResponses::Description(res)) => {
+            (axum::http::StatusCode::OK, Json(res)).into_response()
+        }
+        Ok(_) => ArunaError::DeserializeError("Internal response serialization error".to_string())
+            .into_axum_tuple()
+            .into_response(),
+        Err(e) => e.into_axum_tuple().into_response(),
+    }
+}
+
+/// Update resource visiblity
+#[utoipa::path(
+    post,
+    path = "/resources/visibility",
+    request_body = UpdateResourceVisibilityRequest,
+    responses(
+        (status = 200, body = UpdateResourceVisibilityResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+    tag = RESOURCES,
+)]
+pub async fn update_resource_visibility(
+    State(state): State<Arc<Controller>>,
+    headers: HeaderMap,
+    Json(request): Json<UpdateResourceVisibilityRequest>,
+) -> impl IntoResponse {
+    match state
+        .request(
+            ResourceUpdateRequests::Visibility(request),
+            extract_token(&headers),
+        )
+        .await
+    {
+        Ok(ResourceUpdateResponses::Visibility(res)) => {
+            (axum::http::StatusCode::OK, Json(res)).into_response()
+        }
+        Ok(_) => ArunaError::DeserializeError("Internal response serialization error".to_string())
+            .into_axum_tuple()
+            .into_response(),
+        Err(e) => e.into_axum_tuple().into_response(),
+    }
+}
+
+/// Update resource license
+#[utoipa::path(
+    post,
+    path = "/resources/license",
+    request_body = UpdateResourceLicenseRequest,
+    responses(
+        (status = 200, body = UpdateResourceLicenseResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+    tag = RESOURCES,
+)]
+pub async fn update_resource_license(
+    State(state): State<Arc<Controller>>,
+    headers: HeaderMap,
+    Json(request): Json<UpdateResourceLicenseRequest>,
+) -> impl IntoResponse {
+    match state
+        .request(
+            ResourceUpdateRequests::License(request),
+            extract_token(&headers),
+        )
+        .await
+    {
+        Ok(ResourceUpdateResponses::License(res)) => {
+            (axum::http::StatusCode::OK, Json(res)).into_response()
+        }
+        Ok(_) => ArunaError::DeserializeError("Internal response serialization error".to_string())
+            .into_axum_tuple()
+            .into_response(),
+        Err(e) => e.into_axum_tuple().into_response(),
+    }
+}
+
+/// Update resource labels
+#[utoipa::path(
+    post,
+    path = "/resources/labels",
+    request_body = UpdateResourceLabelsRequest,
+    responses(
+        (status = 200, body = UpdateResourceLabelsResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+    tag = RESOURCES,
+)]
+pub async fn update_resource_labels(
+    State(state): State<Arc<Controller>>,
+    headers: HeaderMap,
+    Json(request): Json<UpdateResourceLabelsRequest>,
+) -> impl IntoResponse {
+    match state
+        .request(
+            ResourceUpdateRequests::Labels(request),
+            extract_token(&headers),
+        )
+        .await
+    {
+        Ok(ResourceUpdateResponses::Labels(res)) => {
+            (axum::http::StatusCode::OK, Json(res)).into_response()
+        }
+        Ok(_) => ArunaError::DeserializeError("Internal response serialization error".to_string())
+            .into_axum_tuple()
+            .into_response(),
+        Err(e) => e.into_axum_tuple().into_response(),
+    }
+}
+
+/// Update resource identifiers
+#[utoipa::path(
+    post,
+    path = "/resources/identifiers",
+    request_body = UpdateResourceIdentifiersRequest,
+    responses(
+        (status = 200, body = UpdateResourceIdentifiersResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+    tag = RESOURCES,
+)]
+pub async fn update_resource_identifiers(
+    State(state): State<Arc<Controller>>,
+    headers: HeaderMap,
+    Json(request): Json<UpdateResourceIdentifiersRequest>,
+) -> impl IntoResponse {
+    match state
+        .request(
+            ResourceUpdateRequests::Identifiers(request),
+            extract_token(&headers),
+        )
+        .await
+    {
+        Ok(ResourceUpdateResponses::Identifiers(res)) => {
+            (axum::http::StatusCode::OK, Json(res)).into_response()
+        }
+        Ok(_) => ArunaError::DeserializeError("Internal response serialization error".to_string())
+            .into_axum_tuple()
+            .into_response(),
+        Err(e) => e.into_axum_tuple().into_response(),
+    }
+}
+
+/// Update resource authors
+#[utoipa::path(
+    post,
+    path = "/resources/authors",
+    request_body = UpdateResourceAuthorsRequest,
+    responses(
+        (status = 200, body = UpdateResourceAuthorsResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+    tag = RESOURCES,
+)]
+pub async fn update_resource_authors(
+    State(state): State<Arc<Controller>>,
+    headers: HeaderMap,
+    Json(request): Json<UpdateResourceAuthorsRequest>,
+) -> impl IntoResponse {
+    match state
+        .request(
+            ResourceUpdateRequests::Authors(request),
+            extract_token(&headers),
+        )
+        .await
+    {
+        Ok(ResourceUpdateResponses::Authors(res)) => {
+            (axum::http::StatusCode::OK, Json(res)).into_response()
+        }
+        Ok(_) => ArunaError::DeserializeError("Internal response serialization error".to_string())
+            .into_axum_tuple()
+            .into_response(),
+        Err(e) => e.into_axum_tuple().into_response(),
+    }
+}
+
 
 /// Create a new resource
 #[utoipa::path(

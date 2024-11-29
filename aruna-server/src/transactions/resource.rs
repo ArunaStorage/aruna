@@ -3,7 +3,7 @@ use super::{
     request::{Request, Requester, SerializedResponse},
 };
 use crate::{
-    constants::relation_types::{self, DEFAULT},
+    constants::{field_names::{AUTHORS_FIELD, DESCRIPTION_FIELD, IDENTIFIERS_FIELD, ID_FIELD, LABELS_FIELD, LAST_MODIFIED_FIELD, LICENSE_FIELD, NAME_FIELD, TAG_FIELD, VISIBILITY_FIELD}, relation_types::{self, DEFAULT}},
     context::{BatchPermission, Context},
     error::ArunaError,
     logerr,
@@ -858,7 +858,6 @@ impl WriteRequest for UpdateResourceTx {
 
             // Affected nodes: Group, Realm, Project
             let resource = store.get_node(wtxn.get_txn(), resource_idx).unwrap();
-            println!("{resource:?}");
             let response = match request {
                 ResourceUpdateRequests::Name(_) => {
                     ResourceUpdateResponses::Name(UpdateResourceNameResponse { resource })
@@ -913,8 +912,8 @@ fn parse_update_fields(
     request: ResourceUpdateRequests,
 ) -> Result<serde_json::Map<String, Value>, ArunaError> {
     let mut map = serde_json::Map::new();
-    map.insert("id".to_string(), serde_json::to_value(resource_id)?);
-    map.insert("last_modified".to_string(), serde_json::to_value(time)?);
+    map.insert(ID_FIELD.to_string(), serde_json::to_value(resource_id)?);
+    map.insert(LAST_MODIFIED_FIELD.to_string(),serde_json::to_value(time)?);
     match request {
         ResourceUpdateRequests::Name(request) => {
             if !request.name.is_empty() && request.name != old_resource.name {
@@ -932,13 +931,13 @@ fn parse_update_fields(
                     });
                 }
             }
-            map.insert("name".to_string(), request.name.into());
+            map.insert(NAME_FIELD.to_string(), request.name.into());
         }
         ResourceUpdateRequests::Title(request) => {
-            map.insert("tag".to_string(), request.title.into());
+            map.insert(TAG_FIELD.to_string(), request.title.into());
         }
         ResourceUpdateRequests::Description(request) => {
-            map.insert("description".to_string(), request.description.into());
+            map.insert(DESCRIPTION_FIELD.to_string(), request.description.into());
         }
         ResourceUpdateRequests::Visibility(request) => {
             if old_resource.visibility > request.visibility {
@@ -952,10 +951,10 @@ fn parse_update_fields(
                 crate::models::models::VisibilityClass::PublicMetadata => "PublicMetadata",
                 crate::models::models::VisibilityClass::Private => "Private",
             };
-            map.insert("visibility".to_string(), value.into());
+            map.insert(VISIBILITY_FIELD.to_string(), value.into());
         }
         ResourceUpdateRequests::License(request) => {
-            map.insert("license_tag".to_string(), request.license_tag.into());
+            map.insert(LICENSE_FIELD.to_string(), request.license_tag.into());
         }
         ResourceUpdateRequests::Labels(request) => {
             let mut labels = old_resource.labels;
@@ -969,7 +968,7 @@ fn parse_update_fields(
                 labels.extend(request.labels_to_add);
             }
             map.insert(
-                "labels".to_string(),
+                LABELS_FIELD.to_string(),
                 serde_json::Value::Array(
                     labels
                         .iter()
@@ -993,7 +992,7 @@ fn parse_update_fields(
                 ids.extend(request.ids_to_add);
             }
             map.insert(
-                "identifiers".to_string(),
+                IDENTIFIERS_FIELD.to_string(),
                 serde_json::Value::Array(
                     ids.iter()
                         .map(|id| {
@@ -1016,7 +1015,7 @@ fn parse_update_fields(
                 authors.extend(request.authors_to_add);
             }
             map.insert(
-                "authors".to_string(),
+                AUTHORS_FIELD.to_string(),
                 serde_json::Value::Array(
                     authors
                         .iter()
