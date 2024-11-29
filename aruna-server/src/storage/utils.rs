@@ -83,7 +83,7 @@ pub fn pubkey_from_pem(pem: &str) -> Result<(DecodingKey, [u8; 32]), ArunaError>
     })?;
 
     Ok((
-        DecodingKey::from_ed_pem(pem.as_bytes()).map_err(|_| {
+        DecodingKey::from_ed_pem(public_pem.as_bytes()).map_err(|_| {
             tracing::error!("Error creating decoding key");
             ArunaError::ConfigError("Error creating decoding key".to_string())
         })?,
