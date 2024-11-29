@@ -5,106 +5,134 @@ pub struct Field {
     pub index: u32,
 }
 
+pub mod field_names {
+    pub const ID_FIELD: &str = "id";
+    pub const VARIANT_FIELD: &str = "variant";
+    pub const NAME_FIELD: &str = "name";
+    pub const DESCRIPTION_FIELD: &str = "description";
+    pub const LABELS_FIELD: &str = "labels";
+    pub const IDENTIFIERS_FIELD: &str = "identifiers";
+    pub const CONTENT_LEN_FIELD: &str = "content_len";
+    pub const COUNT_FIELD: &str = "count";
+    pub const VISIBILITY_FIELD: &str = "visibility";
+    pub const CREATED_AT_FIELD: &str = "created_at";
+    pub const LAST_MODIFIED_FIELD: &str = "last_modified";
+    pub const AUTHORS_FIELD: &str = "authors";
+    pub const LOCKED_FIELD: &str = "locked";
+    pub const LICENSE_FIELD: &str = "license";
+    pub const HASHES_FIELD: &str = "hashes";
+    pub const LOCATION_FIELD: &str = "location";
+    pub const TAGS_FIELD: &str = "tags";
+    pub const EXPIRES_AT_FIELD: &str = "expires_at";
+    pub const FIRST_NAME_FIELD: &str = "first_name";
+    pub const LAST_NAME_FIELD: &str = "last_name";
+    pub const EMAIL_FIELD: &str = "email";
+    pub const GLOBAL_ADMIN_FIELD: &str = "global_admin";
+    pub const TAG_FIELD: &str = "tag";
+    pub const COMPONENT_TYPE_FIELD: &str = "component_type";
+    pub const ENDPOINTS_FIELD: &str = "endpoints";
+}
+
 // Milli index internal field ids
 pub const FIELDS: &[Field] = &[
     Field {
-        name: "id",
+        name: field_names::ID_FIELD,
         index: 0,
     }, // 0 UUID - This is the primary key             | ALL
     Field {
-        name: "variant",
+        name: field_names::VARIANT_FIELD,
         index: 1,
     }, // 1 Int - NodeVariant                          | ALL
     Field {
-        name: "name",
+        name: field_names::NAME_FIELD,
         index: 2,
     }, // 2 String - Name of the resource              | ALL
     Field {
-        name: "description",
+        name: field_names::DESCRIPTION_FIELD,
         index: 3,
     }, // 3 String - Description of the resource       | ALL
     Field {
-        name: "labels",
+        name: field_names::LABELS_FIELD,
         index: 4,
     }, // 4 Value - Labels of the resource             | Resource
     Field {
-        name: "identifiers",
+        name: field_names::IDENTIFIERS_FIELD,
         index: 5,
     }, // 5 Value - List of external identifiers       | Resource
     Field {
-        name: "content_len",
+        name: field_names::CONTENT_LEN_FIELD,
         index: 6,
     }, // 6 Int - Length of the content                | Resource
     Field {
-        name: "count",
+        name: field_names::COUNT_FIELD,
         index: 7,
     }, // 7 Int - Count of the resource                | Resource
     Field {
-        name: "visibility",
+        name: field_names::VISIBILITY_FIELD,
         index: 8,
     }, // 8 Int - Visibility of the resource           | Resource
     Field {
-        name: "created_at",
+        name: field_names::CREATED_AT_FIELD,
         index: 9,
     }, // 9 Int - Creation time of the resource        | ALL
     Field {
-        name: "last_modified",
+        name: field_names::LAST_MODIFIED_FIELD,
         index: 10,
     }, // 10 Int - Last update time of the resource    | ALL
     Field {
-        name: "authors",
+        name: field_names::AUTHORS_FIELD,
         index: 11,
     }, // 11 Value - List of authors of the resource   | Resource
     Field {
-        name: "locked",
+        name: field_names::LOCKED_FIELD,
         index: 12,
     }, // 12 Bool - Is the resource read_only          | Resource
     Field {
-        name: "license",
+        name: field_names::LICENSE_FIELD,
         index: 13,
     }, // 13 String - License of the resource          | Resource
     Field {
-        name: "hashes",
+        name: field_names::HASHES_FIELD,
         index: 14,
     }, // 14 Value - Hashes of the resource            | Resource
     Field {
-        name: "location",
+        name: field_names::LOCATION_FIELD,
         index: 15,
     }, // 15 Value - Location of the resource          | Resource
     Field {
-        name: "tags",
+        name: field_names::TAGS_FIELD,
         index: 16,
     }, // 16 Value - Tags of a realm                   | Realm
     Field {
-        name: "expires_at",
+        name: field_names::EXPIRES_AT_FIELD,
         index: 17,
     }, // 17 Int - Expiration time of the resource     | Token
     Field {
-        name: "first_name",
+        name: field_names::FIRST_NAME_FIELD,
         index: 18,
     }, // 18 String - First name of the user           | User
     Field {
-        name: "last_name",
+        name: field_names::LAST_NAME_FIELD,
         index: 19,
     }, // 19 String - Last name of the user            | User
     Field {
-        name: "email",
+        name: field_names::EMAIL_FIELD,
         index: 20,
     }, // 20 String - Email of the user                | User
     Field {
-        name: "global_admin",
+        name: field_names::GLOBAL_ADMIN_FIELD,
         index: 21,
     }, // 21 Bool - Is the user a global admin         | User
     Field {
-        name: "tag",
+        name: field_names::TAG_FIELD,
         index: 22,
     }, // 22 String - Tag or Title of a resource       | Realm / Resource
     Field {
-        name: "component_type",
+        name: field_names::COMPONENT_TYPE_FIELD,
         index: 23,
     }, // 22 Int - Component variant                   | Component
     Field {
-        name: "endpoints",
+        name: field_names::ENDPOINTS_FIELD,
         index: 24,
     }, // 22 String - Endpoint variant of a component   | Component
 ];

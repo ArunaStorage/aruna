@@ -23,7 +23,7 @@ use milli::{
     documents::{DocumentsBatchBuilder, DocumentsBatchReader},
     execute_search, filtered_universe,
     update::{IndexDocuments, IndexDocumentsConfig, IndexDocumentsMethod, IndexerConfig},
-    CboRoaringBitmapCodec, DefaultSearchLogger, Filter, GeoSortStrategy, Index, ObkvCodec,
+    CboRoaringBitmapCodec, DefaultSearchLogger, Filter, GeoSortStrategy, Index,
     SearchContext, TermsMatchingStrategy, TimeBudget, BEU32, BEU64,
 };
 use obkv::KvReader;
@@ -45,12 +45,8 @@ use ulid::Ulid;
 use super::graph::{get_permissions, get_realm_and_groups, get_subtree, IndexHelper};
 
 pub struct WriteTxn<'a> {
-    milli_index: &'a Index,
     txn: Option<RwTxn<'a>>,
     graph_lock: RwLockWriteGuard<'a, Graph<NodeVariant, EdgeType>>,
-    relation_idx: &'a AtomicU64,
-    relations: &'a Database<BEU64, SerdeBincode<RawRelation>>,
-    documents: &'a Database<BEU32, ObkvCodec>,
     events: &'a Database<BEU32, U128<BigEndian>>,
     subscribers: &'a Database<U128<BigEndian>, SerdeBincode<Vec<u128>>>,
     single_entry_database: &'a Database<Unspecified, Unspecified>,
@@ -335,12 +331,8 @@ impl Store {
         let graph_lock = self.graph.write().expect("Poisoned lock");
 
         Ok(WriteTxn {
-            milli_index: &self.milli_index,
             graph_lock,
             txn: Some(self.milli_index.write_txn().inspect_err(logerr!())?),
-            relation_idx: &self.relation_idx,
-            relations: &self.relations,
-            documents: &self.milli_index.documents,
             events: &self.events,
             subscribers: &self.subscribers,
             single_entry_database: &self.single_entry_database,

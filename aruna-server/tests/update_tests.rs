@@ -6,9 +6,15 @@ mod update_tests {
     use aruna_rust_api::v3::aruna::api::v3::{
         Author, CreateProjectRequest, CreateRealmRequest, CreateResourceRequest, KeyValue, Realm,
     };
+    use aruna_server::models::models::{Author as ModelAuthor, KeyValue as ModelKeyValue};
     use aruna_server::models::requests::{
-        UpdateResourceNameRequest, UpdateResourceNameResponse, UpdateResourceTitleRequest,
-        UpdateResourceTitleResponse,
+        UpdateResourceAuthorsRequest, UpdateResourceAuthorsResponse,
+        UpdateResourceDescriptionRequest, UpdateResourceDescriptionResponse,
+        UpdateResourceIdentifiersRequest, UpdateResourceIdentifiersResponse,
+        UpdateResourceLabelsRequest, UpdateResourceLabelsResponse, UpdateResourceLicenseRequest,
+        UpdateResourceLicenseResponse, UpdateResourceNameRequest, UpdateResourceNameResponse,
+        UpdateResourceTitleRequest, UpdateResourceTitleResponse, UpdateResourceVisibilityRequest,
+        UpdateResourceVisibilityResponse,
     };
     use ulid::Ulid;
 
@@ -118,20 +124,166 @@ mod update_tests {
         assert_eq!(response.resource.name, update_name.name);
 
         let url = format!("{}/api/v3/resources/title", clients.rest_endpoint);
-        let update_name = UpdateResourceTitleRequest {
+        let update_title = UpdateResourceTitleRequest {
             id: resource_id,
             title: "ReleaseTitle".to_string(),
         };
         let response: UpdateResourceTitleResponse = client
             .post(url)
             .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
-            .json(&update_name)
+            .json(&update_title)
             .send()
             .await
             .unwrap()
             .json()
             .await
             .unwrap();
-        assert_eq!(response.resource.title, update_name.title);
+        assert_eq!(response.resource.title, update_title.title);
+
+        let url = format!("{}/api/v3/resources/description", clients.rest_endpoint);
+        let update_desc = UpdateResourceDescriptionRequest {
+            id: resource_id,
+            description: "ReleaseDescription".to_string(),
+        };
+        let response: UpdateResourceDescriptionResponse = client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
+            .json(&update_desc)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(response.resource.description, update_desc.description);
+
+        let url = format!("{}/api/v3/resources/visibility", clients.rest_endpoint);
+        let update_visi = UpdateResourceVisibilityRequest {
+            id: resource_id,
+            visibility: aruna_server::models::models::VisibilityClass::Public,
+        };
+        let response: UpdateResourceVisibilityResponse = client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
+            .json(&update_visi)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(response.resource.visibility, update_visi.visibility);
+
+        let url = format!("{}/api/v3/resources/license", clients.rest_endpoint);
+        let update_license = UpdateResourceLicenseRequest {
+            id: resource_id,
+            license_tag: "CC-BY-4.0".to_string(),
+        };
+        let response: UpdateResourceLicenseResponse = client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
+            .json(&update_license)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(response.resource.license_tag, update_license.license_tag);
+
+        let url = format!("{}/api/v3/resources/labels", clients.rest_endpoint);
+        let update_labels = UpdateResourceLabelsRequest {
+            id: resource_id,
+            labels_to_add: vec![ModelKeyValue {
+                key: "NewKey".to_string(),
+                value: "NewValue".to_string(),
+                locked: false,
+            }],
+            labels_to_remove: vec![ModelKeyValue {
+                key: "another_test".to_string(),
+                value: "another_value".to_string(),
+                locked: false,
+            }],
+        };
+        let response: UpdateResourceLabelsResponse = client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
+            .json(&update_labels)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert!(response
+            .resource
+            .labels
+            .contains(&update_labels.labels_to_add[0]));
+        assert!(!response
+            .resource
+            .labels
+            .contains(&update_labels.labels_to_remove[0]));
+
+        let url = format!("{}/api/v3/resources/identifiers", clients.rest_endpoint);
+        let update_ids = UpdateResourceIdentifiersRequest {
+            id: resource_id,
+            ids_to_add: vec!["NewId".to_string()],
+            ids_to_remove: vec!["WHATEVER".to_string()],
+        };
+        let response: UpdateResourceIdentifiersResponse = client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
+            .json(&update_ids)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert!(response
+            .resource
+            .identifiers
+            .contains(&update_ids.ids_to_add[0]));
+        assert!(!response
+            .resource
+            .identifiers
+            .contains(&update_ids.ids_to_remove[0]));
+
+        let url = format!("{}/api/v3/resources/authors", clients.rest_endpoint);
+        let update_authors = UpdateResourceAuthorsRequest {
+            id: resource_id,
+            authors_to_add: vec![ModelAuthor {
+                id: Ulid::new(),
+                first_name: "Herribert".to_string(),
+                last_name: "Harribert".to_string(),
+                email: "herri@harri.bert".to_string(),
+                identifier: "AnotherId".to_string(),
+            }],
+            authors_to_remove: vec![ModelAuthor {
+                id: Ulid::from_string("01JDVSKTFKR4J1DZQT11231R6Q").unwrap(),
+                first_name: "John".to_string(),
+                last_name: "Doe".to_string(),
+                email: "test@test.org".to_string(),
+                identifier: "THIS_IS_ANOTHER_ORCID".to_string(),
+            }],
+        };
+        let response: UpdateResourceAuthorsResponse = client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
+            .json(&update_authors)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert!(response
+            .resource
+            .authors
+            .contains(&update_authors.authors_to_add[0]));
+        assert!(!response
+            .resource
+            .authors
+            .contains(&update_authors.authors_to_remove[0]));
     }
 }

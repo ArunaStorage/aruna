@@ -369,7 +369,7 @@ pub fn get_subtree(
             }
             NodeVariant::ResourceFolder | NodeVariant::ResourceObject => {
                 subtree.push(current_node_id.index() as u32);
-                let Some(parent) = get_parent(graph, node_idx) else {
+                let Some(parent) = get_parent(graph, current_node_id.index() as u32) else {
                     error!("Parent not found for {node_idx}");
                     return Err(ArunaError::NotFound(format!(
                         "Parent not found for {node_idx}"

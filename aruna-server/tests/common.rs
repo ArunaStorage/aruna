@@ -229,7 +229,6 @@ async fn init_testing_server(offset: u16) -> (u16, u16, Arc<Notify>) {
                 rest_port,
                 node_serial,
                 database_path: test_path,
-                //members: Vec::new(),
                 key_config: (
                     1,
                     "MC4CAQAwBQYDK2VwBCIEICHl/V9wxvENDJKePwusDhnC7xgaHYV6iHLb0ENJZndj".to_string(),
@@ -237,6 +236,7 @@ async fn init_testing_server(offset: u16) -> (u16, u16, Arc<Notify>) {
                 ),
                 socket_addr: SocketAddr::from_str(&socket_addr).unwrap(),
                 init_node: None,
+                issuer_config: None
             },
             Some(notify_clone),
         )
