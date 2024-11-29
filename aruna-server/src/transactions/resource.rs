@@ -186,10 +186,7 @@ impl WriteRequest for CreateProjectRequestTx {
                 });
             }
 
-            debug!("Endpoint found: {:?}", endpoint_idx);
-
             if let Some(endpoint_idx) = endpoint_idx {
-                debug!("Endpoint found: {}", endpoint_idx);
                 if let Some(component) = store.get_node::<Component>(wtxn.get_txn(), endpoint_idx) {
                     project.location = vec![DataLocation {
                         endpoint_id: component.id,

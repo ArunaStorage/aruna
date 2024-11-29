@@ -436,7 +436,7 @@ impl WriteRequest for AddComponentToRealmRequestTx {
             let mut wtxn = store.write_txn()?;
 
             let component_idx = store.get_idx_from_ulid_validate(
-                &realm_id,
+                &component_id,
                 "component_id",
                 &[NodeVariant::Component],
                 wtxn.get_ro_txn(),
