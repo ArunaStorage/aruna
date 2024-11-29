@@ -441,7 +441,7 @@ pub async fn create_relation_variant(
 )]
 pub async fn get_resource(
     State(state): State<Arc<Controller>>,
-    Query(request): Query<GetResourcesRequest>,
+    axum_extra::extract::Query(request): axum_extra::extract::Query<GetResourcesRequest>,
     header: HeaderMap,
 ) -> impl IntoResponse {
     into_axum_response(state.request(request, extract_token(&header)).await)
