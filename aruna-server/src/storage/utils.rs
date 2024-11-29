@@ -15,8 +15,8 @@ impl heed::BytesEncode<'_> for SigningInfoCodec {
         let mut buffer = vec![];
         buffer.extend_from_slice(&serial);
         buffer.extend_from_slice((encode_secret.len() as u64).to_be_bytes().as_ref());
-        buffer.extend_from_slice(&item.2);
         buffer.extend_from_slice(encode_secret);
+        buffer.extend_from_slice(&item.2);
         buffer.extend_from_slice(decode_secret);
         Ok(std::borrow::Cow::Owned(buffer))
     }
