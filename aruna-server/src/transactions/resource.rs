@@ -8,7 +8,7 @@ use crate::{
     error::ArunaError,
     logerr,
     models::{
-        models::{DataLocation, NodeVariant, Resource, ResourceVariant, SyncingStatus},
+        models::{Component, DataLocation, NodeVariant, Resource, ResourceVariant, SyncingStatus},
         requests::{
             CreateProjectRequest, CreateProjectResponse, CreateRelationRequest,
             CreateRelationResponse, CreateResourceBatchRequest, CreateResourceBatchResponse,
@@ -26,7 +26,7 @@ use chrono::{DateTime, Utc};
 use petgraph::Direction::Outgoing;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use ulid::Ulid;
 
 impl Request for CreateProjectRequest {
@@ -126,7 +126,8 @@ impl WriteRequest for CreateProjectRequestTx {
             };
 
             // Validate that the data endpoint is part of the realm
-            let endpont_id = if let Some(data_endpoint) = endpoint {
+
+            let endpoint_idx = if let Some(data_endpoint) = endpoint {
                 let Some(data_endpoint_idx) =
                     store.get_idx_from_ulid(&data_endpoint, wtxn.get_txn())
                 else {
@@ -146,12 +147,6 @@ impl WriteRequest for CreateProjectRequestTx {
                         error: "Realm does not use this data endpoint".to_string(),
                     });
                 }
-
-                project.location = vec![DataLocation {
-                    endpoint_id: data_endpoint,
-                    status: SyncingStatus::Finished,
-                }];
-
                 Some(data_endpoint_idx)
             } else {
                 get_relations(wtxn.get_ro_graph(), realm_idx, Some(&[DEFAULT]), Outgoing)
@@ -179,6 +174,15 @@ impl WriteRequest for CreateProjectRequestTx {
                     name: "name".to_string(),
                     error: "Project with this name already exists".to_string(),
                 });
+            }
+
+            if let Some(endpoint_idx) = endpoint_idx {
+                if let Some(component) = store.get_node::<Component>(wtxn.get_txn(), endpoint_idx) {
+                    project.location = vec![DataLocation {
+                        endpoint_id: component.id,
+                        status: SyncingStatus::Finished,
+                    }];
+                }
             }
 
             // Create project
@@ -212,7 +216,7 @@ impl WriteRequest for CreateProjectRequestTx {
             };
 
             // Notify the endpoint if user wants to add a data endpoint
-            let additional_affected = if let Some(endpoint_idx) = endpont_id {
+            let additional_affected = if let Some(endpoint_idx) = endpoint_idx {
                 vec![endpoint_idx]
             } else {
                 vec![]
