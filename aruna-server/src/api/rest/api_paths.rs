@@ -554,6 +554,10 @@ pub async fn add_component_to_realm(
     path = "/resources/{id}/relations",
     params(
         ("id" = Ulid, Path, description = "Resource ID"),
+        ("direction" = Option<Direction>, Query, description = "Direction of relation"),
+        ("filter" = Option<Vec<u32>>, Query, description = "Filter relations by index"),
+        ("offset" = Option<u32>, Query, description = "Offset for pagination"),
+        ("page_size" = Option<u32>, Query, description = "Page size for pagination"),
     ),
     responses(
         (status = 200, body = GetRelationsResponse),
@@ -568,7 +572,7 @@ pub async fn add_component_to_realm(
 pub async fn get_relations(
     Path(id): Path<Ulid>,
     State(state): State<Arc<Controller>>,
-    Query(mut request): Query<GetRelationsRequest>,
+    axum_extra::extract::Query(mut request): axum_extra::extract::Query<GetRelationsRequest>,
     header: HeaderMap,
 ) -> impl IntoResponse {
     request.node = id;
