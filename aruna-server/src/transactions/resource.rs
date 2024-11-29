@@ -933,6 +933,31 @@ impl WriteRequest for RegisterDataRequestTx {
                 });
             }
 
+            let mut update = serde_json::Map::new();
+
+            let mut existing_endpoints = resource.location.clone();
+
+            let mut updated = false;
+            for location in existing_endpoints.iter_mut() {
+                if location.endpoint_id == request.component_id {
+                    location.status = SyncingStatus::Finished;
+                    updated = true;
+                }
+            };
+
+            if !updated {
+                existing_endpoints.push(DataLocation {
+                    endpoint_id: request.component_id,
+                    status: SyncingStatus::Finished,
+                });
+            }
+
+            update.insert("location".to_string(), serde_json::to_value(existing_endpoints)?);
+            update.insert("hashes".to_string(), serde_json::to_value(request.hashes)?);
+            update.insert("updated_at".to_string(), serde_json::to_value(time)?);
+
+            store.update_node_field(&mut wtxn, resource.id, update)?;
+
             // Affected nodes: Group, Realm, Project
             wtxn.commit(associated_event_id, &[resource_idx], &[])?;
             // Create admin group, add user to admin group
