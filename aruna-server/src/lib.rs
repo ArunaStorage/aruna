@@ -22,6 +22,7 @@ use ulid::Ulid;
 pub mod api;
 pub mod constants;
 pub mod context;
+pub mod crypto;
 pub mod error;
 pub mod macros;
 pub mod models;

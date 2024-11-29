@@ -233,7 +233,7 @@ pub struct CreateS3CredentialsRequest {
     pub name: String,
     pub realm_id: Ulid,
     pub group_id: Ulid,
-    pub endpoint_id: Ulid,
+    pub component_id: Ulid,
     #[serde(default)]
     pub scope: Scope,
     #[serde(default)]

@@ -7,7 +7,10 @@ use crate::{
         ServiceAccount, Subscriber, Token, User,
     },
     storage::{
-        graph::load_graph, init, milli_helpers::prepopulate_fields, utils::SigningInfoCodec,
+        graph::load_graph,
+        init,
+        milli_helpers::prepopulate_fields,
+        utils::{pubkey_from_pem, SigningInfoCodec},
     },
     transactions::{controller::KeyConfig, request::Requester},
 };
@@ -605,7 +608,7 @@ impl Store {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_encoding_key(&self) -> Result<(u32, EncodingKey), ArunaError> {
+    pub fn get_encoding_key(&self) -> Result<(u32, EncodingKey, [u8; 32]), ArunaError> {
         let rtxn = self.read_txn()?;
 
         let signing_info = self
@@ -616,7 +619,7 @@ impl Store {
             .expect("Signing info not found")
             .expect("Signing info not found");
 
-        Ok((signing_info.0, signing_info.1))
+        Ok((signing_info.0, signing_info.1, signing_info.2))
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -624,7 +627,7 @@ impl Store {
         &self,
         issuer_name: String,
         key_id: String,
-    ) -> Option<(IssuerType, String, DecodingKey, Vec<String>)> {
+    ) -> Option<(IssuerType, String, DecodingKey, [u8; 32], Vec<String>)> {
         let read_txn = self.read_txn().ok()?;
 
         let issuers = self
@@ -642,6 +645,7 @@ impl Store {
                     issuer.issuer_type,
                     issuer.issuer_name,
                     issuer.decoding_key,
+                    issuer.x25519_pubkey,
                     issuer.audiences,
                 )
             })
@@ -1077,6 +1081,56 @@ impl Store {
         Ok(relation_info)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, wtxn))]
+    pub fn add_component_key(
+        &self,
+        wtxn: &mut WriteTxn,
+        component_idx: u32,
+        pubkey: String,
+    ) -> Result<(), ArunaError> {
+        let mut wtxn = wtxn.get_txn();
+        let issuer_single_entry_db = self
+            .single_entry_database
+            .remap_types::<Str, SerdeBincode<Vec<IssuerKey>>>();
+
+        let mut entries = issuer_single_entry_db
+            .get(&wtxn, single_entry_names::ISSUER_KEYS)
+            .inspect_err(logerr!())?;
+
+        let component = self
+            .get_node::<Component>(&wtxn, component_idx)
+            .ok_or_else(|| ArunaError::NotFound(format!("{component_idx}")))?;
+
+        let (decoding_key, x25519_pubkey) = pubkey_from_pem(&pubkey).inspect_err(logerr!())?;
+
+        let key = IssuerKey {
+            key_id: component.id.to_string(),
+            issuer_name: component.id.to_string(),
+            issuer_endpoint: None,
+            issuer_type: IssuerType::DATAPROXY,
+            decoding_key,
+            x25519_pubkey, // OIDC does not have a x25519 key
+            audiences: vec!["aruna".to_string()],
+        };
+
+        match entries {
+            Some(ref current_keys) if current_keys.contains(&key) => {}
+            Some(ref mut current_keys) if !current_keys.contains(&key) => {
+                current_keys.push(key);
+                issuer_single_entry_db
+                    .put(&mut wtxn, single_entry_names::ISSUER_KEYS, &current_keys)
+                    .inspect_err(logerr!())?;
+            }
+            _ => {
+                // TODO: This should not happen at this stage right?
+                issuer_single_entry_db
+                    .put(&mut wtxn, single_entry_names::ISSUER_KEYS, &vec![key])
+                    .inspect_err(logerr!())?;
+            }
+        }
+        Ok(())
+    }
+
     #[tracing::instrument(level = "trace", skip(self, wtxn, keys))]
     pub fn add_issuer(
         &self,
@@ -1101,6 +1155,7 @@ impl Store {
             issuer_endpoint: Some(issuer_endpoint.clone()),
             issuer_type: IssuerType::OIDC,
             decoding_key,
+            x25519_pubkey: [0; 32], // OIDC does not have a x25519 key
             audiences: audiences.clone(),
         }) {
             match entries {

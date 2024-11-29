@@ -3,7 +3,7 @@ use super::{
     request::{Request, Requester, WriteRequest},
 };
 use crate::{
-    constants::relation_types::{self, GROUP_PART_OF_REALM, REALM_USES_COMPONENT},
+    constants::relation_types::{self},
     context::Context,
     error::ArunaError,
     models::{
@@ -81,7 +81,7 @@ impl WriteRequest for CreateComponentRequestTx {
             };
 
             let idx = store.create_node(&mut wtxn, &component)?;
-
+            store.add_component_key(&mut wtxn, idx, req.pubkey)?;
             store.create_relation(&mut wtxn, idx, requester_idx, relation_types::OWNED_BY_USER)?;
 
             // Add a listener if the component is a proxy

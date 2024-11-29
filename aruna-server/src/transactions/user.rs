@@ -11,10 +11,11 @@ use crate::{
     models::{
         models::{Group, NodeVariant, Permission, Subscriber, Token, TokenType, User},
         requests::{
-            CreateTokenRequest, CreateTokenResponse, GetGroupsFromUserRequest,
-            GetGroupsFromUserResponse, GetRealmsFromUserRequest, GetRealmsFromUserResponse,
-            GetTokensRequest, GetTokensResponse, GetUserRequest, GetUserResponse,
-            RegisterUserRequest, RegisterUserResponse,
+            CreateS3CredentialsRequest, CreateS3CredentialsResponse, CreateTokenRequest,
+            CreateTokenResponse, GetGroupsFromUserRequest, GetGroupsFromUserResponse,
+            GetRealmsFromUserRequest, GetRealmsFromUserResponse, GetTokensRequest,
+            GetTokensResponse, GetUserRequest, GetUserResponse, RegisterUserRequest,
+            RegisterUserResponse,
         },
     },
     transactions::request::SerializedResponse,
@@ -426,5 +427,106 @@ impl Request for GetTokensRequest {
             tracing::error!("Failed to join task");
             ArunaError::ServerError("".to_string())
         })?
+    }
+}
+
+impl Request for CreateS3CredentialsRequest {
+    type Response = CreateS3CredentialsResponse;
+    fn get_context(&self) -> Context {
+        Context::UserOnly
+    }
+
+    async fn run_request(
+        mut self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        if self.expires_at.is_none() {
+            self.expires_at = Some(chrono::Utc::now() + chrono::Duration::days(365));
+        }
+
+        let request_tx = CreateS3CredentialsRequestTx {
+            req: self,
+            requester: requester
+                .ok_or_else(|| ArunaError::Unauthorized)
+                .inspect_err(logerr!())?,
+        };
+
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response)?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateS3CredentialsRequestTx {
+    req: CreateS3CredentialsRequest,
+    requester: Requester,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for CreateS3CredentialsRequestTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, crate::error::ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+        let user_id = self
+            .requester
+            .get_id()
+            .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
+
+        let token = Token {
+            id: 0, // This id is created in the store
+            user_id,
+            name: self.req.name.clone(),
+            expires_at: self.req.expires_at.expect("Got generated in Request"),
+            scope: self.req.scope.clone(),
+            constraints: None, // TODO: Constraints
+            token_type: TokenType::S3,
+            component_id: Some(self.req.component_id.clone()),
+            default_group: Some(self.req.group_id.clone()),
+            default_realm: Some(self.req.realm_id.clone()),
+        };
+
+        let component_id = self.req.component_id.clone();
+
+        let is_service_account = matches!(self.requester, Requester::ServiceAccount { .. });
+
+        let store = controller.get_store();
+        Ok(tokio::task::spawn_blocking(move || {
+            let mut wtxn = store.write_txn()?;
+
+            // Create token
+            let user_idx = store
+                .get_idx_from_ulid(&user_id, wtxn.get_txn())
+                .ok_or_else(|| ArunaError::NotFound("User not found".to_string()))?;
+            let token = store.add_token(
+                wtxn.get_txn(),
+                associated_event_id,
+                &token.user_id.clone(),
+                token,
+            )?;
+            // Add event to user
+
+            let (access_key, secret_key) =
+                TokenHandler::sign_s3_credentials(&store, &token.user_id, token.id, &component_id)?;
+            wtxn.commit(associated_event_id, &[user_idx], &[])?;
+
+            // Create admin group, add user to admin group
+            Ok::<_, ArunaError>(bincode::serialize(&CreateS3CredentialsResponse {
+                token,
+                component_id,
+                access_key,
+                secret_key,
+            })?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
     }
 }

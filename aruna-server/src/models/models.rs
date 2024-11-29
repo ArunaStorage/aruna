@@ -21,6 +21,7 @@ pub struct IssuerKey {
     pub issuer_endpoint: Option<String>,
     pub issuer_type: IssuerType,
     pub decoding_key: DecodingKey,
+    pub x25519_pubkey: [u8; 32],
     pub audiences: Vec<String>,
 }
 

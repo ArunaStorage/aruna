@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tracing::trace;
 use tracing_subscriber::EnvFilter;
 
-mod auth;
+//mod auth;
 mod client;
 mod config;
 mod error;

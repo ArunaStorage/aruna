@@ -17,6 +17,7 @@ use base64::{engine::general_purpose, Engine};
 use chrono::Utc;
 use jsonwebtoken::{encode, Algorithm, DecodingKey, Header};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use sha3::{Digest, Sha3_512};
 use ulid::Ulid;
 
 impl Controller {
@@ -129,7 +130,7 @@ impl TokenHandler {
     ) -> Result<String, ArunaError> {
         // Gets the signing key -> if this returns a poison error this should also panic
         // We dont want to allow poisoned / malformed encoding keys and must crash at this point
-        let (kid, encoding_key) = store.get_encoding_key()?;
+        let (kid, encoding_key, _) = store.get_encoding_key()?;
         let is_sa_u8 = if is_service_account { 1u8 } else { 0u8 };
 
         let claims = ArunaTokenClaims {
@@ -158,6 +159,38 @@ impl TokenHandler {
         })
     }
 
+    pub fn sign_s3_credentials(
+        store: &Store,
+        user_id: &Ulid,
+        token_idx: u16,
+        component_id: &Ulid,
+    ) -> Result<(String, String), ArunaError> {
+        let (_, _, server_privkey) = store.get_encoding_key()?;
+        let Some((_, _, _, proxy_pubkey, _)) =
+            store.get_issuer_info(component_id.to_string(), component_id.to_string())
+        else {
+            tracing::error!("No issuer found");
+            return Err(ArunaError::Unauthorized);
+        };
+
+        // Calculate Server Keypair
+        let proxy_secret_key = crypto_kx::Keypair::from(crypto_kx::SecretKey::from(server_privkey));
+        let server_pubkey = crypto_kx::PublicKey::from(proxy_pubkey);
+
+        let access_key = format!("{user_id}.{token_idx}");
+
+        // Calculate SessionKey
+        // Server must use session_keys_to .tx
+        let key = proxy_secret_key.session_keys_from(&server_pubkey).tx;
+
+        // Hash Key + Access Key
+        let mut hasher = Sha3_512::new();
+        hasher.update(key.as_ref());
+        hasher.update(access_key.as_bytes());
+        let shared_secret = hex::encode(hasher.finalize());
+        Ok((access_key, shared_secret))
+    }
+
     fn process_token(&self, token: &str) -> Result<Requester, ArunaError> {
         // Split the token into header and payload
         let mut split = token.split('.').map(b64_decode);
@@ -167,7 +200,7 @@ impl TokenHandler {
         // Decode and deserialize a potential payload to get the claims and issuer
         let unvalidated_claims = deserialize_field::<ArunaTokenClaims>(&mut split)?;
 
-        let (issuer_type, issuer_name, decoding_key, audiences) = self
+        let (issuer_type, issuer_name, decoding_key, _, audiences) = self
             .store
             .get_issuer_info(
                 unvalidated_claims.iss.to_string(),

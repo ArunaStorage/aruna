@@ -706,8 +706,7 @@ pub async fn create_s3_credential(
     header: HeaderMap,
     Json(request): Json<CreateS3CredentialsRequest>,
 ) -> impl IntoResponse {
-    todo!();
-    // into_axum_response(state.request(request, extract_token(&header)).await)
+    into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
 /// List all tokens from the current user
