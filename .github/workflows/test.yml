@@ -10,17 +10,12 @@ jobs:
       CARGO_NET_GIT_FETCH_WITH_CLI: true
     steps:
       - uses: arduino/setup-protoc@v1
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: remove .cargo
+        run: rm -rf ~/.cargo
       - name: Setup
         run: docker compose -f compose.yaml up -d
-      - name: cargo test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all-features -- --include-ignored
+      - uses: dtolnay/rust-toolchain@stable
+      - run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --all-features
