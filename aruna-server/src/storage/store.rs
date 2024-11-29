@@ -23,8 +23,8 @@ use milli::{
     documents::{DocumentsBatchBuilder, DocumentsBatchReader},
     execute_search, filtered_universe,
     update::{IndexDocuments, IndexDocumentsConfig, IndexDocumentsMethod, IndexerConfig},
-    CboRoaringBitmapCodec, DefaultSearchLogger, Filter, GeoSortStrategy, Index,
-    SearchContext, TermsMatchingStrategy, TimeBudget, BEU32, BEU64,
+    CboRoaringBitmapCodec, DefaultSearchLogger, Filter, GeoSortStrategy, Index, SearchContext,
+    TermsMatchingStrategy, TimeBudget, BEU32, BEU64,
 };
 use obkv::KvReader;
 use petgraph::{
@@ -820,6 +820,23 @@ impl Store {
             .inspect_err(logerr!())?;
 
         Ok(tokens.pop().flatten().expect("Added token before"))
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn get_tokens(
+        &self,
+        rtxn: &RoTxn,
+        user_id: &Ulid,
+    ) -> Result<Vec<Option<Token>>, ArunaError> {
+        let user_idx = self
+            .get_idx_from_ulid(user_id, rtxn)
+            .ok_or_else(|| ArunaError::NotFound(user_id.to_string()))?;
+
+        Ok(self
+            .tokens
+            .get(rtxn, &user_idx)
+            .inspect_err(logerr!())?
+            .unwrap_or_default())
     }
 
     #[tracing::instrument(level = "trace", skip(self, rtxn))]

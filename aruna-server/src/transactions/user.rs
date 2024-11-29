@@ -13,7 +13,8 @@ use crate::{
         requests::{
             CreateTokenRequest, CreateTokenResponse, GetGroupsFromUserRequest,
             GetGroupsFromUserResponse, GetRealmsFromUserRequest, GetRealmsFromUserResponse,
-            GetUserRequest, GetUserResponse, RegisterUserRequest, RegisterUserResponse,
+            GetTokensRequest, GetTokensResponse, GetUserRequest, GetUserResponse,
+            RegisterUserRequest, RegisterUserResponse,
         },
     },
     transactions::request::SerializedResponse,
@@ -368,6 +369,57 @@ impl Request for GetRealmsFromUserRequest {
             let read_txn = store.read_txn()?;
             let realms = store.get_realms_for_user(&read_txn, requester)?;
             Ok::<GetRealmsFromUserResponse, ArunaError>(GetRealmsFromUserResponse { realms })
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })?
+    }
+}
+
+impl Request for GetTokensRequest {
+    type Response = GetTokensResponse;
+
+    fn get_context<'a>(&'a self) -> Context {
+        Context::UserOnly
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let requester_ulid = requester
+            .ok_or_else(|| {
+                tracing::error!("Missing requester");
+                ArunaError::Unauthorized
+            })?
+            .get_id()
+            .ok_or_else(|| {
+                tracing::error!("Missing requester id");
+                ArunaError::NotFound("User not reqistered".to_string())
+            })?;
+
+        let store = controller.get_store();
+        tokio::task::spawn_blocking(move || {
+            let rtxn = store.read_txn()?;
+
+            let tokens = store.get_tokens(&rtxn, &requester_ulid)?;
+
+            let tokens = tokens
+                .into_iter()
+                .filter_map(|token| {
+                    let token = token?;
+                    if token.token_type == TokenType::Aruna {
+                        Some(token)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            Ok::<GetTokensResponse, ArunaError>(GetTokensResponse { tokens })
         })
         .await
         .map_err(|_e| {

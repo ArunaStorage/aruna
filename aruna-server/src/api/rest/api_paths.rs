@@ -117,7 +117,6 @@ pub async fn update_resource_title(
     }
 }
 
-
 /// Update resource description
 #[utoipa::path(
     post,
@@ -333,7 +332,6 @@ pub async fn update_resource_authors(
         Err(e) => e.into_axum_tuple().into_response(),
     }
 }
-
 
 /// Create a new resource
 #[utoipa::path(
@@ -683,12 +681,11 @@ pub async fn get_tokens(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!()
-    // into_axum_response(
-    //     state
-    //         .request(GetTokensRequest {}, extract_token(&header))
-    //         .await,
-    // )
+    into_axum_response(
+        state
+            .request(GetTokensRequest {}, extract_token(&header))
+            .await,
+    )
 }
 
 /// Create a s3credential

@@ -14,7 +14,6 @@ fn main() {
     )
     .unwrap();
 
-
     let file = "./01J69YGPPZY80206PGHHXBR863/store/";
     let env = unsafe {
         heed::EnvOpenOptions::new()
