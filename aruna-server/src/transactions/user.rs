@@ -9,7 +9,7 @@ use crate::{
     error::ArunaError,
     logerr,
     models::{
-        models::{Group, NodeVariant, Permission, Subscriber, Token, User},
+        models::{Group, NodeVariant, Permission, Subscriber, Token, TokenType, User},
         requests::{
             CreateTokenRequest, CreateTokenResponse, GetGroupsFromUserRequest,
             GetGroupsFromUserResponse, GetRealmsFromUserRequest, GetRealmsFromUserResponse,
@@ -173,6 +173,9 @@ impl WriteRequest for CreateTokenRequestTx {
             name: self.req.name.clone(),
             expires_at: self.req.expires_at.expect("Got generated in Request"),
             constraints: None, // TODO: Constraints
+            token_type: TokenType::Aruna,
+            default_group: self.req.group_id.clone(),
+            default_realm: self.req.realm_id.clone(),
         };
 
         let is_service_account = matches!(self.requester, Requester::ServiceAccount { .. });

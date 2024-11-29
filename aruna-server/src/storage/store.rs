@@ -38,7 +38,7 @@ use std::{
     collections::HashMap,
     fs,
     io::Cursor,
-    sync::{atomic::AtomicU64, RwLock, RwLockWriteGuard},
+    sync::{atomic::AtomicU64, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 use ulid::Ulid;
 
@@ -321,6 +321,11 @@ impl Store {
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn read_txn(&self) -> Result<heed::RoTxn, ArunaError> {
         Ok(self.milli_index.read_txn().inspect_err(logerr!())?)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn get_graph(&self) -> RwLockReadGuard<'_, Graph<NodeVariant, EdgeType>> {
+        self.graph.read().expect("Poisoned lock")
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -714,23 +719,34 @@ impl Store {
         get_permissions(&graph, resource_idx, user_idx)
     }
 
-    /// Returns the type of user and additional information
-    /// based on the token Ulid
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub fn ensure_token_exists(
+    /// Returns the token
+    #[tracing::instrument(level = "trace", skip(self, rtxn, graph))]
+    pub fn get_token(
         &self,
-        requester_id: &Ulid,
-        token_idx: u16,
-    ) -> Result<(), ArunaError> {
+        requester: &Requester,
+        rtxn: &RoTxn,
+        graph: &Graph<NodeVariant, EdgeType>,
+    ) -> Result<Token, ArunaError> {
         let read_txn = self.read_txn()?;
 
+        let requester_id = requester.get_id().ok_or_else(|| {
+            tracing::error!("Requester id not found");
+            ArunaError::Unauthorized
+        })?;
+
+        let token_idx = requester.get_token_idx().ok_or_else(|| {
+            tracing::error!("Token idx not found");
+            ArunaError::Unauthorized
+        })?;
+
         // Get the internal idx of the token
-        let requester_internal_idx =
-            self.get_idx_from_ulid(requester_id, &read_txn)
-                .ok_or_else(|| {
-                    tracing::error!("User not found");
-                    ArunaError::Unauthorized
-                })?;
+        let requester_internal_idx = self.get_idx_from_ulid_validate(
+            &requester_id,
+            "requester",
+            &[NodeVariant::User, NodeVariant::ServiceAccount],
+            &rtxn,
+            graph,
+        )?;
 
         let Some(tokens) = self
             .tokens
@@ -741,11 +757,11 @@ impl Store {
             return Err(ArunaError::Unauthorized);
         };
 
-        let Some(Some(_token)) = tokens.get(token_idx as usize) else {
+        let Some(Some(token)) = tokens.get(token_idx as usize) else {
             tracing::error!("Token not found");
             return Err(ArunaError::Unauthorized);
         };
-        Ok(())
+        Ok(*token)
     }
 
     // Returns the group_id of the service account

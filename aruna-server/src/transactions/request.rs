@@ -84,6 +84,17 @@ impl Requester {
         }
     }
 
+    pub fn get_token_idx(&self) -> Option<u16> {
+        match self {
+            Self::ServiceAccount { token_id, .. } => Some(*token_id),
+            Self::User {
+                auth_method: AuthMethod::Aruna(idx),
+                ..
+            } => Some(*idx),
+            _ => None,
+        }
+    }
+
     pub fn get_impersonator(&self) -> Option<Ulid> {
         match self {
             Self::User {

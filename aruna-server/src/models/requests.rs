@@ -3,11 +3,10 @@ use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
-use crate::{error::ArunaError, transactions::request::WriteRequest};
-
 use super::models::{
     Author, Component, ComponentType, Endpoint, GenericNode, Group, Hash, KeyValue, Permission,
-    Realm, Relation, RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass,
+    Realm, Relation, RelationInfo, Resource, ResourceVariant, S3Credential, Token, User,
+    VisibilityClass,
 };
 
 fn default_license_tag() -> String {
@@ -218,12 +217,49 @@ pub struct CreateTokenRequest {
     #[serde(default)]
     pub expires_at: Option<chrono::DateTime<Utc>>,
     //pub constraints: Vec<Constraint>,
+    pub realm_id: Option<Ulid>,
+    pub group_id: Option<Ulid>,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct CreateTokenResponse {
     pub token: Token,
     pub secret: String,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateS3CredentialsRequest {
+    pub name: String,
+    pub realm_id: Ulid,
+    pub group_id: Ulid,
+    pub endpoint_id: Ulid,
+    #[serde(default)]
+    pub expires_at: Option<chrono::DateTime<Utc>>,
+    //pub constraints: Vec<Constraint>,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateS3CredentialsResponse {
+    pub token: Token,
+    pub component_id: Ulid,
+    pub access_key: String,
+    pub secret_key: String,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetTokensRequest {}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetTokensResponse {
+    pub tokens: Vec<Token>,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetS3CredentialsRequest {}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetS3CredentialsResponse {
+    pub tokens: Vec<S3Credential>,
 }
 
 #[derive(

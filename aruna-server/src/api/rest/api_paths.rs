@@ -447,6 +447,79 @@ pub async fn create_token(
     into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
+/// List all tokens from the current user
+#[utoipa::path(
+    get,
+    path = "/users/tokens",
+    responses(
+        (status = 200, body = GetTokensResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+    tag = USERS,
+)]
+pub async fn get_tokens(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(
+        state
+            .request(GetTokensRequest {}, extract_token(&header))
+            .await,
+    )
+}
+
+/// Create a s3credential
+#[utoipa::path(
+    post,
+    path = "/users/s3credentials",
+    request_body = CreateS3CredentialsRequest,
+    responses(
+        (status = 200, body = CreateS3CredentialsResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+    tag = USERS,
+)]
+pub async fn create_s3_credential(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+    Json(request): Json<CreateS3CredentialsRequest>,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&header)).await)
+}
+
+/// List all tokens from the current user
+#[utoipa::path(
+    get,
+    path = "/users/s3credentials",
+    responses(
+        (status = 200, body = GetS3CredentialsResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+    tag = USERS,
+)]
+pub async fn get_s3_credentials(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(
+        state
+            .request(GetS3CredentialsRequest {}, extract_token(&header))
+            .await,
+    )
+}
+
 /// Search for resources
 #[utoipa::path(
     get,

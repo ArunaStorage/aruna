@@ -68,5 +68,8 @@ pub fn router(store: Arc<Controller>) -> OpenApiRouter {
         .routes(routes!(add_user))
         .routes(routes!(add_component_to_realm))
         .routes(routes!(register_data))
+        .routes(routes!(get_tokens))
+        .routes(routes!(create_s3_credential))
+        .routes(routes!(get_s3_credentials))
         .with_state(store)
 }
