@@ -212,7 +212,6 @@ pub struct RegisterUserResponse {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct CreateTokenRequest {
-    pub user_id: Ulid, // TODO: REMOVE
     pub name: String,
     #[serde(default)]
     pub expires_at: Option<chrono::DateTime<Utc>>,
