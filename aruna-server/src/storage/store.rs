@@ -1293,7 +1293,7 @@ impl Store {
         &'a self,
         wtxn: &mut WriteTxn<'a>,
         node_id: Ulid,
-        json_object: serde_json::Map<String, serde_json::Value>,
+        mut json_object: serde_json::Map<String, serde_json::Value>,
     ) -> Result<(), ArunaError> {
         let indexer_config = IndexerConfig::default();
         let mut documents_config = IndexDocumentsConfig::default();
@@ -1306,6 +1306,8 @@ impl Store {
             |_| (),
             || false,
         )?;
+
+        json_object.insert("id".to_string(), serde_json::Value::String(node_id.to_string()));
 
         // Create a document batch
         let mut documents_batch = DocumentsBatchBuilder::new(Vec::new());
