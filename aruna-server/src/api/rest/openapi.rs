@@ -1,5 +1,8 @@
 use super::api_paths::*;
-use crate::{models::{models::Permission, requests::Direction}, transactions::controller::Controller};
+use crate::{
+    models::{models::Permission, requests::Direction},
+    transactions::controller::Controller,
+};
 use std::sync::Arc;
 use utoipa::{
     openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},

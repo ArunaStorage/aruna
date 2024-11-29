@@ -65,6 +65,10 @@ impl<'a> WriteTxn<'a> {
         self.txn.as_mut().expect("Transaction already committed")
     }
 
+    pub fn get_ro_txn(&self) -> &RoTxn<'a> {
+        self.txn.as_ref().expect("Transaction already committed")
+    }
+
     pub fn add_node(&mut self, node: NodeVariant) -> NodeIndex {
         let idx = self.graph_lock.add_node(node);
         self.nodes.push(idx);
@@ -350,6 +354,43 @@ impl Store {
             .inspect_err(logerr!())
             .ok()
             .flatten()
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, id, rtxn))]
+    pub fn get_idx_from_ulid_validate(
+        &self,
+        id: &Ulid,
+        field_name: &str,
+        expected_variants: &[NodeVariant],
+        rtxn: &RoTxn,
+        graph: &Graph<NodeVariant, EdgeType>,
+    ) -> Result<u32, ArunaError> {
+        let idx = self
+            .milli_index
+            .external_documents_ids
+            .get(rtxn, &id.to_string())
+            .inspect_err(logerr!())
+            .ok()
+            .flatten()
+            .ok_or_else(|| {
+                ArunaError::NotFound(format!("Resource not found: {}, field: {}", id, field_name))
+            })?;
+
+        let node_weight = graph.node_weight(idx.into()).ok_or_else(|| {
+            ArunaError::NotFound(format!("Resource not found: {}, field: {}", id, field_name))
+        })?;
+
+        if !expected_variants.contains(node_weight) {
+            return Err(ArunaError::InvalidParameter {
+                name: field_name.to_string(),
+                error: format!(
+                    "Resource {} not of expected types: {:?}",
+                    id, expected_variants
+                ),
+            });
+        }
+
+        Ok(idx)
     }
 
     #[tracing::instrument(level = "trace", skip(self, id, rtxn))]

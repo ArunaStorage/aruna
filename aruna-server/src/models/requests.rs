@@ -254,7 +254,9 @@ pub struct AddUserRequest {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct AddUserResponse {}
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
 pub enum Direction {
     Incoming,
     Outgoing,
@@ -275,7 +277,7 @@ pub struct GetRelationsRequest {
     #[serde(default)]
     pub direction: Direction, // wrapper type for petgraph::Direction enum
     #[serde(default)]
-    pub filter: Vec<u32>,     // Filter with Strings for directions or idx for rel idx?
+    pub filter: Vec<u32>, // Filter with Strings for directions or idx for rel idx?
     #[serde(default)]
     pub offset: Option<usize>,
     #[serde(default = "default_page_size")]

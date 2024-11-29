@@ -107,7 +107,7 @@ impl WriteRequest for CreateProjectRequestTx {
 
         let endpoint = self.req.data_endpoint.clone();
 
-        let requester = self.requester.clone();
+        let _requester = self.requester.clone();
 
         let store = controller.get_store();
         Ok(tokio::task::spawn_blocking(move || {
@@ -116,24 +116,32 @@ impl WriteRequest for CreateProjectRequestTx {
             let mut wtxn = store.write_txn()?;
 
             // Get group idx
-            let Some(group_idx) = store.get_idx_from_ulid(&group_id, wtxn.get_txn()) else {
-                return Err(ArunaError::NotFound(group_id.to_string()));
-            };
+            let group_idx = store.get_idx_from_ulid_validate(
+                &group_id,
+                "group_id",
+                &[NodeVariant::Group],
+                wtxn.get_ro_txn(),
+                wtxn.get_ro_graph(),
+            )?;
             // Get the realm
-            let Some(realm_idx) = store.get_idx_from_ulid(&realm_id, wtxn.get_txn()) else {
-                error!("Realm not found: {}", realm_id);
-                return Err(ArunaError::NotFound(group_id.to_string()));
-            };
+            let realm_idx = store.get_idx_from_ulid_validate(
+                &realm_id,
+                "realm_id",
+                &[NodeVariant::Realm],
+                wtxn.get_ro_txn(),
+                wtxn.get_ro_graph(),
+            )?;
 
             // Validate that the data endpoint is part of the realm
-
             let endpoint_idx = if let Some(data_endpoint) = endpoint {
-                let Some(data_endpoint_idx) =
-                    store.get_idx_from_ulid(&data_endpoint, wtxn.get_txn())
-                else {
-                    error!("Data endpoint not found: {}", data_endpoint);
-                    return Err(ArunaError::NotFound(data_endpoint.to_string()));
-                };
+                // Get the endpoint
+                let data_endpoint_idx = store.get_idx_from_ulid_validate(
+                    &data_endpoint,
+                    "data_endpoint",
+                    &[NodeVariant::Component],
+                    wtxn.get_ro_txn(),
+                    wtxn.get_ro_graph(),
+                )?;
 
                 if !has_relation(
                     wtxn.get_ro_graph(),
@@ -149,12 +157,14 @@ impl WriteRequest for CreateProjectRequestTx {
                 }
                 Some(data_endpoint_idx)
             } else {
+                debug!("No data endpoint provided");
                 get_relations(wtxn.get_ro_graph(), realm_idx, Some(&[DEFAULT]), Outgoing)
                     .iter()
                     .find_map(|r| {
-                        if wtxn.get_ro_graph().node_weight(r.target.into())
-                            == Some(&NodeVariant::Component)
-                        {
+                        debug!("Checking relation: {:?}", r);
+                        let node_type = wtxn.get_ro_graph().node_weight(r.target.into());
+                        debug!("Node type: {:?}", node_type);
+                        if node_type == Some(&NodeVariant::Component) {
                             Some(r.target)
                         } else {
                             None
@@ -176,12 +186,17 @@ impl WriteRequest for CreateProjectRequestTx {
                 });
             }
 
+            debug!("Endpoint found: {:?}", endpoint_idx);
+
             if let Some(endpoint_idx) = endpoint_idx {
+                debug!("Endpoint found: {}", endpoint_idx);
                 if let Some(component) = store.get_node::<Component>(wtxn.get_txn(), endpoint_idx) {
                     project.location = vec![DataLocation {
                         endpoint_id: component.id,
                         status: SyncingStatus::Finished,
                     }];
+                } else {
+                    return Err(ArunaError::NotFound(endpoint_idx.to_string()));
                 }
             }
 
@@ -514,10 +529,13 @@ impl WriteRequest for CreateResourceBatchRequestTx {
 
             for (index, batch_resource) in request.resources.iter().enumerate() {
                 let mut resource = Resource {
-                    id: ids.get(index).ok_or_else(|| {
-                        error!("Id not found: {}", index);
-                        ArunaError::DeserializeError("Id not found".to_string())
-                    })?.clone(),
+                    id: ids
+                        .get(index)
+                        .ok_or_else(|| {
+                            error!("Id not found: {}", index);
+                            ArunaError::DeserializeError("Id not found".to_string())
+                        })?
+                        .clone(),
                     name: batch_resource.name.clone(),
                     description: batch_resource.description.clone(),
                     title: batch_resource.title.clone(),
@@ -560,9 +578,9 @@ impl WriteRequest for CreateResourceBatchRequestTx {
                         }
 
                         let parent_endpoints = parent_node.location.clone();
-                        affected_endpoints.extend(parent_endpoints
-                            .iter()
-                            .filter_map(|l| store.get_idx_from_ulid(&l.endpoint_id, wtxn.get_txn())));
+                        affected_endpoints.extend(parent_endpoints.iter().filter_map(|l| {
+                            store.get_idx_from_ulid(&l.endpoint_id, wtxn.get_txn())
+                        }));
                         resource.location = parent_endpoints;
 
                         // Check for unique name 1. Get all resources with the same name
@@ -587,10 +605,13 @@ impl WriteRequest for CreateResourceBatchRequestTx {
                         ulid
                     }
                     Parent::Idx(index) => {
-                        let parent: &Resource = &to_create.get(index as usize).ok_or_else(|| {
-                            error!("Parent not found: {}", index);
-                            ArunaError::NotFound(index.to_string())
-                        })?.0;
+                        let parent: &Resource = &to_create
+                            .get(index as usize)
+                            .ok_or_else(|| {
+                                error!("Parent not found: {}", index);
+                                ArunaError::NotFound(index.to_string())
+                            })?
+                            .0;
 
                         if !matches!(
                             parent.variant,
@@ -605,7 +626,10 @@ impl WriteRequest for CreateResourceBatchRequestTx {
                         let parent_endpoints = parent.location.clone();
                         resource.location = parent_endpoints;
 
-                        if existing_names.insert(index, resource.name.clone()).is_some() {
+                        if existing_names
+                            .insert(index, resource.name.clone())
+                            .is_some()
+                        {
                             return Err(ArunaError::ConflictParameter {
                                 name: "name".to_string(),
                                 error: "Resource with this name already exists in this hierarchy"
@@ -613,14 +637,14 @@ impl WriteRequest for CreateResourceBatchRequestTx {
                             });
                         }
                         parent.id
-                    },
+                    }
                 };
 
                 to_create.push((resource, parent_id));
             }
 
-            let resource_idx = store
-                .create_nodes_batch(&mut wtxn, to_create.iter().map(|e| &e.0).collect())?;
+            let resource_idx =
+                store.create_nodes_batch(&mut wtxn, to_create.iter().map(|e| &e.0).collect())?;
 
             let mut affected = vec![];
             for (resource, parent_id) in &to_create {

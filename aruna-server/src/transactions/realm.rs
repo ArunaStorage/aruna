@@ -435,20 +435,29 @@ impl WriteRequest for AddComponentToRealmRequestTx {
 
             let mut wtxn = store.write_txn()?;
 
-            let Some(component_idx) = store.get_idx_from_ulid(&component_id, wtxn.get_txn()) else {
-                error!("Component not found");
-                return Err(ArunaError::NotFound(component_id.to_string()));
-            };
+            let component_idx = store.get_idx_from_ulid_validate(
+                &realm_id,
+                "component_id",
+                &[NodeVariant::Component],
+                wtxn.get_ro_txn(),
+                wtxn.get_ro_graph(),
+            )?;
 
-            let Some(user_idx) = store.get_idx_from_ulid(&requester_id, wtxn.get_txn()) else {
-                error!("Component not found");
-                return Err(ArunaError::NotFound(component_id.to_string()));
-            };
+            let user_idx = store.get_idx_from_ulid_validate(
+                &requester_id,
+                "user",
+                &[NodeVariant::User, NodeVariant::ServiceAccount],
+                wtxn.get_ro_txn(),
+                wtxn.get_ro_graph(),
+            )?;
 
-            let Some(realm_idx) = store.get_idx_from_ulid(&realm_id, wtxn.get_txn()) else {
-                error!("Realm not found");
-                return Err(ArunaError::NotFound(realm_id.to_string()));
-            };
+            let realm_idx = store.get_idx_from_ulid_validate(
+                &realm_id,
+                "realm_id",
+                &[NodeVariant::Realm],
+                wtxn.get_ro_txn(),
+                wtxn.get_ro_graph(),
+            )?;
 
             let component = store
                 .get_node::<Component>(wtxn.get_txn(), component_idx)

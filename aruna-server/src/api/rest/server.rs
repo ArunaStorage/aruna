@@ -1,6 +1,6 @@
-use std::{net::SocketAddr, sync::Arc};
 use crate::{error::ArunaError, transactions::controller::Controller};
 use axum::{response::Redirect, routing::get};
+use std::{net::SocketAddr, sync::Arc};
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
@@ -22,13 +22,14 @@ impl RestServer {
         let swagger = SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api);
 
         let app = router
-        .route("/", get(|| async { Redirect::permanent("/swagger-ui") }))
-        .merge(swagger).layer(
-            TraceLayer::new_for_http()
-                .on_response(())
-                .on_body_chunk(())
-                .on_eos(()),
-        );
+            .route("/", get(|| async { Redirect::permanent("/swagger-ui") }))
+            .merge(swagger)
+            .layer(
+                TraceLayer::new_for_http()
+                    .on_response(())
+                    .on_body_chunk(())
+                    .on_eos(()),
+            );
         axum::serve(listener, app.into_make_service())
             .await
             .map_err(|e| ArunaError::ServerError(e.to_string()))?;

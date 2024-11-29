@@ -53,8 +53,8 @@ impl Request for GetRelationsRequest {
             // Check if resource is public
             if public {
                 let resource = store
-                .get_node::<Resource>(&rtxn, idx)
-                .ok_or_else(|| ArunaError::NotFound(self.node.to_string()))?;
+                    .get_node::<Resource>(&rtxn, idx)
+                    .ok_or_else(|| ArunaError::NotFound(self.node.to_string()))?;
                 if !matches!(
                     resource.visibility,
                     crate::models::models::VisibilityClass::Public
@@ -72,11 +72,21 @@ impl Request for GetRelationsRequest {
             };
 
             let relations = match self.direction {
-                Direction::Incoming => store.get_relations(idx, filter, petgraph::Direction::Incoming, &rtxn)?,
-                Direction::Outgoing => store.get_relations(idx, filter, petgraph::Direction::Outgoing, &rtxn)?,
+                Direction::Incoming => {
+                    store.get_relations(idx, filter, petgraph::Direction::Incoming, &rtxn)?
+                }
+                Direction::Outgoing => {
+                    store.get_relations(idx, filter, petgraph::Direction::Outgoing, &rtxn)?
+                }
                 Direction::All => {
-                    let mut relations = store.get_relations(idx, filter, petgraph::Direction::Incoming, &rtxn)?;
-                    relations.extend(store.get_relations(idx, filter, petgraph::Direction::Outgoing, &rtxn)?);
+                    let mut relations =
+                        store.get_relations(idx, filter, petgraph::Direction::Incoming, &rtxn)?;
+                    relations.extend(store.get_relations(
+                        idx,
+                        filter,
+                        petgraph::Direction::Outgoing,
+                        &rtxn,
+                    )?);
                     relations
                 }
             };
