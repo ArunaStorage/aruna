@@ -38,6 +38,7 @@ pub struct Config {
     pub init_node: Option<String>,
     pub key_config: (u32, String, String),
     pub socket_addr: SocketAddr,
+    pub issuer_config: Option<(String, String, String)>,
 }
 
 pub fn config_from_env() -> Config {
@@ -64,6 +65,12 @@ pub fn config_from_env() -> Config {
         dotenvy::var("ENCODING_KEY").unwrap(),
         dotenvy::var("DECODING_KEY").unwrap(),
     );
+    let issuer_config = match (dotenvy::var("OIDC_ISSUER_NAME").ok(),
+        dotenvy::var("OIDC_ISSUER_ENDPOINT").ok(),
+        dotenvy::var("OIDC_ISSUER_AUDIENCES").ok()) {
+        (Some(name), Some(endpoint), Some(aud)) => Some((name, endpoint, aud)),
+        _=> None,
+    };
 
     Config {
         node_id,
@@ -74,6 +81,7 @@ pub fn config_from_env() -> Config {
         init_node,
         key_config,
         socket_addr,
+        issuer_config
     }
 }
 
@@ -88,6 +96,7 @@ pub async fn start_server(
         grpc_port,
         rest_port,
         init_node,
+        issuer_config
     }: Config,
     notify: Option<Arc<Notify>>,
 ) -> Result<(), ArunaError> {
@@ -103,12 +112,8 @@ pub async fn start_server(
     .await
     .unwrap();
 
-    match (
-        dotenvy::var("OIDC_ISSUER_NAME").ok(),
-        dotenvy::var("OIDC_ISSUER_ENDPOINT").ok(),
-        dotenvy::var("OIDC_ISSUER_AUDIENCES").ok(),
-    ) {
-        (Some(issuer_name), Some(issuer_endpoint), Some(aud)) => {
+    match issuer_config {
+        Some((issuer_name, issuer_endpoint,aud)) => {
             if first_node {
                 info!("Adding OIDC provider");
                 let audiences = aud.split(';').map(|s| s.to_string()).collect();
