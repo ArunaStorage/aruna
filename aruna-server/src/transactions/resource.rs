@@ -365,11 +365,18 @@ impl WriteRequest for CreateResourceRequestTx {
                 });
             }
 
-            let parent_endpoints = parent_node.location.clone();
+            let mut parent_endpoints = parent_node.location.clone();
             let affected = parent_endpoints
                 .iter()
                 .filter_map(|l| store.get_idx_from_ulid(&l.endpoint_id, wtxn.get_txn()))
                 .collect::<Vec<_>>();
+
+            if resource.variant == ResourceVariant::Object {
+                parent_endpoints.iter_mut().for_each(|l| {
+                    l.status = SyncingStatus::Pending;
+                });
+            }
+
             resource.location = parent_endpoints;
 
             // Check for unique name 1. Get all resources with the same name
@@ -574,10 +581,17 @@ impl WriteRequest for CreateResourceBatchRequestTx {
                             });
                         }
 
-                        let parent_endpoints = parent_node.location.clone();
+                        let mut parent_endpoints = parent_node.location.clone();
                         affected_endpoints.extend(parent_endpoints.iter().filter_map(|l| {
                             store.get_idx_from_ulid(&l.endpoint_id, wtxn.get_txn())
                         }));
+
+                        if resource.variant == ResourceVariant::Object {
+                            parent_endpoints.iter_mut().for_each(|l| {
+                                l.status = SyncingStatus::Pending;
+                            });
+                        }
+
                         resource.location = parent_endpoints;
 
                         // Check for unique name 1. Get all resources with the same name
@@ -620,7 +634,14 @@ impl WriteRequest for CreateResourceBatchRequestTx {
                             });
                         }
 
-                        let parent_endpoints = parent.location.clone();
+                        let mut parent_endpoints = parent.location.clone();
+
+                        if resource.variant == ResourceVariant::Object {
+                            parent_endpoints.iter_mut().for_each(|l| {
+                                l.status = SyncingStatus::Pending;
+                            });
+                        }
+
                         resource.location = parent_endpoints;
 
                         if existing_names
@@ -943,7 +964,7 @@ impl WriteRequest for RegisterDataRequestTx {
                     location.status = SyncingStatus::Finished;
                     updated = true;
                 }
-            };
+            }
 
             if !updated {
                 existing_endpoints.push(DataLocation {
@@ -952,7 +973,10 @@ impl WriteRequest for RegisterDataRequestTx {
                 });
             }
 
-            update.insert("location".to_string(), serde_json::to_value(existing_endpoints)?);
+            update.insert(
+                "location".to_string(),
+                serde_json::to_value(existing_endpoints)?,
+            );
             update.insert("hashes".to_string(), serde_json::to_value(request.hashes)?);
             update.insert("updated_at".to_string(), serde_json::to_value(time)?);
 
