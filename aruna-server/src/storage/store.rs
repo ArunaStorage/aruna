@@ -613,7 +613,7 @@ impl Store {
     pub fn get_relations(
         &self,
         idx: u32,
-        filter: &[EdgeType],
+        filter: Option<&[EdgeType]>,
         direction: Direction,
         rtxn: &RoTxn,
     ) -> Result<Vec<Relation>, ArunaError> {

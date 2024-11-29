@@ -301,7 +301,7 @@ impl Request for GetGroupsFromRealmRequest {
             for source in store
                 .get_relations(
                     realm_idx,
-                    &[GROUP_PART_OF_REALM],
+                    Some(&[GROUP_PART_OF_REALM]),
                     Direction::Incoming,
                     &rtxn,
                 )?
@@ -352,7 +352,7 @@ impl Request for GetRealmComponentsRequest {
             };
             let component_relations = store.get_relations(
                 realm_idx,
-                &[REALM_USES_COMPONENT],
+                Some(&[REALM_USES_COMPONENT]),
                 Direction::Outgoing,
                 &read_txn,
             )?;
@@ -474,7 +474,7 @@ impl WriteRequest for AddComponentToRealmRequestTx {
                 relation_types::REALM_USES_COMPONENT,
             )?;
 
-            if !get_relations(wtxn.get_ro_graph(), realm_idx, &[DEFAULT], Outgoing)
+            if !get_relations(wtxn.get_ro_graph(), realm_idx, Some(&[DEFAULT]), Outgoing)
                 .iter()
                 .any(|r| {
                     wtxn.get_ro_graph().node_weight(r.target.into())

@@ -289,7 +289,7 @@ impl Request for GetGroupsFromUserRequest {
                 .ok_or_else(|| ArunaError::NotFound("Requester not found".to_string()))?;
 
             let relations =
-                store.get_relations(user_idx, &filter, petgraph::Direction::Outgoing, &rtxn)?;
+                store.get_relations(user_idx, Some(&filter), petgraph::Direction::Outgoing, &rtxn)?;
             for relation in &relations {
                 let target = relation.to_id;
 

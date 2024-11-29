@@ -51,10 +51,10 @@ impl Request for GetRelationsRequest {
                 .ok_or_else(|| ArunaError::NotFound(self.node.to_string()))?;
 
             // Check if resource is public
-            let resource = store
+            if public {
+                let resource = store
                 .get_node::<Resource>(&rtxn, idx)
                 .ok_or_else(|| ArunaError::NotFound(self.node.to_string()))?;
-            if public {
                 if !matches!(
                     resource.visibility,
                     crate::models::models::VisibilityClass::Public
@@ -63,12 +63,24 @@ impl Request for GetRelationsRequest {
                 }
             }
 
-            let direction = match self.direction {
-                Direction::Incoming => petgraph::Direction::Incoming,
-                Direction::Outgoing => petgraph::Direction::Outgoing,
-            };
             let offset = self.offset.unwrap_or_default();
-            let relations = store.get_relations(idx, &self.filter, direction, &rtxn)?;
+
+            let filter: Option<&[u32]> = if self.filter.is_empty() {
+                None
+            } else {
+                Some(&self.filter)
+            };
+
+            let relations = match self.direction {
+                Direction::Incoming => store.get_relations(idx, filter, petgraph::Direction::Incoming, &rtxn)?,
+                Direction::Outgoing => store.get_relations(idx, filter, petgraph::Direction::Outgoing, &rtxn)?,
+                Direction::All => {
+                    let mut relations = store.get_relations(idx, filter, petgraph::Direction::Incoming, &rtxn)?;
+                    relations.extend(store.get_relations(idx, filter, petgraph::Direction::Outgoing, &rtxn)?);
+                    relations
+                }
+            };
+
             let new_offset = if relations.len() < offset + self.page_size {
                 None
             } else {

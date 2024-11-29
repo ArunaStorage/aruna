@@ -154,7 +154,7 @@ impl WriteRequest for CreateProjectRequestTx {
 
                 Some(data_endpoint_idx)
             } else {
-                get_relations(wtxn.get_ro_graph(), realm_idx, &[DEFAULT], Outgoing)
+                get_relations(wtxn.get_ro_graph(), realm_idx, Some(&[DEFAULT]), Outgoing)
                     .iter()
                     .find_map(|r| {
                         if wtxn.get_ro_graph().node_weight(r.target.into())

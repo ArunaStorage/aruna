@@ -566,10 +566,12 @@ pub async fn add_component_to_realm(
     tag = RESOURCES,
 )]
 pub async fn get_relations(
+    Path(id): Path<Ulid>,
     State(state): State<Arc<Controller>>,
-    Query(request): Query<GetRelationsRequest>,
+    Query(mut request): Query<GetRelationsRequest>,
     header: HeaderMap,
 ) -> impl IntoResponse {
+    request.node = id;
     into_axum_response(state.request(request, extract_token(&header)).await)
 }
 

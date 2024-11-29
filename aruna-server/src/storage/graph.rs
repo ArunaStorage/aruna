@@ -72,28 +72,29 @@ pub fn load_graph(
 pub fn get_relations(
     graph: &Graph<NodeVariant, EdgeType>,
     idx: u32,
-    filter: &[EdgeType],
+    filter: Option<&[EdgeType]>,
     direction: Direction,
 ) -> Vec<RawRelation> {
     let idx = idx.into();
     graph
         .edges_directed(idx, direction)
         .filter_map(|e| {
-            if filter.contains(e.weight()) {
-                match direction {
-                    Direction::Outgoing => Some(RawRelation {
-                        target: e.target().as_u32(),
-                        source: idx.as_u32(),
-                        edge_type: *e.weight(),
-                    }),
-                    Direction::Incoming => Some(RawRelation {
-                        source: e.target().as_u32(),
-                        target: idx.as_u32(),
-                        edge_type: *e.weight(),
-                    }),
+            if let Some(filter) = filter {
+                if !filter.contains(e.weight()) {
+                    return None;
                 }
-            } else {
-                None
+            }
+            match direction {
+                Direction::Outgoing => Some(RawRelation {
+                    target: e.target().as_u32(),
+                    source: idx.as_u32(),
+                    edge_type: *e.weight(),
+                }),
+                Direction::Incoming => Some(RawRelation {
+                    source: e.target().as_u32(),
+                    target: idx.as_u32(),
+                    edge_type: *e.weight(),
+                }),
             }
         })
         .collect()

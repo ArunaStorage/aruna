@@ -274,7 +274,7 @@ impl Request for GetUsersFromGroupRequest {
 
             let mut users = Vec::new();
             for source in store
-                .get_relations(idx, &filter, petgraph::Direction::Incoming, &rtxn)?
+                .get_relations(idx, Some(&filter), petgraph::Direction::Incoming, &rtxn)?
                 .into_iter()
                 .map(|r| r.from_id)
             {
