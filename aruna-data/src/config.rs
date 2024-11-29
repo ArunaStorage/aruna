@@ -86,7 +86,10 @@ impl Proxy {
         let Some(private_key) = self.private_key.clone() else {
             bail!("Private key not set")
         };
-        crate::auth::crypto::ed25519_to_x25519_privatekey(&private_key)
+        aruna_server::crypto::ed25519_to_x25519_privatekey(&private_key).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.message);
+            anyhow!(e.message)
+        })
     }
 
     pub fn _get_public_key(&self) -> Result<[u8; 32]> {
@@ -98,7 +101,10 @@ impl Proxy {
     }
 
     pub fn get_public_key_x25519(&self) -> Result<[u8; 32]> {
-        crate::auth::crypto::ed25519_to_x25519_pubkey(&self.public_key)
+        aruna_server::crypto::ed25519_to_x25519_pubkey(&self.public_key).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.message);
+            anyhow!(e.message)
+        })
     }
 }
 
