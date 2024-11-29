@@ -8,7 +8,7 @@ mod create_tests {
     };
     use aruna_server::models::requests::{
         BatchResource, CreateResourceBatchRequest, CreateResourceBatchResponse,
-        UpdateResourceRequest,
+        UpdateResourceNameRequest, UpdateResourceNameResponse,
     };
     use ulid::Ulid;
     pub const OFFSET: u16 = 0;
@@ -112,7 +112,7 @@ mod create_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_resource() {
+    async fn test_resource_creation() {
         let mut clients = init_test(OFFSET).await;
 
         // Create realm
@@ -166,11 +166,29 @@ mod create_tests {
 
         assert_eq!(request.name, resource.name);
 
-        let request = UpdateResourceRequest {
+        let request = UpdateResourceNameRequest {
             id: Ulid::from_string(&resource.id).unwrap(),
             name: "NewName".to_string(),
             ..Default::default()
         };
+
+        let client = reqwest::Client::new();
+        let url = format!("{}/api/v3/resources/name", clients.rest_endpoint);
+        let response: UpdateResourceNameResponse = client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
+            .json(&request)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+        assert_eq!(response.resource.name, request.name);
+        let new = response.resource.last_modified;
+        let old = resource.last_modified.unwrap().into();
+        assert!( new > old )
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -235,7 +253,7 @@ mod create_tests {
         //dbg!(&request);
 
         let client = reqwest::Client::new();
-        let url = format!("{}/api/v3/resource/batch", clients.rest_endpoint);
+        let url = format!("{}/api/v3/resources/batch", clients.rest_endpoint);
 
         let response: CreateResourceBatchResponse = client
             .post(url)
@@ -269,7 +287,7 @@ mod create_tests {
         let request = CreateResourceBatchRequest { resources };
 
         let client = reqwest::Client::new();
-        let url = format!("{}/api/v3/resource/batch", clients.rest_endpoint);
+        let url = format!("{}/api/v3/resources/batch", clients.rest_endpoint);
 
         assert!(client
             .post(url)
@@ -281,54 +299,4 @@ mod create_tests {
             .error_for_status()
             .is_err())
     }
-
-    // #[tokio::test(flavor = "multi_thread")]
-    // async fn create_user() {
-    //     // Setup
-    //     let clients = init_test(OFFSET).await;
-
-    //     // Create realm
-    //     let request = RegisterUserRequest {
-    //         first_name: "user2".to_string(),
-    //         last_name: "user2".to_string(),
-    //         email: "user2@test.org".to_string(),
-    //         identifier: String::new(),
-    //     };
-
-    //     let client = reqwest::Client::new();
-    //     let url = format!("{}/api/v3/user", clients.rest_endpoint);
-
-    //     let response: RegisterUserResponse = client
-    //         .post(url)
-    //         .header("Authorization", format!("Bearer {}", TEST_TOKEN))
-    //         .json(&request)
-    //         .send()
-    //         .await
-    //         .unwrap()
-    //         .json()
-    //         .await
-    //         .unwrap();
-
-    //     dbg!(&response);
-
-    //     let request = CreateTokenRequest {
-    //         user_id: response.user.id,
-    //         name: "Second token".to_string(),
-    //         expires_at: None,
-    //     };
-
-    //     let url = format!("{}/api/v3/token", clients.rest_endpoint);
-    //     let response: CreateTokenResponse = client
-    //         .post(url)
-    //         .header("Authorization", format!("Bearer {}", TEST_TOKEN))
-    //         .json(&request)
-    //         .send()
-    //         .await
-    //         .unwrap()
-    //         .json()
-    //         .await
-    //         .unwrap();
-
-    //     dbg!(&response);
-    // }
 }

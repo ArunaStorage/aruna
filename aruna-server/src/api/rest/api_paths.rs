@@ -45,6 +45,78 @@ pub async fn create_resource(
     into_axum_response(state.request(request, extract_token(&headers)).await)
 }
 
+/// Update resource name
+#[utoipa::path(
+    post,
+    path = "/resources/name",
+    request_body = UpdateResourceNameRequest,
+    responses(
+        (status = 200, body = UpdateResourceNameResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+    tag = RESOURCES,
+)]
+pub async fn update_resource_name(
+    State(state): State<Arc<Controller>>,
+    headers: HeaderMap,
+    Json(request): Json<UpdateResourceNameRequest>,
+) -> impl IntoResponse {
+    match state
+        .request(
+            ResourceUpdateRequests::Name(request),
+            extract_token(&headers),
+        )
+        .await
+    {
+        Ok(ResourceUpdateResponses::Name(res)) => {
+            (axum::http::StatusCode::OK, Json(res)).into_response()
+        }
+        Ok(_) => ArunaError::DeserializeError("Internal response serialization error".to_string())
+            .into_axum_tuple()
+            .into_response(),
+        Err(e) => e.into_axum_tuple().into_response(),
+    }
+}
+
+/// Update resource name
+#[utoipa::path(
+    post,
+    path = "/resources/title",
+    request_body = UpdateResourceTitleRequest,
+    responses(
+        (status = 200, body = UpdateResourceTitleResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+    tag = RESOURCES,
+)]
+pub async fn update_resource_title(
+    State(state): State<Arc<Controller>>,
+    headers: HeaderMap,
+    Json(request): Json<UpdateResourceTitleRequest>,
+) -> impl IntoResponse {
+    match state
+        .request(
+            ResourceUpdateRequests::Title(request),
+            extract_token(&headers),
+        )
+        .await
+    {
+        Ok(ResourceUpdateResponses::Title(res)) => {
+            (axum::http::StatusCode::OK, Json(res)).into_response()
+        }
+        Ok(_) => ArunaError::DeserializeError("Internal response serialization error".to_string())
+            .into_axum_tuple()
+            .into_response(),
+        Err(e) => e.into_axum_tuple().into_response(),
+    }
+}
+
 /// Create a new resource
 #[utoipa::path(
     post,

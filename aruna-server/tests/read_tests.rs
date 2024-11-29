@@ -6,7 +6,7 @@ mod read_tests {
     use crate::common::{init_test, ADMIN_TOKEN, REGULAR_TOKEN};
     use aruna_rust_api::v3::aruna::api::v3::{
         AddGroupRequest, CreateGroupRequest, CreateProjectRequest, CreateRealmRequest,
-        GetRealmRequest, Realm,
+        CreateResourceRequest as GrpcCreateResourceRequest, GetRealmRequest, Realm,
     };
     use aruna_server::models::{
         models::Permission,
@@ -15,7 +15,7 @@ mod read_tests {
             CreateGroupResponse as ModelsCreateGroupResponse,
             CreateProjectRequest as ModelsCreateProject, CreateProjectResponse,
             CreateResourceBatchRequest, CreateResourceBatchResponse, GetGroupsFromUserResponse,
-            GetRealmsFromUserResponse, SearchResponse,
+            GetRealmsFromUserResponse, GetRelationsRequest, GetRelationsResponse, SearchResponse,
         },
     };
     use ulid::Ulid;
@@ -477,5 +477,81 @@ mod read_tests {
             assert!(ids.contains(&group.id));
             assert_eq!(permission, Permission::Admin);
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn get_relations() {
+        let mut clients = init_test(OFFSET).await;
+
+        // Create realm
+        let request = CreateRealmRequest {
+            tag: "test".to_string(),
+            name: "TestRealm".to_string(),
+            description: String::new(),
+        };
+        let response = clients
+            .realm_client
+            .create_realm(request)
+            .await
+            .unwrap()
+            .into_inner();
+        let Realm { id: realm_id, .. } = response.realm.unwrap();
+
+        // Create project
+        let request = CreateProjectRequest {
+            name: "TestProject".to_string(),
+            group_id: response.admin_group_id,
+            realm_id,
+            visibility: 1,
+            ..Default::default()
+        };
+        let parent_id = clients
+            .resource_client
+            .create_project(request.clone())
+            .await
+            .unwrap()
+            .into_inner()
+            .resource
+            .unwrap()
+            .id;
+
+        let mut resources = Vec::new();
+        for i in 0..10 {
+            // Create resource
+            let request = GrpcCreateResourceRequest {
+                name: format!("TestResource{i}"),
+                parent_id: parent_id.clone(),
+                visibility: 1,
+                variant: 2,
+                ..Default::default()
+            };
+            resources.push(
+                clients
+                    .resource_client
+                    .create_resource(request.clone())
+                    .await
+                    .unwrap()
+                    .into_inner()
+                    .resource
+                    .unwrap(),
+            );
+        }
+
+        let get_relations = GetRelationsRequest {
+            node: Ulid::from_string(&parent_id).unwrap(),
+            direction: aruna_server::models::requests::Direction::Outgoing,
+            filter: vec![0],
+            offset: None,
+            page_size: 1000,
+        };
+        
+
+        let client = reqwest::Client::new();
+        let url = format!(
+            "{}/api/v3/resources/{parent_id}/relations",
+            clients.rest_endpoint
+        );
+
+        todo!()
     }
 }

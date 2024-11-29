@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 use utoipa::{IntoParams, ToSchema};
 
+use crate::{error::ArunaError, transactions::request::WriteRequest};
+
 use super::models::{
     Author, Component, ComponentType, Endpoint, GenericNode, Group, Hash, KeyValue, Permission,
     Realm, Relation, RelationInfo, Resource, ResourceVariant, Token, User, VisibilityClass,
@@ -435,33 +437,136 @@ pub struct CreateRelationVariantResponse {
     pub idx: u32,
 }
 
+
 #[derive(
     Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
 )]
-pub struct UpdateResourceRequest {
+pub struct UpdateResourceNameRequest {
     pub id: Ulid,
-    #[serde(default)]
     pub name: String,
-    #[serde(default)]
-    pub title: String,
-    #[serde(default)]
-    pub description: String,
-    #[serde(default)]
-    pub visibility: VisibilityClass,
-    #[serde(default = "default_license_tag")]
-    pub license_tag: String,
-    // TODO:
-    // #[serde(default)]
-    // pub labels: Vec<KeyValue>,
-    // #[serde(default)]
-    // pub identifiers: Vec<String>,
-    // #[serde(default)]
-    // pub authors: Vec<Author>,
 }
-
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
-pub struct UpdateResourceResponse {
+pub struct UpdateResourceNameResponse {
     pub resource: Resource,
+}
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
+pub struct UpdateResourceTitleRequest {
+    pub id: Ulid,
+    pub title: String,
+}
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UpdateResourceTitleResponse {
+    pub resource: Resource,
+}
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
+pub struct UpdateResourceDescriptionRequest {
+    pub id: Ulid,
+    pub description: String,
+}
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UpdateResourceDescriptionResponse {
+    pub resource: Resource,
+}
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
+pub struct UpdateResourceVisibilityRequest {
+    pub id: Ulid,
+    pub visibility: VisibilityClass,
+}
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UpdateResourceVisibilityResponse {
+    pub resource: Resource,
+}
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
+pub struct UpdateResourceLicenseRequest {
+    pub id: Ulid,
+    pub license_tag: String,
+}
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UpdateResourceLicenseResponse {
+    pub resource: Resource,
+}
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
+pub struct UpdateResourceLabelsRequest {
+    pub id: Ulid,
+    pub labels_to_add: Vec<KeyValue>,
+    pub labels_to_remove: Vec<KeyValue>,
+}
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UpdateResourceLabelsResponse {
+    pub resource: Resource,
+}
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
+pub struct UpdateResourceIdentifiersRequest {
+    pub id: Ulid,
+    pub ids_to_add: Vec<String>,
+    pub ids_to_remove: Vec<String>,
+}
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UpdateResourceIdentifiersResponse {
+    pub resource: Resource,
+}
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
+pub struct UpdateResourceAuthorsRequest {
+    pub id: Ulid,
+    pub authors_to_add: Vec<Author>,
+    pub authors_to_remove: Vec<Author>,
+}
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UpdateResourceAuthorsResponse {
+    pub resource: Resource,
+}
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+pub enum ResourceUpdateRequests {
+    Name(UpdateResourceNameRequest),
+    Title(UpdateResourceTitleRequest),
+    Description(UpdateResourceDescriptionRequest),
+    Visibility(UpdateResourceVisibilityRequest),
+    License(UpdateResourceLicenseRequest),
+    Labels(UpdateResourceLabelsRequest),
+    Identifiers(UpdateResourceIdentifiersRequest),
+    Authors(UpdateResourceAuthorsRequest),
+}
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+pub enum ResourceUpdateResponses {
+    Name(UpdateResourceNameResponse),
+    Title(UpdateResourceTitleResponse),
+    Description(UpdateResourceDescriptionResponse),
+    Visibility(UpdateResourceVisibilityResponse),
+    License(UpdateResourceLicenseResponse),
+    Labels(UpdateResourceLabelsResponse),
+    Identifiers(UpdateResourceIdentifiersResponse),
+    Authors(UpdateResourceAuthorsResponse),
+}
+pub trait GetInner {
+    fn get_id(&self) -> Ulid;
+}
+impl GetInner for ResourceUpdateRequests {
+    fn get_id(&self) -> Ulid {
+        match self {
+            ResourceUpdateRequests::Name(req) => req.id,
+            ResourceUpdateRequests::Title(req) => req.id,
+            ResourceUpdateRequests::Description(req) => req.id,
+            ResourceUpdateRequests::Visibility(req) => req.id,
+            ResourceUpdateRequests::License(req) => req.id,
+            ResourceUpdateRequests::Labels(req) => req.id,
+            ResourceUpdateRequests::Identifiers(req) => req.id,
+            ResourceUpdateRequests::Authors(req) => req.id,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
