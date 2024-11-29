@@ -161,7 +161,7 @@ pub fn get_permissions(
 
     let mut highest_perm: Option<u32> = None;
     let mut queue = VecDeque::new();
-    let mut reached_constraint = false;
+    let mut reached_constraint = !constraint.is_some();
     queue.push_back((resource_idx.into(), u32::MAX));
     while let Some((idx, current_perm)) = queue.pop_front() {
         // Iterate over all incoming edges
