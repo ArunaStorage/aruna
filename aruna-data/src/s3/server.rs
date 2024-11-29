@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::info;
 
-use crate::grpc::ServerClient;
+use crate::client::ServerClient;
 use crate::s3::route::CustomRoute;
 use crate::{error::ProxyError, lmdbstore::LmdbStore};
 use crate::{logerr, CONFIG};

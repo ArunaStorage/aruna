@@ -136,7 +136,7 @@ name = "aruna_data"
 version = "2.1.0"
 dependencies = [
  "anyhow",
- "aruna-rust-api",
+ "aruna_server",
  "async-channel",
  "async-trait",
  "aws-sdk-s3",

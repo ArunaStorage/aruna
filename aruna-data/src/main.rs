@@ -13,7 +13,7 @@ use tracing_subscriber::EnvFilter;
 mod auth;
 mod config;
 mod error;
-mod grpc;
+mod client;
 mod lmdbstore;
 mod s3;
 mod structs;
@@ -67,7 +67,7 @@ async fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)?;
 
     let store = Arc::new(LmdbStore::new(&CONFIG.lmdb_path)?);
-    let client = grpc::ServerClient::new().await?;
+    let client = client::ServerClient::new().await?;
 
     trace!("init s3 server");
     run_server(store, client).await?;

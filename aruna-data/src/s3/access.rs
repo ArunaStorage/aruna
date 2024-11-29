@@ -5,7 +5,7 @@ use s3s::{
     s3_error, S3Result,
 };
 
-use crate::{grpc::ServerClient, lmdbstore::LmdbStore};
+use crate::{client::ServerClient, lmdbstore::LmdbStore};
 
 pub struct AccessChecker {
     store: Arc<LmdbStore>,
