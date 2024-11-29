@@ -704,19 +704,27 @@ impl Store {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_permissions(&self, resource: &Ulid, user: &Ulid) -> Result<Permission, ArunaError> {
+    pub fn get_permissions(
+        &self,
+        resource: &Ulid,
+        constraint: Option<&Ulid>,
+        user: &Ulid,
+    ) -> Result<Permission, ArunaError> {
         let rtxn = self.read_txn()?;
         let resource_idx = self.get_idx_from_ulid(resource, &rtxn).ok_or_else(|| {
             tracing::error!("From not found");
             ArunaError::Unauthorized
         })?;
+        let constraint_idx = constraint
+            .map(|c| self.get_idx_from_ulid(c, &rtxn))
+            .flatten();
         let user_idx = self.get_idx_from_ulid(user, &rtxn).ok_or_else(|| {
             tracing::error!("To not found");
             ArunaError::Unauthorized
         })?;
         drop(rtxn);
         let graph = self.graph.read().expect("Poisoned lock");
-        get_permissions(&graph, resource_idx, user_idx)
+        get_permissions(&graph, resource_idx, user_idx, constraint_idx)
     }
 
     /// Returns the token

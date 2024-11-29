@@ -172,8 +172,10 @@ impl WriteRequest for CreateTokenRequestTx {
             user_id,
             name: self.req.name.clone(),
             expires_at: self.req.expires_at.expect("Got generated in Request"),
+            scope: self.req.scope.clone(),
             constraints: None, // TODO: Constraints
             token_type: TokenType::Aruna,
+            component_id: None,
             default_group: self.req.group_id.clone(),
             default_realm: self.req.realm_id.clone(),
         };

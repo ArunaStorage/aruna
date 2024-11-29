@@ -8,7 +8,7 @@ use crate::{
     context::{BatchPermission, Context},
     error::ArunaError,
     models::{
-        models::{ArunaTokenClaims, Audience, IssuerKey, IssuerType, Scope, Token},
+        models::{ArunaTokenClaims, Audience, IssuerKey, IssuerType, Scope},
         requests::{AddOidcProviderRequest, AddOidcProviderResponse},
     },
     storage::store::Store,
@@ -387,6 +387,43 @@ fn validate_subscriber_of(
         .get_id()
         .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
     let txn = store.read_txn()?;
+
+    match &user {
+        Requester::User { auth_method, .. } => match auth_method {
+            AuthMethod::Aruna(..) => {
+                let token = store.get_token(
+                    &user
+                        .get_id()
+                        .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?,
+                    user.get_token_idx()
+                        .ok_or_else(|| ArunaError::Forbidden("No token".to_string()))?,
+                    &txn,
+                    &store.get_graph(),
+                )?;
+                match token.scope {
+                    Scope::Personal => Ok(()),
+                    _ => Err(ArunaError::Forbidden("Invalid scope".to_string())),
+                }
+            }
+            AuthMethod::Oidc { .. } => Ok(()),
+        },
+        Requester::ServiceAccount {
+            service_account_id,
+            token_id,
+            ..
+        } => {
+            let token =
+                store.get_token(&service_account_id, *token_id, &txn, &store.get_graph())?;
+            match token.scope {
+                Scope::Personal => Ok(()),
+                _ => Err(ArunaError::Forbidden("Invalid scope".to_string())),
+            }
+        }
+        Requester::Server { .. } => Ok(()),
+        _ => Err(ArunaError::Forbidden(
+            "Unregistered is not allowed".to_string(),
+        )),
+    }?;
     let result = store.get_subscribers(&txn)?;
 
     let Some(subscriber) = result
@@ -410,8 +447,35 @@ fn validate_permission_batch(
     let user_id = user
         .get_id()
         .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
+
+    let additional_constraint = if let Some(tokenidx) = user.get_token_idx() {
+        let txn = store.read_txn()?;
+        let token = store.get_token(&user_id, tokenidx, &txn, &store.get_graph())?;
+
+        match token.scope {
+            Scope::Personal => None,
+            Scope::Ressource {
+                resource_id,
+                permission,
+            } => Some((resource_id, permission)),
+        }
+    } else {
+        None
+    };
+
     for permission in permissions {
-        let perm = store.get_permissions(&permission.source, &user_id)?;
+        let constraint = if let Some((resource_id, constraint_perm)) = &additional_constraint {
+            if constraint_perm < &permission.min_permission {
+                tracing::error!("Insufficient permission");
+                return Err(ArunaError::Forbidden("Permission denied".to_string()));
+            }
+
+            Some(resource_id)
+        } else {
+            None
+        };
+
+        let perm = store.get_permissions(&permission.source, constraint, &user_id)?;
         if perm >= permission.min_permission {
             continue;
         } else {

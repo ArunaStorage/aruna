@@ -465,11 +465,12 @@ pub async fn get_tokens(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    into_axum_response(
-        state
-            .request(GetTokensRequest {}, extract_token(&header))
-            .await,
-    )
+    todo!()
+    // into_axum_response(
+    //     state
+    //         .request(GetTokensRequest {}, extract_token(&header))
+    //         .await,
+    // )
 }
 
 /// Create a s3credential
@@ -492,7 +493,8 @@ pub async fn create_s3_credential(
     header: HeaderMap,
     Json(request): Json<CreateS3CredentialsRequest>,
 ) -> impl IntoResponse {
-    into_axum_response(state.request(request, extract_token(&header)).await)
+    todo!();
+    // into_axum_response(state.request(request, extract_token(&header)).await)
 }
 
 /// List all tokens from the current user
@@ -513,11 +515,12 @@ pub async fn get_s3_credentials(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    into_axum_response(
-        state
-            .request(GetS3CredentialsRequest {}, extract_token(&header))
-            .await,
-    )
+    todo!()
+    // into_axum_response(
+    //     state
+    //         .request(GetS3CredentialsRequest {}, extract_token(&header))
+    //         .await,
+    // )
 }
 
 /// Search for resources
