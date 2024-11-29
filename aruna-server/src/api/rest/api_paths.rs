@@ -560,7 +560,7 @@ pub async fn get_stats(
         ("id" = Ulid, Path, description = "Realm ID"),
     ),
     responses(
-        (status = 200, body = GetRealmComponentsRequest),
+        (status = 200, body = GetRealmComponentsResponse),
         ArunaError,
     ),
     security(
