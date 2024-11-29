@@ -2186,7 +2186,12 @@ dependencies = [
 name = "hacks"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "aruna_server",
+ "chrono",
  "heed",
+ "jsonwebtoken",
+ "ulid",
 ]
 
 [[package]]
