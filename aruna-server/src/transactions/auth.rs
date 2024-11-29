@@ -8,7 +8,7 @@ use crate::{
     context::{BatchPermission, Context},
     error::ArunaError,
     models::{
-        models::{ArunaTokenClaims, Audience, IssuerKey, IssuerType, Scope},
+        models::{ArunaTokenClaims, Audience, IssuerKey, IssuerType, Scope, Token},
         requests::{AddOidcProviderRequest, AddOidcProviderResponse},
     },
     storage::store::Store,
@@ -58,39 +58,54 @@ impl Controller {
         let ctx = request.get_context();
         let store = self.get_store();
         let user = user.clone();
-        match ctx {
-            Context::Public => Ok(()),
-            Context::NotRegistered => Ok(()), // Must provide valid oidc_token
-            Context::UserOnly => validate_user_only(user, store).await,
-            Context::SubscriberOwnerOf(subscriber_id) => {
-                validate_subscriber_of(user, subscriber_id, store).await
+
+        tokio::task::spawn_blocking(move || {
+            match ctx {
+                Context::Public => Ok(()),
+                Context::NotRegistered => Ok(()), // Must provide valid oidc_token
+                Context::UserOnly => validate_user_only(user, store),
+                Context::SubscriberOwnerOf(subscriber_id) => {
+                    validate_subscriber_of(user, subscriber_id, store)
+                }
+                Context::GlobalAdmin => Err(ArunaError::Forbidden(String::new())), // TODO: Impl global
+                // admins
+                Context::Permission {
+                    min_permission,
+                    source,
+                } => validate_permission_batch(
+                    user,
+                    &[BatchPermission {
+                        min_permission,
+                        source,
+                    }],
+                    store,
+                ),
+                Context::PermissionBatch(permissions) => {
+                    validate_permission_batch(user, &permissions, store)
+                }
+                Context::PermissionFork {
+                    first_min_permission,
+                    first_source,
+                    second_min_permission,
+                    second_source,
+                } => {
+                    let first = BatchPermission {
+                        min_permission: first_min_permission,
+                        source: first_source,
+                    };
+                    let second = BatchPermission {
+                        min_permission: second_min_permission,
+                        source: second_source,
+                    };
+                    validate_permission_batch(user, &[first, second], store)
+                }
             }
-            Context::GlobalAdmin => Err(ArunaError::Forbidden(String::new())), // TODO: Impl global
-            // admins
-            Context::Permission {
-                min_permission,
-                source,
-            } => validate_permission_batch(user, &[BatchPermission{ min_permission, source }], store).await,
-            Context::PermissionBatch(permissions) => {
-                validate_permission_batch(user, &permissions, store).await
-            }
-            Context::PermissionFork {
-                first_min_permission,
-                first_source,
-                second_min_permission,
-                second_source,
-            } => {
-                let first = BatchPermission {
-                    min_permission: first_min_permission,
-                    source: first_source,
-                };
-                let second = BatchPermission {
-                    min_permission: second_min_permission,
-                    source: second_source,
-                };
-                validate_permission_batch(user, &[first, second], store).await
-            }
-        }
+        })
+        .await
+        .map_err(|e| {
+            tracing::error!("{e}");
+            ArunaError::Unauthorized
+        })?
     }
 }
 
@@ -215,8 +230,6 @@ impl TokenHandler {
         match is_service_account {
             0u8 => {
                 // False
-                self.store.ensure_token_exists(&user_id, token_idx)?;
-
                 Ok(Requester::User {
                     user_id,
                     auth_method: AuthMethod::Aruna(token_idx),
@@ -225,7 +238,6 @@ impl TokenHandler {
             }
             1u8 => {
                 // True
-                self.store.ensure_token_exists(&user_id, token_idx)?;
                 let group_id = self.store.get_group_from_sa(&user_id)?;
 
                 Ok(Requester::ServiceAccount {
@@ -336,26 +348,24 @@ impl WriteRequest for AddOidcProviderRequestTx {
     }
 }
 
-async fn validate_user_only(user: Requester, store: Arc<Store>) -> Result<(), ArunaError> {
+fn validate_user_only(user: Requester, store: Arc<Store>) -> Result<(), ArunaError> {
     match &user {
         Requester::User { auth_method, .. } => match auth_method {
             AuthMethod::Aruna(..) => {
-                let user = user.clone();
-                tokio::task::spawn_blocking(move || {
-                    let txn = store.read_txn()?;
-                    let token = store.get_token(&user, &txn, &store.get_graph())?;
-
-                    match token.scope {
-                        Scope::Personal => Ok(()),
-                        _ => Err(ArunaError::Forbidden("Invalid scope".to_string())),
-                    }
-                })
-                .await
-                .map_err(|_| {
-                    tracing::error!("Error joining thread");
-                    ArunaError::Unauthorized
-                })??;
-                Ok(())
+                let txn = store.read_txn()?;
+                let token = store.get_token(
+                    &user
+                        .get_id()
+                        .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?,
+                    user.get_token_idx()
+                        .ok_or_else(|| ArunaError::Forbidden("No token".to_string()))?,
+                    &txn,
+                    &store.get_graph(),
+                )?;
+                match token.scope {
+                    Scope::Personal => Ok(()),
+                    _ => Err(ArunaError::Forbidden("Invalid scope".to_string())),
+                }
             }
             AuthMethod::Oidc { .. } => Ok(()),
         },
@@ -368,7 +378,7 @@ async fn validate_user_only(user: Requester, store: Arc<Store>) -> Result<(), Ar
     }
 }
 
-async fn validate_subscriber_of(
+fn validate_subscriber_of(
     user: Requester,
     subscriber_id: Ulid,
     store: Arc<Store>,
@@ -376,31 +386,23 @@ async fn validate_subscriber_of(
     let user_id = user
         .get_id()
         .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
-    tokio::task::spawn_blocking(move || {
-        let txn = store.read_txn()?;
-        let result = store.get_subscribers(&txn)?;
+    let txn = store.read_txn()?;
+    let result = store.get_subscribers(&txn)?;
 
-        let Some(subscriber) = result
-            .iter()
-            .find(|subscriber| subscriber.id == subscriber_id)
-        else {
-            return Err(ArunaError::Forbidden("No owner found".to_string()));
-        };
-        if subscriber.owner != user_id {
-            Err(ArunaError::Forbidden("Not owner".to_string()))
-        } else {
-            Ok(())
-        }
-    })
-    .await
-    .map_err(|_| {
-        tracing::error!("Error joining thread");
-        ArunaError::Unauthorized
-    })??;
-    Ok(())
+    let Some(subscriber) = result
+        .iter()
+        .find(|subscriber| subscriber.id == subscriber_id)
+    else {
+        return Err(ArunaError::Forbidden("No owner found".to_string()));
+    };
+    if subscriber.owner != user_id {
+        Err(ArunaError::Forbidden("Not owner".to_string()))
+    } else {
+        Ok(())
+    }
 }
 
-async fn validate_permission_batch(
+fn validate_permission_batch(
     user: Requester,
     permissions: &[BatchPermission],
     store: Arc<Store>,
@@ -409,14 +411,7 @@ async fn validate_permission_batch(
         .get_id()
         .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
     for permission in permissions {
-        let source = permission.source.clone();
-        let store = store.clone();
-        let perm = tokio::task::spawn_blocking(move || store.get_permissions(&source, &user_id))
-            .await
-            .map_err(|_| {
-                tracing::error!("Error joining thread");
-                ArunaError::Unauthorized
-            })??;
+        let perm = store.get_permissions(&permission.source, &user_id)?;
         if perm >= permission.min_permission {
             continue;
         } else {

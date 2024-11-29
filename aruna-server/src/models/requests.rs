@@ -5,7 +5,7 @@ use utoipa::{IntoParams, ToSchema};
 
 use super::models::{
     Author, Component, ComponentType, Endpoint, GenericNode, Group, Hash, KeyValue, Permission,
-    Realm, Relation, RelationInfo, Resource, ResourceVariant, S3Credential, Token, User,
+    Realm, Relation, RelationInfo, Resource, ResourceVariant, S3Credential, Scope, Token, User,
     VisibilityClass,
 };
 
@@ -216,6 +216,8 @@ pub struct CreateTokenRequest {
     pub name: String,
     #[serde(default)]
     pub expires_at: Option<chrono::DateTime<Utc>>,
+    #[serde(default)]
+    pub scope: Scope,
     //pub constraints: Vec<Constraint>,
     pub realm_id: Option<Ulid>,
     pub group_id: Option<Ulid>,
@@ -233,6 +235,8 @@ pub struct CreateS3CredentialsRequest {
     pub realm_id: Ulid,
     pub group_id: Ulid,
     pub endpoint_id: Ulid,
+    #[serde(default)]
+    pub scope: Scope,
     #[serde(default)]
     pub expires_at: Option<chrono::DateTime<Utc>>,
     //pub constraints: Vec<Constraint>,

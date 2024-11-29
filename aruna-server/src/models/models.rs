@@ -488,8 +488,11 @@ pub struct Token {
     pub component_id: Option<Ulid>,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
 pub enum Scope {
+    #[default]
     Personal,
     Ressource {
         resource_id: Ulid,

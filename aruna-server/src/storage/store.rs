@@ -723,21 +723,12 @@ impl Store {
     #[tracing::instrument(level = "trace", skip(self, rtxn, graph))]
     pub fn get_token(
         &self,
-        requester: &Requester,
+        requester_id: &Ulid,
+        token_idx: u16,
         rtxn: &RoTxn,
         graph: &Graph<NodeVariant, EdgeType>,
     ) -> Result<Token, ArunaError> {
         let read_txn = self.read_txn()?;
-
-        let requester_id = requester.get_id().ok_or_else(|| {
-            tracing::error!("Requester id not found");
-            ArunaError::Unauthorized
-        })?;
-
-        let token_idx = requester.get_token_idx().ok_or_else(|| {
-            tracing::error!("Token idx not found");
-            ArunaError::Unauthorized
-        })?;
 
         // Get the internal idx of the token
         let requester_internal_idx = self.get_idx_from_ulid_validate(
@@ -761,7 +752,7 @@ impl Store {
             tracing::error!("Token not found");
             return Err(ArunaError::Unauthorized);
         };
-        Ok(*token)
+        Ok(token.clone())
     }
 
     // Returns the group_id of the service account
