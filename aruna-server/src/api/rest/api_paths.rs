@@ -433,7 +433,8 @@ pub async fn create_relation_variant(
         ArunaError,
     ),
     security(
-        ("auth" = [])
+        (), // <-- make optional authentication
+        ("auth" = []),
     ),
     tag = RESOURCES,
 )]
@@ -479,7 +480,8 @@ pub async fn create_realm(
         ArunaError,
     ),
     security(
-        ("auth" = [])
+        (), // <-- make optional authentication
+        ("auth" = []),
     ),
     tag = REALMS,
 )]
@@ -528,7 +530,7 @@ pub async fn add_group(
     )
 }
 
-/// Create a new  
+/// Create a new group
 #[utoipa::path(
     post,
     path = "/groups",
@@ -589,7 +591,6 @@ pub async fn get_group(
         ArunaError,
     ),
     security(
-        (), // <-- make optional authentication
         ("auth" = [])
     ),
     tag = USERS,
@@ -650,7 +651,6 @@ pub async fn add_user(
         ArunaError,
     ),
     security(
-        (), // <-- make optional authentication
         ("auth" = [])
     ),
     tag = USERS,
@@ -672,7 +672,6 @@ pub async fn create_token(
         ArunaError,
     ),
     security(
-        (), // <-- make optional authentication
         ("auth" = [])
     ),
     tag = USERS,
@@ -698,7 +697,6 @@ pub async fn get_tokens(
         ArunaError,
     ),
     security(
-        (), // <-- make optional authentication
         ("auth" = [])
     ),
     tag = USERS,
@@ -721,7 +719,6 @@ pub async fn create_s3_credential(
         ArunaError,
     ),
     security(
-        (), // <-- make optional authentication
         ("auth" = [])
     ),
     tag = USERS,
@@ -772,7 +769,6 @@ pub async fn search(
         ArunaError,
     ),
     security(
-        (), // <-- make optional authentication
         ("auth" = [])
     ),
     tag = USERS,
@@ -797,7 +793,6 @@ pub async fn get_user_realms(
         ArunaError,
     ),
     security(
-        (), // <-- make optional authentication
         ("auth" = [])
     ),
     tag = USERS,
@@ -855,7 +850,6 @@ pub async fn get_stats(
         ArunaError,
     ),
     security(
-        (), // <-- make optional authentication
         ("auth" = [])
     ),
     tag = REALMS,
@@ -888,7 +882,6 @@ pub async fn get_realm_components(
         ArunaError,
     ),
     security(
-        (), // <-- make optional authentication
         ("auth" = [])
     ),
     tag = REALMS,
@@ -1068,7 +1061,6 @@ pub async fn get_user(
         ArunaError,
     ),
     security(
-        (), // <-- make optional authentication
         ("auth" = [])
     ),
     tag = INFO,

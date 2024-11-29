@@ -11,9 +11,9 @@ use tracing::trace;
 use tracing_subscriber::EnvFilter;
 
 mod auth;
+mod client;
 mod config;
 mod error;
-mod client;
 mod lmdbstore;
 mod s3;
 mod structs;
