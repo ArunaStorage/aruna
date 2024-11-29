@@ -188,7 +188,7 @@ mod create_tests {
         assert_eq!(response.resource.name, request.name);
         let new = response.resource.last_modified;
         let old = resource.last_modified.unwrap().into();
-        assert!( new > old )
+        assert!(new > old)
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -10,10 +10,20 @@ use crate::{
     models::{
         models::{Component, DataLocation, NodeVariant, Resource, ResourceVariant, SyncingStatus},
         requests::{
-            CreateProjectRequest, CreateProjectResponse, CreateResourceBatchRequest, CreateResourceBatchResponse, CreateResourceRequest, CreateResourceResponse, GetInner, GetResourcesRequest, GetResourcesResponse, Parent, ResourceUpdateRequests, ResourceUpdateResponses, UpdateResourceAuthorsResponse, UpdateResourceDescriptionResponse, UpdateResourceIdentifiersResponse, UpdateResourceLabelsResponse, UpdateResourceLicenseResponse, UpdateResourceNameResponse, UpdateResourceTitleResponse, UpdateResourceVisibilityResponse
+            CreateProjectRequest, CreateProjectResponse, CreateResourceBatchRequest,
+            CreateResourceBatchResponse, CreateResourceRequest, CreateResourceResponse, GetInner,
+            GetResourcesRequest, GetResourcesResponse, Parent, RegisterDataRequest,
+            RegisterDataResponse, ResourceUpdateRequests, ResourceUpdateResponses,
+            UpdateResourceAuthorsResponse, UpdateResourceDescriptionResponse,
+            UpdateResourceIdentifiersResponse, UpdateResourceLabelsResponse,
+            UpdateResourceLicenseResponse, UpdateResourceNameResponse, UpdateResourceTitleResponse,
+            UpdateResourceVisibilityResponse,
         },
     },
-    storage::graph::{get_parent, get_related_user_or_groups, has_relation},
+    storage::{
+        graph::{get_parent, get_related_user_or_groups, get_relations, has_relation},
+        store::{Store, WriteTxn},
+    },
     transactions::request::WriteRequest,
 };
 use ahash::RandomState;
@@ -835,8 +845,14 @@ impl WriteRequest for UpdateResourceTx {
                 )));
             };
 
-            let map =
-                parse_update_fields(&store, &mut wtxn, old_resource, resource_id, time, request.clone())?;
+            let map = parse_update_fields(
+                &store,
+                &mut wtxn,
+                old_resource,
+                resource_id,
+                time,
+                request.clone(),
+            )?;
 
             store.update_node_field(&mut wtxn, resource_id, map)?;
 
@@ -851,10 +867,14 @@ impl WriteRequest for UpdateResourceTx {
                     ResourceUpdateResponses::Title(UpdateResourceTitleResponse { resource })
                 }
                 ResourceUpdateRequests::Description(_) => {
-                    ResourceUpdateResponses::Description(UpdateResourceDescriptionResponse{ resource })
+                    ResourceUpdateResponses::Description(UpdateResourceDescriptionResponse {
+                        resource,
+                    })
                 }
                 ResourceUpdateRequests::Visibility(_) => {
-                    ResourceUpdateResponses::Visibility(UpdateResourceVisibilityResponse { resource })
+                    ResourceUpdateResponses::Visibility(UpdateResourceVisibilityResponse {
+                        resource,
+                    })
                 }
                 ResourceUpdateRequests::License(_) => {
                     ResourceUpdateResponses::License(UpdateResourceLicenseResponse { resource })
@@ -863,7 +883,9 @@ impl WriteRequest for UpdateResourceTx {
                     ResourceUpdateResponses::Labels(UpdateResourceLabelsResponse { resource })
                 }
                 ResourceUpdateRequests::Identifiers(_) => {
-                    ResourceUpdateResponses::Identifiers(UpdateResourceIdentifiersResponse { resource })
+                    ResourceUpdateResponses::Identifiers(UpdateResourceIdentifiersResponse {
+                        resource,
+                    })
                 }
                 ResourceUpdateRequests::Authors(_) => {
                     ResourceUpdateResponses::Authors(UpdateResourceAuthorsResponse { resource })
@@ -1008,4 +1030,122 @@ fn parse_update_fields(
         }
     };
     Ok(map)
+}
+
+impl Request for RegisterDataRequest {
+    type Response = RegisterDataResponse;
+    fn get_context(&self) -> Context {
+        Context::Permission {
+            min_permission: crate::models::models::Permission::Write,
+            source: self.object_id,
+        }
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let request_tx = RegisterDataRequestTx {
+            req: self,
+            requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
+            updated_at: Utc::now().timestamp_millis(),
+        };
+
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response)?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RegisterDataRequestTx {
+    req: RegisterDataRequest,
+    requester: Requester,
+    updated_at: i64,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for RegisterDataRequestTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, crate::error::ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+
+        let time = DateTime::from_timestamp_millis(self.updated_at).ok_or_else(|| {
+            ArunaError::ConversionError {
+                from: "i64".to_string(),
+                to: "Chrono::DateTime".to_string(),
+            }
+        })?;
+
+        let object_id = self.req.object_id;
+        let request = self.req.clone();
+
+        let store = controller.get_store();
+
+        Ok(tokio::task::spawn_blocking(move || {
+            let mut wtxn = store.write_txn()?;
+
+            // Get resource idx
+            let Some(resource_idx) = store.get_idx_from_ulid(&object_id, wtxn.get_txn()) else {
+                return Err(ArunaError::NotFound(object_id.to_string()));
+            };
+
+            let Some(resource): Option<Resource> = store.get_node(&wtxn.get_txn(), resource_idx)
+            else {
+                return Err(ArunaError::NotFound(format!(
+                    "Resource with id {object_id} not found"
+                )));
+            };
+
+            if resource.variant != ResourceVariant::Object {
+                return Err(ArunaError::InvalidParameter {
+                    name: "object_id".to_string(),
+                    error: "Resource is not an object".to_string(),
+                });
+            }
+
+            let mut update = serde_json::Map::new();
+
+            let mut existing_endpoints = resource.location.clone();
+
+            let mut updated = false;
+            for location in existing_endpoints.iter_mut() {
+                if location.endpoint_id == request.component_id {
+                    location.status = SyncingStatus::Finished;
+                    updated = true;
+                }
+            }
+
+            if !updated {
+                existing_endpoints.push(DataLocation {
+                    endpoint_id: request.component_id,
+                    status: SyncingStatus::Finished,
+                });
+            }
+
+            update.insert(
+                "location".to_string(),
+                serde_json::to_value(existing_endpoints)?,
+            );
+            update.insert("hashes".to_string(), serde_json::to_value(request.hashes)?);
+            update.insert("updated_at".to_string(), serde_json::to_value(time)?);
+
+            store.update_node_field(&mut wtxn, resource.id, update)?;
+
+            // Affected nodes: Group, Realm, Project
+            wtxn.commit(associated_event_id, &[resource_idx], &[])?;
+            // Create admin group, add user to admin group
+            Ok::<_, ArunaError>(bincode::serialize(&RegisterDataResponse {})?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
+    }
 }

@@ -1307,7 +1307,10 @@ impl Store {
             || false,
         )?;
 
-        json_object.insert("id".to_string(), serde_json::Value::String(node_id.to_string()));
+        json_object.insert(
+            "id".to_string(),
+            serde_json::Value::String(node_id.to_string()),
+        );
 
         // Create a document batch
         let mut documents_batch = DocumentsBatchBuilder::new(Vec::new());

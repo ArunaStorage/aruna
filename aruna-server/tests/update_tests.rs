@@ -6,7 +6,10 @@ mod update_tests {
     use aruna_rust_api::v3::aruna::api::v3::{
         Author, CreateProjectRequest, CreateRealmRequest, CreateResourceRequest, KeyValue, Realm,
     };
-    use aruna_server::models::requests::{UpdateResourceNameRequest, UpdateResourceNameResponse, UpdateResourceTitleRequest, UpdateResourceTitleResponse};
+    use aruna_server::models::requests::{
+        UpdateResourceNameRequest, UpdateResourceNameResponse, UpdateResourceTitleRequest,
+        UpdateResourceTitleResponse,
+    };
     use ulid::Ulid;
 
     use crate::common::{init_test, ADMIN_TOKEN};

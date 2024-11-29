@@ -437,7 +437,6 @@ pub struct CreateRelationVariantResponse {
     pub idx: u32,
 }
 
-
 #[derive(
     Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
 )]

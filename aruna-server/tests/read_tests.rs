@@ -544,7 +544,6 @@ mod read_tests {
             offset: None,
             page_size: 1000,
         };
-        
 
         let client = reqwest::Client::new();
         let url = format!(
