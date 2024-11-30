@@ -21,9 +21,12 @@ impl Request for SearchRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, crate::error::ArunaError> {
-
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
         let store = controller.get_store();

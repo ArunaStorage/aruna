@@ -1,10 +1,13 @@
 use super::{
     auth::TokenHandler,
     controller::Controller,
+    group,
     request::{Request, Requester, WriteRequest},
 };
 use crate::{
-    constants::relation_types::{PERMISSION_ADMIN, PERMISSION_NONE},
+    constants::relation_types::{
+        GROUP_PART_OF_REALM, PERMISSION_ADMIN, PERMISSION_NONE, REALM_USES_COMPONENT,
+    },
     context::Context,
     error::ArunaError,
     logerr,
@@ -18,6 +21,7 @@ use crate::{
             RegisterUserResponse,
         },
     },
+    storage::graph::has_relation,
     transactions::request::SerializedResponse,
 };
 use serde::{Deserialize, Serialize};
@@ -36,7 +40,11 @@ impl Request for RegisterUserRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
         let request_tx = RegisterUserRequestTx {
@@ -137,7 +145,11 @@ impl Request for CreateTokenRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
         if self.expires_at.is_none() {
@@ -242,7 +254,11 @@ impl Request for GetUserRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
         let requester_ulid = requester
@@ -291,7 +307,11 @@ impl Request for GetGroupsFromUserRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
         let requester_id = requester
@@ -377,7 +397,11 @@ impl Request for GetRealmsFromUserRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
 
@@ -415,7 +439,11 @@ impl Request for GetTokensRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
         let requester_ulid = requester
@@ -469,7 +497,11 @@ impl Request for CreateS3CredentialsRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
         if self.expires_at.is_none() {
@@ -523,6 +555,8 @@ impl WriteRequest for CreateS3CredentialsRequestTx {
         };
 
         let component_id = self.req.component_id.clone();
+        let realm_id = self.req.realm_id.clone();
+        let group_id = self.req.group_id.clone();
 
         let is_service_account = matches!(self.requester, Requester::ServiceAccount { .. });
 
@@ -531,9 +565,66 @@ impl WriteRequest for CreateS3CredentialsRequestTx {
             let mut wtxn = store.write_txn()?;
 
             // Create token
-            let user_idx = store
-                .get_idx_from_ulid(&user_id, wtxn.get_txn())
-                .ok_or_else(|| ArunaError::NotFound("User not found".to_string()))?;
+
+            let user_idx = store.get_idx_from_ulid_validate(
+                &user_id,
+                "user_id",
+                &[NodeVariant::User, NodeVariant::ServiceAccount],
+                wtxn.get_ro_txn(),
+                wtxn.get_ro_graph(),
+            )?;
+
+            let component_idx = store.get_idx_from_ulid_validate(
+                &component_id,
+                "component_id",
+                &[NodeVariant::Component],
+                wtxn.get_ro_txn(),
+                wtxn.get_ro_graph(),
+            )?;
+
+            let realm_idx = store.get_idx_from_ulid_validate(
+                &realm_id,
+                "realm_id",
+                &[NodeVariant::Realm],
+                wtxn.get_ro_txn(),
+                wtxn.get_ro_graph(),
+            )?;
+
+            let group_idx = store.get_idx_from_ulid_validate(
+                &group_id,
+                "group_id",
+                &[NodeVariant::Group],
+                wtxn.get_ro_txn(),
+                wtxn.get_ro_graph(),
+            )?;
+
+            if !has_relation(
+                wtxn.get_ro_graph(),
+                user_idx,
+                group_idx,
+                &((PERMISSION_NONE..=PERMISSION_ADMIN).collect::<Vec<u32>>()),
+            ) {
+                return Err(ArunaError::Forbidden("User not in group".to_string()));
+            }
+
+            if !has_relation(
+                wtxn.get_ro_graph(),
+                realm_idx,
+                component_idx,
+                &[REALM_USES_COMPONENT],
+            ) {
+                return Err(ArunaError::Forbidden("Component not in realm".to_string()));
+            }
+
+            if !has_relation(
+                wtxn.get_ro_graph(),
+                group_idx,
+                realm_idx,
+                &[GROUP_PART_OF_REALM],
+            ) {
+                return Err(ArunaError::Forbidden("Group not part of realm".to_string()));
+            }
+
             let token = store.add_token(
                 wtxn.get_txn(),
                 associated_event_id,

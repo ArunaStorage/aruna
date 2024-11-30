@@ -36,9 +36,12 @@ impl Request for CreateRealmRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
-
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
         let request_tx = CreateRealmRequestTx {
@@ -171,7 +174,11 @@ impl Request for AddGroupRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
         let request_tx = AddGroupRequestTx {
@@ -252,7 +259,11 @@ impl Request for GetRealmRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
         let store = controller.get_store();
@@ -292,7 +303,11 @@ impl Request for GetGroupsFromRealmRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
         let store = controller.get_store();
@@ -351,7 +366,11 @@ impl Request for GetRealmComponentsRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
         let store = controller.get_store();
@@ -408,7 +427,11 @@ impl Request for AddComponentToRealmRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
         let request_tx = AddComponentToRealmRequestTx {

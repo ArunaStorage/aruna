@@ -27,7 +27,11 @@ impl Request for CreateComponentRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
         let request_tx = CreateComponentRequestTx {

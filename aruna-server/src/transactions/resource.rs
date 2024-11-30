@@ -86,7 +86,9 @@ impl Request for CreateProjectRequest {
                             error: "expected default realm for token".to_string(),
                         })?,
                 ))
-            }).await.map_err(|e| {
+            })
+            .await
+            .map_err(|e| {
                 error!("Failed to join task: {}", e);
                 ArunaError::ServerError("".to_string())
             })??;
@@ -775,7 +777,6 @@ impl Request for GetResourcesRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
-
         let public = if let Some(requester) = requester {
             controller.authorize(&requester, &self).await?;
             false

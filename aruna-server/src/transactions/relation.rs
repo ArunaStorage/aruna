@@ -36,7 +36,11 @@ impl Request for GetRelationsRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
 
@@ -128,7 +132,11 @@ impl Request for GetRelationInfosRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
         let store = controller.get_store();
@@ -159,7 +167,11 @@ impl Request for CreateRelationRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
         let request_tx = CreateRelationTx {
@@ -243,7 +255,11 @@ impl Request for CreateRelationVariantRequest {
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
         // Disallow impersonation
-        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
         }
         let request_tx = CreateRelationVariantTx {
