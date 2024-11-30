@@ -51,7 +51,7 @@ pub enum Requester {
         oidc_realm: String,
         oidc_subject: String,
     },
-    Server {
+    Component {
         server_id: Ulid,
     },
 }
@@ -80,7 +80,7 @@ impl Requester {
                 service_account_id, ..
             } => Some(*service_account_id),
             Self::Unregistered { .. } => None,
-            Self::Server { server_id } => Some(*server_id),
+            Self::Component { server_id } => Some(*server_id),
         }
     }
 
