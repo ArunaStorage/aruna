@@ -12,13 +12,9 @@ use crate::{
     error::ArunaError,
     logerr,
     models::{
-        models::{Group, NodeVariant, Permission, Subscriber, Token, TokenType, User},
+        models::{Group, NodeVariant, Permission, S3Credential, Subscriber, Token, TokenType, User},
         requests::{
-            CreateS3CredentialsRequest, CreateS3CredentialsResponse, CreateTokenRequest,
-            CreateTokenResponse, GetGroupsFromUserRequest, GetGroupsFromUserResponse,
-            GetRealmsFromUserRequest, GetRealmsFromUserResponse, GetTokensRequest,
-            GetTokensResponse, GetUserRequest, GetUserResponse, RegisterUserRequest,
-            RegisterUserResponse,
+            CreateS3CredentialsRequest, CreateS3CredentialsResponse, CreateTokenRequest, CreateTokenResponse, GetGroupsFromUserRequest, GetGroupsFromUserResponse, GetRealmsFromUserRequest, GetRealmsFromUserResponse, GetS3CredentialsRequest, GetS3CredentialsResponse, GetTokensRequest, GetTokensResponse, GetUserRequest, GetUserResponse, RegisterUserRequest, RegisterUserResponse
         },
     },
     storage::graph::has_relation,
@@ -558,7 +554,7 @@ impl WriteRequest for CreateS3CredentialsRequestTx {
         let realm_id = self.req.realm_id.clone();
         let group_id = self.req.group_id.clone();
 
-        let is_service_account = matches!(self.requester, Requester::ServiceAccount { .. });
+        let _is_service_account = matches!(self.requester, Requester::ServiceAccount { .. });
 
         let store = controller.get_store();
         Ok(tokio::task::spawn_blocking(move || {
@@ -650,5 +646,67 @@ impl WriteRequest for CreateS3CredentialsRequestTx {
             tracing::error!("Failed to join task");
             ArunaError::ServerError("".to_string())
         })??)
+    }
+}
+
+impl Request for GetS3CredentialsRequest {
+    type Response = GetS3CredentialsResponse;
+
+    fn get_context<'a>(&'a self) -> Context {
+        Context::UserOnly
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
+            return Err(ArunaError::Unauthorized);
+        }
+        let requester_ulid = requester
+            .ok_or_else(|| {
+                tracing::error!("Missing requester");
+                ArunaError::Unauthorized
+            })?
+            .get_id()
+            .ok_or_else(|| {
+                tracing::error!("Missing requester id");
+                ArunaError::NotFound("User not reqistered".to_string())
+            })?;
+
+        let store = controller.get_store();
+        tokio::task::spawn_blocking(move || {
+            let rtxn = store.read_txn()?;
+
+            let tokens = store.get_tokens(&rtxn, &requester_ulid)?;
+
+            let tokens = tokens
+                .into_iter()
+                .filter_map(|token| {
+                    let token = token?;
+                    if token.token_type == TokenType::S3 {
+                        Some(S3Credential {
+                            access_key: format!("{}.{}", &requester_ulid, token.id),
+                            token_info: token,
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            Ok::<GetS3CredentialsResponse, ArunaError>(GetS3CredentialsResponse { tokens })
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })?
     }
 }

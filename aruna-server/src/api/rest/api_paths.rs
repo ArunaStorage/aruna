@@ -726,12 +726,11 @@ pub async fn get_s3_credentials(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!()
-    // into_axum_response(
-    //     state
-    //         .request(GetS3CredentialsRequest {}, extract_token(&header))
-    //         .await,
-    // )
+    into_axum_response(
+        state
+            .request(GetS3CredentialsRequest {}, extract_token(&header))
+            .await,
+    )
 }
 
 /// Search for resources
