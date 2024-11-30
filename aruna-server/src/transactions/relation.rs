@@ -35,12 +35,10 @@ impl Request for GetRelationsRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
-        let public = if let Some(requester) = requester {
-            controller.authorize(&requester, &self).await?;
-            false
-        } else {
-            true
-        };
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+            return Err(ArunaError::Unauthorized);
+        }
 
         let store = controller.get_store();
         let response = tokio::task::spawn_blocking(move || {
@@ -50,8 +48,9 @@ impl Request for GetRelationsRequest {
                 .get_idx_from_ulid(&self.node, &rtxn)
                 .ok_or_else(|| ArunaError::NotFound(self.node.to_string()))?;
 
-            // Check if resource is public
-            if public {
+            // Check if resource access is public
+            // TODO: This will currently not work because we require permission read to the node
+            if requester.is_none() {
                 let resource = store
                     .get_node::<Resource>(&rtxn, idx)
                     .ok_or_else(|| ArunaError::NotFound(self.node.to_string()))?;
@@ -125,9 +124,13 @@ impl Request for GetRelationInfosRequest {
 
     async fn run_request(
         self,
-        _requester: Option<Requester>,
+        requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+            return Err(ArunaError::Unauthorized);
+        }
         let store = controller.get_store();
         tokio::task::spawn_blocking(move || {
             let rtxn = store.read_txn()?;
@@ -155,6 +158,10 @@ impl Request for CreateRelationRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+            return Err(ArunaError::Unauthorized);
+        }
         let request_tx = CreateRelationTx {
             req: self,
             requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
@@ -235,6 +242,10 @@ impl Request for CreateRelationVariantRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+            return Err(ArunaError::Unauthorized);
+        }
         let request_tx = CreateRelationVariantTx {
             req: self,
             requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,

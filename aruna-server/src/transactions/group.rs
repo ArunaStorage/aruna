@@ -35,6 +35,10 @@ impl Request for CreateGroupRequest {
         requester: Option<Requester>,
         controller: &super::controller::Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+            return Err(ArunaError::Unauthorized);
+        }
         let request_tx = CreateGroupRequestTx {
             id: Ulid::new(),
             req: self,
@@ -125,9 +129,8 @@ impl Request for GetGroupRequest {
         requester: Option<Requester>,
         controller: &super::controller::Controller,
     ) -> Result<Self::Response, ArunaError> {
-        if let Some(requester) = requester {
-            controller.authorize(&requester, &self).await?;
-        } else {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
             return Err(ArunaError::Unauthorized);
         }
         let store = controller.get_store();
@@ -169,6 +172,10 @@ impl Request for AddUserRequest {
         requester: Option<Requester>,
         controller: &super::controller::Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+            return Err(ArunaError::Unauthorized);
+        }
         let request_tx = AddUserRequestTx {
             id: Ulid::new(),
             req: self,
@@ -257,9 +264,8 @@ impl Request for GetUsersFromGroupRequest {
         requester: Option<Requester>,
         controller: &super::controller::Controller,
     ) -> Result<Self::Response, ArunaError> {
-        if let Some(requester) = requester {
-            controller.authorize(&requester, &self).await?;
-        } else {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
             return Err(ArunaError::Unauthorized);
         }
         let store = controller.get_store();

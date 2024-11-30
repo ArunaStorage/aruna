@@ -51,10 +51,47 @@ impl Request for CreateProjectRequest {
     }
 
     async fn run_request(
-        self,
+        mut self,
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // This checks if a default group or realm are set for the token
+        // If not, it will fetch the default group and realm from the token
+        // And overwrite the group_id and realm_id in the request
+        // Note: Currently both or neither must be set, it is not possible to set only one
+        if self.group_id.is_nil() || self.realm_id.is_nil() {
+            let requester = requester.clone().ok_or_else(|| ArunaError::Unauthorized)?;
+
+            let token_idx = requester
+                .get_token_idx()
+                .ok_or_else(|| ArunaError::Unauthorized)?;
+            let user_id = requester.get_id().ok_or_else(|| ArunaError::Unauthorized)?;
+
+            let store = controller.get_store();
+
+            (self.group_id, self.realm_id) = tokio::task::spawn_blocking(move || {
+                let rtxn = store.read_txn()?;
+                let token = store.get_token(&user_id, token_idx, &rtxn, &store.get_graph())?;
+                Ok::<_, ArunaError>((
+                    token
+                        .default_group
+                        .ok_or_else(|| ArunaError::InvalidParameter {
+                            name: "default_group".to_string(),
+                            error: "expected default group for token".to_string(),
+                        })?,
+                    token
+                        .default_realm
+                        .ok_or_else(|| ArunaError::InvalidParameter {
+                            name: "default_realm".to_string(),
+                            error: "expected default realm for token".to_string(),
+                        })?,
+                ))
+            }).await.map_err(|e| {
+                error!("Failed to join task: {}", e);
+                ArunaError::ServerError("".to_string())
+            })??;
+        }
+
         let request_tx = CreateProjectRequestTx {
             req: self,
             project_id: Ulid::new(),
@@ -738,7 +775,6 @@ impl Request for GetResourcesRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
-        info!("Executing GetResourceRequest");
 
         let public = if let Some(requester) = requester {
             controller.authorize(&requester, &self).await?;

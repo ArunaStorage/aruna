@@ -36,6 +36,11 @@ impl Request for CreateRealmRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+            return Err(ArunaError::Unauthorized);
+        }
         let request_tx = CreateRealmRequestTx {
             id: Ulid::new(),
             generated_group: Group {
@@ -165,6 +170,10 @@ impl Request for AddGroupRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+            return Err(ArunaError::Unauthorized);
+        }
         let request_tx = AddGroupRequestTx {
             req: self,
             requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
@@ -242,9 +251,8 @@ impl Request for GetRealmRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
-        if let Some(requester) = requester {
-            controller.authorize(&requester, &self).await?;
-        } else {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
             return Err(ArunaError::Unauthorized);
         }
         let store = controller.get_store();
@@ -283,9 +291,8 @@ impl Request for GetGroupsFromRealmRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
-        if let Some(requester) = requester {
-            controller.authorize(&requester, &self).await?;
-        } else {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
             return Err(ArunaError::Unauthorized);
         }
         let store = controller.get_store();
@@ -340,9 +347,13 @@ impl Request for GetRealmComponentsRequest {
 
     async fn run_request(
         self,
-        _requester: Option<Requester>,
+        requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+            return Err(ArunaError::Unauthorized);
+        }
         let store = controller.get_store();
         let realm_id = self.realm_id;
         tokio::task::spawn_blocking(move || {
@@ -396,6 +407,10 @@ impl Request for AddComponentToRealmRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+            return Err(ArunaError::Unauthorized);
+        }
         let request_tx = AddComponentToRealmRequestTx {
             req: self,
             requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,

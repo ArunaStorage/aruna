@@ -97,7 +97,9 @@ pub struct CreateProjectRequest {
     pub authors: Vec<Author>,
     #[serde(default)]
     pub license_tag: String,
+    #[serde(default)]
     pub group_id: Ulid,
+    #[serde(default)]
     pub realm_id: Ulid,
     // TODO: Default endpoints?
     #[serde(default)]

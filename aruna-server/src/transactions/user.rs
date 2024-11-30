@@ -35,6 +35,10 @@ impl Request for RegisterUserRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+            return Err(ArunaError::Unauthorized);
+        }
         let request_tx = RegisterUserRequestTx {
             id: Ulid::new(),
             req: self,
@@ -132,6 +136,10 @@ impl Request for CreateTokenRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+            return Err(ArunaError::Unauthorized);
+        }
         if self.expires_at.is_none() {
             self.expires_at = Some(chrono::Utc::now() + chrono::Duration::days(365));
         }
@@ -233,6 +241,10 @@ impl Request for GetUserRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+            return Err(ArunaError::Unauthorized);
+        }
         let requester_ulid = requester
             .ok_or_else(|| {
                 tracing::error!("Missing requester");
@@ -278,11 +290,16 @@ impl Request for GetGroupsFromUserRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
-        let requester = if let Some(requester) = requester {
-            requester.get_id().ok_or_else(|| ArunaError::Unauthorized)?
-        } else {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
             return Err(ArunaError::Unauthorized);
-        };
+        }
+        let requester_id = requester
+            .ok_or_else(|| ArunaError::Unauthorized)
+            .inspect_err(logerr!())?
+            .get_id()
+            .ok_or_else(|| ArunaError::NotFound("User not reqistered".to_string()))
+            .inspect_err(logerr!())?;
 
         let store = controller.get_store();
         tokio::task::spawn_blocking(move || {
@@ -292,7 +309,7 @@ impl Request for GetGroupsFromUserRequest {
 
             let rtxn = store.read_txn()?;
             let user_idx = store
-                .get_idx_from_ulid(&requester, &rtxn)
+                .get_idx_from_ulid(&requester_id, &rtxn)
                 .ok_or_else(|| ArunaError::NotFound("Requester not found".to_string()))?;
 
             let relations = store.get_relations(
@@ -359,16 +376,22 @@ impl Request for GetRealmsFromUserRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
-        let requester = if let Some(requester) = requester {
-            requester.get_id().ok_or_else(|| ArunaError::Unauthorized)?
-        } else {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
             return Err(ArunaError::Unauthorized);
-        };
+        }
+
+        let requester_id = requester
+            .ok_or_else(|| ArunaError::Unauthorized)
+            .inspect_err(logerr!())?
+            .get_id()
+            .ok_or_else(|| ArunaError::NotFound("User not reqistered".to_string()))
+            .inspect_err(logerr!())?;
 
         let store = controller.get_store();
         tokio::task::spawn_blocking(move || {
             let read_txn = store.read_txn()?;
-            let realms = store.get_realms_for_user(&read_txn, requester)?;
+            let realms = store.get_realms_for_user(&read_txn, requester_id)?;
             Ok::<GetRealmsFromUserResponse, ArunaError>(GetRealmsFromUserResponse { realms })
         })
         .await
@@ -391,6 +414,10 @@ impl Request for GetTokensRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+            return Err(ArunaError::Unauthorized);
+        }
         let requester_ulid = requester
             .ok_or_else(|| {
                 tracing::error!("Missing requester");
@@ -441,6 +468,10 @@ impl Request for CreateS3CredentialsRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+            return Err(ArunaError::Unauthorized);
+        }
         if self.expires_at.is_none() {
             self.expires_at = Some(chrono::Utc::now() + chrono::Duration::days(365));
         }

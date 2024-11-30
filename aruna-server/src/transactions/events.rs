@@ -20,9 +20,13 @@ impl Request for GetEventsRequest {
 
     async fn run_request(
         self,
-        _requester: Option<Requester>,
+        requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester.as_ref().and_then(|r| r.get_impersonator()).is_some() {
+            return Err(ArunaError::Unauthorized);
+        }
         let store = controller.store.clone();
         let Some(node) = controller.node.read().await.clone() else {
             return Err(ArunaError::ServerError("Node not set".to_string()));
