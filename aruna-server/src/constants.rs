@@ -8,6 +8,7 @@ pub struct Field {
 pub mod field_names {
     pub const ID_FIELD: &str = "id";
     pub const VARIANT_FIELD: &str = "variant";
+    pub const DELETED_FIELD: &str = "deleted";
     pub const NAME_FIELD: &str = "name";
     pub const DESCRIPTION_FIELD: &str = "description";
     pub const LABELS_FIELD: &str = "labels";
@@ -44,97 +45,101 @@ pub const FIELDS: &[Field] = &[
         index: 1,
     }, // 1 Int - NodeVariant                          | ALL
     Field {
-        name: field_names::NAME_FIELD,
+        name: field_names::DELETED_FIELD,
         index: 2,
-    }, // 2 String - Name of the resource              | ALL
+    }, // 2 bool - Flags a node as deleted            | All
+    Field {
+        name: field_names::NAME_FIELD,
+        index: 3,
+    }, // 3 String - Name of the resource              | ALL
     Field {
         name: field_names::DESCRIPTION_FIELD,
-        index: 3,
-    }, // 3 String - Description of the resource       | ALL
+        index: 4,
+    }, // 4 String - Description of the resource       | ALL
     Field {
         name: field_names::LABELS_FIELD,
-        index: 4,
-    }, // 4 Value - Labels of the resource             | Resource
+        index: 5,
+    }, // 5 Value - Labels of the resource             | Resource
     Field {
         name: field_names::IDENTIFIERS_FIELD,
-        index: 5,
-    }, // 5 Value - List of external identifiers       | Resource
+        index: 6,
+    }, // 6 Value - List of external identifiers       | Resource
     Field {
         name: field_names::CONTENT_LEN_FIELD,
-        index: 6,
-    }, // 6 Int - Length of the content                | Resource
+        index: 7,
+    }, // 7 Int - Length of the content                | Resource
     Field {
         name: field_names::COUNT_FIELD,
-        index: 7,
-    }, // 7 Int - Count of the resource                | Resource
+        index: 8,
+    }, // 8 Int - Count of the resource                | Resource
     Field {
         name: field_names::VISIBILITY_FIELD,
-        index: 8,
-    }, // 8 Int - Visibility of the resource           | Resource
+        index: 9,
+    }, // 9 Int - Visibility of the resource           | Resource
     Field {
         name: field_names::CREATED_AT_FIELD,
-        index: 9,
-    }, // 9 Int - Creation time of the resource        | ALL
+        index: 10,
+    }, // 10 Int - Creation time of the resource        | ALL
     Field {
         name: field_names::LAST_MODIFIED_FIELD,
-        index: 10,
-    }, // 10 Int - Last update time of the resource    | ALL
+        index: 11,
+    }, // 11 Int - Last update time of the resource    | ALL
     Field {
         name: field_names::AUTHORS_FIELD,
-        index: 11,
-    }, // 11 Value - List of authors of the resource   | Resource
+        index: 12,
+    }, // 12 Value - List of authors of the resource   | Resource
     Field {
         name: field_names::LOCKED_FIELD,
-        index: 12,
-    }, // 12 Bool - Is the resource read_only          | Resource
+        index: 13,
+    }, // 13 Bool - Is the resource read_only          | Resource
     Field {
         name: field_names::LICENSE_FIELD,
-        index: 13,
-    }, // 13 String - License of the resource          | Resource
+        index: 14,
+    }, // 14 String - License of the resource          | Resource
     Field {
         name: field_names::HASHES_FIELD,
-        index: 14,
-    }, // 14 Value - Hashes of the resource            | Resource
+        index: 15,
+    }, // 15 Value - Hashes of the resource            | Resource
     Field {
         name: field_names::LOCATION_FIELD,
-        index: 15,
-    }, // 15 Value - Location of the resource          | Resource
+        index: 16,
+    }, // 16 Value - Location of the resource          | Resource
     Field {
         name: field_names::TAGS_FIELD,
-        index: 16,
-    }, // 16 Value - Tags of a realm                   | Realm
+        index: 17,
+    }, // 17 Value - Tags of a realm                   | Realm
     Field {
         name: field_names::EXPIRES_AT_FIELD,
-        index: 17,
-    }, // 17 Int - Expiration time of the resource     | Token
+        index: 18,
+    }, // 18 Int - Expiration time of the resource     | Token
     Field {
         name: field_names::FIRST_NAME_FIELD,
-        index: 18,
-    }, // 18 String - First name of the user           | User
+        index: 19,
+    }, // 19 String - First name of the user           | User
     Field {
         name: field_names::LAST_NAME_FIELD,
-        index: 19,
-    }, // 19 String - Last name of the user            | User
+        index: 20,
+    }, // 20 String - Last name of the user            | User
     Field {
         name: field_names::EMAIL_FIELD,
-        index: 20,
-    }, // 20 String - Email of the user                | User
+        index: 21,
+    }, // 21 String - Email of the user                | User
     Field {
         name: field_names::GLOBAL_ADMIN_FIELD,
-        index: 21,
-    }, // 21 Bool - Is the user a global admin         | User
+        index: 22,
+    }, // 22 Bool - Is the user a global admin         | User
     Field {
         name: field_names::TAG_FIELD,
-        index: 22,
-    }, // 22 String - Tag or Title of a resource       | Realm / Resource
+        index: 23,
+    }, // 23 String - Tag or Title of a resource       | Realm / Resource
     Field {
         name: field_names::COMPONENT_TYPE_FIELD,
-        index: 23,
-    }, // 22 Int - Component variant                   | Component
+        index: 24,
+    }, // 24 Int - Component variant                   | Component
     Field {
         name: field_names::ENDPOINTS_FIELD,
-        index: 24,
-    }, // 22 String - Endpoint variant of a component   | Component
+        index: 25,
+    }, // 25 String - Endpoint variant of a component  | Component
 ];
 
 pub mod relation_types {

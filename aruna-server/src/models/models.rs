@@ -9,7 +9,10 @@ use ulid::Ulid;
 use utoipa::ToSchema;
 
 use crate::{
-    constants::relation_types::*,
+    constants::{
+        field_names::{DELETED_FIELD, VARIANT_FIELD},
+        relation_types::*,
+    },
     error::ArunaError,
     storage::obkv_ext::{FieldIterator, ParseError},
 };
@@ -160,9 +163,10 @@ pub fn into_serde_json_map<T: Serialize>(
     match value {
         Value::Object(mut map) => {
             map.insert(
-                "variant".to_string(),
+                VARIANT_FIELD.to_string(),
                 Value::Number(Number::from(variant as u64)),
             );
+            map.insert(DELETED_FIELD.to_string(), Value::Bool(false));
             Ok(map)
         }
         _ => Err(ArunaError::ConversionError {
@@ -217,27 +221,37 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Resource {
                 )))
             }
         };
-
-        Ok(Resource {
-            id,
-            variant,
-            name: obkv.get_required_field(2)?,
-            description: obkv.get_field(3)?,
-            revision: 0,
-            labels: obkv.get_field(4)?,
-            identifiers: obkv.get_field(5)?,
-            content_len: obkv.get_field(6)?,
-            count: obkv.get_field(7)?,
-            visibility: obkv.get_field(8)?,
-            created_at: obkv.get_field(9)?,
-            last_modified: obkv.get_field(10)?,
-            authors: obkv.get_field(11)?,
-            locked: obkv.get_field(12)?,
-            license_tag: obkv.get_field(13)?,
-            hashes: obkv.get_field(14)?,
-            location: obkv.get_field(15)?,
-            title: obkv.get_field(22)?,
-        })
+        let deleted: bool = obkv.get_required_field(2)?;
+        if deleted {
+            Ok(Resource {
+                id,
+                variant,
+                deleted,
+                ..Default::default()
+            })
+        } else {
+            Ok(Resource {
+                id,
+                variant,
+                deleted,
+                name: obkv.get_required_field(3)?,
+                description: obkv.get_field(4)?,
+                revision: 0,
+                labels: obkv.get_field(5)?,
+                identifiers: obkv.get_field(6)?,
+                content_len: obkv.get_field(7)?,
+                count: obkv.get_field(8)?,
+                visibility: obkv.get_field(9)?,
+                created_at: obkv.get_field(10)?,
+                last_modified: obkv.get_field(11)?,
+                authors: obkv.get_field(12)?,
+                locked: obkv.get_field(13)?,
+                license_tag: obkv.get_field(14)?,
+                hashes: obkv.get_field(15)?,
+                location: obkv.get_field(16)?,
+                title: obkv.get_field(23)?,
+            })
+        }
     }
 }
 
@@ -270,14 +284,25 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for User {
         if variant != NodeVariant::User as u8 {
             return Err(ParseError(format!("Invalid variant for User: {}", variant)));
         }
-        Ok(User {
-            id,
-            identifiers: obkv.get_field(5)?,
-            first_name: obkv.get_required_field(18)?,
-            last_name: obkv.get_required_field(19)?,
-            email: obkv.get_required_field(20)?,
-            global_admin: obkv.get_field(21)?,
-        })
+
+        let deleted: bool = obkv.get_required_field(2)?;
+        if deleted {
+            Ok(User {
+                id,
+                deleted,
+                ..Default::default()
+            })
+        } else {
+            Ok(User {
+                id,
+                deleted,
+                identifiers: obkv.get_field(6)?,
+                first_name: obkv.get_required_field(19)?,
+                last_name: obkv.get_required_field(20)?,
+                email: obkv.get_required_field(21)?,
+                global_admin: obkv.get_field(22)?,
+            })
+        }
     }
 }
 
@@ -310,10 +335,20 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for ServiceAccount {
         if variant != NodeVariant::ServiceAccount as u8 {
             return Err(ParseError(format!("Invalid variant for User: {}", variant)));
         }
-        Ok(ServiceAccount {
-            id,
-            name: obkv.get_field(2)?,
-        })
+        let deleted: bool = obkv.get_required_field(2)?;
+        if deleted {
+            Ok(ServiceAccount {
+                id,
+                deleted,
+                ..Default::default()
+            })
+        } else {
+            Ok(ServiceAccount {
+                id,
+                deleted,
+                name: obkv.get_field(3)?,
+            })
+        }
     }
 }
 
@@ -346,11 +381,21 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Group {
         if variant != NodeVariant::Group as u8 {
             return Err(ParseError(format!("Invalid variant for User: {}", variant)));
         }
-        Ok(Group {
-            id,
-            name: obkv.get_required_field(2)?,
-            description: obkv.get_field(3)?,
-        })
+        let deleted: bool = obkv.get_required_field(2)?;
+        if deleted {
+            Ok(Group {
+                id,
+                deleted,
+                ..Default::default()
+            })
+        } else {
+            Ok(Group {
+                id,
+                deleted,
+                name: obkv.get_required_field(3)?,
+                description: obkv.get_field(4)?,
+            })
+        }
     }
 }
 
@@ -383,12 +428,22 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Realm {
         if variant != NodeVariant::Realm as u8 {
             return Err(ParseError(format!("Invalid variant for User: {}", variant)));
         }
-        Ok(Realm {
-            id,
-            name: obkv.get_required_field(2)?,
-            description: obkv.get_field(3)?,
-            tag: obkv.get_field(22)?,
-        })
+        let deleted: bool = obkv.get_required_field(2)?;
+        if deleted {
+            Ok(Realm {
+                id,
+                deleted,
+                ..Default::default()
+            })
+        } else {
+            Ok(Realm {
+                id,
+                deleted,
+                name: obkv.get_required_field(3)?,
+                description: obkv.get_field(4)?,
+                tag: obkv.get_field(23)?,
+            })
+        }
     }
 }
 
@@ -446,19 +501,25 @@ pub struct Author {
 }
 
 // ArunaGraph Nodes
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
 pub struct Realm {
     pub id: Ulid,
     pub tag: String, // -> Region
     pub name: String,
     pub description: String,
+    pub deleted: bool,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
 pub struct Group {
     pub id: Ulid,
     pub name: String,
     pub description: String,
+    pub deleted: bool,
     // TODO: OIDC mapping ?
 }
 
@@ -495,6 +556,7 @@ pub struct User {
     // TODO: OIDC mapping ?
     // pub oidc_mappings: Vec<OidcMapping>,
     pub global_admin: bool,
+    pub deleted: bool,
 }
 
 #[derive(
@@ -505,14 +567,19 @@ pub struct OidcMapping {
     pub id: String,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
 pub struct ServiceAccount {
     pub id: Ulid,
     pub name: String,
+    pub deleted: bool,
     // TODO: More fields?
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
 pub struct Resource {
     pub id: Ulid,
     pub name: String,
@@ -531,6 +598,7 @@ pub struct Resource {
     pub authors: Vec<Author>,
     pub license_tag: String,
     pub locked: bool,
+    pub deleted: bool,
     // TODO:
     pub location: Vec<DataLocation>, // Part of index ?
     pub hashes: Vec<Hash>,
@@ -760,7 +828,7 @@ pub enum Endpoint {
     Consensus(Url),
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
 pub struct Component {
     pub id: Ulid,
     pub name: String,
@@ -768,6 +836,7 @@ pub struct Component {
     pub component_type: ComponentType,
     pub endpoints: Vec<Endpoint>,
     pub public: bool,
+    pub deleted: bool,
 }
 
 impl Node for Component {
@@ -802,14 +871,25 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Component {
                 variant
             )));
         }
-        Ok(Component {
-            id,
-            name: obkv.get_field(2)?,
-            description: obkv.get_field(3)?,
-            component_type: obkv.get_field(23)?,
-            endpoints: obkv.get_field(24)?,
-            public: obkv.get_field(25)?,
-        })
+
+        let deleted: bool = obkv.get_required_field(2)?;
+        if deleted {
+            Ok(Component {
+                id,
+                deleted,
+                ..Default::default()
+            })
+        } else {
+            Ok(Component {
+                id,
+                deleted,
+                name: obkv.get_field(3)?,
+                description: obkv.get_field(4)?,
+                component_type: obkv.get_field(24)?,
+                endpoints: obkv.get_field(25)?,
+                public: obkv.get_field(26)?,
+            })
+        }
     }
 }
 

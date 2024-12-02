@@ -70,6 +70,7 @@ impl WriteRequest for CreateGroupRequestTx {
             id: self.id,
             name: self.req.name.clone(),
             description: self.req.description.clone(),
+            deleted: false,
         };
         let requester_id = self
             .requester

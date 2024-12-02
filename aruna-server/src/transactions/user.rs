@@ -72,6 +72,7 @@ impl WriteRequest for RegisterUserRequestTx {
             first_name: self.req.first_name.clone(),
             last_name: self.req.last_name.clone(),
             email: self.req.email.clone(),
+            deleted: false,
             // TODO: Multiple identifiers ?
             identifiers: self.req.identifier.clone(),
             global_admin: false,

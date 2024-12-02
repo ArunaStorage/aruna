@@ -42,6 +42,7 @@ impl Request for CreateRealmRequest {
                 id: Ulid::new(),
                 name: format!("{}-admin-group", self.tag),
                 description: format!("Auto-generated admin group for: {}", self.name),
+                deleted: false,
             },
             req: self,
             requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
@@ -76,6 +77,7 @@ impl WriteRequest for CreateRealmRequestTx {
             tag: self.req.tag.clone(),
             name: self.req.name.clone(),
             description: self.req.description.clone(),
+            deleted: false,
         };
 
         let group = self.generated_group.clone();

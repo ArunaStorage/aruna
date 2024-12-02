@@ -3,7 +3,13 @@ use super::{
     request::{Request, Requester, SerializedResponse},
 };
 use crate::{
-    constants::{field_names::{AUTHORS_FIELD, DESCRIPTION_FIELD, IDENTIFIERS_FIELD, ID_FIELD, LABELS_FIELD, LAST_MODIFIED_FIELD, LICENSE_FIELD, NAME_FIELD, TAG_FIELD, VISIBILITY_FIELD}, relation_types::{self, DEFAULT}},
+    constants::{
+        field_names::{
+            AUTHORS_FIELD, DESCRIPTION_FIELD, IDENTIFIERS_FIELD, ID_FIELD, LABELS_FIELD,
+            LAST_MODIFIED_FIELD, LICENSE_FIELD, NAME_FIELD, TAG_FIELD, VISIBILITY_FIELD,
+        },
+        relation_types::{self, DEFAULT},
+    },
     context::{BatchPermission, Context},
     error::ArunaError,
     logerr,
@@ -104,6 +110,7 @@ impl WriteRequest for CreateProjectRequestTx {
             authors: self.req.authors.clone(),
             license_tag: self.req.license_tag.clone(),
             locked: false,
+            deleted: false,
             location: vec![], // TODO: Locations and DataProxies
             hashes: vec![],
         };
@@ -340,6 +347,7 @@ impl WriteRequest for CreateResourceRequestTx {
             authors: self.req.authors.clone(),
             license_tag: self.req.license_tag.clone(),
             locked: false,
+            deleted: false,
             location: vec![], // TODO: Locations and DataProxies
             hashes: vec![],
         };
@@ -561,6 +569,7 @@ impl WriteRequest for CreateResourceBatchRequestTx {
                     authors: batch_resource.authors.clone(),
                     license_tag: batch_resource.license_tag.clone(),
                     locked: false,
+                    deleted: false,
                     location: vec![], // TODO: Locations and DataProxies
                     hashes: vec![],
                 };
@@ -913,7 +922,7 @@ fn parse_update_fields(
 ) -> Result<serde_json::Map<String, Value>, ArunaError> {
     let mut map = serde_json::Map::new();
     map.insert(ID_FIELD.to_string(), serde_json::to_value(resource_id)?);
-    map.insert(LAST_MODIFIED_FIELD.to_string(),serde_json::to_value(time)?);
+    map.insert(LAST_MODIFIED_FIELD.to_string(), serde_json::to_value(time)?);
     match request {
         ResourceUpdateRequests::Name(request) => {
             if !request.name.is_empty() && request.name != old_resource.name {

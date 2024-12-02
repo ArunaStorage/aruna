@@ -3,7 +3,7 @@ use super::{
     request::{Request, Requester, WriteRequest},
 };
 use crate::{
-    constants::relation_types::{self, GROUP_PART_OF_REALM, REALM_USES_COMPONENT},
+    constants::relation_types::{self},
     context::Context,
     error::ArunaError,
     models::{
@@ -78,6 +78,7 @@ impl WriteRequest for CreateComponentRequestTx {
                 component_type: req.component_type,
                 endpoints: req.endpoints.clone(),
                 public: req.public,
+                deleted: false,
             };
 
             let idx = store.create_node(&mut wtxn, &component)?;
