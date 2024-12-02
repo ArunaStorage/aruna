@@ -455,6 +455,11 @@ pub struct GroupAccessRealmRequest {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GroupAccessRealmRequestHelper {
+    pub group_id: Ulid,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GroupAccessRealmResponse {}
 
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]

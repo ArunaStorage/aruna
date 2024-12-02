@@ -1,3 +1,4 @@
+use petgraph::Direction;
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
@@ -14,6 +15,7 @@ use crate::{
         requests::{
             AddUserRequest, AddUserResponse, CreateGroupRequest, CreateGroupResponse,
             GetGroupRequest, GetGroupResponse, GetUsersFromGroupRequest, GetUsersFromGroupResponse,
+            UserAccessGroupRequest, UserAccessGroupResponse,
         },
     },
     transactions::request::WriteRequest,
@@ -320,5 +322,94 @@ impl Request for GetUsersFromGroupRequest {
         })??;
 
         Ok(response)
+    }
+}
+
+impl Request for UserAccessGroupRequest {
+    type Response = UserAccessGroupResponse;
+    fn get_context(&self) -> Context {
+        Context::UserOnly
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &super::controller::Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
+            return Err(ArunaError::Unauthorized);
+        }
+        let request_tx = UserAccessGroupTx {
+            req: self,
+            requester: requester
+                .ok_or_else(|| ArunaError::Unauthorized)
+                .inspect_err(logerr!())?,
+        };
+
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response)?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UserAccessGroupTx {
+    req: UserAccessGroupRequest,
+    requester: Requester,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for UserAccessGroupTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+
+        let requester_id = self
+            .requester
+            .get_id()
+            .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
+
+        let store = controller.get_store();
+        let group_id = self.req.group_id;
+        Ok(tokio::task::spawn_blocking(move || {
+            let wtxn = store.write_txn()?;
+            let ro_txn = wtxn.get_ro_txn();
+            let graph = wtxn.get_ro_graph();
+
+            let Some(group_idx) = store.get_idx_from_ulid(&group_id, ro_txn) else {
+                return Err(ArunaError::NotFound(group_id.to_string()));
+            };
+            let Some(requester_idx) = store.get_idx_from_ulid(&requester_id, ro_txn) else {
+                return Err(ArunaError::NotFound(requester_id.to_string()));
+            };
+
+            let mut affected = vec![group_idx];
+            let filter = (PERMISSION_READ..=PERMISSION_ADMIN).collect::<Vec<u32>>();
+            affected.extend(
+                store
+                    .get_raw_relations(group_idx, Some(&filter), Direction::Incoming, graph)
+                    .iter()
+                    .map(|rel| rel.source)
+                    .collect::<Vec<u32>>(),
+            );
+
+            // Notification gets automatically created in commit
+            wtxn.commit(associated_event_id, &affected, &[requester_idx])?;
+            Ok::<_, ArunaError>(bincode::serialize(&UserAccessGroupResponse {})?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
     }
 }

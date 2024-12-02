@@ -41,7 +41,7 @@ pub(super) fn init_issuers(
     key_config: &(u32, String, String),
     single_entry_db: &Database<Unspecified, Unspecified>,
 ) -> Result<(), ArunaError> {
-    let x25519_pubkey = crate::crypto::ed25519_to_x25519_pubkey(&key_config.2).map_err(|e| {
+    let x25519_pubkey = crate::crypto::ed25519_to_x25519_pubkey(&key_config.2).map_err(|_e| {
         tracing::error!("Error converting ed25519 to x25519 public");
         ArunaError::ConfigError("Error converting ed25519 to x25519 public".to_string())
     })?;

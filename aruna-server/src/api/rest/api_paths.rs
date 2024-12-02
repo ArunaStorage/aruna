@@ -1090,12 +1090,18 @@ pub async fn get_events(
 )]
 pub async fn request_group_access_realm(
     Path(realm_id): Path<Ulid>,
-    Query(group_id): Query<Ulid>,
+    Query(GroupAccessRealmRequestHelper { group_id }): Query<GroupAccessRealmRequestHelper>,
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!();
-    // into_axum_response(state.request(request, extract_token(&header)).await)
+    into_axum_response(
+        state
+            .request(
+                GroupAccessRealmRequest { realm_id, group_id },
+                extract_token(&header),
+            )
+            .await,
+    )
 }
 
 /// Request user join group
@@ -1119,8 +1125,11 @@ pub async fn request_user_access_group(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!()
-    // into_axum_response(state.request(request, extract_token(&header)).await)
+    into_axum_response(
+        state
+            .request(UserAccessGroupRequest { group_id }, extract_token(&header))
+            .await,
+    )
 }
 
 /// Create a new component

@@ -650,6 +650,18 @@ impl Store {
                 )
             })
     }
+    #[tracing::instrument(level = "trace", skip(self, graph))]
+    pub fn get_raw_relations(
+        &self,
+        idx: u32,
+        filter: Option<&[EdgeType]>,
+        direction: Direction,
+        graph: &Graph<NodeVariant, EdgeType>,
+    ) -> Vec<RawRelation> {
+        super::graph::get_relations(&graph, idx, filter, direction)
+    }
+
+
 
     #[tracing::instrument(level = "trace", skip(self, rtxn))]
     pub fn get_relations(

@@ -4,17 +4,18 @@ use super::{
 };
 use crate::{
     constants::relation_types::{
-        self, DEFAULT, GROUP_PART_OF_REALM, OWNED_BY_USER, REALM_USES_COMPONENT,
+        self, DEFAULT, GROUP_ADMINISTRATES_REALM, GROUP_PART_OF_REALM, OWNED_BY_USER, PERMISSION_READ, REALM_USES_COMPONENT, SHARES_PERMISSION
     },
     context::Context,
     error::ArunaError,
+    logerr,
     models::{
         models::{Component, Group, NodeVariant, Realm},
         requests::{
             AddComponentToRealmRequest, AddComponentToRealmResponse, AddGroupRequest,
             AddGroupResponse, CreateRealmRequest, CreateRealmResponse, GetGroupsFromRealmRequest,
             GetGroupsFromRealmResponse, GetRealmComponentsRequest, GetRealmComponentsResponse,
-            GetRealmRequest, GetRealmResponse,
+            GetRealmRequest, GetRealmResponse, GroupAccessRealmRequest, GroupAccessRealmResponse,
         },
     },
     storage::graph::{get_relations, has_relation},
@@ -538,6 +539,107 @@ impl WriteRequest for AddComponentToRealmRequestTx {
             wtxn.commit(associated_event_id, &[realm_idx, component_idx], &[])?;
 
             Ok::<_, ArunaError>(bincode::serialize(&AddComponentToRealmResponse {})?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
+    }
+}
+
+impl Request for GroupAccessRealmRequest {
+    type Response = GroupAccessRealmResponse;
+    fn get_context(&self) -> Context {
+        Context::Permission {
+            min_permission: crate::models::models::Permission::Admin,
+            source: self.group_id,
+        }
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &super::controller::Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
+            return Err(ArunaError::Unauthorized);
+        }
+        let request_tx = GroupAccessRealmTx {
+            req: self,
+            requester: requester
+                .ok_or_else(|| ArunaError::Unauthorized)
+                .inspect_err(logerr!())?,
+        };
+
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response)?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GroupAccessRealmTx {
+    req: GroupAccessRealmRequest,
+    requester: Requester,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for GroupAccessRealmTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+
+        let store = controller.get_store();
+        let Some(requester) = self.requester.get_id() else {
+            return Err(ArunaError::Unauthorized);
+        };
+        let realm_id = self.req.realm_id;
+        let group_id = self.req.group_id;
+
+        Ok(tokio::task::spawn_blocking(move || {
+            let wtxn = store.write_txn()?;
+            let ro_txn = wtxn.get_ro_txn();
+            let graph = wtxn.get_ro_graph();
+
+            let Some(group_idx) = store.get_idx_from_ulid(&group_id, ro_txn) else {
+                return Err(ArunaError::NotFound(group_id.to_string()));
+            };
+            let Some(realm_idx) = store.get_idx_from_ulid(&realm_id, ro_txn) else {
+                return Err(ArunaError::NotFound(realm_id.to_string()));
+            };
+            let Some(requester_idx) = store.get_idx_from_ulid(&requester, ro_txn) else {
+                return Err(ArunaError::NotFound(requester.to_string()));
+            };
+
+            let mut affected = vec![group_idx, realm_idx];
+            let filter = (PERMISSION_READ..=SHARES_PERMISSION).collect::<Vec<u32>>();
+            let relations = store.get_raw_relations(
+                realm_idx,
+                Some(&[GROUP_ADMINISTRATES_REALM]),
+                Direction::Incoming,
+                graph,
+            ).iter().map(|rel| rel.source).collect::<Vec<u32>>();
+            for admin_group in relations {
+                let users = &store
+                    .get_raw_relations(admin_group, Some(&filter), Direction::Incoming, graph)
+                    .iter()
+                    .map(|rel| rel.source)
+                    .collect::<Vec<u32>>();
+                affected.extend(users);
+            }
+            // Notification gets automatically created in commit
+            wtxn.commit(associated_event_id, &affected, &[requester_idx])?;
+            Ok::<_, ArunaError>(bincode::serialize(&GroupAccessRealmResponse {})?)
         })
         .await
         .map_err(|_e| {

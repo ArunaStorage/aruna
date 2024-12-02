@@ -91,7 +91,7 @@ pub fn get_relations(
                     edge_type: *e.weight(),
                 }),
                 Direction::Incoming => Some(RawRelation {
-                    source: e.target().as_u32(),
+                    source: e.source().as_u32(),
                     target: idx.as_u32(),
                     edge_type: *e.weight(),
                 }),

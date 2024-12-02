@@ -1,7 +1,6 @@
 use super::{
     auth::TokenHandler,
     controller::Controller,
-    group,
     request::{Request, Requester, WriteRequest},
 };
 use crate::{
