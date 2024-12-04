@@ -648,3 +648,14 @@ pub struct RegisterDataRequest {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct RegisterDataResponse {}
+
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct AuthorizeRequest {
+    pub id: Ulid,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct AuthorizeResponse {
+    pub allowed: bool,
+}

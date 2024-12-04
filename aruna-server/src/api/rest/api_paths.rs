@@ -1180,3 +1180,32 @@ pub async fn register_data(
     request.object_id = id;
     into_axum_response(state.request(request, extract_token(&header)).await)
 }
+
+/// Register data for an object
+#[utoipa::path(
+    get,
+    path = "/resources/authorize/{id}",
+    params(
+        ("id" = Ulid, Path, description = "Resource ID (Must be object)"),
+    ),
+    request_body = (),
+    responses(
+        (status = 200, body = ()),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+    tag = RESOURCES,
+)]
+pub async fn authorize_resource(
+    Path(id): Path<Ulid>,
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(
+        state
+            .request(AuthorizeRequest { id }, extract_token(&header))
+            .await,
+    )
+}

@@ -14,15 +14,19 @@ use crate::{
     error::ArunaError,
     logerr,
     models::{
-        models::{Component, DataLocation, NodeVariant, Resource, ResourceVariant, SyncingStatus},
+        models::{
+            Component, DataLocation, NodeVariant, Resource, ResourceVariant, SyncingStatus,
+            VisibilityClass,
+        },
         requests::{
-            CreateProjectRequest, CreateProjectResponse, CreateResourceBatchRequest,
-            CreateResourceBatchResponse, CreateResourceRequest, CreateResourceResponse, GetInner,
-            GetResourcesRequest, GetResourcesResponse, Parent, RegisterDataRequest,
-            RegisterDataResponse, ResourceUpdateRequests, ResourceUpdateResponses,
-            UpdateResourceAuthorsResponse, UpdateResourceDescriptionResponse,
-            UpdateResourceIdentifiersResponse, UpdateResourceLabelsResponse,
-            UpdateResourceLicenseResponse, UpdateResourceNameResponse, UpdateResourceTitleResponse,
+            AuthorizeRequest, AuthorizeResponse, CreateProjectRequest, CreateProjectResponse,
+            CreateResourceBatchRequest, CreateResourceBatchResponse, CreateResourceRequest,
+            CreateResourceResponse, GetInner, GetResourcesRequest, GetResourcesResponse, Parent,
+            RegisterDataRequest, RegisterDataResponse, ResourceUpdateRequests,
+            ResourceUpdateResponses, UpdateResourceAuthorsResponse,
+            UpdateResourceDescriptionResponse, UpdateResourceIdentifiersResponse,
+            UpdateResourceLabelsResponse, UpdateResourceLicenseResponse,
+            UpdateResourceNameResponse, UpdateResourceTitleResponse,
             UpdateResourceVisibilityResponse,
         },
     },
@@ -1189,5 +1193,44 @@ impl WriteRequest for RegisterDataRequestTx {
             tracing::error!("Failed to join task");
             ArunaError::ServerError("".to_string())
         })??)
+    }
+}
+
+impl Request for AuthorizeRequest {
+    type Response = AuthorizeResponse;
+    fn get_context(&self) -> Context {
+        Context::Permission {
+            min_permission: crate::models::models::Permission::Read,
+            source: self.id,
+        }
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let allowed = if let Some(requester) = requester {
+            controller.authorize(&requester, &self).await.is_ok()
+        } else {
+            let store = controller.get_store();
+            let id = self.id;
+            tokio::task::spawn_blocking(move || {
+                let rtxn = store.read_txn()?;
+                let Some(idx) = store.get_idx_from_ulid(&id, &rtxn) else {
+                    return Err(ArunaError::NotFound(format!("{id} not found")));
+                };
+                let Some(node) = store.get_node::<Resource>(&rtxn, idx) else {
+                    return Err(ArunaError::NotFound(format!("{id} not found")));
+                };
+                Ok::<bool, ArunaError>(matches!(node.visibility, VisibilityClass::Public))
+            })
+            .await
+            .map_err(|e| {
+                error!("Failed to join task: {}", e);
+                ArunaError::ServerError("".to_string())
+            })??
+        };
+        Ok(AuthorizeResponse { allowed })
     }
 }
