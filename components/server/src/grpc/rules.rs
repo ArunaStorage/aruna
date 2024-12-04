@@ -212,7 +212,7 @@ impl RulesService for RuleServiceImpl {
 
         let request = CreateRuleBinding(request.into_inner());
         let resource_id = tonic_invalid!(request.get_resource_id(), "Invalid resource id");
-        let rule_id = tonic_invalid!(request.get_resource_id(), "Invalid rule id");
+        let rule_id = tonic_invalid!(request.get_rule_id(), "Invalid rule id");
 
         let user_id = tonic_auth!(
             self.authorizer
