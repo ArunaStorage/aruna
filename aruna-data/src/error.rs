@@ -34,7 +34,8 @@ pub enum ProxyError {
     BodyError(String),
     #[error("InvalidAccessKey")]
     InvalidAccessKey,
-
+    #[error("Internal Error: {0}")]
+    InternalError(String),
 }
 
 impl From<ProxyError> for S3Error {

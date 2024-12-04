@@ -1,8 +1,11 @@
 use anyhow::{anyhow, bail, Result};
 use base64::engine::general_purpose;
 use base64::Engine;
+use jsonwebtoken::EncodingKey;
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
+
+use crate::error::ProxyError;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -103,6 +106,15 @@ impl Proxy {
         aruna_server::crypto::ed25519_to_x25519_pubkey(&self.public_key).map_err(|e| {
             tracing::error!(error = ?e, msg = e.message);
             anyhow!(e.message)
+        })
+    }
+
+    pub fn get_encoding_key(&self) -> Result<EncodingKey, ProxyError> {
+        self.private_key.as_ref().map(
+            |key| EncodingKey::from_secret(key.as_bytes()),
+        ).ok_or_else(|| {
+            tracing::error!("Private key not set");
+            ProxyError::InternalError("Private key not set".to_string())
         })
     }
 }

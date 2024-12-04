@@ -16,7 +16,7 @@ use sha2::Sha256;
 use std::sync::Arc;
 use tracing::error;
 
-use super::utils::permute_path;
+use super::utils::{permute_path, sign_user_token};
 
 pub struct ArunaS3Service {
     storage: Arc<LmdbStore>,
@@ -48,6 +48,15 @@ impl S3 for ArunaS3Service {
 
         let project_id = parent_id;
 
+        let user_token = sign_user_token(
+            CONFIG.proxy.get_encoding_key()?,
+            CONFIG.proxy.endpoint_id,
+            req.credentials.map(|c| c.access_key).ok_or_else(|| {
+                error!("Access key is missing");
+                s3_error!(InvalidAccessKeyId, "Access key is missing")
+            })?,
+        )?;
+
         let parts_len = parts.len() - 1;
         for (i, part) in parts.into_iter().enumerate() {
             parent_id = if let Some(exists) = self.storage.get_object_id(&part) {
@@ -64,7 +73,7 @@ impl S3 for ArunaS3Service {
                 })?;
                 let id = self
                     .client
-                    .create_object(name, variant.clone(), parent_id)
+                    .create_object(name, variant.clone(), parent_id, &user_token)
                     .await?;
 
                 if variant == ResourceVariant::Object {
@@ -154,6 +163,7 @@ impl S3 for ArunaS3Service {
                         },
                     ],
                 },
+                &user_token,
             )
             .await?;
 

@@ -19,7 +19,7 @@ impl ServerClient {
         Ok(Self { store })
     }
 
-    pub async fn get_events(&self) -> Result<(), ProxyError> {
+    pub async fn get_events(&self, token: &str) -> Result<(), ProxyError> {
         reqwest::Client::new()
             .get(format!(
                 "{}/api/v3/info/events?subscriber_id={}",
@@ -30,7 +30,7 @@ impl ServerClient {
                     .unwrap_or(&"http://localhost:8080".to_string()),
                 "subscriber_id"
             ))
-            .header("Authorization", format!("Bearer {}", "token"))
+            .header("Authorization", format!("Bearer {}", token))
             .send()
             .await
             .map_err(|e| ProxyError::RequestError(e.to_string()))?
@@ -48,6 +48,7 @@ impl ServerClient {
         name: &str,
         variant: ResourceVariant,
         parent: Ulid,
+        token: &str,
     ) -> Result<Ulid, ProxyError> {
         let result = reqwest::Client::new()
             .post(format!(
@@ -64,7 +65,7 @@ impl ServerClient {
                 parent_id: parent,
                 ..Default::default()
             })
-            .header("Authorization", format!("Bearer {}", "token"))
+            .header("Authorization", format!("Bearer {}", token))
             .send()
             .await
             .map_err(|e| ProxyError::RequestError(e.to_string()))?
@@ -76,7 +77,7 @@ impl ServerClient {
         Ok(result.resource.id)
     }
 
-    pub async fn add_data(&self, id: Ulid, req: RegisterDataRequest) -> Result<(), ProxyError> {
+    pub async fn add_data(&self, id: Ulid, req: RegisterDataRequest, token: &str) -> Result<(), ProxyError> {
         reqwest::Client::new()
             .post(format!(
                 "{}/api/v3/resources/{id}/data",
@@ -87,7 +88,7 @@ impl ServerClient {
                     .unwrap_or(&"http://localhost:8080".to_string()),
             ))
             .json(&req)
-            .header("Authorization", format!("Bearer {}", "token"))
+            .header("Authorization", format!("Bearer {}", token))
             .send()
             .await
             .map_err(|e| ProxyError::RequestError(e.to_string()))?
