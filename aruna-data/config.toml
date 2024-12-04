@@ -1,6 +1,6 @@
 [proxy]
 # ID of the proxy
-endpoint_id = "01H81W0ZMB54YEP5711Q2BK46V"
+endpoint_id = "01JDWY8MN7JDSJ7E3WZ957TQJS"
 # Private ed25519 key of the proxy (can also be provided via env-var PROXY_PRIVATE_KEY)
 private_key = "MC4CAQAwBQYDK2VwBCIEIM/FI+bYw+auSKGyGqeISRIEjofvZV/lbK7QL1wkuCey"
 public_key = "MCowBQYDK2VwAyEAnouQBh4GHPCD/k85VIzPyCdOijVg2qlzt2TELwTMy4c="

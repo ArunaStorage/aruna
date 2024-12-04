@@ -161,6 +161,8 @@ dependencies = [
  "http-body-util",
  "hyper 1.5.1",
  "hyper-util",
+ "itertools 0.13.0",
+ "jsonwebtoken",
  "lazy_static",
  "md-5",
  "nom",

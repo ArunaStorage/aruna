@@ -32,6 +32,9 @@ pub enum ProxyError {
     OpendalError(#[from] opendal::Error),
     #[error("Body Error: {0}")]
     BodyError(String),
+    #[error("InvalidAccessKey")]
+    InvalidAccessKey,
+
 }
 
 impl From<ProxyError> for S3Error {

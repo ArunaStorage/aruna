@@ -35,8 +35,8 @@ fn main() {
     let pubkey = "MCowBQYDK2VwAyEAnouQBh4GHPCD/k85VIzPyCdOijVg2qlzt2TELwTMy4c=";
     let proxy_id = Ulid::from_string("01JDWY8MN7JDSJ7E3WZ957TQJS").unwrap();
 
-    // let user_id = Ulid::from_string("01JDWY8MN7JDSJ7E3WZ957TQJS").unwrap();
-    let user_id = Ulid::from_string("01JDWXJ6V34MH1XGZW8WS7Q22Z").unwrap();
+    let user_id = Ulid::from_string("01JDWY8MN7JDSJ7E3WZ957TQJS").unwrap();
+    //let user_id = Ulid::from_string("01JDWXJ6V34MH1XGZW8WS7Q22Z").unwrap();
     let token_idx = 1;
 
     let private_pem = format!(
