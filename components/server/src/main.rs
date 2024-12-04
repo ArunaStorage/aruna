@@ -12,7 +12,7 @@ use aruna_rust_api::api::{
         endpoint_service_server::EndpointServiceServer,
         license_service_server::LicenseServiceServer, object_service_server::ObjectServiceServer,
         project_service_server::ProjectServiceServer,
-        relations_service_server::RelationsServiceServer,
+        relations_service_server::RelationsServiceServer, rules_service_server::RulesServiceServer,
         search_service_server::SearchServiceServer,
         storage_status_service_server::StorageStatusServiceServer,
         user_service_server::UserServiceServer,
@@ -32,14 +32,13 @@ use aruna_server::{
         endpoints::EndpointServiceImpl, hooks::HookServiceImpl, info::StorageStatusServiceImpl,
         licenses::LicensesServiceImpl, notification::NotificationServiceImpl,
         object::ObjectServiceImpl, projects::ProjectServiceImpl, relations::RelationsServiceImpl,
-        search::SearchServiceImpl, users::UserServiceImpl,
+        rules::RuleServiceImpl, search::SearchServiceImpl, users::UserServiceImpl,
     },
     hooks,
     middlelayer::db_handler::DatabaseHandler,
     notification::natsio_handler::NatsIoHandler,
     search::meilisearch_client::{MeilisearchClient, MeilisearchIndexes},
-    utils::mailclient::MailClient,
-    utils::search_utils,
+    utils::{mailclient::MailClient, search_utils},
 };
 use diesel_ulid::DieselUlid;
 use log::{error, info, warn};
@@ -306,6 +305,10 @@ pub async fn main() -> Result<()> {
             ))
             .add_service(HooksServiceServer::new(
                 HookServiceImpl::new(db_handler_arc.clone(), auth_arc.clone(), cache_arc.clone())
+                    .await,
+            ))
+            .add_service(RulesServiceServer::new(
+                RuleServiceImpl::new(db_handler_arc.clone(), auth_arc.clone(), cache_arc.clone())
                     .await,
             ))
             .add_service(LicenseServiceServer::new(
