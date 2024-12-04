@@ -661,8 +661,6 @@ impl Store {
         super::graph::get_relations(&graph, idx, filter, direction)
     }
 
-
-
     #[tracing::instrument(level = "trace", skip(self, rtxn))]
     pub fn get_relations(
         &self,

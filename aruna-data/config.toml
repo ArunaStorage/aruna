@@ -8,7 +8,7 @@ server_pubkey = "MCowBQYDK2VwAyEA2YfYTgb8Y0LTFr+2Rm2Fkdu38eJTfnsMDH2iZHErBH0="
 # The serial number of the proxy (will be received from the server on registration)
 serial = 1337
 # Optional will disable notification sync if not set
-aruna_url = "http://localhost:50051"
+aruna_url = "http://localhost:8080"
 enable_ingest = true # Set to true to enable the ingest service
 admin_ids = [
     "01H819G3ZMK5DC9Q5PD18N9SXB",
@@ -16,15 +16,8 @@ admin_ids = [
 grpc_server = "0.0.0.0:50052"
 remote_synced = true
 replication_interval = 30 # Interval between replication batches in seconds
+lmdb_path = "/dev/shm/aruna-proxy"
 
-[persistence.postgres]
-host = "localhost"
-port = 5433
-user = "yugabyte"
-database = "proxy"
-# Can also be provided via env-var POSTGRES_PASSWORD
-password = "yugabyte"
-schema = './src/database/schema.sql'
 
 [frontend]
 hostname = "localhost:1337"

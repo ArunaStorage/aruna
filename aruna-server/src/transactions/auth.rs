@@ -270,12 +270,14 @@ impl TokenHandler {
                 tracing::error!("Invalid token id provided");
                 ArunaError::Unauthorized
             })?;
-            
+
             if impersonated != subject_as_ulid || impersonated != iss_as_ulid {
                 tracing::error!("Impersonation not allowed");
                 return Err(ArunaError::Unauthorized);
             }
-            return Ok(Requester::Component { server_id: impersonated });
+            return Ok(Requester::Component {
+                server_id: impersonated,
+            });
         }
 
         match is_service_account {
@@ -473,10 +475,12 @@ fn validate_subscriber_of(
         Requester::Component { server_id } => {
             if server_id == &subscriber_id {
                 Ok(())
-            }else{
-                Err(ArunaError::Forbidden("Component is not subscriber".to_string()))
+            } else {
+                Err(ArunaError::Forbidden(
+                    "Component is not subscriber".to_string(),
+                ))
             }
-        }         
+        }
         _ => Err(ArunaError::Forbidden(
             "Unregistered is not allowed".to_string(),
         )),

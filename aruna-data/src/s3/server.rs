@@ -13,7 +13,7 @@ use crate::{logerr, CONFIG};
 use super::{access::AccessChecker, service::ArunaS3Service};
 
 pub async fn run_server(storage: Arc<LmdbStore>, client: ServerClient) -> Result<(), ProxyError> {
-    let aruna_s3_service = ArunaS3Service::new(storage.clone());
+    let aruna_s3_service = ArunaS3Service::new(storage.clone(), client.clone());
 
     let service = {
         let mut builder = S3ServiceBuilder::new(aruna_s3_service);

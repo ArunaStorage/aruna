@@ -10,7 +10,6 @@ use std::sync::Arc;
 use tracing::trace;
 use tracing_subscriber::EnvFilter;
 
-//mod auth;
 mod client;
 mod config;
 mod error;
@@ -66,8 +65,8 @@ async fn main() -> Result<()> {
 
     tracing::subscriber::set_global_default(subscriber)?;
 
-    let store = Arc::new(LmdbStore::new(&CONFIG.lmdb_path)?);
-    let client = client::ServerClient::new().await?;
+    let store = Arc::new(LmdbStore::new(&CONFIG.proxy.lmdb_path)?);
+    let client = client::ServerClient::new(store.clone()).await?;
 
     trace!("init s3 server");
     run_server(store, client).await?;

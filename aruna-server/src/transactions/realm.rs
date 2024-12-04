@@ -4,7 +4,8 @@ use super::{
 };
 use crate::{
     constants::relation_types::{
-        self, DEFAULT, GROUP_ADMINISTRATES_REALM, GROUP_PART_OF_REALM, OWNED_BY_USER, PERMISSION_READ, REALM_USES_COMPONENT, SHARES_PERMISSION
+        self, DEFAULT, GROUP_ADMINISTRATES_REALM, GROUP_PART_OF_REALM, OWNED_BY_USER,
+        PERMISSION_READ, REALM_USES_COMPONENT, SHARES_PERMISSION,
     },
     context::Context,
     error::ArunaError,
@@ -623,12 +624,16 @@ impl WriteRequest for GroupAccessRealmTx {
 
             let mut affected = vec![group_idx, realm_idx];
             let filter = (PERMISSION_READ..=SHARES_PERMISSION).collect::<Vec<u32>>();
-            let relations = store.get_raw_relations(
-                realm_idx,
-                Some(&[GROUP_ADMINISTRATES_REALM]),
-                Direction::Incoming,
-                graph,
-            ).iter().map(|rel| rel.source).collect::<Vec<u32>>();
+            let relations = store
+                .get_raw_relations(
+                    realm_idx,
+                    Some(&[GROUP_ADMINISTRATES_REALM]),
+                    Direction::Incoming,
+                    graph,
+                )
+                .iter()
+                .map(|rel| rel.source)
+                .collect::<Vec<u32>>();
             for admin_group in relations {
                 let users = &store
                     .get_raw_relations(admin_group, Some(&filter), Direction::Incoming, graph)

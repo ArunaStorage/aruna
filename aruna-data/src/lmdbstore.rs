@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, fs};
 
 use crate::structs::{ObjectInfo, UploadPart};
 use heed::{
@@ -48,8 +48,11 @@ impl LmdbStore {
     pub fn new(path: &str) -> Result<Self, ProxyError> {
         use crate::lmdbstore::db_names::*;
 
+        fs::create_dir_all(path).inspect_err(logerr!())?;
+
         let env = unsafe {
             EnvOpenOptions::new()
+                .max_dbs(10)
                 .map_size(10 * 1024 * 1024)
                 .open(path)
                 .inspect_err(logerr!())?
@@ -84,5 +87,31 @@ impl LmdbStore {
         let read_txn = self.env.read_txn().ok()?;
         let key = self.keys.get(&read_txn, path).ok()??;
         self.info.get(&read_txn, &key).ok()?
+    }
+
+    pub fn get_object_id(&self, path: &str) -> Option<Ulid> {
+        let read_txn = self.env.read_txn().ok()?;
+        self.keys.get(&read_txn, path).ok()?
+    }
+
+    pub fn put_key(&self, ulid: Ulid, path: &str) -> Result<(), ProxyError> {
+        let mut write_txn = self.env.write_txn()?;
+        self.keys
+            .put(&mut write_txn, path, &ulid)
+            .inspect_err(logerr!())?;
+        write_txn.commit().inspect_err(logerr!())?;
+        Ok(())
+    }
+
+    pub fn put_object(&self, ulid: Ulid, path: &str, info: ObjectInfo) -> Result<(), ProxyError> {
+        let mut write_txn = self.env.write_txn()?;
+        self.keys
+            .put(&mut write_txn, path, &ulid)
+            .inspect_err(logerr!())?;
+        self.info
+            .put(&mut write_txn, &ulid, &info)
+            .inspect_err(logerr!())?;
+        write_txn.commit().inspect_err(logerr!())?;
+        Ok(())
     }
 }

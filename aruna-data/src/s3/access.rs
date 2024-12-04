@@ -19,8 +19,4 @@ impl AccessChecker {
 }
 
 #[async_trait::async_trait]
-impl S3Access for AccessChecker {
-    async fn check(&self, _cx: &mut S3AccessContext<'_>) -> S3Result<()> {
-        Ok(())
-    }
-}
+impl S3Access for AccessChecker {}

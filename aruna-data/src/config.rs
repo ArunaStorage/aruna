@@ -7,7 +7,6 @@ use ulid::Ulid;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub proxy: Proxy,
-    pub lmdb_path: String,
     pub frontend: Frontend,
     pub backend: Backend,
     pub rules: Option<Vec<Rule>>,
@@ -38,8 +37,8 @@ pub struct Proxy {
     pub enable_ingest: bool,
     pub admin_ids: Vec<Ulid>,
     pub aruna_url: Option<String>,
-    pub grpc_server: String,
     pub replication_interval: Option<u64>,
+    pub lmdb_path: String,
 }
 
 impl Proxy {

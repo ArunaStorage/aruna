@@ -11,9 +11,15 @@ use crate::{
     error::ArunaError,
     logerr,
     models::{
-        models::{Group, NodeVariant, Permission, S3Credential, Subscriber, Token, TokenType, User},
+        models::{
+            Group, NodeVariant, Permission, S3Credential, Subscriber, Token, TokenType, User,
+        },
         requests::{
-            CreateS3CredentialsRequest, CreateS3CredentialsResponse, CreateTokenRequest, CreateTokenResponse, GetGroupsFromUserRequest, GetGroupsFromUserResponse, GetRealmsFromUserRequest, GetRealmsFromUserResponse, GetS3CredentialsRequest, GetS3CredentialsResponse, GetTokensRequest, GetTokensResponse, GetUserRequest, GetUserResponse, RegisterUserRequest, RegisterUserResponse
+            CreateS3CredentialsRequest, CreateS3CredentialsResponse, CreateTokenRequest,
+            CreateTokenResponse, GetGroupsFromUserRequest, GetGroupsFromUserResponse,
+            GetRealmsFromUserRequest, GetRealmsFromUserResponse, GetS3CredentialsRequest,
+            GetS3CredentialsResponse, GetTokensRequest, GetTokensResponse, GetUserRequest,
+            GetUserResponse, RegisterUserRequest, RegisterUserResponse,
         },
     },
     storage::graph::has_relation,

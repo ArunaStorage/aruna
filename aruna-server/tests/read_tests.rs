@@ -629,16 +629,13 @@ mod read_tests {
             .json()
             .await
             .unwrap();
-        assert!(response
-            .events
-            .iter()
-            .any(|map| map.values().into_iter().any(|v| v["type"] == "GroupAccessRealmTx")));
+        assert!(response.events.iter().any(|map| map
+            .values()
+            .into_iter()
+            .any(|v| v["type"] == "GroupAccessRealmTx")));
 
         // Request group access
-        let url = format!(
-            "{}/api/v3/groups/{}/join",
-            clients.rest_endpoint, group_id
-        );
+        let url = format!("{}/api/v3/groups/{}/join", clients.rest_endpoint, group_id);
         let _response: UserAccessGroupResponse = rest_client
             .post(url)
             .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
@@ -660,9 +657,9 @@ mod read_tests {
             .json()
             .await
             .unwrap();
-        assert!(response
-            .events
-            .iter()
-            .any(|map| map.values().into_iter().any(|v| v["type"] == "UserAccessGroupTx")));
+        assert!(response.events.iter().any(|map| map
+            .values()
+            .into_iter()
+            .any(|v| v["type"] == "UserAccessGroupTx")));
     }
 }
