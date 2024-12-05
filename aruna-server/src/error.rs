@@ -94,7 +94,7 @@ impl ArunaError {
             err @ ArunaError::ConflictParameter { .. } => {
                 (StatusCode::CONFLICT, Json(err.to_string()))
             }
-            ArunaError::Forbidden(_) => (StatusCode::FORBIDDEN, Json("Forbidden".to_string())),
+            ArunaError::Forbidden(message) => (StatusCode::FORBIDDEN, Json(message)),
             ArunaError::Unauthorized => {
                 (StatusCode::UNAUTHORIZED, Json("Unauthorized".to_string()))
             }

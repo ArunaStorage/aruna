@@ -77,7 +77,12 @@ impl ServerClient {
         Ok(result.resource.id)
     }
 
-    pub async fn add_data(&self, id: Ulid, req: RegisterDataRequest, token: &str) -> Result<(), ProxyError> {
+    pub async fn add_data(
+        &self,
+        id: Ulid,
+        req: RegisterDataRequest,
+        token: &str,
+    ) -> Result<(), ProxyError> {
         reqwest::Client::new()
             .post(format!(
                 "{}/api/v3/resources/{id}/data",

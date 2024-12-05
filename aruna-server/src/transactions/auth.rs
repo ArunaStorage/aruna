@@ -18,6 +18,7 @@ use chrono::Utc;
 use jsonwebtoken::{encode, Algorithm, DecodingKey, Header};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha3::{Digest, Sha3_512};
+use tracing::trace;
 use ulid::Ulid;
 
 impl Controller {
@@ -271,13 +272,16 @@ impl TokenHandler {
                 ArunaError::Unauthorized
             })?;
 
-            if impersonated != subject_as_ulid || impersonated != iss_as_ulid {
-                tracing::error!("Impersonation not allowed");
-                return Err(ArunaError::Unauthorized);
+            if subject_as_ulid == iss_as_ulid {
+                if impersonated != subject_as_ulid || impersonated != iss_as_ulid {
+                    tracing::error!("Impersonation not allowed");
+                    return Err(ArunaError::Unauthorized);
+                }
+                trace!(?impersonated, "Requester is component with id");
+                return Ok(Requester::Component {
+                    server_id: impersonated,
+                });
             }
-            return Ok(Requester::Component {
-                server_id: impersonated,
-            });
         }
 
         match is_service_account {

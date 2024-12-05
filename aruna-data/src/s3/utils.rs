@@ -39,8 +39,9 @@ pub fn sign_user_token(
     };
 
     let user_id = Ulid::from_string(user_id).map_err(|_| ProxyError::InvalidAccessKey)?;
-    let token_idx = token_idx.parse().map_err(|_| ProxyError::InvalidAccessKey)?;
-
+    let token_idx = token_idx
+        .parse()
+        .map_err(|_| ProxyError::InvalidAccessKey)?;
 
     let claims = aruna_server::models::models::ArunaTokenClaims {
         iss: proxy_id.to_string(),

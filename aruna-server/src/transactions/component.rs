@@ -7,7 +7,7 @@ use crate::{
     context::Context,
     error::ArunaError,
     models::{
-        models::Component,
+        models::{Component, Subscriber},
         requests::{CreateComponentRequest, CreateComponentResponse},
     },
     transactions::request::SerializedResponse,
@@ -97,6 +97,16 @@ impl WriteRequest for CreateComponentRequestTx {
             if component.public {
                 store.add_public_resources_universe(&mut wtxn, &[idx])?;
             }
+
+            store.add_subscriber(
+                &mut wtxn,
+                Subscriber {
+                    id,
+                    owner: id,
+                    target_idx: idx,
+                    cascade: true,
+                },
+            )?;
 
             wtxn.commit(associated_event_id, &[requester_idx], &[])?;
 
