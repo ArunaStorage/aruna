@@ -48,10 +48,7 @@ use ulid::Ulid;
 impl Request for CreateProjectRequest {
     type Response = CreateProjectResponse;
     fn get_context(&self) -> Context {
-        Context::Permission {
-            min_permission: crate::models::models::Permission::Write,
-            source: self.group_id,
-        }
+        Context::InRequest
     }
 
     async fn run_request(
@@ -98,10 +95,18 @@ impl Request for CreateProjectRequest {
             })??;
         }
 
+        let requester = requester.ok_or_else(|| ArunaError::Unauthorized)?;
+
+        // Manuall authorize to allow for default values from token to taken into account
+        controller.authorize_with_context(&requester, &self, Context::Permission {
+            min_permission: crate::models::models::Permission::Write,
+            source: self.group_id,
+        }).await?;
+
         let request_tx = CreateProjectRequestTx {
             req: self,
             project_id: Ulid::new(),
-            requester: requester.ok_or_else(|| ArunaError::Unauthorized)?,
+            requester,
             created_at: Utc::now().timestamp_millis(),
         };
 

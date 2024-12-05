@@ -52,18 +52,19 @@ impl Controller {
         Ok(Some(requester))
     }
 
-    pub(super) async fn authorize<'a, R: Request>(
+
+    pub(super) async fn authorize_with_context<'a, R: Request>(
         &self,
         user: &Requester,
         request: &'a R,
+        ctx: Context,
     ) -> Result<(), ArunaError> {
-        let ctx = request.get_context();
         let store = self.get_store();
         let user = user.clone();
 
         tokio::task::spawn_blocking(move || {
             match ctx {
-                Context::Public => Ok(()),
+                Context::InRequest | Context::Public => Ok(()),
                 Context::NotRegistered => Ok(()), // Must provide valid oidc_token
                 Context::UserOnly => validate_user_only(user, store),
                 Context::SubscriberOwnerOf(subscriber_id) => {
@@ -108,6 +109,15 @@ impl Controller {
             tracing::error!("{e}");
             ArunaError::Unauthorized
         })?
+    }
+
+    pub(super) async fn authorize<'a, R: Request>(
+        &self,
+        user: &Requester,
+        request: &'a R,
+    ) -> Result<(), ArunaError> {
+       let ctx = request.get_context();
+       self.authorize_with_context(user, request, ctx).await
     }
 }
 
