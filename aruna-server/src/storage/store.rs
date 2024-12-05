@@ -718,7 +718,7 @@ impl Store {
     ) -> Result<Permission, ArunaError> {
         let rtxn = self.read_txn()?;
         let resource_idx = self.get_idx_from_ulid(resource, &rtxn).ok_or_else(|| {
-            tracing::error!("From not found");
+            tracing::error!(?resource, "From not found");
             ArunaError::Unauthorized
         })?;
         let constraint_idx = constraint

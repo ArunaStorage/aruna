@@ -112,7 +112,11 @@ impl Proxy {
     pub fn get_encoding_key(&self) -> Result<EncodingKey, ProxyError> {
         self.private_key
             .as_ref()
-            .map(|key| EncodingKey::from_secret(key.as_bytes()))
+            .map(|key| EncodingKey::from_ed_pem(
+                format!(
+                    "-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----",
+                    key
+                ).as_bytes()).unwrap())
             .ok_or_else(|| {
                 tracing::error!("Private key not set");
                 ProxyError::InternalError("Private key not set".to_string())

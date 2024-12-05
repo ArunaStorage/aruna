@@ -1,5 +1,9 @@
 use crate::config::Config;
 use anyhow::Result;
+use aruna_server::models::models::Audience;
+use chrono::Utc;
+use error::ProxyError;
+use jsonwebtoken::{encode, Algorithm, Header};
 use lazy_static::lazy_static;
 use lmdbstore::LmdbStore;
 use regex::Regex;
@@ -65,11 +69,38 @@ async fn main() -> Result<()> {
 
     tracing::subscriber::set_global_default(subscriber)?;
 
+    let self_token = sign_self_token()?;
+
     let store = Arc::new(LmdbStore::new(&CONFIG.proxy.lmdb_path)?);
-    let client = client::ServerClient::new(store.clone()).await?;
+    let client = client::ServerClient::new(store.clone(), self_token).await?;
 
     trace!("init s3 server");
     run_server(store, client).await?;
 
     Ok(())
+}
+
+
+pub fn sign_self_token() -> Result<String, ProxyError> {
+    // Gets the signing key -> if this returns a poison error this should also panic
+    // We dont want to allow poisoned / malformed encoding keys and must crash at this point
+
+    let self_id = CONFIG.proxy.endpoint_id;
+
+    let claims = aruna_server::models::models::ArunaTokenClaims {
+        iss: self_id.to_string(),
+        sub: self_id.to_string(),
+        exp: (Utc::now().timestamp() as u64) + 315360000,
+        info: Some((0u8, 0u16)),
+        scope: None,
+        aud: Some(Audience::String("aruna".to_string())),
+    };
+
+    let header = Header {
+        kid: Some(format!("{}", self_id)),
+        alg: Algorithm::EdDSA,
+        ..Default::default()
+    };
+
+    Ok(encode(&header, &claims, &CONFIG.proxy.get_encoding_key()?).map_err(|_| ProxyError::InvalidAccessKey)?)
 }

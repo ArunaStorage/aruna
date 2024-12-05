@@ -5,10 +5,17 @@ use s3s::{
     s3_error, S3Result,
 };
 use sha3::{Digest, Sha3_512};
+use tracing::trace;
 use std::sync::Arc;
 
 pub struct AuthProvider {
     database: Arc<LmdbStore>,
+}
+
+impl AuthProvider {
+    pub fn new(database: Arc<LmdbStore>) -> Self {
+        Self { database }
+    }
 }
 
 #[async_trait::async_trait]
@@ -36,12 +43,15 @@ fn get_shared_secret(access_key: &str) -> Option<String> {
     let server_pubkey = crypto_kx::PublicKey::from(server_pubkey);
 
     // Calculate SessionKey
-    // Server must use session_keys_to .tx
+    // Proxy must use session_keys_from .rx
     let key = proxy_secret_key.session_keys_from(&server_pubkey).rx;
 
     // Hash Key + Access Key
     let mut hasher = Sha3_512::new();
     hasher.update(key.as_ref());
     hasher.update(access_key.as_bytes());
-    Some(hex::encode(hasher.finalize()))
+    let result = Some(hex::encode(hasher.finalize()));
+    trace!(?result);
+    result
+
 }

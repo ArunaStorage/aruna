@@ -182,7 +182,7 @@ impl TokenHandler {
 
         // Calculate SessionKey
         // Server must use session_keys_to .tx
-        let key = proxy_secret_key.session_keys_from(&server_pubkey).tx;
+        let key = proxy_secret_key.session_keys_to(&server_pubkey).tx;
 
         // Hash Key + Access Key
         let mut hasher = Sha3_512::new();
@@ -427,9 +427,9 @@ fn validate_user_only(user: Requester, store: Arc<Store>) -> Result<(), ArunaErr
             AuthMethod::Oidc { .. } => Ok(()),
         },
         _ => {
-            tracing::error!("ServiceAccount not allowed");
+            tracing::error!("ServiceAccount or Components not allowed");
             Err(ArunaError::Forbidden(
-                "SerivceAccounts are not allowed".to_string(),
+                "SerivceAccounts or Components are not allowed".to_string(),
             ))
         }
     }

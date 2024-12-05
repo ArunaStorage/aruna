@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{
     constants::relation_types::{
-        GROUP_PART_OF_REALM, PERMISSION_ADMIN, PERMISSION_NONE, REALM_USES_COMPONENT,
+        GROUP_ADMINISTRATES_REALM, GROUP_PART_OF_REALM, PERMISSION_ADMIN, PERMISSION_NONE, REALM_USES_COMPONENT
     },
     context::Context,
     error::ArunaError,
@@ -621,7 +621,7 @@ impl WriteRequest for CreateS3CredentialsRequestTx {
                 wtxn.get_ro_graph(),
                 group_idx,
                 realm_idx,
-                &[GROUP_PART_OF_REALM],
+                &[GROUP_PART_OF_REALM, GROUP_ADMINISTRATES_REALM],
             ) {
                 return Err(ArunaError::Forbidden("Group not part of realm".to_string()));
             }

@@ -9,14 +9,14 @@ use futures::{StreamExt, TryStreamExt};
 use md5::{Digest, Md5};
 use opendal::{services, Operator};
 use s3s::{
-    dto::{PutObjectInput, PutObjectOutput},
+    dto::{CreateBucketInput, CreateBucketOutput, PutObjectInput, PutObjectOutput},
     s3_error, S3Request, S3Response, S3Result, S3,
 };
 use sha2::Sha256;
 use std::sync::Arc;
 use tracing::error;
 
-use super::utils::{permute_path, sign_user_token};
+use super::utils::{permute_path, sign_user_token, token_from_credentials};
 
 pub struct ArunaS3Service {
     storage: Arc<LmdbStore>,
@@ -31,6 +31,14 @@ impl ArunaS3Service {
 
 #[async_trait::async_trait]
 impl S3 for ArunaS3Service {
+
+    #[tracing::instrument(err, skip(self, req))]
+    async fn create_bucket(&self, req: S3Request<CreateBucketInput>) -> S3Result<S3Response<CreateBucketOutput>> {
+        let user_token = token_from_credentials(req.credentials.as_ref())?;
+        self.client.create_project(&req.input.bucket, &user_token).await?;
+        Ok(S3Response::new(CreateBucketOutput::default()))
+    }
+
     #[tracing::instrument(err, skip(self, req))]
     async fn put_object(
         &self,
@@ -48,14 +56,7 @@ impl S3 for ArunaS3Service {
 
         let project_id = parent_id;
 
-        let user_token = sign_user_token(
-            CONFIG.proxy.get_encoding_key()?,
-            CONFIG.proxy.endpoint_id,
-            req.credentials.map(|c| c.access_key).ok_or_else(|| {
-                error!("Access key is missing");
-                s3_error!(InvalidAccessKeyId, "Access key is missing")
-            })?,
-        )?;
+        let user_token = token_from_credentials(req.credentials.as_ref())?;
 
         let parts_len = parts.len() - 1;
         for (i, part) in parts.into_iter().enumerate() {

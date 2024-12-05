@@ -6,6 +6,7 @@ use tokio::net::TcpListener;
 use tracing::info;
 
 use crate::client::ServerClient;
+use crate::s3::auth::AuthProvider;
 use crate::s3::route::CustomRoute;
 use crate::{error::ProxyError, lmdbstore::LmdbStore};
 use crate::{logerr, CONFIG};
@@ -18,6 +19,7 @@ pub async fn run_server(storage: Arc<LmdbStore>, client: ServerClient) -> Result
     let service = {
         let mut builder = S3ServiceBuilder::new(aruna_s3_service);
 
+        builder.set_auth(AuthProvider::new(storage.clone()));
         builder.set_access(AccessChecker::new(storage, client));
         builder.set_host(
             MultiDomain::new(&[CONFIG.frontend.hostname.clone()]).inspect_err(logerr!())?,

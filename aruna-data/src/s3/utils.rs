@@ -2,9 +2,11 @@ use aruna_server::{models::models::Audience, transactions::user};
 use chrono::Utc;
 use itertools::Itertools;
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use s3s::auth::Credentials;
+use tracing::error;
 use ulid::Ulid;
 
-use crate::error::ProxyError;
+use crate::{error::ProxyError, CONFIG};
 
 // Create an increasing list of "permutated" paths
 // bucket: foo key: bar/baz/bat
@@ -24,6 +26,19 @@ pub fn permute_path(bucket: &str, path: &str) -> Vec<String> {
     }
 
     result
+}
+
+pub fn token_from_credentials(
+    creds: Option<&Credentials>,
+) -> Result<String, ProxyError> {
+    sign_user_token(
+        CONFIG.proxy.get_encoding_key()?,
+        CONFIG.proxy.endpoint_id,
+        creds.map(|c| c.access_key.clone()).ok_or_else(|| {
+            error!("Access key is missing");
+            ProxyError::InvalidAccessKey
+        })?,
+    )
 }
 
 pub fn sign_user_token(
