@@ -253,7 +253,7 @@ impl EndpointService for EndpointServiceImpl {
             get_token_from_md(request.metadata()),
             "Token authentication error"
         );
-        let ctx = Context::admin();
+        let ctx = Context::registered();
         tonic_auth!(
             self.authorizer.check_permissions(&token, vec![ctx]).await,
             "Unauthorized"
