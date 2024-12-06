@@ -52,6 +52,7 @@ async fn main() -> Result<()> {
 
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or("none".into())
+        .add_directive("s3s=trace".parse()?)
         .add_directive("aruna_data=trace".parse()?);
 
     let subscriber = tracing_subscriber::fmt()

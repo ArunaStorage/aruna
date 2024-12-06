@@ -108,7 +108,7 @@ impl ServerClient {
 
     pub async fn add_data(
         &self,
-        id: Ulid,
+        id: &Ulid,
         req: RegisterDataRequest,
         token: &str,
     ) -> Result<(), ProxyError> {
@@ -131,11 +131,7 @@ impl ServerClient {
         Ok(())
     }
 
-    pub async fn authorize(
-        &self,
-        object_id: Ulid,
-        token: &str,
-    ) -> Result<(), ProxyError> {
+    pub async fn authorize(&self, object_id: Ulid, token: &str) -> Result<(), ProxyError> {
         reqwest::Client::new()
             .get(format!(
                 "{}/api/v3/resources/{object_id}/authorize",

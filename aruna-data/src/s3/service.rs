@@ -1,26 +1,19 @@
-use crate::{
-    client::ServerClient, config::Backend, error::ProxyError, lmdbstore::LmdbStore, CONFIG,
-};
-use aruna_server::models::{
-    models::{Hash, HashAlgorithm, ResourceVariant},
-    requests::RegisterDataRequest,
-};
-use futures::{StreamExt, TryStreamExt};
-use md5::{Digest, Md5};
-use opendal::{services, Operator};
+use crate::{client::ServerClient, error::ProxyError, lmdbstore::LmdbStore, structs::ObjectInfo};
 use s3s::{
     dto::{
         CreateBucketInput, CreateBucketOutput, GetObjectInput, GetObjectOutput, PutObjectInput,
-        PutObjectOutput,
+        PutObjectOutput, StreamingBlob,
     },
     s3_error, S3Request, S3Response, S3Result, S3,
 };
-use sha2::Sha256;
 use std::sync::Arc;
 use tracing::error;
 
-use super::utils::{
-    ensure_parts_exists, finish_data_upload, get_operator, permute_path, token_from_credentials,
+use super::{
+    object_writer::ObjectWriter,
+    utils::{
+        ensure_parts_exists, finish_data_upload, get_operator, permute_path, token_from_credentials,
+    },
 };
 
 pub struct ArunaS3Service {
@@ -72,65 +65,28 @@ impl S3 for ArunaS3Service {
         let user_token = token_from_credentials(req.credentials.as_ref())?;
 
         // Ensure that all parts exist and init the location in storage
-        let (object_id, location) = ensure_parts_exists(
+        let object_id =
+            ensure_parts_exists(&self.storage, &self.client, parts, parent_id, &user_token).await?;
+
+        let object_info =
+            ObjectWriter::new(req.input.bucket.clone(), req.input.key.clone(), object_id)
+                .write(req.input.body)
+                .await?;
+
+        finish_data_upload(
             &self.storage,
             &self.client,
-            parts,
-            parent_id,
+            &object_id,
+            &object_info,
             &user_token,
             &req.input.bucket,
             &req.input.key,
         )
         .await?;
 
-        // Get the operator (this can be anything, s3, file, etc.)
-        let op = get_operator(location)?;
-
-        // Create a new md5 and sha256 hasher
-        let mut md5_hash = Md5::new();
-        let mut sha256_hash = Sha256::new();
-
-        // Get a writer from the operator
-        let mut writer = op
-            .writer(&format!("{}/{}", &req.input.bucket, &req.input.key))
-            .await
-            .map_err(ProxyError::from)?;
-        let body = req.input.body.ok_or_else(|| {
-            error!("Body is missing");
-            s3_error!(InvalidRequest, "Body is missing")
-        })?;
-
-        // Inspect the body and update the hashes
-        let mut stream = body.inspect_ok(|bytes| {
-            md5_hash.update(bytes.as_ref());
-            sha256_hash.update(bytes.as_ref());
-        });
-
-        // Write the body to the operator
-        while let Some(body) = stream.next().await {
-            let body = body.map_err(|e| ProxyError::BodyError(e.to_string()))?;
-            writer.write(body).await.map_err(ProxyError::from)?;
-        }
-
-        // Close the writer
-        writer.close().await.map_err(ProxyError::from)?;
-
-        // Finalize the hashes
-        let md5_final = hex::encode(md5_hash.finalize());
-        let sha_final = hex::encode(sha256_hash.finalize());
-
-        finish_data_upload(
-            &self.client,
-            object_id,
-            md5_final.clone(),
-            sha_final.clone(),
-            &user_token,
-        )
-        .await?;
-
         let output = PutObjectOutput {
-            e_tag: Some(md5_final),
-            checksum_sha256: Some(sha_final),
+            e_tag: object_info.get_md5_hash(),
+            checksum_sha256: object_info.get_sha256_hash(),
             version_id: Some(object_id.to_string()),
             ..Default::default()
         };
@@ -143,17 +99,35 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<GetObjectInput>,
     ) -> S3Result<S3Response<GetObjectOutput>> {
-        let object = self
+        let (object_id, ObjectInfo::Object { location, .. }) = self
             .storage
             .get_object(&format!("{}/{}", &req.input.bucket, &req.input.key))
             .ok_or_else(|| {
                 error!("Object not found");
                 s3_error!(NoSuchKey, "Object not found")
-            })?;
+            })?
+        else {
+            return Err(s3_error!(NoSuchKey, "Object not found"));
+        };
 
-        Err(s3_error!(
-            NotImplemented,
-            "GetObject is not implemented yet"
-        ))
+        let token = token_from_credentials(req.credentials.as_ref())?;
+        self.client.authorize(object_id, &token).await?;
+
+        let path = location.get_path();
+        let op = get_operator(&location)?;
+        let reader = op
+            .reader(&path)
+            .await
+            .map_err(ProxyError::from)?
+            .into_bytes_stream(..)
+            .await
+            .map_err(ProxyError::from)?;
+
+        let streaming_blob = StreamingBlob::wrap(reader);
+
+        Ok(S3Response::new(GetObjectOutput {
+            body: Some(streaming_blob),
+            ..Default::default()
+        }))
     }
 }

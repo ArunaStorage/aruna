@@ -36,6 +36,7 @@ pub async fn run_server(storage: Arc<LmdbStore>, client: ServerClient) -> Result
 
     let connection = ConnBuilder::new(TokioExecutor::new());
     let shared = service.into_shared();
+
     let server = async move {
         loop {
             let (socket, _) = match listener.accept().await {

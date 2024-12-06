@@ -83,10 +83,10 @@ impl LmdbStore {
         })
     }
 
-    pub fn get_object(&self, path: &str) -> Option<ObjectInfo> {
+    pub fn get_object(&self, path: &str) -> Option<(Ulid, ObjectInfo)> {
         let read_txn = self.env.read_txn().ok()?;
         let key = self.keys.get(&read_txn, path).ok()??;
-        self.info.get(&read_txn, &key).ok()?
+        self.info.get(&read_txn, &key).ok()?.map(|info| (key, info))
     }
 
     pub fn get_object_id(&self, path: &str) -> Option<Ulid> {
@@ -103,13 +103,13 @@ impl LmdbStore {
         Ok(())
     }
 
-    pub fn put_object(&self, ulid: Ulid, path: &str, info: ObjectInfo) -> Result<(), ProxyError> {
+    pub fn put_object(&self, ulid: &Ulid, path: &str, info: &ObjectInfo) -> Result<(), ProxyError> {
         let mut write_txn = self.env.write_txn()?;
         self.keys
-            .put(&mut write_txn, path, &ulid)
+            .put(&mut write_txn, path, ulid)
             .inspect_err(logerr!())?;
         self.info
-            .put(&mut write_txn, &ulid, &info)
+            .put(&mut write_txn, ulid, info)
             .inspect_err(logerr!())?;
         write_txn.commit().inspect_err(logerr!())?;
         Ok(())

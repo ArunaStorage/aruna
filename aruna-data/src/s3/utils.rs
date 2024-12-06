@@ -3,6 +3,7 @@ use aruna_server::{
         models::{Audience, Hash, HashAlgorithm, ResourceVariant},
         requests::RegisterDataRequest,
     },
+    storage,
     transactions::user,
 };
 use chrono::Utc;
@@ -15,8 +16,12 @@ use tracing::error;
 use ulid::Ulid;
 
 use crate::{
-    client::ServerClient, config::Backend, error::ProxyError, lmdbstore::LmdbStore,
-    structs::StorageLocation, CONFIG,
+    client::ServerClient,
+    config::Backend,
+    error::ProxyError,
+    lmdbstore::LmdbStore,
+    structs::{ObjectInfo, StorageLocation},
+    CONFIG,
 };
 
 // Create an increasing list of "permutated" paths
@@ -91,15 +96,9 @@ pub async fn ensure_parts_exists(
     parts: Vec<String>,
     mut parent_id: Ulid,
     user_token: &str,
-    bucket: &str,
-    key: &str,
-) -> Result<(Ulid, StorageLocation), S3Error> {
+) -> Result<Ulid, S3Error> {
     let parts_len = parts.len() - 1;
     let project_id = parent_id;
-    let location = crate::structs::StorageLocation::S3 {
-        bucket: "aruna".to_string(),
-        key: format!("{}/{}", bucket, key),
-    };
     // Query all the parts of the path
     for (i, part) in parts.into_iter().enumerate() {
         parent_id = if let Some(exists) = storage.get_object_id(&part) {
@@ -118,28 +117,24 @@ pub async fn ensure_parts_exists(
                 .create_object(name, variant.clone(), parent_id, &user_token)
                 .await?;
 
-            if variant == ResourceVariant::Object {
-                storage.put_object(
-                    id,
-                    &part,
-                    crate::structs::ObjectInfo::Object {
-                        location: location.clone(),
-                        storage_format: crate::structs::StorageFormat::Raw,
-                        project: project_id,
-                        revision_number: 0,
-                        public: false,
-                    },
-                )?;
-            } else {
+            if variant != ResourceVariant::Object {
                 storage.put_key(id, &part)?;
             }
             id
         };
     }
-    Ok((parent_id, location))
+    Ok(parent_id)
 }
 
-pub fn get_operator(location: StorageLocation) -> Result<Operator, S3Error> {
+pub fn create_location(bucket: &str, key: &str) -> StorageLocation {
+    // TODO: enable more variants
+    StorageLocation::S3 {
+        bucket: "aruna".to_string(),
+        key: format!("{}/{}", bucket, key),
+    }
+}
+
+pub fn get_operator(location: &StorageLocation) -> Result<Operator, ProxyError> {
     let Backend::S3 {
         host: Some(host),
         access_key: Some(access_key),
@@ -147,7 +142,9 @@ pub fn get_operator(location: StorageLocation) -> Result<Operator, S3Error> {
         ..
     } = &CONFIG.backend
     else {
-        return Err(s3_error!(InternalError, "Invalid backend"));
+        return Err(ProxyError::InternalError(
+            "S3 backend not configured".to_string(),
+        ));
     };
 
     let builder = services::S3::default()
@@ -161,26 +158,40 @@ pub fn get_operator(location: StorageLocation) -> Result<Operator, S3Error> {
 }
 
 pub async fn finish_data_upload(
+    storage: &Arc<LmdbStore>,
     client: &ServerClient,
-    object_id: Ulid,
-    md5_final: String,
-    sha_final: String,
+    object_id: &Ulid,
+    object_info: &ObjectInfo,
+    bucket: &str,
+    key: &str,
     token: &str,
 ) -> Result<(), ProxyError> {
+    storage.put_object(object_id, &format!("{}/{}", bucket, key), object_info)?;
+
+    let md5_final = object_info.get_md5_hash().ok_or_else(|| {
+        error!("MD5 hash missing");
+        ProxyError::InternalError("MD5 hash missing".to_string())
+    })?;
+
+    let sha_final = object_info.get_sha256_hash().ok_or_else(|| {
+        error!("SHA256 hash missing");
+        ProxyError::InternalError("SHA256 hash missing".to_string())
+    })?;
+
     client
         .add_data(
             object_id,
             RegisterDataRequest {
-                object_id,
+                object_id: *object_id,
                 component_id: CONFIG.proxy.endpoint_id,
                 hashes: vec![
                     Hash {
                         algorithm: HashAlgorithm::MD5,
-                        value: md5_final.clone(),
+                        value: md5_final,
                     },
                     Hash {
                         algorithm: HashAlgorithm::Sha256,
-                        value: sha_final.clone(),
+                        value: sha_final,
                     },
                 ],
             },
