@@ -102,6 +102,8 @@ impl S3 for ArunaS3Service {
             error!("Object not found");
             s3_error!(NoSuchKey, "Object not found")
         })?;
+        let token = token_from_credentials(req.credentials.as_ref())?;
+        self.client.authorize(object_id, &token).await?;
 
         let e_tag = info.get_md5_hash();
         let ObjectInfo::Object { meta, .. } = info else {
