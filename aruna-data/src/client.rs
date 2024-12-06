@@ -130,4 +130,27 @@ impl ServerClient {
             .map_err(|e| ProxyError::RequestError(e.to_string()))?;
         Ok(())
     }
+
+    pub async fn authorize(
+        &self,
+        object_id: Ulid,
+        token: &str,
+    ) -> Result<(), ProxyError> {
+        reqwest::Client::new()
+            .get(format!(
+                "{}/api/v3/resources/{object_id}/authorize",
+                CONFIG
+                    .proxy
+                    .aruna_url
+                    .as_ref()
+                    .unwrap_or(&"http://localhost:8080".to_string()),
+            ))
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await
+            .map_err(|e| ProxyError::RequestError(e.to_string()))?
+            .error_for_status()
+            .map_err(|e| ProxyError::RequestError(e.to_string()))?;
+        Ok(())
+    }
 }

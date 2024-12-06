@@ -1184,7 +1184,7 @@ pub async fn register_data(
 /// Register data for an object
 #[utoipa::path(
     get,
-    path = "/resources/authorize/{id}",
+    path = "/resources/{id}/authorize",
     params(
         ("id" = Ulid, Path, description = "Resource ID (Must be object)"),
     ),

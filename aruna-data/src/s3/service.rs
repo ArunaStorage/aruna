@@ -9,7 +9,10 @@ use futures::{StreamExt, TryStreamExt};
 use md5::{Digest, Md5};
 use opendal::{services, Operator};
 use s3s::{
-    dto::{CreateBucketInput, CreateBucketOutput, PutObjectInput, PutObjectOutput},
+    dto::{
+        CreateBucketInput, CreateBucketOutput, GetObjectInput, GetObjectOutput, PutObjectInput,
+        PutObjectOutput,
+    },
     s3_error, S3Request, S3Response, S3Result, S3,
 };
 use sha2::Sha256;
@@ -133,5 +136,24 @@ impl S3 for ArunaS3Service {
         };
 
         Ok(S3Response::new(output))
+    }
+
+    #[tracing::instrument(err, skip(self, req))]
+    async fn get_object(
+        &self,
+        req: S3Request<GetObjectInput>,
+    ) -> S3Result<S3Response<GetObjectOutput>> {
+        let object = self
+            .storage
+            .get_object(&format!("{}/{}", &req.input.bucket, &req.input.key))
+            .ok_or_else(|| {
+                error!("Object not found");
+                s3_error!(NoSuchKey, "Object not found")
+            })?;
+
+        Err(s3_error!(
+            NotImplemented,
+            "GetObject is not implemented yet"
+        ))
     }
 }
