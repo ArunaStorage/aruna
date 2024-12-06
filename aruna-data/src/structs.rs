@@ -4,7 +4,7 @@ use pithos_lib::helpers::footer_parser::Footer;
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Clone, Deserialize)]
 pub enum StorageLocation {
     S3 { bucket: String, key: String },
     FileSystem { path: String },

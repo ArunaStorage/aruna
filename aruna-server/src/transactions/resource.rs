@@ -98,10 +98,16 @@ impl Request for CreateProjectRequest {
         let requester = requester.ok_or_else(|| ArunaError::Unauthorized)?;
 
         // Manuall authorize to allow for default values from token to taken into account
-        controller.authorize_with_context(&requester, &self, Context::Permission {
-            min_permission: crate::models::models::Permission::Write,
-            source: self.group_id,
-        }).await?;
+        controller
+            .authorize_with_context(
+                &requester,
+                &self,
+                Context::Permission {
+                    min_permission: crate::models::models::Permission::Write,
+                    source: self.group_id,
+                },
+            )
+            .await?;
 
         let request_tx = CreateProjectRequestTx {
             req: self,

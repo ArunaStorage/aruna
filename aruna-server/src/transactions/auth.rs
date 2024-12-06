@@ -52,7 +52,6 @@ impl Controller {
         Ok(Some(requester))
     }
 
-
     pub(super) async fn authorize_with_context<'a, R: Request>(
         &self,
         user: &Requester,
@@ -116,8 +115,8 @@ impl Controller {
         user: &Requester,
         request: &'a R,
     ) -> Result<(), ArunaError> {
-       let ctx = request.get_context();
-       self.authorize_with_context(user, request, ctx).await
+        let ctx = request.get_context();
+        self.authorize_with_context(user, request, ctx).await
     }
 }
 

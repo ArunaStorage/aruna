@@ -5,7 +5,8 @@ use super::{
 };
 use crate::{
     constants::relation_types::{
-        GROUP_ADMINISTRATES_REALM, GROUP_PART_OF_REALM, PERMISSION_ADMIN, PERMISSION_NONE, REALM_USES_COMPONENT
+        GROUP_ADMINISTRATES_REALM, GROUP_PART_OF_REALM, PERMISSION_ADMIN, PERMISSION_NONE,
+        REALM_USES_COMPONENT,
     },
     context::Context,
     error::ArunaError,

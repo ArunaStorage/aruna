@@ -5,8 +5,8 @@ use s3s::{
     s3_error, S3Result,
 };
 use sha3::{Digest, Sha3_512};
-use tracing::trace;
 use std::sync::Arc;
+use tracing::trace;
 
 pub struct AuthProvider {
     database: Arc<LmdbStore>,
@@ -53,5 +53,4 @@ fn get_shared_secret(access_key: &str) -> Option<String> {
     let result = Some(hex::encode(hasher.finalize()));
     trace!(?result);
     result
-
 }

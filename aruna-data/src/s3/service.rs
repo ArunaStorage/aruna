@@ -16,7 +16,9 @@ use sha2::Sha256;
 use std::sync::Arc;
 use tracing::error;
 
-use super::utils::{permute_path, sign_user_token, token_from_credentials};
+use super::utils::{
+    ensure_parts_exists, finish_data_upload, get_operator, permute_path, token_from_credentials,
+};
 
 pub struct ArunaS3Service {
     storage: Arc<LmdbStore>,
@@ -31,11 +33,17 @@ impl ArunaS3Service {
 
 #[async_trait::async_trait]
 impl S3 for ArunaS3Service {
-
     #[tracing::instrument(err, skip(self, req))]
-    async fn create_bucket(&self, req: S3Request<CreateBucketInput>) -> S3Result<S3Response<CreateBucketOutput>> {
+    async fn create_bucket(
+        &self,
+        req: S3Request<CreateBucketInput>,
+    ) -> S3Result<S3Response<CreateBucketOutput>> {
         let user_token = token_from_credentials(req.credentials.as_ref())?;
-        self.client.create_project(&req.input.bucket, &user_token).await?;
+        let uid = self
+            .client
+            .create_project(&req.input.bucket, &user_token)
+            .await?;
+        self.storage.put_key(uid, &req.input.bucket)?;
         Ok(S3Response::new(CreateBucketOutput::default()))
     }
 
@@ -44,9 +52,12 @@ impl S3 for ArunaS3Service {
         &self,
         req: S3Request<PutObjectInput>,
     ) -> S3Result<S3Response<PutObjectOutput>> {
+        // Split path into "parts"
+        // e.g. "bucket/key/foo" -> ["bucket", "bucket/key", "bucket/key/foo"]
         let parts: Vec<String> = permute_path(&req.input.bucket, &req.input.key);
 
-        let mut parent_id = self
+        // Query the parent id
+        let parent_id = self
             .storage
             .get_object_id(&req.input.bucket)
             .ok_or_else(|| {
@@ -54,75 +65,29 @@ impl S3 for ArunaS3Service {
                 s3_error!(NoSuchBucket, "Bucket not found")
             })?;
 
-        let project_id = parent_id;
-
+        // Sign a temp token from the credentials
         let user_token = token_from_credentials(req.credentials.as_ref())?;
 
-        let parts_len = parts.len() - 1;
-        for (i, part) in parts.into_iter().enumerate() {
-            parent_id = if let Some(exists) = self.storage.get_object_id(&part) {
-                exists
-            } else {
-                let variant = if i != parts_len {
-                    ResourceVariant::Folder
-                } else {
-                    ResourceVariant::Object
-                };
-                let name = part.split("/").last().ok_or_else(|| {
-                    error!("Invalid path");
-                    s3_error!(InternalError, "Invalid path")
-                })?;
-                let id = self
-                    .client
-                    .create_object(name, variant.clone(), parent_id, &user_token)
-                    .await?;
+        // Ensure that all parts exist and init the location in storage
+        let (object_id, location) = ensure_parts_exists(
+            &self.storage,
+            &self.client,
+            parts,
+            parent_id,
+            &user_token,
+            &req.input.bucket,
+            &req.input.key,
+        )
+        .await?;
 
-                if variant == ResourceVariant::Object {
-                    self.storage.put_object(
-                        id,
-                        &req.input.key,
-                        crate::structs::ObjectInfo::Object {
-                            location: crate::structs::StorageLocation::S3 {
-                                bucket: "aruna".to_string(),
-                                key: format!("{}/{}", &req.input.bucket, &req.input.key),
-                            },
-                            storage_format: crate::structs::StorageFormat::Raw,
-                            project: project_id,
-                            revision_number: 0,
-                            public: false,
-                        },
-                    )?;
-                } else {
-                    self.storage.put_key(id, &part)?;
-                }
-                id
-            };
-        }
-        // Rename the variable to avoid confusion
-        let object_id = parent_id;
+        // Get the operator (this can be anything, s3, file, etc.)
+        let op = get_operator(location)?;
 
-        let Backend::S3 {
-            host: Some(host),
-            access_key: Some(access_key),
-            secret_key: Some(secret_key),
-            ..
-        } = &CONFIG.backend
-        else {
-            return Err(s3_error!(InternalError, "Invalid backend"));
-        };
-
-        let builder = services::S3::default()
-            .bucket("aruna")
-            .endpoint(host)
-            .access_key_id(access_key)
-            .secret_access_key(secret_key);
-
-        // Init an operator
-        let op = Operator::new(builder).map_err(ProxyError::from)?.finish();
-
+        // Create a new md5 and sha256 hasher
         let mut md5_hash = Md5::new();
         let mut sha256_hash = Sha256::new();
 
+        // Get a writer from the operator
         let mut writer = op
             .writer(&format!("{}/{}", &req.input.bucket, &req.input.key))
             .await
@@ -132,41 +97,33 @@ impl S3 for ArunaS3Service {
             s3_error!(InvalidRequest, "Body is missing")
         })?;
 
+        // Inspect the body and update the hashes
         let mut stream = body.inspect_ok(|bytes| {
             md5_hash.update(bytes.as_ref());
             sha256_hash.update(bytes.as_ref());
         });
 
+        // Write the body to the operator
         while let Some(body) = stream.next().await {
             let body = body.map_err(|e| ProxyError::BodyError(e.to_string()))?;
             writer.write(body).await.map_err(ProxyError::from)?;
         }
 
+        // Close the writer
         writer.close().await.map_err(ProxyError::from)?;
 
+        // Finalize the hashes
         let md5_final = hex::encode(md5_hash.finalize());
         let sha_final = hex::encode(sha256_hash.finalize());
 
-        self.client
-            .add_data(
-                object_id,
-                RegisterDataRequest {
-                    object_id,
-                    component_id: CONFIG.proxy.endpoint_id,
-                    hashes: vec![
-                        Hash {
-                            algorithm: HashAlgorithm::MD5,
-                            value: md5_final.clone(),
-                        },
-                        Hash {
-                            algorithm: HashAlgorithm::Sha256,
-                            value: sha_final.clone(),
-                        },
-                    ],
-                },
-                &user_token,
-            )
-            .await?;
+        finish_data_upload(
+            &self.client,
+            object_id,
+            md5_final.clone(),
+            sha_final.clone(),
+            &user_token,
+        )
+        .await?;
 
         let output = PutObjectOutput {
             e_tag: Some(md5_final),

@@ -80,7 +80,6 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-
 pub fn sign_self_token() -> Result<String, ProxyError> {
     // Gets the signing key -> if this returns a poison error this should also panic
     // We dont want to allow poisoned / malformed encoding keys and must crash at this point
@@ -102,5 +101,6 @@ pub fn sign_self_token() -> Result<String, ProxyError> {
         ..Default::default()
     };
 
-    Ok(encode(&header, &claims, &CONFIG.proxy.get_encoding_key()?).map_err(|_| ProxyError::InvalidAccessKey)?)
+    Ok(encode(&header, &claims, &CONFIG.proxy.get_encoding_key()?)
+        .map_err(|_| ProxyError::InvalidAccessKey)?)
 }

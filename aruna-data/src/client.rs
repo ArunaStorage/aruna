@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use aruna_server::models::{
     models::ResourceVariant,
-    requests::{CreateProjectRequest, CreateResourceRequest, CreateResourceResponse, RegisterDataRequest},
+    requests::{
+        CreateProjectRequest, CreateResourceRequest, CreateResourceResponse, RegisterDataRequest,
+    },
 };
 use ulid::Ulid;
 
@@ -44,12 +46,7 @@ impl ServerClient {
         Ok(())
     }
 
-
-    pub async fn create_project(
-        &self,
-        name: &str,
-        token: &str,
-    ) -> Result<Ulid, ProxyError> {
+    pub async fn create_project(&self, name: &str, token: &str) -> Result<Ulid, ProxyError> {
         let result = reqwest::Client::new()
             .post(format!(
                 "{}/api/v3/resources/projects",
