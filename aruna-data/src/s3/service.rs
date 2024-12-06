@@ -1,8 +1,7 @@
 use crate::{client::ServerClient, error::ProxyError, lmdbstore::LmdbStore, structs::ObjectInfo};
 use s3s::{
     dto::{
-        CreateBucketInput, CreateBucketOutput, GetObjectInput, GetObjectOutput, PutObjectInput,
-        PutObjectOutput, StreamingBlob,
+        CreateBucketInput, CreateBucketOutput, GetObjectInput, GetObjectOutput, HeadObjectInput, HeadObjectOutput, PutObjectInput, PutObjectOutput, StreamingBlob
     },
     s3_error, S3Request, S3Response, S3Result, S3,
 };
@@ -64,7 +63,7 @@ impl S3 for ArunaS3Service {
         // Sign a temp token from the credentials
         let user_token = token_from_credentials(req.credentials.as_ref())?;
 
-        // Ensure that all parts exist and init the location in storage
+        // Ensure that all parts exist and init the folder locations in storage
         let object_id =
             ensure_parts_exists(&self.storage, &self.client, parts, parent_id, &user_token).await?;
 
@@ -95,11 +94,33 @@ impl S3 for ArunaS3Service {
     }
 
     #[tracing::instrument(err, skip(self, req))]
+    async fn head_object(&self, req: S3Request<HeadObjectInput>) -> S3Result<S3Response<HeadObjectOutput>> {
+        let (object_id, info) = self
+        .storage
+        .get_object(&format!("{}/{}", &req.input.bucket, &req.input.key))
+        .ok_or_else(|| {
+            error!("Object not found");
+            s3_error!(NoSuchKey, "Object not found")
+        })?;
+
+        let e_tag = info.get_md5_hash();
+        let ObjectInfo::Object { meta, .. } = info else {
+            return Err(s3_error!(NoSuchKey, "Object not found"));
+        };
+
+        Ok(S3Response::new(HeadObjectOutput {
+            e_tag,
+            content_length: Some(meta.input_size as i64),
+            ..Default::default()
+        }))
+    }
+
+    #[tracing::instrument(err, skip(self, req))]
     async fn get_object(
         &self,
         req: S3Request<GetObjectInput>,
     ) -> S3Result<S3Response<GetObjectOutput>> {
-        let (object_id, ObjectInfo::Object { location, .. }) = self
+        let (object_id, ObjectInfo::Object { location, meta, .. }) = self
             .storage
             .get_object(&format!("{}/{}", &req.input.bucket, &req.input.key))
             .ok_or_else(|| {
@@ -126,7 +147,9 @@ impl S3 for ArunaS3Service {
         let streaming_blob = StreamingBlob::wrap(reader);
 
         Ok(S3Response::new(GetObjectOutput {
+            e_tag: Some(meta.md5),
             body: Some(streaming_blob),
+            content_length: Some(meta.input_size as i64),
             ..Default::default()
         }))
     }
