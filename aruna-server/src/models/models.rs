@@ -24,6 +24,7 @@ pub struct IssuerKey {
     pub issuer_endpoint: Option<String>,
     pub issuer_type: IssuerType,
     pub decoding_key: DecodingKey,
+    pub x25519_pubkey: [u8; 32],
     pub audiences: Vec<String>,
 }
 
@@ -526,22 +527,45 @@ pub struct Group {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct Constraints {}
 
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
+pub enum TokenType {
+    #[default]
+    Aruna,
+    S3,
+}
+
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct Token {
     pub id: u16,
     pub user_id: Ulid,
     pub name: String,
     pub expires_at: DateTime<Utc>,
+    pub token_type: TokenType,
+    pub scope: Scope,
     pub constraints: Option<Constraints>,
+    pub default_realm: Option<Ulid>,
+    pub default_group: Option<Ulid>,
+    pub component_id: Option<Ulid>,
+}
+
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
+pub enum Scope {
+    #[default]
+    Personal,
+    Ressource {
+        resource_id: Ulid,
+        permission: Permission,
+    },
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
-pub struct TokenWithPermission {
-    pub id: Ulid,
-    pub name: String,
-    pub expires_at: DateTime<Utc>,
-    pub permission: Permission,
-    pub resource_id: Ulid,
+pub struct S3Credential {
+    pub access_key: String,
+    pub token_info: Token,
 }
 
 #[derive(

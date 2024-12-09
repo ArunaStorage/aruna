@@ -5,7 +5,8 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::info;
 
-use crate::grpc::ServerClient;
+use crate::client::ServerClient;
+use crate::s3::auth::AuthProvider;
 use crate::s3::route::CustomRoute;
 use crate::{error::ProxyError, lmdbstore::LmdbStore};
 use crate::{logerr, CONFIG};
@@ -13,11 +14,12 @@ use crate::{logerr, CONFIG};
 use super::{access::AccessChecker, service::ArunaS3Service};
 
 pub async fn run_server(storage: Arc<LmdbStore>, client: ServerClient) -> Result<(), ProxyError> {
-    let aruna_s3_service = ArunaS3Service::new(storage.clone());
+    let aruna_s3_service = ArunaS3Service::new(storage.clone(), client.clone());
 
     let service = {
         let mut builder = S3ServiceBuilder::new(aruna_s3_service);
 
+        builder.set_auth(AuthProvider::new(storage.clone()));
         builder.set_access(AccessChecker::new(storage, client));
         builder.set_host(
             MultiDomain::new(&[CONFIG.frontend.hostname.clone()]).inspect_err(logerr!())?,
@@ -34,6 +36,7 @@ pub async fn run_server(storage: Arc<LmdbStore>, client: ServerClient) -> Result
 
     let connection = ConnBuilder::new(TokioExecutor::new());
     let shared = service.into_shared();
+
     let server = async move {
         loop {
             let (socket, _) = match listener.accept().await {

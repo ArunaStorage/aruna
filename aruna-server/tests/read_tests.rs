@@ -3,7 +3,7 @@ mod common;
 #[cfg(test)]
 mod read_tests {
 
-    use crate::common::{init_test, ADMIN_TOKEN, REGULAR_TOKEN};
+    use crate::common::{init_test, ADMIN_TOKEN, REGULAR2_TOKEN, REGULAR_TOKEN};
     use aruna_rust_api::v3::aruna::api::v3::{
         AddGroupRequest, CreateGroupRequest, CreateProjectRequest, CreateRealmRequest,
         CreateResourceRequest as GrpcCreateResourceRequest, GetRealmRequest, Realm,
@@ -14,10 +14,13 @@ mod read_tests {
             BatchResource, CreateGroupRequest as ModelsCreateGroupRequest,
             CreateGroupResponse as ModelsCreateGroupResponse,
             CreateProjectRequest as ModelsCreateProject, CreateProjectResponse,
-            CreateResourceBatchRequest, CreateResourceBatchResponse, GetGroupsFromUserResponse,
-            GetRealmsFromUserResponse, GetRelationsRequest, GetRelationsResponse, SearchResponse,
+            CreateResourceBatchRequest, CreateResourceBatchResponse, GetEventsResponse,
+            GetGroupsFromUserResponse, GetRealmsFromUserResponse, GetRelationsRequest,
+            GetRelationsResponse, GroupAccessRealmRequest, GroupAccessRealmResponse,
+            SearchResponse, UserAccessGroupResponse,
         },
     };
+    use serde_json::{json, Value};
     use ulid::Ulid;
     pub const OFFSET: u16 = 100;
 
@@ -555,5 +558,108 @@ mod read_tests {
             "{}/api/v3/resources/{parent_id}/relations",
             clients.rest_endpoint
         );
+
+        // TODO: Test pagination, filters and permissions
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn get_subscriptions() {
+        let mut clients = init_test(OFFSET).await;
+
+        // Create realm with admin user
+        let request = CreateRealmRequest {
+            tag: "test".to_string(),
+            name: "TestRealm".to_string(),
+            description: String::new(),
+        };
+        let response = clients
+            .realm_client
+            .create_realm(request)
+            .await
+            .unwrap()
+            .into_inner();
+        let Realm { id: realm_id, .. } = response.realm.unwrap();
+
+        // Create group with regular user
+        let request = ModelsCreateGroupRequest {
+            name: "SecondGroup".to_string(),
+            description: String::new(),
+        };
+        let rest_client = reqwest::Client::new();
+        let url = format!("{}/api/v3/groups", clients.rest_endpoint);
+        let response: ModelsCreateGroupResponse = rest_client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", REGULAR_TOKEN))
+            .json(&request)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+        let group_id = response.group.id.to_string();
+
+        // Request realm access
+        let rest_client = reqwest::Client::new();
+        let url = format!(
+            "{}/api/v3/realms/{}/access",
+            clients.rest_endpoint, realm_id
+        );
+        let _response: GroupAccessRealmResponse = rest_client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", REGULAR_TOKEN))
+            .query(&[("group_id", group_id.clone())])
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+        // Check subscribed events
+        let url = format!("{}/api/v3/info/events", clients.rest_endpoint);
+        let response: GetEventsResponse = rest_client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
+            .query(&[("subscriber_id", "01JDWXJ6V34MH1XGZW8WS7Q22Z")])
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert!(response.events.iter().any(|map| map
+            .values()
+            .into_iter()
+            .any(|v| v["type"] == "GroupAccessRealmTx")));
+
+        // Request group access
+        let url = format!("{}/api/v3/groups/{}/join", clients.rest_endpoint, group_id);
+        let _response: UserAccessGroupResponse = rest_client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+        let url = format!("{}/api/v3/info/events", clients.rest_endpoint);
+        let response: GetEventsResponse = rest_client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", REGULAR_TOKEN))
+            .query(&[("subscriber_id", "01JDWXNA8XYXYV1A61XZ47D1W2")])
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert!(response.events.iter().any(|map| map
+            .values()
+            .into_iter()
+            .any(|v| v["type"] == "UserAccessGroupTx")));
     }
 }

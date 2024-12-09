@@ -29,3 +29,7 @@ Input B     ---------input------------^
 - Request access to grp / Request access to realm
 - AddUserToGrp / AddGrpToRealm
 - FilterByRealm Universe
+
+
+- Check that proxy / realm / group are in line when creating s3creds
+- Check that proxy_impersonation_tokens only work with s3creds

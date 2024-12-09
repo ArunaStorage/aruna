@@ -91,7 +91,7 @@ pub fn get_relations(
                     edge_type: *e.weight(),
                 }),
                 Direction::Incoming => Some(RawRelation {
-                    source: e.target().as_u32(),
+                    source: e.source().as_u32(),
                     target: idx.as_u32(),
                     edge_type: *e.weight(),
                 }),
@@ -148,17 +148,20 @@ pub fn get_children(graph: &Graph<NodeVariant, EdgeType>, idx: u32) -> Vec<u32> 
 /// 3. If the edge is a colored as a "permission" edge add the source node with the minimum permission to the queue
 /// 4. If the edge is a colored as a "hierarchy related non permission" edge add the source node with the previous current perm to the queue
 /// 5. If the source node is the target node, update the highest permission to the maximum of the current permission and the previous highest permission
+/// 6. If a constraint is reached, remove all other nodes from the queue and continue with the constraint node
 #[tracing::instrument(level = "trace", skip(graph))]
 pub fn get_permissions(
     graph: &Graph<NodeVariant, EdgeType>,
     resource_idx: u32,
     identity: u32,
+    constraint: Option<u32>,
 ) -> Result<Permission, ArunaError> {
     use crate::constants::relation_types::*;
     // Resource could be: Group, User, Projects, Folder, Object || TODO: Realm, ServiceAccount, Hooks, etc.
 
     let mut highest_perm: Option<u32> = None;
     let mut queue = VecDeque::new();
+    let mut reached_constraint = !constraint.is_some();
     queue.push_back((resource_idx.into(), u32::MAX));
     while let Some((idx, current_perm)) = queue.pop_front() {
         // Iterate over all incoming edges
@@ -166,6 +169,13 @@ pub fn get_permissions(
             match edge.weight() {
                 // If the edge is a "permission related" edge
                 &HAS_PART | &OWNS_PROJECT | &SHARES_PERMISSION | &GROUP_ADMINISTRATES_REALM => {
+                    if let Some(constraint) = constraint {
+                        if edge.source().as_u32() == constraint {
+                            reached_constraint = true;
+                            queue.clear();
+                        }
+                    }
+
                     queue.push_back((edge.source(), current_perm));
                     if edge.source().as_u32() == identity {
                         if let Some(perm) = highest_perm.as_mut() {
@@ -181,6 +191,12 @@ pub fn get_permissions(
                 got_perm @ PERMISSION_NONE..=PERMISSION_ADMIN => {
                     let perm_possible = min(*got_perm, current_perm);
 
+                    if let Some(constraint) = constraint {
+                        if edge.source().as_u32() == constraint {
+                            reached_constraint = true;
+                            queue.clear();
+                        }
+                    }
                     queue.push_back((edge.source(), perm_possible));
 
                     if edge.source().as_u32() == identity {
@@ -202,7 +218,14 @@ pub fn get_permissions(
             error!("No valid permission path found");
             Err(ArunaError::Forbidden("Permission denied".to_string()))
         }
-        Some(p) => Ok(Permission::try_from(p).inspect_err(logerr!())?),
+        Some(p) => {
+            if reached_constraint {
+                Ok(Permission::try_from(p).inspect_err(logerr!())?)
+            } else {
+                error!("No valid permission path found");
+                Err(ArunaError::Forbidden("Permission denied".to_string()))
+            }
+        }
     }
 }
 

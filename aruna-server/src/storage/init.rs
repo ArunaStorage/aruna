@@ -41,6 +41,10 @@ pub(super) fn init_issuers(
     key_config: &(u32, String, String),
     single_entry_db: &Database<Unspecified, Unspecified>,
 ) -> Result<(), ArunaError> {
+    let x25519_pubkey = crate::crypto::ed25519_to_x25519_pubkey(&key_config.2).map_err(|_e| {
+        tracing::error!("Error converting ed25519 to x25519 public");
+        ArunaError::ConfigError("Error converting ed25519 to x25519 public".to_string())
+    })?;
     let config_into_keys = config_into_keys(key_config)?;
 
     let issuer_single_entry_db = single_entry_db.remap_types::<Str, SerdeBincode<Vec<IssuerKey>>>();
@@ -50,7 +54,8 @@ pub(super) fn init_issuers(
         issuer_name: "aruna".to_string(),
         issuer_endpoint: None,
         issuer_type: IssuerType::SERVER,
-        decoding_key: config_into_keys.2,
+        decoding_key: config_into_keys.3,
+        x25519_pubkey,
         audiences: vec!["aruna".to_string()],
     };
 

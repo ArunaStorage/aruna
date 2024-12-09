@@ -4,18 +4,26 @@ use super::{
     request::{Request, Requester, WriteRequest},
 };
 use crate::{
-    constants::relation_types::{PERMISSION_ADMIN, PERMISSION_NONE},
+    constants::relation_types::{
+        GROUP_ADMINISTRATES_REALM, GROUP_PART_OF_REALM, PERMISSION_ADMIN, PERMISSION_NONE,
+        REALM_USES_COMPONENT,
+    },
     context::Context,
     error::ArunaError,
     logerr,
     models::{
-        models::{Group, NodeVariant, Permission, Subscriber, Token, User},
+        models::{
+            Group, NodeVariant, Permission, S3Credential, Subscriber, Token, TokenType, User,
+        },
         requests::{
-            CreateTokenRequest, CreateTokenResponse, GetGroupsFromUserRequest,
-            GetGroupsFromUserResponse, GetRealmsFromUserRequest, GetRealmsFromUserResponse,
-            GetUserRequest, GetUserResponse, RegisterUserRequest, RegisterUserResponse,
+            CreateS3CredentialsRequest, CreateS3CredentialsResponse, CreateTokenRequest,
+            CreateTokenResponse, GetGroupsFromUserRequest, GetGroupsFromUserResponse,
+            GetRealmsFromUserRequest, GetRealmsFromUserResponse, GetS3CredentialsRequest,
+            GetS3CredentialsResponse, GetTokensRequest, GetTokensResponse, GetUserRequest,
+            GetUserResponse, RegisterUserRequest, RegisterUserResponse,
         },
     },
+    storage::graph::has_relation,
     transactions::request::SerializedResponse,
 };
 use serde::{Deserialize, Serialize};
@@ -33,6 +41,14 @@ impl Request for RegisterUserRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
+            return Err(ArunaError::Unauthorized);
+        }
         let request_tx = RegisterUserRequestTx {
             id: Ulid::new(),
             req: self,
@@ -131,6 +147,14 @@ impl Request for CreateTokenRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
+            return Err(ArunaError::Unauthorized);
+        }
         if self.expires_at.is_none() {
             self.expires_at = Some(chrono::Utc::now() + chrono::Duration::days(365));
         }
@@ -173,7 +197,12 @@ impl WriteRequest for CreateTokenRequestTx {
             user_id,
             name: self.req.name.clone(),
             expires_at: self.req.expires_at.expect("Got generated in Request"),
+            scope: self.req.scope.clone(),
             constraints: None, // TODO: Constraints
+            token_type: TokenType::Aruna,
+            component_id: None,
+            default_group: self.req.group_id.clone(),
+            default_realm: self.req.realm_id.clone(),
         };
 
         let is_service_account = matches!(self.requester, Requester::ServiceAccount { .. });
@@ -227,6 +256,14 @@ impl Request for GetUserRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
+            return Err(ArunaError::Unauthorized);
+        }
         let requester_ulid = requester
             .ok_or_else(|| {
                 tracing::error!("Missing requester");
@@ -272,11 +309,20 @@ impl Request for GetGroupsFromUserRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
-        let requester = if let Some(requester) = requester {
-            requester.get_id().ok_or_else(|| ArunaError::Unauthorized)?
-        } else {
+        // Disallow impersonation
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
-        };
+        }
+        let requester_id = requester
+            .ok_or_else(|| ArunaError::Unauthorized)
+            .inspect_err(logerr!())?
+            .get_id()
+            .ok_or_else(|| ArunaError::NotFound("User not reqistered".to_string()))
+            .inspect_err(logerr!())?;
 
         let store = controller.get_store();
         tokio::task::spawn_blocking(move || {
@@ -286,7 +332,7 @@ impl Request for GetGroupsFromUserRequest {
 
             let rtxn = store.read_txn()?;
             let user_idx = store
-                .get_idx_from_ulid(&requester, &rtxn)
+                .get_idx_from_ulid(&requester_id, &rtxn)
                 .ok_or_else(|| ArunaError::NotFound("Requester not found".to_string()))?;
 
             let relations = store.get_relations(
@@ -353,17 +399,316 @@ impl Request for GetRealmsFromUserRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
-        let requester = if let Some(requester) = requester {
-            requester.get_id().ok_or_else(|| ArunaError::Unauthorized)?
-        } else {
+        // Disallow impersonation
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
             return Err(ArunaError::Unauthorized);
-        };
+        }
+
+        let requester_id = requester
+            .ok_or_else(|| ArunaError::Unauthorized)
+            .inspect_err(logerr!())?
+            .get_id()
+            .ok_or_else(|| ArunaError::NotFound("User not reqistered".to_string()))
+            .inspect_err(logerr!())?;
 
         let store = controller.get_store();
         tokio::task::spawn_blocking(move || {
             let read_txn = store.read_txn()?;
-            let realms = store.get_realms_for_user(&read_txn, requester)?;
+            let realms = store.get_realms_for_user(&read_txn, requester_id)?;
             Ok::<GetRealmsFromUserResponse, ArunaError>(GetRealmsFromUserResponse { realms })
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })?
+    }
+}
+
+impl Request for GetTokensRequest {
+    type Response = GetTokensResponse;
+
+    fn get_context<'a>(&'a self) -> Context {
+        Context::UserOnly
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
+            return Err(ArunaError::Unauthorized);
+        }
+        let requester_ulid = requester
+            .ok_or_else(|| {
+                tracing::error!("Missing requester");
+                ArunaError::Unauthorized
+            })?
+            .get_id()
+            .ok_or_else(|| {
+                tracing::error!("Missing requester id");
+                ArunaError::NotFound("User not reqistered".to_string())
+            })?;
+
+        let store = controller.get_store();
+        tokio::task::spawn_blocking(move || {
+            let rtxn = store.read_txn()?;
+
+            let tokens = store.get_tokens(&rtxn, &requester_ulid)?;
+
+            let tokens = tokens
+                .into_iter()
+                .filter_map(|token| {
+                    let token = token?;
+                    if token.token_type == TokenType::Aruna {
+                        Some(token)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            Ok::<GetTokensResponse, ArunaError>(GetTokensResponse { tokens })
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })?
+    }
+}
+
+impl Request for CreateS3CredentialsRequest {
+    type Response = CreateS3CredentialsResponse;
+    fn get_context(&self) -> Context {
+        Context::UserOnly
+    }
+
+    async fn run_request(
+        mut self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
+            return Err(ArunaError::Unauthorized);
+        }
+        if self.expires_at.is_none() {
+            self.expires_at = Some(chrono::Utc::now() + chrono::Duration::days(365));
+        }
+
+        let request_tx = CreateS3CredentialsRequestTx {
+            req: self,
+            requester: requester
+                .ok_or_else(|| ArunaError::Unauthorized)
+                .inspect_err(logerr!())?,
+        };
+
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response)?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateS3CredentialsRequestTx {
+    req: CreateS3CredentialsRequest,
+    requester: Requester,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for CreateS3CredentialsRequestTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, crate::error::ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+        let user_id = self
+            .requester
+            .get_id()
+            .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
+
+        let token = Token {
+            id: 0, // This id is created in the store
+            user_id,
+            name: self.req.name.clone(),
+            expires_at: self.req.expires_at.expect("Got generated in Request"),
+            scope: self.req.scope.clone(),
+            constraints: None, // TODO: Constraints
+            token_type: TokenType::S3,
+            component_id: Some(self.req.component_id.clone()),
+            default_group: Some(self.req.group_id.clone()),
+            default_realm: Some(self.req.realm_id.clone()),
+        };
+
+        let component_id = self.req.component_id.clone();
+        let realm_id = self.req.realm_id.clone();
+        let group_id = self.req.group_id.clone();
+
+        let _is_service_account = matches!(self.requester, Requester::ServiceAccount { .. });
+
+        let store = controller.get_store();
+        Ok(tokio::task::spawn_blocking(move || {
+            let mut wtxn = store.write_txn()?;
+
+            // Create token
+
+            let user_idx = store.get_idx_from_ulid_validate(
+                &user_id,
+                "user_id",
+                &[NodeVariant::User, NodeVariant::ServiceAccount],
+                wtxn.get_ro_txn(),
+                wtxn.get_ro_graph(),
+            )?;
+
+            let component_idx = store.get_idx_from_ulid_validate(
+                &component_id,
+                "component_id",
+                &[NodeVariant::Component],
+                wtxn.get_ro_txn(),
+                wtxn.get_ro_graph(),
+            )?;
+
+            let realm_idx = store.get_idx_from_ulid_validate(
+                &realm_id,
+                "realm_id",
+                &[NodeVariant::Realm],
+                wtxn.get_ro_txn(),
+                wtxn.get_ro_graph(),
+            )?;
+
+            let group_idx = store.get_idx_from_ulid_validate(
+                &group_id,
+                "group_id",
+                &[NodeVariant::Group],
+                wtxn.get_ro_txn(),
+                wtxn.get_ro_graph(),
+            )?;
+
+            if !has_relation(
+                wtxn.get_ro_graph(),
+                user_idx,
+                group_idx,
+                &((PERMISSION_NONE..=PERMISSION_ADMIN).collect::<Vec<u32>>()),
+            ) {
+                return Err(ArunaError::Forbidden("User not in group".to_string()));
+            }
+
+            if !has_relation(
+                wtxn.get_ro_graph(),
+                realm_idx,
+                component_idx,
+                &[REALM_USES_COMPONENT],
+            ) {
+                return Err(ArunaError::Forbidden("Component not in realm".to_string()));
+            }
+
+            if !has_relation(
+                wtxn.get_ro_graph(),
+                group_idx,
+                realm_idx,
+                &[GROUP_PART_OF_REALM, GROUP_ADMINISTRATES_REALM],
+            ) {
+                return Err(ArunaError::Forbidden("Group not part of realm".to_string()));
+            }
+
+            let token = store.add_token(
+                wtxn.get_txn(),
+                associated_event_id,
+                &token.user_id.clone(),
+                token,
+            )?;
+            // Add event to user
+
+            let (access_key, secret_key) =
+                TokenHandler::sign_s3_credentials(&store, &token.user_id, token.id, &component_id)?;
+            wtxn.commit(associated_event_id, &[user_idx], &[])?;
+
+            // Create admin group, add user to admin group
+            Ok::<_, ArunaError>(bincode::serialize(&CreateS3CredentialsResponse {
+                token,
+                component_id,
+                access_key,
+                secret_key,
+            })?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
+    }
+}
+
+impl Request for GetS3CredentialsRequest {
+    type Response = GetS3CredentialsResponse;
+
+    fn get_context<'a>(&'a self) -> Context {
+        Context::UserOnly
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
+            return Err(ArunaError::Unauthorized);
+        }
+        let requester_ulid = requester
+            .ok_or_else(|| {
+                tracing::error!("Missing requester");
+                ArunaError::Unauthorized
+            })?
+            .get_id()
+            .ok_or_else(|| {
+                tracing::error!("Missing requester id");
+                ArunaError::NotFound("User not reqistered".to_string())
+            })?;
+
+        let store = controller.get_store();
+        tokio::task::spawn_blocking(move || {
+            let rtxn = store.read_txn()?;
+
+            let tokens = store.get_tokens(&rtxn, &requester_ulid)?;
+
+            let tokens = tokens
+                .into_iter()
+                .filter_map(|token| {
+                    let token = token?;
+                    if token.token_type == TokenType::S3 {
+                        Some(S3Credential {
+                            access_key: format!("{}.{}", &requester_ulid, token.id),
+                            token_info: token,
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            Ok::<GetS3CredentialsResponse, ArunaError>(GetS3CredentialsResponse { tokens })
         })
         .await
         .map_err(|_e| {

@@ -4,11 +4,21 @@ use pithos_lib::helpers::footer_parser::Footer;
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Clone, Deserialize)]
 pub enum StorageLocation {
     S3 { bucket: String, key: String },
     FileSystem { path: String },
     Temp { upload_id: String }, // A temporary location for uploads
+}
+
+impl StorageLocation {
+    pub fn get_path(&self) -> String {
+        match self {
+            StorageLocation::S3 { bucket, key } => format!("{}/{}", bucket, key),
+            StorageLocation::FileSystem { path } => path.clone(),
+            StorageLocation::Temp { upload_id } => upload_id.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -21,10 +31,21 @@ pub enum StorageFormat {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct Metadata {
+    pub md5: String,
+    pub sha256: String,
+    pub disk_size: u64,
+    pub input_size: u64,
+    pub content_type: String,
+    pub last_modified: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub enum ObjectInfo {
     Object {
         location: StorageLocation,
         storage_format: StorageFormat,
+        meta: Metadata,
         project: Ulid,
         revision_number: u64,
         public: bool,
@@ -38,6 +59,21 @@ pub enum ObjectInfo {
         expiry: DateTime<Utc>,
         //password: String,
     },
+}
+
+impl ObjectInfo {
+    pub fn get_md5_hash(&self) -> Option<String> {
+        match self {
+            ObjectInfo::Object { meta, .. } => Some(meta.md5.to_string()),
+            _ => None,
+        }
+    }
+    pub fn get_sha256_hash(&self) -> Option<String> {
+        match self {
+            ObjectInfo::Object { meta, .. } => Some(meta.sha256.to_string()),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

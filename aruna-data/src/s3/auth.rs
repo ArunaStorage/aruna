@@ -1,4 +1,4 @@
-use crate::{auth, lmdbstore::LmdbStore, CONFIG};
+use crate::{lmdbstore::LmdbStore, CONFIG};
 use crypto_kx::Keypair;
 use s3s::{
     auth::{S3Auth, SecretKey},
@@ -6,9 +6,16 @@ use s3s::{
 };
 use sha3::{Digest, Sha3_512};
 use std::sync::Arc;
+use tracing::trace;
 
 pub struct AuthProvider {
     database: Arc<LmdbStore>,
+}
+
+impl AuthProvider {
+    pub fn new(database: Arc<LmdbStore>) -> Self {
+        Self { database }
+    }
 }
 
 #[async_trait::async_trait]
@@ -23,10 +30,12 @@ impl S3Auth for AuthProvider {
 
 fn get_shared_secret(access_key: &str) -> Option<String> {
     // Server pubkey
-    let server_pubkey = auth::crypto::ed25519_to_x25519_pubkey(&CONFIG.proxy.server_pubkey).ok()?;
+    let server_pubkey =
+        aruna_server::crypto::ed25519_to_x25519_pubkey(&CONFIG.proxy.server_pubkey).ok()?;
     // Proxy privkey
     let proxy_privkey =
-        auth::crypto::ed25519_to_x25519_privatekey(CONFIG.proxy.private_key.as_ref()?).ok()?;
+        aruna_server::crypto::ed25519_to_x25519_privatekey(CONFIG.proxy.private_key.as_ref()?)
+            .ok()?;
 
     // Calculate Proxy Keypair
     // TODO: This can be cached
@@ -34,12 +43,14 @@ fn get_shared_secret(access_key: &str) -> Option<String> {
     let server_pubkey = crypto_kx::PublicKey::from(server_pubkey);
 
     // Calculate SessionKey
-    // Server must use session_keys_to .tx
+    // Proxy must use session_keys_from .rx
     let key = proxy_secret_key.session_keys_from(&server_pubkey).rx;
 
     // Hash Key + Access Key
     let mut hasher = Sha3_512::new();
     hasher.update(key.as_ref());
     hasher.update(access_key.as_bytes());
-    Some(hex::encode(hasher.finalize()))
+    let result = Some(hex::encode(hasher.finalize()));
+    trace!(?result);
+    result
 }

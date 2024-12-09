@@ -1,5 +1,7 @@
-use s3s::host::DomainError;
+use s3s::{host::DomainError, s3_error, S3Error};
 use thiserror::Error;
+
+use crate::s3;
 
 #[macro_export]
 macro_rules! logerr {
@@ -24,4 +26,21 @@ pub enum ProxyError {
     TonicError(#[from] tonic::transport::Error),
     #[error("Invalid Config: {0}")]
     InvalidConfig(String),
+    #[error("Request Error: {0}")]
+    RequestError(String),
+    #[error("Internal Error: {0}")]
+    OpendalError(#[from] opendal::Error),
+    #[error("Body Error: {0}")]
+    BodyError(String),
+    #[error("InvalidAccessKey")]
+    InvalidAccessKey,
+    #[error("Internal Error: {0}")]
+    InternalError(String),
+}
+
+impl From<ProxyError> for S3Error {
+    fn from(e: ProxyError) -> Self {
+        let message = e.to_string();
+        s3_error!(InternalError, "{}", message)
+    }
 }

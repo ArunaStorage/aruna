@@ -7,7 +7,7 @@ use crate::{
     context::Context,
     error::ArunaError,
     models::{
-        models::Component,
+        models::{Component, Subscriber},
         requests::{CreateComponentRequest, CreateComponentResponse},
     },
     transactions::request::SerializedResponse,
@@ -26,6 +26,14 @@ impl Request for CreateComponentRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
+            return Err(ArunaError::Unauthorized);
+        }
         let request_tx = CreateComponentRequestTx {
             id: Ulid::new(),
             req: self,
@@ -82,7 +90,7 @@ impl WriteRequest for CreateComponentRequestTx {
             };
 
             let idx = store.create_node(&mut wtxn, &component)?;
-
+            store.add_component_key(&mut wtxn, idx, req.pubkey)?;
             store.create_relation(&mut wtxn, idx, requester_idx, relation_types::OWNED_BY_USER)?;
 
             // Add a listener if the component is a proxy
@@ -90,6 +98,16 @@ impl WriteRequest for CreateComponentRequestTx {
             if component.public {
                 store.add_public_resources_universe(&mut wtxn, &[idx])?;
             }
+
+            store.add_subscriber(
+                &mut wtxn,
+                Subscriber {
+                    id,
+                    owner: id,
+                    target_idx: idx,
+                    cascade: true,
+                },
+            )?;
 
             wtxn.commit(associated_event_id, &[requester_idx], &[])?;
 

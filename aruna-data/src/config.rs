@@ -1,13 +1,15 @@
 use anyhow::{anyhow, bail, Result};
 use base64::engine::general_purpose;
 use base64::Engine;
+use jsonwebtoken::EncodingKey;
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
+
+use crate::error::ProxyError;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub proxy: Proxy,
-    pub lmdb_path: String,
     pub frontend: Frontend,
     pub backend: Backend,
     pub rules: Option<Vec<Rule>>,
@@ -38,8 +40,8 @@ pub struct Proxy {
     pub enable_ingest: bool,
     pub admin_ids: Vec<Ulid>,
     pub aruna_url: Option<String>,
-    pub grpc_server: String,
     pub replication_interval: Option<u64>,
+    pub lmdb_path: String,
 }
 
 impl Proxy {
@@ -86,7 +88,10 @@ impl Proxy {
         let Some(private_key) = self.private_key.clone() else {
             bail!("Private key not set")
         };
-        crate::auth::crypto::ed25519_to_x25519_privatekey(&private_key)
+        aruna_server::crypto::ed25519_to_x25519_privatekey(&private_key).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.message);
+            anyhow!(e.message)
+        })
     }
 
     pub fn _get_public_key(&self) -> Result<[u8; 32]> {
@@ -98,7 +103,29 @@ impl Proxy {
     }
 
     pub fn get_public_key_x25519(&self) -> Result<[u8; 32]> {
-        crate::auth::crypto::ed25519_to_x25519_pubkey(&self.public_key)
+        aruna_server::crypto::ed25519_to_x25519_pubkey(&self.public_key).map_err(|e| {
+            tracing::error!(error = ?e, msg = e.message);
+            anyhow!(e.message)
+        })
+    }
+
+    pub fn get_encoding_key(&self) -> Result<EncodingKey, ProxyError> {
+        self.private_key
+            .as_ref()
+            .map(|key| {
+                EncodingKey::from_ed_pem(
+                    format!(
+                        "-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----",
+                        key
+                    )
+                    .as_bytes(),
+                )
+                .unwrap()
+            })
+            .ok_or_else(|| {
+                tracing::error!("Private key not set");
+                ProxyError::InternalError("Private key not set".to_string())
+            })
     }
 }
 

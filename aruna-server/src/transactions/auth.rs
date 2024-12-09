@@ -5,10 +5,10 @@ use super::{
     request::{AuthMethod, Request, Requester, SerializedResponse, WriteRequest},
 };
 use crate::{
-    context::Context,
+    context::{BatchPermission, Context},
     error::ArunaError,
     models::{
-        models::{ArunaTokenClaims, Audience, IssuerKey, IssuerType},
+        models::{ArunaTokenClaims, Audience, IssuerKey, IssuerType, Scope},
         requests::{AddOidcProviderRequest, AddOidcProviderResponse},
     },
     storage::store::Store,
@@ -17,6 +17,8 @@ use base64::{engine::general_purpose, Engine};
 use chrono::Utc;
 use jsonwebtoken::{encode, Algorithm, DecodingKey, Header};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use sha3::{Digest, Sha3_512};
+use tracing::trace;
 use ulid::Ulid;
 
 impl Controller {
@@ -50,144 +52,71 @@ impl Controller {
         Ok(Some(requester))
     }
 
+    pub(super) async fn authorize_with_context<'a, R: Request>(
+        &self,
+        user: &Requester,
+        request: &'a R,
+        ctx: Context,
+    ) -> Result<(), ArunaError> {
+        let store = self.get_store();
+        let user = user.clone();
+
+        tokio::task::spawn_blocking(move || {
+            match ctx {
+                Context::InRequest | Context::Public => Ok(()),
+                Context::NotRegistered => Ok(()), // Must provide valid oidc_token
+                Context::UserOnly => validate_user_only(user, store),
+                Context::SubscriberOwnerOf(subscriber_id) => {
+                    validate_subscriber_of(user, subscriber_id, store)
+                }
+                Context::GlobalAdmin => Err(ArunaError::Forbidden(String::new())), // TODO: Impl global
+                // admins
+                Context::Permission {
+                    min_permission,
+                    source,
+                } => validate_permission_batch(
+                    user,
+                    &[BatchPermission {
+                        min_permission,
+                        source,
+                    }],
+                    store,
+                ),
+                Context::PermissionBatch(permissions) => {
+                    validate_permission_batch(user, &permissions, store)
+                }
+                Context::PermissionFork {
+                    first_min_permission,
+                    first_source,
+                    second_min_permission,
+                    second_source,
+                } => {
+                    let first = BatchPermission {
+                        min_permission: first_min_permission,
+                        source: first_source,
+                    };
+                    let second = BatchPermission {
+                        min_permission: second_min_permission,
+                        source: second_source,
+                    };
+                    validate_permission_batch(user, &[first, second], store)
+                }
+            }
+        })
+        .await
+        .map_err(|e| {
+            tracing::error!("{e}");
+            ArunaError::Unauthorized
+        })?
+    }
+
     pub(super) async fn authorize<'a, R: Request>(
         &self,
         user: &Requester,
         request: &'a R,
     ) -> Result<(), ArunaError> {
         let ctx = request.get_context();
-
-        match ctx {
-            Context::Public => Ok(()),
-            Context::NotRegistered => Ok(()), // Must provide valid oidc_token
-            Context::UserOnly => {
-                if matches!(user, Requester::User { .. }) {
-                    Ok(())
-                } else {
-                    tracing::error!("ServiceAccount not allowed");
-                    Err(ArunaError::Forbidden(
-                        "SerivceAccounts are not allowed".to_string(),
-                    ))
-                }
-            }
-            Context::SubscriberOwnerOf(subscriber_id) => {
-                let store = self.get_store();
-                let user_id = user
-                    .get_id()
-                    .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
-                tokio::task::spawn_blocking(move || {
-                    let txn = store.read_txn()?;
-                    let result = store.get_subscribers(&txn)?;
-
-                    let Some(subscriber) = result
-                        .iter()
-                        .find(|subscriber| subscriber.id == subscriber_id)
-                    else {
-                        return Err(ArunaError::Forbidden("No owner found".to_string()));
-                    };
-                    if subscriber.owner != user_id {
-                        Err(ArunaError::Forbidden("Not owner".to_string()))
-                    } else {
-                        Ok(())
-                    }
-                })
-                .await
-                .map_err(|_| {
-                    tracing::error!("Error joining thread");
-                    ArunaError::Unauthorized
-                })??;
-                Ok(())
-            }
-
-            Context::GlobalAdmin => Err(ArunaError::Forbidden(String::new())), // TODO: Impl global
-            // admins
-            Context::Permission {
-                min_permission,
-                source,
-            } => {
-                let store = self.get_store();
-                let user_id = user
-                    .get_id()
-                    .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
-                let source = source.clone();
-                let perm =
-                    tokio::task::spawn_blocking(move || store.get_permissions(&source, &user_id))
-                        .await
-                        .map_err(|_| {
-                            tracing::error!("Error joining thread");
-                            ArunaError::Unauthorized
-                        })??;
-                if perm >= min_permission {
-                    Ok(())
-                } else {
-                    tracing::error!("Insufficient permission");
-                    return Err(ArunaError::Forbidden("Permission denied".to_string()));
-                }
-            }
-            Context::PermissionBatch(permissions) => {
-                let user_id = user
-                    .get_id()
-                    .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
-                for permission in permissions {
-                    let store = self.get_store();
-                    let source = permission.source.clone();
-                    let perm = tokio::task::spawn_blocking(move || {
-                        store.get_permissions(&source, &user_id)
-                    })
-                    .await
-                    .map_err(|_| {
-                        tracing::error!("Error joining thread");
-                        ArunaError::Unauthorized
-                    })??;
-                    if perm >= permission.min_permission {
-                        continue;
-                    } else {
-                        tracing::error!("Insufficient permission");
-                        return Err(ArunaError::Forbidden("Permission denied".to_string()));
-                    }
-                }
-                Ok(())
-            }
-            Context::PermissionFork {
-                first_min_permission,
-                first_source,
-                second_min_permission,
-                second_source,
-            } => {
-                let store = self.get_store();
-                let user_id = user
-                    .get_id()
-                    .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
-                let first_source = first_source.clone();
-
-                let first_perm = tokio::task::spawn_blocking(move || {
-                    store.get_permissions(&first_source, &user_id)
-                })
-                .await
-                .map_err(|_| {
-                    tracing::error!("Error joining thread");
-                    ArunaError::Unauthorized
-                })??;
-
-                let second_source = second_source.clone();
-                let store = self.get_store();
-                let second_perm = tokio::task::spawn_blocking(move || {
-                    store.get_permissions(&second_source, &user_id)
-                })
-                .await
-                .map_err(|_| {
-                    tracing::error!("Error joining thread");
-                    ArunaError::Unauthorized
-                })??;
-
-                if first_perm >= first_min_permission && second_perm >= second_min_permission {
-                    Ok(())
-                } else {
-                    tracing::error!("Insufficient permission");
-                    return Err(ArunaError::Forbidden("Permission denied".to_string()));
-                }
-            }
-        }
+        self.authorize_with_context(user, request, ctx).await
     }
 }
 
@@ -211,7 +140,7 @@ impl TokenHandler {
     ) -> Result<String, ArunaError> {
         // Gets the signing key -> if this returns a poison error this should also panic
         // We dont want to allow poisoned / malformed encoding keys and must crash at this point
-        let (kid, encoding_key) = store.get_encoding_key()?;
+        let (kid, encoding_key, _) = store.get_encoding_key()?;
         let is_sa_u8 = if is_service_account { 1u8 } else { 0u8 };
 
         let claims = ArunaTokenClaims {
@@ -240,6 +169,38 @@ impl TokenHandler {
         })
     }
 
+    pub fn sign_s3_credentials(
+        store: &Store,
+        user_id: &Ulid,
+        token_idx: u16,
+        component_id: &Ulid,
+    ) -> Result<(String, String), ArunaError> {
+        let (_, _, server_privkey) = store.get_encoding_key()?;
+        let Some((_, _, _, proxy_pubkey, _)) =
+            store.get_issuer_info(component_id.to_string(), component_id.to_string())
+        else {
+            tracing::error!("No issuer found");
+            return Err(ArunaError::Unauthorized);
+        };
+
+        // Calculate Server Keypair
+        let proxy_secret_key = crypto_kx::Keypair::from(crypto_kx::SecretKey::from(server_privkey));
+        let server_pubkey = crypto_kx::PublicKey::from(proxy_pubkey);
+
+        let access_key = format!("{user_id}.{token_idx}");
+
+        // Calculate SessionKey
+        // Server must use session_keys_to .tx
+        let key = proxy_secret_key.session_keys_to(&server_pubkey).tx;
+
+        // Hash Key + Access Key
+        let mut hasher = Sha3_512::new();
+        hasher.update(key.as_ref());
+        hasher.update(access_key.as_bytes());
+        let shared_secret = hex::encode(hasher.finalize());
+        Ok((access_key, shared_secret))
+    }
+
     fn process_token(&self, token: &str) -> Result<Requester, ArunaError> {
         // Split the token into header and payload
         let mut split = token.split('.').map(b64_decode);
@@ -249,7 +210,7 @@ impl TokenHandler {
         // Decode and deserialize a potential payload to get the claims and issuer
         let unvalidated_claims = deserialize_field::<ArunaTokenClaims>(&mut split)?;
 
-        let (issuer_type, issuer_name, decoding_key, audiences) = self
+        let (issuer_type, issuer_name, decoding_key, _, audiences) = self
             .store
             .get_issuer_info(
                 unvalidated_claims.iss.to_string(),
@@ -309,11 +270,32 @@ impl TokenHandler {
             tracing::error!("No token info provided");
             return Err(ArunaError::Unauthorized);
         };
+
+        if let Some(impersonated) = impersonated {
+            let subject_as_ulid = Ulid::from_string(&subject.sub).map_err(|_| {
+                tracing::error!("Invalid token id provided");
+                ArunaError::Unauthorized
+            })?;
+            let iss_as_ulid = Ulid::from_string(&subject.iss).map_err(|_| {
+                tracing::error!("Invalid token id provided");
+                ArunaError::Unauthorized
+            })?;
+
+            if subject_as_ulid == iss_as_ulid {
+                if impersonated != subject_as_ulid || impersonated != iss_as_ulid {
+                    tracing::error!("Impersonation not allowed");
+                    return Err(ArunaError::Unauthorized);
+                }
+                trace!(?impersonated, "Requester is component with id");
+                return Ok(Requester::Component {
+                    server_id: impersonated,
+                });
+            }
+        }
+
         match is_service_account {
             0u8 => {
                 // False
-                self.store.ensure_token_exists(&user_id, token_idx)?;
-
                 Ok(Requester::User {
                     user_id,
                     auth_method: AuthMethod::Aruna(token_idx),
@@ -322,7 +304,6 @@ impl TokenHandler {
             }
             1u8 => {
                 // True
-                self.store.ensure_token_exists(&user_id, token_idx)?;
                 let group_id = self.store.get_group_from_sa(&user_id)?;
 
                 Ok(Requester::ServiceAccount {
@@ -431,4 +412,150 @@ impl WriteRequest for AddOidcProviderRequestTx {
         .await
         .map_err(|e| ArunaError::ServerError(e.to_string()))??)
     }
+}
+
+fn validate_user_only(user: Requester, store: Arc<Store>) -> Result<(), ArunaError> {
+    match &user {
+        Requester::User { auth_method, .. } => match auth_method {
+            AuthMethod::Aruna(..) => {
+                let txn = store.read_txn()?;
+                let token = store.get_token(
+                    &user
+                        .get_id()
+                        .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?,
+                    user.get_token_idx()
+                        .ok_or_else(|| ArunaError::Forbidden("No token".to_string()))?,
+                    &txn,
+                    &store.get_graph(),
+                )?;
+                match token.scope {
+                    Scope::Personal => Ok(()),
+                    _ => Err(ArunaError::Forbidden("Invalid scope".to_string())),
+                }
+            }
+            AuthMethod::Oidc { .. } => Ok(()),
+        },
+        _ => {
+            tracing::error!("ServiceAccount or Components not allowed");
+            Err(ArunaError::Forbidden(
+                "SerivceAccounts or Components are not allowed".to_string(),
+            ))
+        }
+    }
+}
+
+fn validate_subscriber_of(
+    user: Requester,
+    subscriber_id: Ulid,
+    store: Arc<Store>,
+) -> Result<(), ArunaError> {
+    let user_id = user
+        .get_id()
+        .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
+    let txn = store.read_txn()?;
+
+    match &user {
+        Requester::User { auth_method, .. } => match auth_method {
+            AuthMethod::Aruna(..) => {
+                let token = store.get_token(
+                    &user
+                        .get_id()
+                        .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?,
+                    user.get_token_idx()
+                        .ok_or_else(|| ArunaError::Forbidden("No token".to_string()))?,
+                    &txn,
+                    &store.get_graph(),
+                )?;
+                match token.scope {
+                    Scope::Personal => Ok(()),
+                    _ => Err(ArunaError::Forbidden("Invalid scope".to_string())),
+                }
+            }
+            AuthMethod::Oidc { .. } => Ok(()),
+        },
+        Requester::ServiceAccount {
+            service_account_id,
+            token_id,
+            ..
+        } => {
+            let token =
+                store.get_token(&service_account_id, *token_id, &txn, &store.get_graph())?;
+            match token.scope {
+                Scope::Personal => Ok(()),
+                _ => Err(ArunaError::Forbidden("Invalid scope".to_string())),
+            }
+        }
+        Requester::Component { server_id } => {
+            if server_id == &subscriber_id {
+                Ok(())
+            } else {
+                Err(ArunaError::Forbidden(
+                    "Component is not subscriber".to_string(),
+                ))
+            }
+        }
+        _ => Err(ArunaError::Forbidden(
+            "Unregistered is not allowed".to_string(),
+        )),
+    }?;
+    let result = store.get_subscribers(&txn)?;
+
+    let Some(subscriber) = result
+        .iter()
+        .find(|subscriber| subscriber.id == subscriber_id)
+    else {
+        return Err(ArunaError::Forbidden("No owner found".to_string()));
+    };
+    if subscriber.owner != user_id {
+        Err(ArunaError::Forbidden("Not owner".to_string()))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_permission_batch(
+    user: Requester,
+    permissions: &[BatchPermission],
+    store: Arc<Store>,
+) -> Result<(), ArunaError> {
+    let user_id = user
+        .get_id()
+        .ok_or_else(|| ArunaError::Forbidden("Unregistered".to_string()))?;
+
+    let additional_constraint = if let Some(tokenidx) = user.get_token_idx() {
+        let txn = store.read_txn()?;
+        let token = store.get_token(&user_id, tokenidx, &txn, &store.get_graph())?;
+
+        match token.scope {
+            Scope::Personal => None,
+            Scope::Ressource {
+                resource_id,
+                permission,
+            } => Some((resource_id, permission)),
+        }
+    } else {
+        None
+    };
+
+    for permission in permissions {
+        let constraint = if let Some((resource_id, constraint_perm)) = &additional_constraint {
+            if constraint_perm < &permission.min_permission {
+                tracing::error!("Insufficient permission");
+                return Err(ArunaError::Forbidden("Permission denied".to_string()));
+            }
+
+            Some(resource_id)
+        } else {
+            None
+        };
+
+        let perm = store.get_permissions(&permission.source, constraint, &user_id)?;
+        if perm >= permission.min_permission {
+            continue;
+        } else {
+            tracing::error!("Insufficient permission");
+            return Err(ArunaError::Forbidden("Permission denied".to_string()));
+        }
+    }
+    Ok(())
 }

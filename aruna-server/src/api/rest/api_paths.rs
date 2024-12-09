@@ -117,7 +117,6 @@ pub async fn update_resource_title(
     }
 }
 
-
 /// Update resource description
 #[utoipa::path(
     post,
@@ -334,7 +333,6 @@ pub async fn update_resource_authors(
     }
 }
 
-
 /// Create a new resource
 #[utoipa::path(
     post,
@@ -435,7 +433,8 @@ pub async fn create_relation_variant(
         ArunaError,
     ),
     security(
-        ("auth" = [])
+        (), // <-- make optional authentication
+        ("auth" = []),
     ),
     tag = RESOURCES,
 )]
@@ -481,7 +480,8 @@ pub async fn create_realm(
         ArunaError,
     ),
     security(
-        ("auth" = [])
+        (), // <-- make optional authentication
+        ("auth" = []),
     ),
     tag = REALMS,
 )]
@@ -530,7 +530,7 @@ pub async fn add_group(
     )
 }
 
-/// Create a new  
+/// Create a new group
 #[utoipa::path(
     post,
     path = "/groups",
@@ -591,7 +591,6 @@ pub async fn get_group(
         ArunaError,
     ),
     security(
-        (), // <-- make optional authentication
         ("auth" = [])
     ),
     tag = USERS,
@@ -652,7 +651,6 @@ pub async fn add_user(
         ArunaError,
     ),
     security(
-        (), // <-- make optional authentication
         ("auth" = [])
     ),
     tag = USERS,
@@ -663,6 +661,76 @@ pub async fn create_token(
     Json(request): Json<CreateTokenRequest>,
 ) -> impl IntoResponse {
     into_axum_response(state.request(request, extract_token(&header)).await)
+}
+
+/// List all tokens from the current user
+#[utoipa::path(
+    get,
+    path = "/users/tokens",
+    responses(
+        (status = 200, body = GetTokensResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+    tag = USERS,
+)]
+pub async fn get_tokens(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(
+        state
+            .request(GetTokensRequest {}, extract_token(&header))
+            .await,
+    )
+}
+
+/// Create a s3credential
+#[utoipa::path(
+    post,
+    path = "/users/s3credentials",
+    request_body = CreateS3CredentialsRequest,
+    responses(
+        (status = 200, body = CreateS3CredentialsResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+    tag = USERS,
+)]
+pub async fn create_s3_credential(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+    Json(request): Json<CreateS3CredentialsRequest>,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&header)).await)
+}
+
+/// List all tokens from the current user
+#[utoipa::path(
+    get,
+    path = "/users/s3credentials",
+    responses(
+        (status = 200, body = GetS3CredentialsResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+    tag = USERS,
+)]
+pub async fn get_s3_credentials(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(
+        state
+            .request(GetS3CredentialsRequest {}, extract_token(&header))
+            .await,
+    )
 }
 
 /// Search for resources
@@ -699,7 +767,6 @@ pub async fn search(
         ArunaError,
     ),
     security(
-        (), // <-- make optional authentication
         ("auth" = [])
     ),
     tag = USERS,
@@ -724,7 +791,6 @@ pub async fn get_user_realms(
         ArunaError,
     ),
     security(
-        (), // <-- make optional authentication
         ("auth" = [])
     ),
     tag = USERS,
@@ -782,7 +848,6 @@ pub async fn get_stats(
         ArunaError,
     ),
     security(
-        (), // <-- make optional authentication
         ("auth" = [])
     ),
     tag = REALMS,
@@ -815,7 +880,6 @@ pub async fn get_realm_components(
         ArunaError,
     ),
     security(
-        (), // <-- make optional authentication
         ("auth" = [])
     ),
     tag = REALMS,
@@ -995,7 +1059,6 @@ pub async fn get_user(
         ArunaError,
     ),
     security(
-        (), // <-- make optional authentication
         ("auth" = [])
     ),
     tag = INFO,
@@ -1027,12 +1090,18 @@ pub async fn get_events(
 )]
 pub async fn request_group_access_realm(
     Path(realm_id): Path<Ulid>,
-    Query(group_id): Query<Ulid>,
+    Query(GroupAccessRealmRequestHelper { group_id }): Query<GroupAccessRealmRequestHelper>,
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!();
-    // into_axum_response(state.request(request, extract_token(&header)).await)
+    into_axum_response(
+        state
+            .request(
+                GroupAccessRealmRequest { realm_id, group_id },
+                extract_token(&header),
+            )
+            .await,
+    )
 }
 
 /// Request user join group
@@ -1056,8 +1125,11 @@ pub async fn request_user_access_group(
     State(state): State<Arc<Controller>>,
     header: HeaderMap,
 ) -> impl IntoResponse {
-    todo!()
-    // into_axum_response(state.request(request, extract_token(&header)).await)
+    into_axum_response(
+        state
+            .request(UserAccessGroupRequest { group_id }, extract_token(&header))
+            .await,
+    )
 }
 
 /// Create a new component
@@ -1107,4 +1179,33 @@ pub async fn register_data(
 ) -> impl IntoResponse {
     request.object_id = id;
     into_axum_response(state.request(request, extract_token(&header)).await)
+}
+
+/// Register data for an object
+#[utoipa::path(
+    get,
+    path = "/resources/{id}/authorize",
+    params(
+        ("id" = Ulid, Path, description = "Resource ID (Must be object)"),
+    ),
+    request_body = (),
+    responses(
+        (status = 200, body = ()),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+    tag = RESOURCES,
+)]
+pub async fn authorize_resource(
+    Path(id): Path<Ulid>,
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(
+        state
+            .request(AuthorizeRequest { id }, extract_token(&header))
+            .await,
+    )
 }

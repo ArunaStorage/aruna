@@ -22,6 +22,7 @@ use ulid::Ulid;
 pub mod api;
 pub mod constants;
 pub mod context;
+pub mod crypto;
 pub mod error;
 pub mod macros;
 pub mod models;
@@ -65,11 +66,13 @@ pub fn config_from_env() -> Config {
         dotenvy::var("ENCODING_KEY").unwrap(),
         dotenvy::var("DECODING_KEY").unwrap(),
     );
-    let issuer_config = match (dotenvy::var("OIDC_ISSUER_NAME").ok(),
+    let issuer_config = match (
+        dotenvy::var("OIDC_ISSUER_NAME").ok(),
         dotenvy::var("OIDC_ISSUER_ENDPOINT").ok(),
-        dotenvy::var("OIDC_ISSUER_AUDIENCES").ok()) {
+        dotenvy::var("OIDC_ISSUER_AUDIENCES").ok(),
+    ) {
         (Some(name), Some(endpoint), Some(aud)) => Some((name, endpoint, aud)),
-        _=> None,
+        _ => None,
     };
 
     Config {
@@ -81,7 +84,7 @@ pub fn config_from_env() -> Config {
         init_node,
         key_config,
         socket_addr,
-        issuer_config
+        issuer_config,
     }
 }
 
@@ -96,7 +99,7 @@ pub async fn start_server(
         grpc_port,
         rest_port,
         init_node,
-        issuer_config
+        issuer_config,
     }: Config,
     notify: Option<Arc<Notify>>,
 ) -> Result<(), ArunaError> {
@@ -113,7 +116,7 @@ pub async fn start_server(
     .unwrap();
 
     match issuer_config {
-        Some((issuer_name, issuer_endpoint,aud)) => {
+        Some((issuer_name, issuer_endpoint, aud)) => {
             if first_node {
                 info!("Adding OIDC provider");
                 let audiences = aud.split(';').map(|s| s.to_string()).collect();

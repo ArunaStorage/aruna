@@ -5,7 +5,7 @@ use crate::{
 };
 use std::sync::Arc;
 use utoipa::{
-    openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
+    openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder, SecurityScheme},
     Modify, OpenApi,
 };
 use utoipa_axum::router::OpenApiRouter;
@@ -23,13 +23,12 @@ struct SecurityAddon;
 impl Modify for SecurityAddon {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
         if let Some(components) = openapi.components.as_mut() {
-            components.add_security_scheme(
-                "auth",
-                SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::with_description(
-                    "Authorization",
-                    "Prefixed with Bearer",
-                ))),
-            )
+            let security_scheme = HttpBuilder::new()
+                .scheme(HttpAuthScheme::Bearer)
+                .bearer_format("JWT")
+                .description(Some("Either an OIDC, Aruna oder Component signed JWT"))
+                .build();
+            components.add_security_scheme("auth", SecurityScheme::Http(security_scheme));
         }
     }
 }
@@ -74,5 +73,9 @@ pub fn router(store: Arc<Controller>) -> OpenApiRouter {
         .routes(routes!(add_user))
         .routes(routes!(add_component_to_realm))
         .routes(routes!(register_data))
+        .routes(routes!(get_tokens))
+        .routes(routes!(create_s3_credential))
+        .routes(routes!(get_s3_credentials))
+        .routes(routes!(authorize_resource))
         .with_state(store)
 }

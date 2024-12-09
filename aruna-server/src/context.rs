@@ -2,6 +2,10 @@ use crate::models::models::Permission;
 use ulid::Ulid;
 
 pub enum Context {
+    // This variant should be used if global check before the request
+    // is processed is not possible, e.g. for requests that need additional information
+    // It is the responsibility of the implementor to ensure that the correct permissions are checked
+    InRequest,
     Public,
     NotRegistered,
     UserOnly,

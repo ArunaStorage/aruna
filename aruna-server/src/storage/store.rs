@@ -7,7 +7,10 @@ use crate::{
         ServiceAccount, Subscriber, Token, User,
     },
     storage::{
-        graph::load_graph, init, milli_helpers::prepopulate_fields, utils::SigningInfoCodec,
+        graph::load_graph,
+        init,
+        milli_helpers::prepopulate_fields,
+        utils::{pubkey_from_pem, SigningInfoCodec},
     },
     transactions::{controller::KeyConfig, request::Requester},
 };
@@ -23,8 +26,8 @@ use milli::{
     documents::{DocumentsBatchBuilder, DocumentsBatchReader},
     execute_search, filtered_universe,
     update::{IndexDocuments, IndexDocumentsConfig, IndexDocumentsMethod, IndexerConfig},
-    CboRoaringBitmapCodec, DefaultSearchLogger, Filter, GeoSortStrategy, Index,
-    SearchContext, TermsMatchingStrategy, TimeBudget, BEU32, BEU64,
+    CboRoaringBitmapCodec, DefaultSearchLogger, Filter, GeoSortStrategy, Index, SearchContext,
+    TermsMatchingStrategy, TimeBudget, BEU32, BEU64,
 };
 use obkv::KvReader;
 use petgraph::{
@@ -38,7 +41,7 @@ use std::{
     collections::HashMap,
     fs,
     io::Cursor,
-    sync::{atomic::AtomicU64, RwLock, RwLockWriteGuard},
+    sync::{atomic::AtomicU64, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 use ulid::Ulid;
 
@@ -317,6 +320,11 @@ impl Store {
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn read_txn(&self) -> Result<heed::RoTxn, ArunaError> {
         Ok(self.milli_index.read_txn().inspect_err(logerr!())?)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn get_graph(&self) -> RwLockReadGuard<'_, Graph<NodeVariant, EdgeType>> {
+        self.graph.read().expect("Poisoned lock")
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -600,7 +608,7 @@ impl Store {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_encoding_key(&self) -> Result<(u32, EncodingKey), ArunaError> {
+    pub fn get_encoding_key(&self) -> Result<(u32, EncodingKey, [u8; 32]), ArunaError> {
         let rtxn = self.read_txn()?;
 
         let signing_info = self
@@ -611,7 +619,7 @@ impl Store {
             .expect("Signing info not found")
             .expect("Signing info not found");
 
-        Ok((signing_info.0, signing_info.1))
+        Ok((signing_info.0, signing_info.1, signing_info.2))
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -619,7 +627,7 @@ impl Store {
         &self,
         issuer_name: String,
         key_id: String,
-    ) -> Option<(IssuerType, String, DecodingKey, Vec<String>)> {
+    ) -> Option<(IssuerType, String, DecodingKey, [u8; 32], Vec<String>)> {
         let read_txn = self.read_txn().ok()?;
 
         let issuers = self
@@ -637,9 +645,20 @@ impl Store {
                     issuer.issuer_type,
                     issuer.issuer_name,
                     issuer.decoding_key,
+                    issuer.x25519_pubkey,
                     issuer.audiences,
                 )
             })
+    }
+    #[tracing::instrument(level = "trace", skip(self, graph))]
+    pub fn get_raw_relations(
+        &self,
+        idx: u32,
+        filter: Option<&[EdgeType]>,
+        direction: Direction,
+        graph: &Graph<NodeVariant, EdgeType>,
+    ) -> Vec<RawRelation> {
+        super::graph::get_relations(&graph, idx, filter, direction)
     }
 
     #[tracing::instrument(level = "trace", skip(self, rtxn))]
@@ -691,38 +710,48 @@ impl Store {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub fn get_permissions(&self, resource: &Ulid, user: &Ulid) -> Result<Permission, ArunaError> {
+    pub fn get_permissions(
+        &self,
+        resource: &Ulid,
+        constraint: Option<&Ulid>,
+        user: &Ulid,
+    ) -> Result<Permission, ArunaError> {
         let rtxn = self.read_txn()?;
         let resource_idx = self.get_idx_from_ulid(resource, &rtxn).ok_or_else(|| {
-            tracing::error!("From not found");
+            tracing::error!(?resource, "From not found");
             ArunaError::Unauthorized
         })?;
+        let constraint_idx = constraint
+            .map(|c| self.get_idx_from_ulid(c, &rtxn))
+            .flatten();
         let user_idx = self.get_idx_from_ulid(user, &rtxn).ok_or_else(|| {
             tracing::error!("To not found");
             ArunaError::Unauthorized
         })?;
         drop(rtxn);
         let graph = self.graph.read().expect("Poisoned lock");
-        get_permissions(&graph, resource_idx, user_idx)
+        get_permissions(&graph, resource_idx, user_idx, constraint_idx)
     }
 
-    /// Returns the type of user and additional information
-    /// based on the token Ulid
-    #[tracing::instrument(level = "trace", skip(self))]
-    pub fn ensure_token_exists(
+    /// Returns the token
+    #[tracing::instrument(level = "trace", skip(self, rtxn, graph))]
+    pub fn get_token(
         &self,
         requester_id: &Ulid,
         token_idx: u16,
-    ) -> Result<(), ArunaError> {
+        rtxn: &RoTxn,
+        graph: &Graph<NodeVariant, EdgeType>,
+    ) -> Result<Token, ArunaError> {
         let read_txn = self.read_txn()?;
 
         // Get the internal idx of the token
-        let requester_internal_idx =
-            self.get_idx_from_ulid(requester_id, &read_txn)
-                .ok_or_else(|| {
-                    tracing::error!("User not found");
-                    ArunaError::Unauthorized
-                })?;
+        let requester_internal_idx = self.get_idx_from_ulid_validate(
+            &requester_id,
+            "requester",
+            &[NodeVariant::User, NodeVariant::ServiceAccount],
+            &rtxn,
+            graph,
+        )?;
 
         let Some(tokens) = self
             .tokens
@@ -733,11 +762,11 @@ impl Store {
             return Err(ArunaError::Unauthorized);
         };
 
-        let Some(Some(_token)) = tokens.get(token_idx as usize) else {
+        let Some(Some(token)) = tokens.get(token_idx as usize) else {
             tracing::error!("Token not found");
             return Err(ArunaError::Unauthorized);
         };
-        Ok(())
+        Ok(token.clone())
     }
 
     // Returns the group_id of the service account
@@ -805,6 +834,23 @@ impl Store {
             .inspect_err(logerr!())?;
 
         Ok(tokens.pop().flatten().expect("Added token before"))
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, rtxn))]
+    pub fn get_tokens(
+        &self,
+        rtxn: &RoTxn,
+        user_id: &Ulid,
+    ) -> Result<Vec<Option<Token>>, ArunaError> {
+        let user_idx = self
+            .get_idx_from_ulid(user_id, rtxn)
+            .ok_or_else(|| ArunaError::NotFound(user_id.to_string()))?;
+
+        Ok(self
+            .tokens
+            .get(rtxn, &user_idx)
+            .inspect_err(logerr!())?
+            .unwrap_or_default())
     }
 
     #[tracing::instrument(level = "trace", skip(self, rtxn))]
@@ -1045,6 +1091,56 @@ impl Store {
         Ok(relation_info)
     }
 
+    #[tracing::instrument(level = "trace", skip(self, wtxn))]
+    pub fn add_component_key(
+        &self,
+        wtxn: &mut WriteTxn,
+        component_idx: u32,
+        pubkey: String,
+    ) -> Result<(), ArunaError> {
+        let mut wtxn = wtxn.get_txn();
+        let issuer_single_entry_db = self
+            .single_entry_database
+            .remap_types::<Str, SerdeBincode<Vec<IssuerKey>>>();
+
+        let mut entries = issuer_single_entry_db
+            .get(&wtxn, single_entry_names::ISSUER_KEYS)
+            .inspect_err(logerr!())?;
+
+        let component = self
+            .get_node::<Component>(&wtxn, component_idx)
+            .ok_or_else(|| ArunaError::NotFound(format!("{component_idx}")))?;
+
+        let (decoding_key, x25519_pubkey) = pubkey_from_pem(&pubkey).inspect_err(logerr!())?;
+
+        let key = IssuerKey {
+            key_id: component.id.to_string(),
+            issuer_name: component.id.to_string(),
+            issuer_endpoint: None,
+            issuer_type: IssuerType::DATAPROXY,
+            decoding_key,
+            x25519_pubkey, // OIDC does not have a x25519 key
+            audiences: vec!["aruna".to_string()],
+        };
+
+        match entries {
+            Some(ref current_keys) if current_keys.contains(&key) => {}
+            Some(ref mut current_keys) if !current_keys.contains(&key) => {
+                current_keys.push(key);
+                issuer_single_entry_db
+                    .put(&mut wtxn, single_entry_names::ISSUER_KEYS, &current_keys)
+                    .inspect_err(logerr!())?;
+            }
+            _ => {
+                // TODO: This should not happen at this stage right?
+                issuer_single_entry_db
+                    .put(&mut wtxn, single_entry_names::ISSUER_KEYS, &vec![key])
+                    .inspect_err(logerr!())?;
+            }
+        }
+        Ok(())
+    }
+
     #[tracing::instrument(level = "trace", skip(self, wtxn, keys))]
     pub fn add_issuer(
         &self,
@@ -1069,6 +1165,7 @@ impl Store {
             issuer_endpoint: Some(issuer_endpoint.clone()),
             issuer_type: IssuerType::OIDC,
             decoding_key,
+            x25519_pubkey: [0; 32], // OIDC does not have a x25519 key
             audiences: audiences.clone(),
         }) {
             match entries {
