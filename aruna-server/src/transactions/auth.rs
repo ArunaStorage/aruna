@@ -55,7 +55,7 @@ impl Controller {
     pub(super) async fn authorize_with_context<'a, R: Request>(
         &self,
         user: &Requester,
-        request: &'a R,
+        _request: &'a R,
         ctx: Context,
     ) -> Result<(), ArunaError> {
         let store = self.get_store();

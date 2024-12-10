@@ -55,7 +55,7 @@ mod update_tests {
             .resource
             .unwrap()
             .id;
-        let project_id = Ulid::from_string(&parent_id).unwrap();
+        let _project_id = Ulid::from_string(&parent_id).unwrap();
 
         // Create resource
         let request = CreateResourceRequest {

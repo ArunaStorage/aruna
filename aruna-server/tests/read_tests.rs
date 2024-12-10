@@ -3,7 +3,7 @@ mod common;
 #[cfg(test)]
 mod read_tests {
 
-    use crate::common::{init_test, ADMIN_TOKEN, REGULAR2_TOKEN, REGULAR_TOKEN};
+    use crate::common::{init_test, ADMIN_TOKEN, REGULAR_TOKEN};
     use aruna_rust_api::v3::aruna::api::v3::{
         AddGroupRequest, CreateGroupRequest, CreateProjectRequest, CreateRealmRequest,
         CreateResourceRequest as GrpcCreateResourceRequest, GetRealmRequest, Realm,
@@ -16,11 +16,10 @@ mod read_tests {
             CreateProjectRequest as ModelsCreateProject, CreateProjectResponse,
             CreateResourceBatchRequest, CreateResourceBatchResponse, GetEventsResponse,
             GetGroupsFromUserResponse, GetRealmsFromUserResponse, GetRelationsRequest,
-            GetRelationsResponse, GroupAccessRealmRequest, GroupAccessRealmResponse,
+            GroupAccessRealmResponse,
             SearchResponse, UserAccessGroupResponse,
         },
     };
-    use serde_json::{json, Value};
     use ulid::Ulid;
     pub const OFFSET: u16 = 100;
 
@@ -545,7 +544,7 @@ mod read_tests {
             );
         }
 
-        let get_relations = GetRelationsRequest {
+        let _get_relations = GetRelationsRequest {
             node: Ulid::from_string(&parent_id).unwrap(),
             direction: aruna_server::models::requests::Direction::Outgoing,
             filter: vec![0],
@@ -553,8 +552,8 @@ mod read_tests {
             page_size: 1000,
         };
 
-        let client = reqwest::Client::new();
-        let url = format!(
+        let _client = reqwest::Client::new();
+        let _url = format!(
             "{}/api/v3/resources/{parent_id}/relations",
             clients.rest_endpoint
         );
@@ -622,7 +621,7 @@ mod read_tests {
         let response: GetEventsResponse = rest_client
             .get(url)
             .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
-            .query(&[("subscriber_id", "01JDWXJ6V34MH1XGZW8WS7Q22Z")])
+            .query(&[("subscriber_id", "01JER6JBQ39EDVR2M7A6Z9512B")])
             .send()
             .await
             .unwrap()
@@ -650,7 +649,7 @@ mod read_tests {
         let response: GetEventsResponse = rest_client
             .get(url)
             .header("Authorization", format!("Bearer {}", REGULAR_TOKEN))
-            .query(&[("subscriber_id", "01JDWXNA8XYXYV1A61XZ47D1W2")])
+            .query(&[("subscriber_id", "01JER6Q2MEX5SS7GQCSSDFJJVG")])
             .send()
             .await
             .unwrap()
