@@ -1,5 +1,5 @@
 fn main() {
-    let file = "./01J69YGPPZY80206PGHHXBR863/events/";
+    let file = "./aruna-server/01J69YGPPZY80206PGHHXBR863/events/";
     let env = unsafe {
         heed::EnvOpenOptions::new()
             .map_size(10 * 1024 * 1024)
@@ -14,7 +14,7 @@ fn main() {
     )
     .unwrap();
 
-    let file = "./01J69YGPPZY80206PGHHXBR863/store/";
+    let file = "./aruna-server/01J69YGPPZY80206PGHHXBR863/store/";
     let env = unsafe {
         heed::EnvOpenOptions::new()
             .map_size(10 * 1024 * 1024)

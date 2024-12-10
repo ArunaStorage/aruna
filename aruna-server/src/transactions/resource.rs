@@ -21,9 +21,9 @@ use crate::{
         requests::{
             AuthorizeRequest, AuthorizeResponse, CreateProjectRequest, CreateProjectResponse,
             CreateResourceBatchRequest, CreateResourceBatchResponse, CreateResourceRequest,
-            CreateResourceResponse, GetInner, GetResourcesRequest, GetResourcesResponse, Parent,
-            RegisterDataRequest, RegisterDataResponse, ResourceUpdateRequests,
-            ResourceUpdateResponses, UpdateResourceAuthorsResponse,
+            CreateResourceResponse, DeleteRequest, DeleteResponse, GetInner, GetResourcesRequest,
+            GetResourcesResponse, Parent, RegisterDataRequest, RegisterDataResponse,
+            ResourceUpdateRequests, ResourceUpdateResponses, UpdateResourceAuthorsResponse,
             UpdateResourceDescriptionResponse, UpdateResourceIdentifiersResponse,
             UpdateResourceLabelsResponse, UpdateResourceLicenseResponse,
             UpdateResourceNameResponse, UpdateResourceTitleResponse,
@@ -31,7 +31,7 @@ use crate::{
         },
     },
     storage::{
-        graph::{get_parent, get_related_user_or_groups, get_relations, has_relation},
+        graph::{self, get_parent, get_related_user_or_groups, get_relations, has_relation},
         store::{Store, WriteTxn},
     },
     transactions::request::WriteRequest,
@@ -826,7 +826,6 @@ impl Request for GetResourcesRequest {
                 }
                 resources.push(resource);
             }
-
             Ok::<_, ArunaError>(GetResourcesResponse { resources })
         })
         .await
@@ -1246,5 +1245,144 @@ impl Request for AuthorizeRequest {
             })??
         };
         Ok(AuthorizeResponse { allowed })
+    }
+}
+
+impl Request for DeleteRequest {
+    type Response = DeleteResponse;
+    fn get_context(&self) -> Context {
+        Context::Permission {
+            min_permission: crate::models::models::Permission::Admin,
+            source: self.id,
+        }
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        let Some(requester) = requester else {
+            return Err(ArunaError::Unauthorized);
+        };
+        let request_tx = DeleteTx {
+            req: self,
+            requester,
+        };
+
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response).inspect_err(logerr!())?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteTx {
+    req: DeleteRequest,
+    requester: Requester,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for DeleteTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, crate::error::ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+
+        let store = controller.get_store();
+        let node_id = self.req.id;
+
+        Ok(tokio::task::spawn_blocking(move || {
+            let mut wtxn = store.write_txn()?;
+
+            // Get resource idx
+            let Some(resource_idx) = store.get_idx_from_ulid(&node_id, wtxn.get_txn()) else {
+                return Err(ArunaError::NotFound(node_id.to_string()));
+            };
+
+            let Some(raw_node) = store.get_raw_node(wtxn.get_txn(), resource_idx) else {
+                return Err(ArunaError::NotFound(format!(
+                    "Resource with id {node_id} not found"
+                )));
+            };
+
+            let variant: NodeVariant = serde_json::from_slice::<u8>(
+                raw_node
+                    .get(1)
+                    .expect("Missing variant -> corrupted database"),
+            )
+            .inspect_err(logerr!())?
+            .try_into()
+            .inspect_err(logerr!())?;
+            let to_delete_ids = match variant {
+                NodeVariant::ResourceProject => {
+                    let graph = wtxn.get_ro_graph();
+                    // Collect all children
+                    let mut all_children = graph::get_all_children(&graph, resource_idx)?;
+                    // Add project
+                    all_children.push(resource_idx);
+                    all_children
+                }
+                NodeVariant::ResourceFolder => {
+                    let graph = store.get_graph();
+                    // Collect all children
+                    let mut all_children = graph::get_all_children(&graph, resource_idx)?;
+                    // Add folder
+                    all_children.push(resource_idx);
+                    all_children
+                }
+                NodeVariant::ResourceObject => {
+                    // Only object needs to be added
+                    vec![resource_idx]
+                }
+                NodeVariant::Realm => {
+                    // TODO:
+                    // - get_relations with filter for [12] ProjectPartOfRealm
+                    // - Projects
+                    // - Realm
+                    vec![]
+                }
+                NodeVariant::User => {
+                    // TODO
+                    // - check for Groups that only have User as Admin
+                    // - check for Realms that only have User as Admin
+                    // - get User & Tokens
+                    vec![]
+                }
+                NodeVariant::ServiceAccount => {
+                    // TODO: Delete ServiceAccount
+                    vec![]
+                }
+                NodeVariant::Group => {
+                    // TODO
+                    // - owned projects
+                    // - get_all_children
+                    // - group
+                    vec![]
+                }
+                NodeVariant::Component => {
+                    // TODO:
+                    // - Find out which realms use component
+                    // - Set all objects that use this component at this component to unavailable
+                    // - component
+                    vec![]
+                }
+            };
+
+            store.delete_nodes(&mut wtxn, &to_delete_ids)?;
+
+            // TODO: Delete related events
+            wtxn.commit(associated_event_id, &[resource_idx], &[])?;
+
+            Ok::<_, ArunaError>(bincode::serialize(&RegisterDataResponse {})?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
     }
 }

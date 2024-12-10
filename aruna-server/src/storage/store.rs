@@ -1,4 +1,5 @@
 use crate::{
+    constants::field_names::{DELETED_FIELD, ID_FIELD, VARIANT_FIELD},
     error::ArunaError,
     logerr,
     models::models::{
@@ -45,7 +46,7 @@ use std::{
 };
 use ulid::Ulid;
 
-use super::graph::{get_permissions, get_realm_and_groups, get_subtree, IndexHelper};
+use super::{graph::{get_permissions, get_realm_and_groups, get_subtree, IndexHelper}, obkv_ext::FieldIterator};
 
 pub struct WriteTxn<'a> {
     txn: Option<RwTxn<'a>>,
@@ -1416,6 +1417,74 @@ impl Store {
         error.map_err(|e| {
             tracing::error!(?node_id, ?e, "Error adding document");
             ArunaError::DatabaseError("Error adding document".to_string())
+        })?;
+
+        // Execute the indexing
+        builder.execute()?;
+
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, wtxn))]
+    pub fn delete_nodes<'a>(
+        &'a self,
+        wtxn: &mut WriteTxn<'a>,
+        idxs: &[u32],
+    ) -> Result<(), ArunaError> {
+        // Collect ids
+        let mut ids = Vec::new();
+        for idx in idxs {
+            let raw_node = 
+                self.get_raw_node(wtxn.get_ro_txn(), *idx)
+                    .ok_or_else(|| ArunaError::ServerError("Idx did not match any id".to_string()))?;
+
+            let mut obkv = FieldIterator::new(&raw_node);
+            let id: Ulid = obkv.get_required_field(0)?;
+            let variant: u8 = obkv.get_required_field(1)?;
+            ids.push((id, variant));
+        }
+        // Indexer setup
+        let indexer_config = IndexerConfig::default();
+        let mut documents_config = IndexDocumentsConfig::default();
+
+        // Replace instead of update
+        documents_config.update_method = IndexDocumentsMethod::ReplaceDocuments;
+        let builder = IndexDocuments::new(
+            wtxn.get_txn(),
+            &self.milli_index,
+            &indexer_config,
+            documents_config,
+            |_| (),
+            || false,
+        )?;
+
+        // Create a document batch
+        let mut documents_batch = DocumentsBatchBuilder::new(Vec::new());
+
+        // Replace every document with id and deleted
+        for (id, variant) in ids {
+            let mut json_object = serde_json::Map::new();
+            json_object.insert(
+                ID_FIELD.to_string(),
+                serde_json::Value::String(id.to_string()),
+            );
+            json_object.insert(VARIANT_FIELD.to_string(), serde_json::Value::Number(variant.into()));
+            json_object.insert(DELETED_FIELD.to_string(), serde_json::Value::Bool(true));
+            documents_batch.append_json_object(&json_object)?;
+        }
+
+        // Create a reader for the batch
+        let reader = DocumentsBatchReader::from_reader(Cursor::new(documents_batch.into_inner()?))
+            .map_err(|_| {
+                tracing::error!("Unable to delete documents");
+                ArunaError::DatabaseError("Unable to delete documents".to_string())
+            })?;
+
+        // Add the batch to the reader
+        let (builder, error) = builder.add_documents(reader)?;
+        error.map_err(|e| {
+            tracing::error!(?e, "Error deleting documents");
+            ArunaError::DatabaseError("Error deleting documents".to_string())
         })?;
 
         // Execute the indexing

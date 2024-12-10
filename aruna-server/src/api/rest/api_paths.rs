@@ -1209,3 +1209,33 @@ pub async fn authorize_resource(
             .await,
     )
 }
+
+
+/// Register data for an object
+#[utoipa::path(
+    delete,
+    path = "/resources/{id}",
+    params(
+        ("id" = Ulid, Path, description = "Resource ID (Must be object)"),
+    ),
+    request_body = (),
+    responses(
+        (status = 200, body = ()),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+    tag = RESOURCES,
+)]
+pub async fn delete_resource(
+    Path(id): Path<Ulid>,
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(
+        state
+            .request(DeleteRequest { id }, extract_token(&header))
+            .await,
+    )
+}

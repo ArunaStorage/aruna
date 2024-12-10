@@ -390,3 +390,20 @@ pub fn get_subtree(
 
     Ok(subtree)
 }
+
+
+#[tracing::instrument(level = "trace", skip(graph))]
+pub fn get_all_children(
+    graph: &Graph<NodeVariant, EdgeType>,
+    resource_idx: u32,
+) -> Result<Vec<u32>, ArunaError> {
+    let mut result = Vec::new();
+    let mut queue = VecDeque::new();
+    queue.push_front(resource_idx);
+    while let Some(node_id) = queue.pop_front() {
+        let children = get_children(graph, node_id);
+        result.extend(children.clone());
+        queue.extend(children);
+    }
+    Ok(result)
+}

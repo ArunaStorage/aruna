@@ -658,3 +658,11 @@ pub struct AuthorizeRequest {
 pub struct AuthorizeResponse {
     pub allowed: bool,
 }
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct DeleteRequest {
+    pub id: Ulid,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+pub struct DeleteResponse {}
