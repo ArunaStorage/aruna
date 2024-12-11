@@ -1216,7 +1216,7 @@ pub async fn authorize_resource(
     delete,
     path = "/resources/{id}",
     params(
-        ("id" = Ulid, Path, description = "Resource ID (Must be object)"),
+        ("id" = Ulid, Path, description = "Resource ID"),
     ),
     request_body = (),
     responses(

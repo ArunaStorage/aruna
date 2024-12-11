@@ -44,6 +44,24 @@ impl Request for GetRelationsRequest {
             return Err(ArunaError::Unauthorized);
         }
 
+        let check_public = if let Some(requester) = requester {
+            match controller
+                .authorize_with_context(
+                    &requester,
+                    &self,
+                    Context::Permission {
+                        min_permission: crate::models::models::Permission::Read,
+                        source: self.node,
+                    },
+                )
+                .await {
+                    Ok(_) => false,
+                    Err(err) => matches!(err, ArunaError::Forbidden(_)),
+            }
+        } else {
+            true
+        };
+
         let store = controller.get_store();
         let response = tokio::task::spawn_blocking(move || {
             let rtxn = store.read_txn()?;
@@ -54,7 +72,7 @@ impl Request for GetRelationsRequest {
 
             // Check if resource access is public
             // TODO: This will currently not work because we require permission read to the node
-            if requester.is_none() {
+            if check_public {
                 let resource = store
                     .get_node::<Resource>(&rtxn, idx)
                     .ok_or_else(|| ArunaError::NotFound(self.node.to_string()))?;

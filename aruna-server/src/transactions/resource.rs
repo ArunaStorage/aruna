@@ -8,7 +8,7 @@ use crate::{
             AUTHORS_FIELD, DESCRIPTION_FIELD, IDENTIFIERS_FIELD, ID_FIELD, LABELS_FIELD,
             LAST_MODIFIED_FIELD, LICENSE_FIELD, NAME_FIELD, TAG_FIELD, VISIBILITY_FIELD,
         },
-        relation_types::{self, DEFAULT},
+        relation_types::{self, DEFAULT, PROJECT_PART_OF_REALM},
     },
     context::{BatchPermission, Context},
     error::ArunaError,
@@ -38,7 +38,7 @@ use crate::{
 };
 use ahash::RandomState;
 use chrono::{DateTime, Utc};
-use petgraph::Direction::Outgoing;
+use petgraph::Direction::{self, Outgoing};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -1321,29 +1321,43 @@ impl WriteRequest for DeleteTx {
                 NodeVariant::ResourceProject => {
                     let graph = wtxn.get_ro_graph();
                     // Collect all children
-                    let mut all_children = graph::get_all_children(&graph, resource_idx)?;
+                    let mut to_delete = graph::get_all_children(&graph, resource_idx)?;
                     // Add project
-                    all_children.push(resource_idx);
-                    all_children
+                    to_delete.push(resource_idx);
+                    to_delete
                 }
                 NodeVariant::ResourceFolder => {
                     let graph = store.get_graph();
                     // Collect all children
-                    let mut all_children = graph::get_all_children(&graph, resource_idx)?;
+                    let mut to_delete = graph::get_all_children(&graph, resource_idx)?;
                     // Add folder
-                    all_children.push(resource_idx);
-                    all_children
+                    to_delete.push(resource_idx);
+                    to_delete
                 }
                 NodeVariant::ResourceObject => {
                     // Only object needs to be added
                     vec![resource_idx]
                 }
                 NodeVariant::Realm => {
-                    // TODO:
-                    // - get_relations with filter for [12] ProjectPartOfRealm
-                    // - Projects
-                    // - Realm
-                    vec![]
+                    let graph = wtxn.get_ro_graph();
+                    let mut to_delete= Vec::new();
+                    // Collect projects 
+                    let projects = graph::get_relations(
+                        graph,
+                        resource_idx,
+                        Some(&[PROJECT_PART_OF_REALM]),
+                        Direction::Outgoing,
+                    )
+                    .iter()
+                    .map(|rel| rel.target)
+                    .collect::<Vec<u32>>();
+                    // Collect project children
+                    for project_idx in projects {
+                        to_delete.extend(graph::get_all_children(&graph, project_idx)?);
+                    }
+                    // Add realm
+                    to_delete.push(resource_idx);
+                    to_delete
                 }
                 NodeVariant::User => {
                     // TODO
