@@ -162,7 +162,7 @@ impl WriteRequest for CreateProjectRequestTx {
             created_at: time,
             last_modified: time,
             authors: self.req.authors.clone(),
-            license_tag: self.req.license_tag.clone(),
+            license_id: self.req.license_id.unwrap_or_default(),
             locked: false,
             location: vec![], // TODO: Locations and DataProxies
             hashes: vec![],
@@ -398,7 +398,7 @@ impl WriteRequest for CreateResourceRequestTx {
             created_at: time,
             last_modified: time,
             authors: self.req.authors.clone(),
-            license_tag: self.req.license_tag.clone(),
+            license_id: self.req.license_id.unwrap_or_default(),
             locked: false,
             location: vec![], // TODO: Locations and DataProxies
             hashes: vec![],
@@ -619,7 +619,7 @@ impl WriteRequest for CreateResourceBatchRequestTx {
                     created_at: time,
                     last_modified: time,
                     authors: batch_resource.authors.clone(),
-                    license_tag: batch_resource.license_tag.clone(),
+                    license_id: batch_resource.license_id.unwrap_or_default(),
                     locked: false,
                     location: vec![], // TODO: Locations and DataProxies
                     hashes: vec![],

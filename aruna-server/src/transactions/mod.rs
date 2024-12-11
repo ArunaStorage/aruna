@@ -3,6 +3,7 @@ pub mod component;
 pub mod controller;
 pub mod events;
 pub mod group;
+mod license;
 pub mod realm;
 pub mod relation;
 pub mod request;

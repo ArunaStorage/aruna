@@ -9,7 +9,7 @@ use axum::{
     Json,
 };
 use std::sync::Arc;
-use tags::{GLOBAL, GROUPS, INFO, REALMS, RESOURCES, USERS};
+use tags::{GLOBAL, GROUPS, INFO, LICENSE, REALMS, RESOURCES, USERS};
 use ulid::Ulid;
 
 use super::utils::{extract_token, into_axum_response};
@@ -21,6 +21,7 @@ mod tags {
     pub const USERS: &str = "users";
     pub const GLOBAL: &str = "global";
     pub const INFO: &str = "info";
+    pub const LICENSE: &str = "license";
 }
 
 /// Create a new resource
@@ -1206,6 +1207,82 @@ pub async fn authorize_resource(
     into_axum_response(
         state
             .request(AuthorizeRequest { id }, extract_token(&header))
+            .await,
+    )
+}
+
+/// Register data for an object
+#[utoipa::path(
+    post,
+    path = "/license",
+    request_body = CreateLicenseRequest,
+    responses(
+        (status = 200, body = CreateLicenseResponse),
+        ArunaError,
+    ),
+    security(
+        ("auth" = [])
+    ),
+    tag = LICENSE,
+)]
+pub async fn create_license(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+    Json(request): Json<CreateLicenseRequest>,
+) -> impl IntoResponse {
+    into_axum_response(state.request(request, extract_token(&header)).await)
+}
+
+/// Get license
+#[utoipa::path(
+    get,
+    path = "/license/{id}",
+    params(
+        ("id" = Ulid, Path, description = "License ID"),
+    ),
+    responses(
+        (status = 200, body = GetLicenseResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+    tag = LICENSE,
+)]
+pub async fn get_license(
+    Path(id): Path<Ulid>,
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(
+        state
+            .request(GetLicenseRequest { id }, extract_token(&header))
+            .await,
+    )
+}
+
+/// Get licenses
+#[utoipa::path(
+    get,
+    path = "/license",
+    responses(
+        (status = 200, body = GetLicensesResponse),
+        ArunaError,
+    ),
+    security(
+        (), // <-- make optional authentication
+        ("auth" = [])
+    ),
+    tag = LICENSE,
+)]
+pub async fn get_licenses(
+    State(state): State<Arc<Controller>>,
+    header: HeaderMap,
+) -> impl IntoResponse {
+    into_axum_response(
+        state
+            .request(GetLicensesRequest {}, extract_token(&header))
             .await,
     )
 }

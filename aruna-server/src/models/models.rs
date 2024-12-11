@@ -58,7 +58,7 @@ impl TryFrom<u8> for ResourceVariant {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "type")]
 pub enum GenericNode {
     Resource(Resource),
@@ -67,6 +67,7 @@ pub enum GenericNode {
     Group(Group),
     Realm(Realm),
     Component(Component),
+    License(License),
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
@@ -80,6 +81,7 @@ pub enum NodeVariant {
     Group = 5,
     Realm = 6,
     Component = 7,
+    License = 8,
 }
 
 impl TryFrom<u8> for NodeVariant {
@@ -234,7 +236,7 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Resource {
             last_modified: obkv.get_field(10)?,
             authors: obkv.get_field(11)?,
             locked: obkv.get_field(12)?,
-            license_tag: obkv.get_field(13)?,
+            license_id: obkv.get_field(13)?,
             hashes: obkv.get_field(14)?,
             location: obkv.get_field(15)?,
             title: obkv.get_field(22)?,
@@ -400,6 +402,7 @@ pub enum NodeVariantIdx {
     ServiceAccount(u32),
     Group(u32),
     Realm(u32),
+    License(u32),
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
@@ -553,7 +556,7 @@ pub struct Resource {
     pub created_at: DateTime<Utc>,
     pub last_modified: DateTime<Utc>,
     pub authors: Vec<Author>,
-    pub license_tag: String,
+    pub license_id: Ulid,
     pub locked: bool,
     // TODO:
     pub location: Vec<DataLocation>, // Part of index ?
@@ -843,4 +846,44 @@ pub struct Subscriber {
     pub owner: Ulid,
     pub target_idx: u32,
     pub cascade: bool,
+}
+
+#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize, ToSchema)]
+pub struct License {
+    pub id: Ulid,
+    pub name: String,
+    pub description: String,
+    pub terms: serde_json::Value,
+}
+
+impl TryFrom<&License> for serde_json::Map<String, Value> {
+    type Error = ArunaError;
+    fn try_from(u: &License) -> Result<Self, Self::Error> {
+        into_serde_json_map(u, NodeVariant::License)
+    }
+}
+
+// Implement TryFrom for User
+impl<'a> TryFrom<&KvReaderU16<'a>> for License {
+    type Error = ParseError;
+
+    fn try_from(obkv: &KvReaderU16<'a>) -> Result<Self, Self::Error> {
+        let mut obkv = FieldIterator::new(obkv);
+        // Get the required id
+        let id: Ulid = obkv.get_required_field(0)?;
+        // Get and double check the variant
+        let variant: u8 = obkv.get_required_field(1)?;
+        if variant != NodeVariant::License as u8 {
+            return Err(ParseError(format!(
+                "Invalid variant for License: {}",
+                variant
+            )));
+        }
+        Ok(License {
+            id,
+            name: obkv.get_field(2)?,
+            description: obkv.get_field(3)?,
+            terms: obkv.get_field(26)?,
+        })
+    }
 }
