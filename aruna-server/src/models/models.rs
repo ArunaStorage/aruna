@@ -856,6 +856,15 @@ pub struct License {
     pub terms: serde_json::Value,
 }
 
+impl Node for License {
+    fn get_id(&self) -> Ulid {
+        self.id
+    }
+    fn get_variant(&self) -> NodeVariant {
+        NodeVariant::License
+    }
+}
+
 impl TryFrom<&License> for serde_json::Map<String, Value> {
     type Error = ArunaError;
     fn try_from(u: &License) -> Result<Self, Self::Error> {
