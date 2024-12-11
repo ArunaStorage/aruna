@@ -8,7 +8,7 @@ use crate::{
             AUTHORS_FIELD, DESCRIPTION_FIELD, IDENTIFIERS_FIELD, ID_FIELD, LABELS_FIELD,
             LAST_MODIFIED_FIELD, LICENSE_FIELD, NAME_FIELD, TAG_FIELD, VISIBILITY_FIELD,
         },
-        relation_types::{self, DEFAULT, PROJECT_PART_OF_REALM},
+        relation_types::{self, DEFAULT, OWNS_PROJECT, PERMISSION_ADMIN, PROJECT_PART_OF_REALM},
     },
     context::{BatchPermission, Context},
     error::ArunaError,
@@ -1388,25 +1388,39 @@ impl WriteRequest for DeleteTx {
                     // - check for Groups that only have User as Admin
                     // - check for Realms that only have User as Admin
                     // - get User & Tokens
-                    vec![]
+                    return Err(ArunaError::Forbidden("Users cannot be deleted".to_string()));
                 }
                 NodeVariant::ServiceAccount => {
-                    // TODO: Delete ServiceAccount
-                    vec![]
+                    vec![resource_idx]
                 }
                 NodeVariant::Group => {
-                    // TODO
-                    // - owned projects
-                    // - get_all_children
-                    // - group
-                    vec![]
+                    let graph = wtxn.get_ro_graph();
+                    let mut to_delete = Vec::new();
+                    // Collect projects
+                    let projects = graph::get_relations(
+                        graph,
+                        resource_idx,
+                        Some(&[OWNS_PROJECT]),
+                        Direction::Outgoing,
+                    )
+                    .iter()
+                    .map(|rel| rel.target)
+                    .collect::<Vec<u32>>();
+                    // Collect project children
+                    for project_idx in projects {
+                        to_delete.extend(graph::get_all_children(&graph, project_idx)?);
+                    }
+                    // Add group
+                    to_delete.push(resource_idx);
+                    to_delete
                 }
                 NodeVariant::Component => {
                     // TODO:
                     // - Find out which realms use component
                     // - Set all objects that use this component at this component to unavailable
                     // - component
-                    vec![]
+                    // vec![]
+                    return Err(ArunaError::ServerError("Not implemented".to_string()));
                 }
             };
 
