@@ -779,15 +779,16 @@ impl WriteRequest for CreateResourceBatchRequestTx {
 impl Request for GetResourcesRequest {
     type Response = GetResourcesResponse;
     fn get_context(&self) -> Context {
-        Context::PermissionBatch(
-            self.ids
-                .iter()
-                .map(|id| BatchPermission {
-                    min_permission: crate::models::models::Permission::Read,
-                    source: *id,
-                })
-                .collect(),
-        )
+        Context::InRequest
+        // Context::PermissionBatch(
+        //     self.ids
+        //         .iter()
+        //         .map(|id| BatchPermission {
+        //             min_permission: crate::models::models::Permission::Read,
+        //             source: *id,
+        //         })
+        //         .collect(),
+        // )
     }
 
     async fn run_request(
@@ -795,11 +796,34 @@ impl Request for GetResourcesRequest {
         requester: Option<Requester>,
         controller: &Controller,
     ) -> Result<Self::Response, ArunaError> {
-        let public = if let Some(requester) = requester {
-            controller.authorize(&requester, &self).await?;
-            false
+        // let public = if let Some(requester) = requester {
+        //     controller.authorize(&requester, &self).await?;
+        //     false
+        // } else {
+        //     true
+        // };
+
+        let check_public = if let Some(requester) = requester {
+            let mut check = vec![];
+            for id in self.ids.iter() {
+                match controller
+                    .authorize_with_context(
+                        &requester,
+                        &self,
+                        Context::Permission {
+                            min_permission: crate::models::models::Permission::Read,
+                            source: *id,
+                        },
+                    )
+                    .await
+                {
+                    Ok(_) => check.push((*id, false)),
+                    Err(err) => check.push((*id, matches!(err, ArunaError::Forbidden(_)))),
+                }
+            }
+            check
         } else {
-            true
+            self.ids.iter().map(|id| (*id, true)).collect()
         };
 
         let store = controller.get_store();
@@ -807,7 +831,7 @@ impl Request for GetResourcesRequest {
             let rtxn = store.read_txn()?;
             let mut resources = Vec::new();
 
-            for id in &self.ids {
+            for (id, must_be_public) in check_public {
                 let idx = store
                     .get_idx_from_ulid(&id, &rtxn)
                     .ok_or_else(|| ArunaError::NotFound(id.to_string()))?;
@@ -816,7 +840,7 @@ impl Request for GetResourcesRequest {
                     .get_node::<Resource>(&rtxn, idx)
                     .ok_or_else(|| ArunaError::NotFound(id.to_string()))?;
 
-                if public {
+                if must_be_public {
                     if !matches!(
                         resource.visibility,
                         crate::models::models::VisibilityClass::Public
@@ -1340,8 +1364,8 @@ impl WriteRequest for DeleteTx {
                 }
                 NodeVariant::Realm => {
                     let graph = wtxn.get_ro_graph();
-                    let mut to_delete= Vec::new();
-                    // Collect projects 
+                    let mut to_delete = Vec::new();
+                    // Collect projects
                     let projects = graph::get_relations(
                         graph,
                         resource_idx,

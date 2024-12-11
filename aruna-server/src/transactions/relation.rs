@@ -24,10 +24,7 @@ use super::{
 impl Request for GetRelationsRequest {
     type Response = GetRelationsResponse;
     fn get_context(&self) -> Context {
-        Context::Permission {
-            min_permission: crate::models::models::Permission::Read,
-            source: self.node,
-        }
+        Context::InRequest
     }
 
     async fn run_request(
