@@ -663,7 +663,7 @@ pub struct AuthorizeResponse {
 pub struct CreateLicenseRequest {
     pub name: String,
     pub description: String,
-    pub license_terms: serde_json::Value,
+    pub license_terms: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]

@@ -1211,7 +1211,7 @@ pub async fn authorize_resource(
     )
 }
 
-/// Register data for an object
+/// Register a license
 #[utoipa::path(
     post,
     path = "/license",

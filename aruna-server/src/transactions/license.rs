@@ -140,7 +140,7 @@ impl Request for GetLicensesRequest {
 
             let universe = store.get_public_universe(&rtxn)?;
             let (_, result) =
-                store.search("".to_string(), 0, 10000, Some("variant=6"), &rtxn, universe)?;
+                store.search("".to_string(), 0, 10000, Some("variant=8"), &rtxn, universe)?;
             let result = result
                 .into_iter()
                 .filter_map(|val| match val {

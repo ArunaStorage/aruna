@@ -128,6 +128,7 @@ impl TryFrom<serde_json::Number> for NodeVariant {
                     5 => NodeVariant::Group,
                     6 => NodeVariant::Realm,
                     7 => NodeVariant::Component,
+                    8 => NodeVariant::License,
                     _ => {
                         return Err(ArunaError::ConversionError {
                             from: format!("{}u64", v),
@@ -853,7 +854,7 @@ pub struct License {
     pub id: Ulid,
     pub name: String,
     pub description: String,
-    pub terms: serde_json::Value,
+    pub terms: String,
 }
 
 impl Node for License {
@@ -892,7 +893,7 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for License {
             id,
             name: obkv.get_field(2)?,
             description: obkv.get_field(3)?,
-            terms: obkv.get_field(26)?,
+            terms: obkv.get_field(27)?,
         })
     }
 }
