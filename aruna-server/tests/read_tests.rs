@@ -7,6 +7,7 @@ mod read_tests {
     use aruna_rust_api::v3::aruna::api::v3::{
         AddGroupRequest, CreateGroupRequest, CreateProjectRequest, CreateRealmRequest,
         CreateResourceRequest as GrpcCreateResourceRequest, GetRealmRequest, Realm,
+        ResourceVariant, VisibilityClass,
     };
     use aruna_server::models::{
         models::Permission,
@@ -16,8 +17,8 @@ mod read_tests {
             CreateProjectRequest as ModelsCreateProject, CreateProjectResponse,
             CreateResourceBatchRequest, CreateResourceBatchResponse, GetEventsResponse,
             GetGroupsFromUserResponse, GetRealmsFromUserResponse, GetRelationsRequest,
-            GroupAccessRealmResponse,
-            SearchResponse, UserAccessGroupResponse,
+            GetRelationsResponse, GetResourcesResponse, GroupAccessRealmResponse, SearchResponse,
+            UserAccessGroupResponse,
         },
     };
     use ulid::Ulid;
@@ -660,5 +661,121 @@ mod read_tests {
             .values()
             .into_iter()
             .any(|v| v["type"] == "UserAccessGroupTx")));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_public_resources() {
+        let mut clients = init_test(OFFSET).await;
+        let create_request = CreateRealmRequest {
+            tag: "test".to_string(),
+            name: "TestRealm".to_string(),
+            description: String::new(),
+        };
+
+        let response = clients
+            .realm_client
+            .create_realm(create_request.clone())
+            .await
+            .unwrap()
+            .into_inner();
+
+        let realm_id = response.realm.unwrap().id;
+        let group_id = response.admin_group_id;
+
+        let project_id = clients
+            .resource_client
+            .create_project(tonic::Request::new(CreateProjectRequest {
+                name: "test123".to_string(),
+                title: "title123".to_string(),
+                group_id,
+                realm_id,
+                visibility: VisibilityClass::Public as i32,
+                ..Default::default()
+            }))
+            .await
+            .unwrap()
+            .into_inner()
+            .resource
+            .unwrap()
+            .id;
+
+        let mut objects = vec![];
+        for i in 0..5 {
+            objects.push(
+                clients
+                    .resource_client
+                    .create_resource(tonic::Request::new(GrpcCreateResourceRequest {
+                        name: format!("test{i}"),
+                        title: format!("test{i}"),
+                        parent_id: project_id.clone(),
+                        visibility: VisibilityClass::Public as i32,
+                        variant: ResourceVariant::Object as i32,
+                        ..Default::default()
+                    }))
+                    .await
+                    .unwrap()
+                    .into_inner()
+                    .resource
+                    .unwrap()
+                    .id,
+            );
+        }
+
+        // Test with no token
+        let client = reqwest::Client::new();
+        let url = format!("{}/api/v3/resources", clients.rest_endpoint);
+        let _response: GetResourcesResponse = client
+            .get(url)
+            .query(
+                &objects
+                    .iter()
+                    .map(|id| ("ids", id.as_str()))
+                    .collect::<Vec<(&str, &str)>>(),
+            )
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+        let url = format!(
+            "{}/api/v3/resources/{}/relations",
+            clients.rest_endpoint, project_id
+        );
+        let _response: GetRelationsResponse =
+            client.get(url).send().await.unwrap().json().await.unwrap();
+
+        // Test with unauth token
+        let url = format!("{}/api/v3/resources", clients.rest_endpoint);
+        let _response: GetResourcesResponse = client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", REGULAR_TOKEN))
+            .query(
+                &objects
+                    .iter()
+                    .map(|id| ("ids", id.as_str()))
+                    .collect::<Vec<(&str, &str)>>(),
+            )
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+        let url = format!(
+            "{}/api/v3/resources/{}/relations",
+            clients.rest_endpoint, project_id
+        );
+        let _response: GetRelationsResponse = client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", REGULAR_TOKEN))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
     }
 }

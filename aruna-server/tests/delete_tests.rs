@@ -8,7 +8,7 @@ mod delete_tests {
         models::Resource,
         requests::{
             BatchResource, CreateResourceBatchRequest, CreateResourceBatchResponse, DeleteResponse,
-            GetResourcesResponse,
+            GetResourcesResponse, GetUserResponse,
         },
     };
     use ulid::Ulid;
@@ -136,6 +136,20 @@ mod delete_tests {
                 variant: res.variant.clone(),
                 deleted: true,
                 ..Default::default()
-            }))
+            }));
+
+
+        let url = format!("{}/api/v3/users", clients.rest_endpoint);
+        let response: GetUserResponse = client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", ADMIN_TOKEN))
+            .query(&all_ids)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
     }
 }

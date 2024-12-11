@@ -31,11 +31,15 @@ impl Controller {
         let ctx = request.get_context();
 
         let Some(token) = token else {
-            if matches!(ctx, Context::Public) {
-                return Ok(None);
-            } else {
-                tracing::error!("No token provided");
-                return Err(ArunaError::Unauthorized);
+            match ctx {
+                Context::Public => {
+                    return Ok(None);
+                }
+                Context::InRequest => return Ok(None),
+                _ => {
+                    tracing::error!("No token provided");
+                    return Err(ArunaError::Unauthorized);
+                }
             }
         };
 

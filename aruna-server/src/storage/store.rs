@@ -619,7 +619,7 @@ impl Store {
             .inspect_err(logerr!())
             .expect("Signing info not found")
             .expect("Signing info not found");
-
+        rtxn.commit()?;
         Ok((signing_info.0, signing_info.1, signing_info.2))
     }
 
@@ -638,6 +638,7 @@ impl Store {
             .inspect_err(logerr!())
             .ok()??;
 
+        read_txn.commit().ok()?;
         issuers
             .into_iter()
             .find(|issuer| issuer.key_id == key_id && issuer.issuer_name == issuer_name)
@@ -729,7 +730,7 @@ impl Store {
             tracing::error!("To not found");
             ArunaError::Unauthorized
         })?;
-        drop(rtxn);
+        rtxn.commit()?;
         let graph = self.graph.read().expect("Poisoned lock");
         get_permissions(&graph, resource_idx, user_idx, constraint_idx)
     }
@@ -763,10 +764,13 @@ impl Store {
             return Err(ArunaError::Unauthorized);
         };
 
+        read_txn.commit()?;
+
         let Some(Some(token)) = tokens.get(token_idx as usize) else {
             tracing::error!("Token not found");
             return Err(ArunaError::Unauthorized);
         };
+
         Ok(token.clone())
     }
 
@@ -794,6 +798,8 @@ impl Store {
                             tracing::error!("Group not found");
                             ArunaError::Unauthorized
                         })?;
+
+                    read_txn.commit()?;
                     return Ok(group);
                 }
                 _ => {}
@@ -1228,6 +1234,8 @@ impl Store {
         let user: User = self
             .get_node(&read_txn, user_idx)
             .ok_or_else(|| ArunaError::NotFound(format!("{user_idx}")))?;
+
+        read_txn.commit()?;
 
         Ok(Requester::User {
             user_id: user.id,
