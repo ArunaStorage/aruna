@@ -1351,7 +1351,7 @@ impl WriteRequest for DeleteTx {
                     to_delete
                 }
                 NodeVariant::ResourceFolder => {
-                    let graph = store.get_graph();
+                    let graph = wtxn.get_ro_graph();
                     // Collect all children
                     let mut to_delete = graph::get_all_children(&graph, resource_idx)?;
                     // Add folder
