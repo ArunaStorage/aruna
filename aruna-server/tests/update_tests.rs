@@ -177,7 +177,7 @@ mod update_tests {
         let url = format!("{}/api/v3/resources/license", clients.rest_endpoint);
         let update_license = UpdateResourceLicenseRequest {
             id: resource_id,
-            license_tag: "CC-BY-4.0".to_string(),
+            license_id: Ulid::new(),
         };
         let response: UpdateResourceLicenseResponse = client
             .post(url)
@@ -189,7 +189,7 @@ mod update_tests {
             .json()
             .await
             .unwrap();
-        assert_eq!(response.resource.license_tag, update_license.license_tag);
+        assert_eq!(response.resource.license_id, update_license.license_id);
 
         let url = format!("{}/api/v3/resources/labels", clients.rest_endpoint);
         let update_labels = UpdateResourceLabelsRequest {

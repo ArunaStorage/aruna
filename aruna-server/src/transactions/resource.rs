@@ -1012,7 +1012,10 @@ fn parse_update_fields(
             map.insert(VISIBILITY_FIELD.to_string(), value.into());
         }
         ResourceUpdateRequests::License(request) => {
-            map.insert(LICENSE_FIELD.to_string(), request.license_tag.into());
+            map.insert(
+                LICENSE_FIELD.to_string(),
+                request.license_id.to_string().into(),
+            );
         }
         ResourceUpdateRequests::Labels(request) => {
             let mut labels = old_resource.labels;

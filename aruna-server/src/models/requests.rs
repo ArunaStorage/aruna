@@ -532,7 +532,7 @@ pub struct UpdateResourceVisibilityResponse {
 )]
 pub struct UpdateResourceLicenseRequest {
     pub id: Ulid,
-    pub license_tag: String,
+    pub license_id: Ulid,
 }
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct UpdateResourceLicenseResponse {
