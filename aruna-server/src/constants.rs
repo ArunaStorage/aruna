@@ -32,6 +32,7 @@ pub mod field_names {
     pub const TAG_FIELD: &str = "tag";
     pub const COMPONENT_TYPE_FIELD: &str = "component_type";
     pub const ENDPOINTS_FIELD: &str = "endpoints";
+    pub const PUBLIC: &str = "public";
 }
 
 // Milli index internal field ids
@@ -140,6 +141,10 @@ pub const FIELDS: &[Field] = &[
         name: field_names::ENDPOINTS_FIELD,
         index: 25,
     }, // 25 String - Endpoint variant of a component  | Component
+    Field {
+        name: field_names::PUBLIC,
+        index: 26,
+    }, // 25 String - Visiblity of component            | Component
 ];
 
 pub mod relation_types {
