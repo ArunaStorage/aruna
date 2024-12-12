@@ -33,6 +33,7 @@ pub mod field_names {
     pub const COMPONENT_TYPE_FIELD: &str = "component_type";
     pub const ENDPOINTS_FIELD: &str = "endpoints";
     pub const PUBLIC: &str = "public";
+    pub const LICENSE_TERMS: &str = "terms";
 }
 
 // Milli index internal field ids
@@ -144,6 +145,10 @@ pub const FIELDS: &[Field] = &[
     Field {
         name: field_names::PUBLIC,
         index: 26,
+    }, // 25 String - Visiblity of component            | Component
+    Field {
+        name: field_names::LICENSE_TERMS,
+        index: 27,
     }, // 25 String - Visiblity of component            | Component
 ];
 

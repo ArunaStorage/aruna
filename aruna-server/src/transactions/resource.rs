@@ -162,7 +162,7 @@ impl WriteRequest for CreateProjectRequestTx {
             created_at: time,
             last_modified: time,
             authors: self.req.authors.clone(),
-            license_tag: self.req.license_tag.clone(),
+            license_id: self.req.license_id.unwrap_or_default(),
             locked: false,
             deleted: false,
             location: vec![], // TODO: Locations and DataProxies
@@ -399,7 +399,7 @@ impl WriteRequest for CreateResourceRequestTx {
             created_at: time,
             last_modified: time,
             authors: self.req.authors.clone(),
-            license_tag: self.req.license_tag.clone(),
+            license_id: self.req.license_id.unwrap_or_default(),
             locked: false,
             deleted: false,
             location: vec![], // TODO: Locations and DataProxies
@@ -621,7 +621,7 @@ impl WriteRequest for CreateResourceBatchRequestTx {
                     created_at: time,
                     last_modified: time,
                     authors: batch_resource.authors.clone(),
-                    license_tag: batch_resource.license_tag.clone(),
+                    license_id: batch_resource.license_id.unwrap_or_default(),
                     locked: false,
                     deleted: false,
                     location: vec![], // TODO: Locations and DataProxies
@@ -1038,7 +1038,10 @@ fn parse_update_fields(
             map.insert(VISIBILITY_FIELD.to_string(), value.into());
         }
         ResourceUpdateRequests::License(request) => {
-            map.insert(LICENSE_FIELD.to_string(), request.license_tag.into());
+            map.insert(
+                LICENSE_FIELD.to_string(),
+                request.license_id.to_string().into(),
+            );
         }
         ResourceUpdateRequests::Labels(request) => {
             let mut labels = old_resource.labels;
@@ -1420,6 +1423,9 @@ impl WriteRequest for DeleteTx {
                     // - Set all objects that use this component at this component to unavailable
                     // - component
                     // vec![]
+                    return Err(ArunaError::ServerError("Not implemented".to_string()));
+                }
+                NodeVariant::License => {
                     return Err(ArunaError::ServerError("Not implemented".to_string()));
                 }
             };

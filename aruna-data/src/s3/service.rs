@@ -1,7 +1,8 @@
 use crate::{client::ServerClient, error::ProxyError, lmdbstore::LmdbStore, structs::ObjectInfo};
 use s3s::{
     dto::{
-        CreateBucketInput, CreateBucketOutput, GetObjectInput, GetObjectOutput, HeadObjectInput, HeadObjectOutput, PutObjectInput, PutObjectOutput, StreamingBlob
+        CreateBucketInput, CreateBucketOutput, GetObjectInput, GetObjectOutput, HeadObjectInput,
+        HeadObjectOutput, PutObjectInput, PutObjectOutput, StreamingBlob,
     },
     s3_error, S3Request, S3Response, S3Result, S3,
 };
@@ -94,14 +95,17 @@ impl S3 for ArunaS3Service {
     }
 
     #[tracing::instrument(err, skip(self, req))]
-    async fn head_object(&self, req: S3Request<HeadObjectInput>) -> S3Result<S3Response<HeadObjectOutput>> {
+    async fn head_object(
+        &self,
+        req: S3Request<HeadObjectInput>,
+    ) -> S3Result<S3Response<HeadObjectOutput>> {
         let (object_id, info) = self
-        .storage
-        .get_object(&format!("{}/{}", &req.input.bucket, &req.input.key))
-        .ok_or_else(|| {
-            error!("Object not found");
-            s3_error!(NoSuchKey, "Object not found")
-        })?;
+            .storage
+            .get_object(&format!("{}/{}", &req.input.bucket, &req.input.key))
+            .ok_or_else(|| {
+                error!("Object not found");
+                s3_error!(NoSuchKey, "Object not found")
+            })?;
         let token = token_from_credentials(req.credentials.as_ref())?;
         self.client.authorize(object_id, &token).await?;
 

@@ -157,7 +157,7 @@ impl From<models::Resource> for grpc::Resource {
             locked: value.locked,
             endpoint_status: vec![],
             hashes: value.hashes.into_iter().map(models::Hash::into).collect(),
-            license_tag: value.license_tag,
+            license_tag: value.license_id.to_string(),
         }
     }
 }
@@ -182,7 +182,7 @@ impl TryFrom<grpc::CreateResourceRequest> for requests::CreateResourceRequest {
                 .into_iter()
                 .map(models::Author::try_from)
                 .collect::<Result<Vec<_>, _>>()?,
-            license_tag: value.license_tag,
+            license_id: None, //value.license_tag,
             parent_id: Ulid::from_string(&value.parent_id)
                 .map_err(|_| InvalidFieldError("parent_id"))?,
         })
@@ -235,7 +235,7 @@ impl TryFrom<grpc::CreateProjectRequest> for requests::CreateProjectRequest {
                 .into_iter()
                 .map(models::Author::try_from)
                 .collect::<Result<Vec<_>, _>>()?,
-            license_tag: value.license_tag,
+            license_id: None, //Ulid::fromvalue.license_tag,
             group_id: Ulid::from_string(&value.group_id)
                 .map_err(|_| InvalidFieldError("group_id"))?,
             realm_id: Ulid::from_string(&value.realm_id)
@@ -493,7 +493,7 @@ impl TryFrom<grpc::CreateResourceBatchRequest> for requests::CreateResourceBatch
                                     a.try_into().map_err(|_| InvalidFieldError("authors"))
                                 })
                                 .collect::<Result<Vec<models::Author>, InvalidFieldError>>()?,
-                            license_tag: res.license_tag,
+                            license_id: None, // res.license_tag,
                         })
                     },
                 )

@@ -61,7 +61,7 @@ impl TryFrom<u8> for ResourceVariant {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "type")]
 pub enum GenericNode {
     Resource(Resource),
@@ -70,6 +70,7 @@ pub enum GenericNode {
     Group(Group),
     Realm(Realm),
     Component(Component),
+    License(License),
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
@@ -83,6 +84,7 @@ pub enum NodeVariant {
     Group = 5,
     Realm = 6,
     Component = 7,
+    License = 8,
 }
 
 impl TryFrom<u8> for NodeVariant {
@@ -129,6 +131,7 @@ impl TryFrom<serde_json::Number> for NodeVariant {
                     5 => NodeVariant::Group,
                     6 => NodeVariant::Realm,
                     7 => NodeVariant::Component,
+                    8 => NodeVariant::License,
                     _ => {
                         return Err(ArunaError::ConversionError {
                             from: format!("{}u64", v),
@@ -247,7 +250,7 @@ impl<'a> TryFrom<&KvReaderU16<'a>> for Resource {
                 last_modified: obkv.get_field(11)?,
                 authors: obkv.get_field(12)?,
                 locked: obkv.get_field(13)?,
-                license_tag: obkv.get_field(14)?,
+                license_id: obkv.get_field(14)?,
                 hashes: obkv.get_field(15)?,
                 location: obkv.get_field(16)?,
                 title: obkv.get_field(23)?,
@@ -455,6 +458,7 @@ pub enum NodeVariantIdx {
     ServiceAccount(u32),
     Group(u32),
     Realm(u32),
+    License(u32),
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
@@ -620,7 +624,7 @@ pub struct Resource {
     pub created_at: DateTime<Utc>,
     pub last_modified: DateTime<Utc>,
     pub authors: Vec<Author>,
-    pub license_tag: String,
+    pub license_id: Ulid,
     pub locked: bool,
     pub deleted: bool,
     // TODO:
@@ -852,7 +856,9 @@ pub enum Endpoint {
     Consensus(Url),
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Default,
+)]
 pub struct Component {
     pub id: Ulid,
     pub name: String,
@@ -923,4 +929,64 @@ pub struct Subscriber {
     pub owner: Ulid,
     pub target_idx: u32,
     pub cascade: bool,
+}
+
+#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize, ToSchema, Default)]
+pub struct License {
+    pub id: Ulid,
+    pub name: String,
+    pub description: String,
+    pub terms: String,
+    pub deleted: bool,
+}
+
+impl Node for License {
+    fn get_id(&self) -> Ulid {
+        self.id
+    }
+    fn get_variant(&self) -> NodeVariant {
+        NodeVariant::License
+    }
+}
+
+impl TryFrom<&License> for serde_json::Map<String, Value> {
+    type Error = ArunaError;
+    fn try_from(u: &License) -> Result<Self, Self::Error> {
+        into_serde_json_map(u, NodeVariant::License)
+    }
+}
+
+// Implement TryFrom for User
+impl<'a> TryFrom<&KvReaderU16<'a>> for License {
+    type Error = ParseError;
+
+    fn try_from(obkv: &KvReaderU16<'a>) -> Result<Self, Self::Error> {
+        let mut obkv = FieldIterator::new(obkv);
+        // Get the required id
+        let id: Ulid = obkv.get_required_field(0)?;
+        // Get and double check the variant
+        let variant: u8 = obkv.get_required_field(1)?;
+        if variant != NodeVariant::License as u8 {
+            return Err(ParseError(format!(
+                "Invalid variant for License: {}",
+                variant
+            )));
+        }
+        let deleted: bool = obkv.get_required_field(2)?;
+        if deleted {
+            Ok(License {
+                id,
+                deleted,
+                ..Default::default()
+            })
+        } else {
+            Ok(License {
+                id,
+                deleted,
+                name: obkv.get_field(3)?,
+                description: obkv.get_field(4)?,
+                terms: obkv.get_field(27)?,
+            })
+        }
+    }
 }

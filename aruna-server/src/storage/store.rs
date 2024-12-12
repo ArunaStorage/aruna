@@ -3,7 +3,7 @@ use crate::{
     error::ArunaError,
     logerr,
     models::models::{
-        Component, EdgeType, GenericNode, Group, IssuerKey, IssuerType, Node, NodeVariant,
+        Component, EdgeType, GenericNode, Group, IssuerKey, IssuerType, License, Node, NodeVariant,
         Permission, RawRelation, Realm, Relation, RelationInfo, Resource, ServerState,
         ServiceAccount, Subscriber, Token, User,
     },
@@ -929,6 +929,9 @@ impl Store {
                         NodeVariant::Component => GenericNode::Component(
                             Component::try_from(&obkv).inspect_err(logerr!())?,
                         ),
+                        NodeVariant::License => {
+                            GenericNode::License(License::try_from(&obkv).inspect_err(logerr!())?)
+                        }
                     })
                 })
                 .collect::<Result<Vec<_>, ArunaError>>()?,

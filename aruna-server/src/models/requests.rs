@@ -31,8 +31,8 @@ pub struct CreateResourceRequest {
     pub visibility: VisibilityClass,
     #[serde(default)]
     pub authors: Vec<Author>,
-    #[serde(default = "default_license_tag")]
-    pub license_tag: String,
+    #[serde(default)]
+    pub license_id: Option<Ulid>,
     pub parent_id: Ulid,
 }
 
@@ -55,8 +55,8 @@ pub struct BatchResource {
     pub visibility: VisibilityClass,
     #[serde(default)]
     pub authors: Vec<Author>,
-    #[serde(default = "default_license_tag")]
-    pub license_tag: String,
+    #[serde(default)]
+    pub license_id: Option<Ulid>,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema, Hash)]
@@ -96,7 +96,7 @@ pub struct CreateProjectRequest {
     #[serde(default)]
     pub authors: Vec<Author>,
     #[serde(default)]
-    pub license_tag: String,
+    pub license_id: Option<Ulid>,
     #[serde(default)]
     pub group_id: Ulid,
     #[serde(default)]
@@ -281,7 +281,7 @@ pub struct SearchRequest {
     pub offset: Option<usize>,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, ToSchema)]
 pub struct SearchResponse {
     pub expected_hits: usize,
     pub resources: Vec<GenericNode>,
@@ -532,7 +532,7 @@ pub struct UpdateResourceVisibilityResponse {
 )]
 pub struct UpdateResourceLicenseRequest {
     pub id: Ulid,
-    pub license_tag: String,
+    pub license_id: Ulid,
 }
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct UpdateResourceLicenseResponse {
@@ -666,3 +666,33 @@ pub struct DeleteRequest {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, ToSchema)]
 pub struct DeleteResponse {}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateLicenseRequest {
+    pub name: String,
+    pub description: String,
+    pub license_terms: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateLicenseResponse {
+    pub license_id: Ulid,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetLicensesRequest {}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetLicensesResponse {
+    pub licenses: Vec<super::models::License>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetLicenseRequest {
+    pub id: Ulid,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct GetLicenseResponse {
+    pub license: super::models::License,
+}
