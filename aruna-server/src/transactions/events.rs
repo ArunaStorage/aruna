@@ -50,7 +50,9 @@ impl Request for GetEventsRequest {
                     ArunaError::ServerError("Error getting events".to_string())
                 })?;
 
-            let mut events = vec![];
+            //let mut events = vec![];
+
+            let mut events = serde_json::Map::new();
             for event in event_ids.iter() {
                 let event = node.get_event_by_id(*event).ok_or_else(|| {
                     error!("Event not found");
@@ -75,9 +77,7 @@ impl Request for GetEventsRequest {
                     ArunaError::ServerError("Error serializing event".to_string())
                 })?;
 
-                let mut value = serde_json::Map::new();
-                value.insert(Ulid::from(id).to_string(), json_event);
-                events.push(value);
+                events.insert(Ulid::from(id).to_string(), json_event);
             }
 
             Ok::<_, ArunaError>(GetEventsResponse { events })
