@@ -11,10 +11,11 @@ use crate::{
     error::ArunaError,
     logerr,
     models::{
-        models::Group,
+        models::{Group, ServiceAccount},
         requests::{
             AddUserRequest, AddUserResponse, CreateGroupRequest, CreateGroupResponse,
-            GetGroupRequest, GetGroupResponse, GetUsersFromGroupRequest, GetUsersFromGroupResponse,
+            CreateServiceAccountRequest, CreateServiceAccountResponse, GetGroupRequest,
+            GetGroupResponse, GetUsersFromGroupRequest, GetUsersFromGroupResponse,
             UserAccessGroupRequest, UserAccessGroupResponse,
         },
     },
@@ -406,6 +407,102 @@ impl WriteRequest for UserAccessGroupTx {
             // Notification gets automatically created in commit
             wtxn.commit(associated_event_id, &affected, &[requester_idx])?;
             Ok::<_, ArunaError>(bincode::serialize(&UserAccessGroupResponse {})?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
+    }
+}
+
+impl Request for CreateServiceAccountRequest {
+    type Response = CreateServiceAccountResponse;
+    fn get_context(&self) -> Context {
+        Context::Permission {
+            min_permission: crate::models::models::Permission::Admin,
+            source: self.group_id,
+        }
+    }
+
+    async fn run_request(
+        self,
+        requester: Option<Requester>,
+        controller: &super::controller::Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
+            return Err(ArunaError::Unauthorized);
+        }
+        let request_tx = CreateServiceAccountTx {
+            id: Ulid::new(),
+            req: self,
+            requester: requester
+                .ok_or_else(|| ArunaError::Unauthorized)
+                .inspect_err(logerr!())?,
+        };
+
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response)?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateServiceAccountTx {
+    id: Ulid,
+    req: CreateServiceAccountRequest,
+    requester: Requester,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for CreateServiceAccountTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+
+        let service_account = ServiceAccount {
+            id: self.id,
+            name: self.req.name.clone(),
+            deleted: false,
+        };
+        let group_id = self.req.group_id;
+        let permission = match self.req.permission {
+            crate::models::models::Permission::None => relation_types::PERMISSION_NONE,
+            crate::models::models::Permission::Read => relation_types::PERMISSION_READ,
+            crate::models::models::Permission::Append => relation_types::PERMISSION_APPEND,
+            crate::models::models::Permission::Write => relation_types::PERMISSION_WRITE,
+            crate::models::models::Permission::Admin => relation_types::PERMISSION_ADMIN,
+        };
+        let store = controller.get_store();
+
+        Ok(tokio::task::spawn_blocking(move || {
+            let mut wtxn = store.write_txn()?;
+
+            let Some(group_idx) = store.get_idx_from_ulid(&group_id, wtxn.get_txn()) else {
+                return Err(ArunaError::NotFound(group_id.to_string()));
+            };
+
+            let service_account_idx = store.create_node(&mut wtxn, &service_account)?;
+            // Add relation user --ADMIN--> group
+            store.create_relation(&mut wtxn, service_account_idx, group_idx, permission)?;
+
+            store.add_read_permission_universe(&mut wtxn, group_idx, &[group_idx])?;
+
+            // Affected nodes: User and Group
+            wtxn.commit(associated_event_id, &[service_account_idx, group_idx], &[])?;
+            // Create admin group, add user to admin group
+            Ok::<_, ArunaError>(bincode::serialize(&CreateServiceAccountResponse {
+                service_account,
+            })?)
         })
         .await
         .map_err(|_e| {

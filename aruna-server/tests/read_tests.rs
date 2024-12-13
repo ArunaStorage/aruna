@@ -629,10 +629,10 @@ mod read_tests {
             .json()
             .await
             .unwrap();
-        assert!(response.events.iter().any(|map| map
-            .values()
-            .into_iter()
-            .any(|v| v["type"] == "GroupAccessRealmTx")));
+        assert!(response.events.iter().any(|(_, value)| value["type"] == "GroupAccessRealmTx"));
+         //   .values()
+         //   .into_iter()
+         //   .any(|v| v["type"] == "GroupAccessRealmTx")));
 
         // Request group access
         let url = format!("{}/api/v3/groups/{}/join", clients.rest_endpoint, group_id);
@@ -657,10 +657,7 @@ mod read_tests {
             .json()
             .await
             .unwrap();
-        assert!(response.events.iter().any(|map| map
-            .values()
-            .into_iter()
-            .any(|v| v["type"] == "UserAccessGroupTx")));
+        assert!(response.events.iter().any(|(_, value)| value["type"] == "UserAccessGroupTx"));
     }
 
     #[tokio::test(flavor = "multi_thread")]

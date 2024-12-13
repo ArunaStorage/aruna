@@ -1,11 +1,13 @@
 mod error;
 mod poll;
-mod trigger;
+mod task;
 
-use std::{backtrace::Backtrace, panic, time::Duration};
+use std::{backtrace::Backtrace, panic};
 use error::ComputeError;
 use poll::State;
+use task::start_server;
 use tracing_subscriber::EnvFilter;
+use ulid::Ulid;
 
 #[tracing::instrument(level = "trace", skip())]
 #[tokio::main]
@@ -37,14 +39,15 @@ async fn main() -> Result<(), ComputeError> {
         .finish();
 
     tracing::subscriber::set_global_default(subscriber)?;
+
     let token = dotenvy::var("TOKEN".to_string()).unwrap();
     let frequency = dotenvy::var("POLL_FREQUENCY".to_string()).unwrap().parse().unwrap();
+    let realm_id = Ulid::from_string(&dotenvy::var("REALM_ID".to_string()).unwrap()).unwrap();
 
-    let mut state = State::new(token).await;
+    let state = State::new(token).await;
 
-    loop {
-        state.poll_notifications().await?;
-        tokio::time::sleep(Duration::from_secs(frequency)).await;
-    }
+    tokio::spawn(async move {start_server(state, frequency, realm_id)});
+
+    Ok(())
 }
 

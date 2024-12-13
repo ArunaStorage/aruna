@@ -16,11 +16,12 @@ use crate::{
             Group, NodeVariant, Permission, S3Credential, Subscriber, Token, TokenType, User,
         },
         requests::{
-            CreateS3CredentialsRequest, CreateS3CredentialsResponse, CreateTokenRequest,
-            CreateTokenResponse, GetGroupsFromUserRequest, GetGroupsFromUserResponse,
-            GetRealmsFromUserRequest, GetRealmsFromUserResponse, GetS3CredentialsRequest,
-            GetS3CredentialsResponse, GetTokensRequest, GetTokensResponse, GetUserRequest,
-            GetUserResponse, RegisterUserRequest, RegisterUserResponse,
+            CreateS3CredentialsRequest, CreateS3CredentialsResponse,
+            CreateServiceAccountTokenRequest, CreateServiceAccountTokenResponse,
+            CreateTokenRequest, CreateTokenResponse, GetGroupsFromUserRequest,
+            GetGroupsFromUserResponse, GetRealmsFromUserRequest, GetRealmsFromUserResponse,
+            GetS3CredentialsRequest, GetS3CredentialsResponse, GetTokensRequest, GetTokensResponse,
+            GetUserRequest, GetUserResponse, RegisterUserRequest, RegisterUserResponse,
         },
     },
     storage::graph::has_relation,
@@ -715,5 +716,141 @@ impl Request for GetS3CredentialsRequest {
             tracing::error!("Failed to join task");
             ArunaError::ServerError("".to_string())
         })?
+    }
+}
+
+impl Request for CreateServiceAccountTokenRequest {
+    type Response = CreateServiceAccountTokenResponse;
+    fn get_context(&self) -> Context {
+        Context::Permission {
+            min_permission: Permission::Admin,
+            source: self.group_id,
+        }
+    }
+
+    async fn run_request(
+        mut self,
+        requester: Option<Requester>,
+        controller: &Controller,
+    ) -> Result<Self::Response, ArunaError> {
+        // Disallow impersonation
+        if requester
+            .as_ref()
+            .and_then(|r| r.get_impersonator())
+            .is_some()
+        {
+            return Err(ArunaError::Unauthorized);
+        }
+        if self.expires_at.is_none() {
+            self.expires_at = Some(chrono::Utc::now() + chrono::Duration::days(365));
+        }
+
+        let request_tx = CreateServiceAccountTokenRequestTx {
+            req: self,
+            requester: requester
+                .ok_or_else(|| ArunaError::Unauthorized)
+                .inspect_err(logerr!())?,
+        };
+
+        let response = controller.transaction(Ulid::new().0, &request_tx).await?;
+
+        Ok(bincode::deserialize(&response)?)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateServiceAccountTokenRequestTx {
+    req: CreateServiceAccountTokenRequest,
+    requester: Requester,
+}
+
+#[typetag::serde]
+#[async_trait::async_trait]
+impl WriteRequest for CreateServiceAccountTokenRequestTx {
+    async fn execute(
+        &self,
+        associated_event_id: u128,
+        controller: &Controller,
+    ) -> Result<SerializedResponse, crate::error::ArunaError> {
+        controller.authorize(&self.requester, &self.req).await?;
+
+        let token = Token {
+            id: 0, // This id is created in the store
+            user_id: self.req.service_account_id,
+            name: self.req.name.clone(),
+            expires_at: self.req.expires_at.expect("Got generated in Request"),
+            scope: self.req.scope.clone(),
+            constraints: None, // TODO: Constraints
+            token_type: TokenType::Aruna,
+            component_id: None,
+            default_group: Some(self.req.group_id),
+            default_realm: Some(self.req.realm_id),
+        };
+        let service_account_id = self.req.service_account_id;
+        let group_id = self.req.group_id.clone();
+        let realm_id = self.req.realm_id.clone();
+        let user_id = self.req.realm_id.clone();
+        let store = controller.get_store();
+
+        Ok(tokio::task::spawn_blocking(move || {
+            let mut wtxn = store.write_txn()?;
+
+            // Create token
+            let service_account_idx = store
+                .get_idx_from_ulid(&service_account_id, wtxn.get_txn())
+                .ok_or_else(|| ArunaError::NotFound("ServiceAccount not found".to_string()))?;
+            let user_idx = store
+                .get_idx_from_ulid(&user_id, wtxn.get_txn())
+                .ok_or_else(|| ArunaError::NotFound("User not found".to_string()))?;
+            let realm_idx = store
+                .get_idx_from_ulid(&realm_id, wtxn.get_txn())
+                .ok_or_else(|| ArunaError::NotFound("Realm not found".to_string()))?;
+            let group_idx = store
+                .get_idx_from_ulid(&group_id, wtxn.get_txn())
+                .ok_or_else(|| ArunaError::NotFound("Group not found".to_string()))?;
+
+            let graph = wtxn.get_ro_graph();
+            let relations = store.get_raw_relations(
+                realm_idx,
+                Some(&[GROUP_PART_OF_REALM]),
+                petgraph::Direction::Outgoing,
+                graph,
+            );
+            if !relations.iter().any(|rel| rel.target == group_idx) {
+                return Err(ArunaError::Forbidden("Group not part of realm".to_string()));
+            }
+
+            let token = store.add_token(
+                wtxn.get_txn(),
+                associated_event_id,
+                &token.user_id.clone(),
+                token,
+            )?;
+
+            wtxn.commit(
+                associated_event_id,
+                &[service_account_idx, user_idx, realm_idx, group_idx],
+                &[],
+            )?;
+
+            let secret = TokenHandler::sign_user_token(
+                &store,
+                true,
+                token.id,
+                &token.user_id,
+                None,
+                Some(token.expires_at.timestamp() as u64),
+            )?;
+            // Create admin group, add user to admin group
+            Ok::<_, ArunaError>(bincode::serialize(&CreateServiceAccountTokenResponse {
+                token,
+                secret,
+            })?)
+        })
+        .await
+        .map_err(|_e| {
+            tracing::error!("Failed to join task");
+            ArunaError::ServerError("".to_string())
+        })??)
     }
 }

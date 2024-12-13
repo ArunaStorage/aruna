@@ -1435,7 +1435,7 @@ impl WriteRequest for DeleteTx {
             // TODO: Delete related events
             wtxn.commit(associated_event_id, &[resource_idx], &[])?;
 
-            Ok::<_, ArunaError>(bincode::serialize(&RegisterDataResponse {})?)
+            Ok::<_, ArunaError>(bincode::serialize(&DeleteResponse {})?)
         })
         .await
         .map_err(|_e| {

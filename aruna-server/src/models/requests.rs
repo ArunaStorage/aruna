@@ -5,8 +5,8 @@ use utoipa::{IntoParams, ToSchema};
 
 use super::models::{
     Author, Component, ComponentType, Endpoint, GenericNode, Group, Hash, KeyValue, Permission,
-    Realm, Relation, RelationInfo, Resource, ResourceVariant, S3Credential, Scope, Token, User,
-    VisibilityClass,
+    Realm, Relation, RelationInfo, Resource, ResourceVariant, S3Credential, Scope, ServiceAccount,
+    Token, User, VisibilityClass,
 };
 
 fn default_license_tag() -> String {
@@ -695,4 +695,35 @@ pub struct GetLicenseRequest {
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct GetLicenseResponse {
     pub license: super::models::License,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateServiceAccountRequest {
+    pub group_id: Ulid,
+    pub name: String,
+    pub permission: Permission,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateServiceAccountResponse {
+    pub service_account: ServiceAccount,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateServiceAccountTokenRequest {
+    pub service_account_id: Ulid,
+    pub name: String,
+    #[serde(default)]
+    pub expires_at: Option<chrono::DateTime<Utc>>,
+    #[serde(default)]
+    pub scope: Scope,
+    //pub constraints: Vec<Constraint>,
+    pub realm_id: Ulid,
+    pub group_id: Ulid,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct CreateServiceAccountTokenResponse {
+    pub token: Token,
+    pub secret: String,
 }
